@@ -1362,7 +1362,11 @@
   function passwordDialog(p) {
     var email = h('input', { class: 'dp-input', type: 'email', attrs: { autocomplete: 'off' } });
     var pass = h('input', { class: 'dp-input', type: 'password', attrs: { autocomplete: 'new-password' } });
-    var name = h('input', { class: 'dp-input', type: 'text', value: '' });
+    // 1.17.0: sender name and signature suggested from the profile (GET me `suggest`) — the person can change or clear them
+    var sg = suggestion();
+    var name = h('input', { class: 'dp-input', type: 'text', value: sg.senderName || '' });
+    var sig = h('textarea', { class: 'dp-input', attrs: { rows: '2' } });
+    sig.value = sg.signature || '';
     var color = h('input', { class: 'dp-input', type: 'color', value: '#46E0A0', style: 'width:64px;padding:2px' });
     var user = h('input', { class: 'dp-input', type: 'text', attrs: { autocomplete: 'off' } });
     var ih = h('input', { class: 'dp-input', type: 'text' }); var ip = h('select', { class: 'dp-input' }, [h('option', { value: '993', text: '993 (TLS)' }), h('option', { value: '143', text: '143 (STARTTLS)' })]);
@@ -1384,7 +1388,7 @@
     }
     var go = function () {
       err.textContent = '';
-      var b = { provider: p.id, email: email.value.trim(), password: pass.value, name: name.value.trim(), color: color.value };
+      var b = { provider: p.id, email: email.value.trim(), password: pass.value, name: name.value.trim(), color: color.value, signature: sig.value };
       if (imap) {
         b.username = user.value.trim() || undefined;
         b.imap = { host: ih.value.trim(), port: Number(ip.value), security: ip.value === '993' ? 'tls' : 'starttls' };
@@ -1398,6 +1402,7 @@
       p.hint ? h('div', { class: 'dp-note' }, [icon('warn'), h('span', { text: p.hint[CTX.lang] || p.hint.de })]) : null,
       field(T('p.email'), email), field(p.auth === 'app_password' ? T('p.app_password') : T('p.password'), pass), servers,
       h('div', { class: 'mp-frow' }, [h('span', { text: T('p.name_color') }), h('div', { style: 'display:flex;gap:8px' }, [name, color])]),
+      field(T('p.signature'), sig), sg.from === 'profile' ? h('p', { class: 'dp-hint', text: T('p.suggest_profile') }) : null,
       h('p', { class: 'dp-hint', text: T('p.password_note') }), err,
       h('div', { class: 'dp-actions' }, [btn(T('p.cancel'), closeDialog), connect]),
     ]);
@@ -1518,6 +1523,29 @@
     ];
   }
 
+  /** 1.17.0: the suggestion of GET me for sender name and signature ({ senderName, signature, from }) — empty on an older plugin. */
+  function suggestion() {
+    var x = S.me && S.me.suggest;
+    return x && typeof x === 'object' ? x : { senderName: '', signature: null, from: 'account' };
+  }
+
+  /**
+   * 1.17.0: „Aus dem Profil übernehmen“ in the account dialog — only when the profile has a name that differs from the
+   * account's or the signature is empty; it fills the fields, saving is still the person's step.
+   */
+  function suggestRow(name, sig) {
+    var sg = suggestion();
+    if (sg.from !== 'profile' || !sg.senderName) return null;
+    if (name.value.trim() === sg.senderName && (sig.value.trim() || !sg.signature)) return null;
+    var row = h('div', { class: 'dp-note' }, [h('span', { style: 'flex:1', text: T('p.suggest_text', { name: sg.senderName }) }),
+      btn(T('p.suggest_take'), function () {
+        name.value = sg.senderName;
+        if (!sig.value.trim() && sg.signature) sig.value = sg.signature;
+        row.hidden = true;
+      }, { small: true })]);
+    return row;
+  }
+
   function accountDialog(a) {
     var name = h('input', { class: 'dp-input', type: 'text', value: a.name || '' });
     var color = h('input', { class: 'dp-input', type: 'color', value: a.color, style: 'width:64px;padding:2px' });
@@ -1549,7 +1577,7 @@
       h('div', { class: 'mp-frow' }, [h('span', { text: T('p.name_color') }), h('div', { style: 'display:flex;gap:8px' }, [name, color])]),
       field(T('p.push'), push), has('drive') ? field(T('p.attachments_mode'), atts) : null, field(T('p.kind'), kind),
       has('ai') ? h('label', { class: 'dp-check' }, [aiSw, h('span', { text: T('p.ai_account') })]) : null,
-      field(T('p.signature'), sig), ms ? btn(T('p.relogin'), function () { relogin(a); }, { small: true }) : field(T('p.new_password'), pass),
+      field(T('p.signature'), sig), suggestRow(name, sig), ms ? btn(T('p.relogin'), function () { relogin(a); }, { small: true }) : field(T('p.new_password'), pass),
       pim.el,
       err, h('div', { class: 'dp-actions' }, [btn(T('p.remove_account'), remove, { danger: true }), btn(T('p.cancel'), closeDialog), btn(T('p.save'), save, { primary: true })]),
     ]);

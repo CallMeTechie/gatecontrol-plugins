@@ -8,6 +8,7 @@ const store = require('./store');
 const config = require('./config');
 const providers = require('./providers');
 const accounts = require('./accounts');
+const profile = require('./profile');
 const messages = require('./messages');
 const compose = require('./compose');
 const ai = require('./ai');
@@ -139,6 +140,9 @@ async function me(gc, ctx) {
     // since 1.1.0 (like Drive): the person's place in the licence — without one (null) every other call answers 403
     // no_seat, without a valid licence not_licensed
     seat: ctx.seat ? ctx.seat.kind : null, licence: { valid: !!(ctx.licence && ctx.licence.valid), tier: (ctx.licence && ctx.licence.tier) || null },
+    // since 1.17.0: the suggestion for a new or edited mailbox — sender name and signature from the user profile
+    // (GateControl ≥ 1.280.0; else the display name, no signature). Only a suggestion: nothing is set by itself.
+    suggest: await profile.suggestion(gc, ctx.userId, ctx.userName),
   };
 }
 

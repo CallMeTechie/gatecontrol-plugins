@@ -1,4 +1,4 @@
-<!-- version: 1.16.0 -->
+<!-- version: 1.17.0 -->
 # Mail
 
 ## What the plugin does
@@ -16,7 +16,7 @@
 
 ## Requirements
 
-- GateControl **1.219.0** or later (the tab “Resources” and booking requests by e-mail from 1.225.0).
+- GateControl **1.219.0** or later (the tab “Resources” and booking requests by e-mail from 1.225.0, sender name and signature suggested from the profile from 1.280.0).
 - A **licence** with seats for people (family or business).
 - For attachments in Drive: the Drive plugin 1.15.0 or later. For the AI: an AI provider in GateControl.
 - For Outlook.com and Microsoft 365: the Microsoft sign-in (the publisher's registration is preset).
@@ -45,6 +45,8 @@ In the portal tab **“Mail”** (or the app) › settings › **“Add account�
 - **Gmail:** an **app password** – turn on 2-step verification, then create one under myaccount.google.com › Security › App passwords.
 - **Outlook.com / Microsoft 365:** sign in at Microsoft. In the portal Mail shows a code you enter on Microsoft's page. GateControl never sees your password.
 - **Other account (IMAP):** your provider's servers and credentials.
+
+Mail suggests the sender name and the signature from your profile (“My profile”: first and last name). You can change or clear both before you connect.
 
 Credentials are stored encrypted. The first sync fetches the newest mail first.
 
@@ -107,6 +109,13 @@ When attachments live on a storage target that is unreachable, Mail tries again 
 
 **Free/busy shows “unknown”.**
 The person switched free/busy off or is not in GateControl. Colleagues in Microsoft 365 appear through your Microsoft account.
+
+## New in 1.17.0
+
+- **Sender name and signature from your profile:** With GateControl 1.280.0 you have a profile of your own (“My profile” in the portal and the app). When you add an account, your first and last name from there are already filled in as sender name and signature. You can change or clear both.
+- **Editing an account:** If the sender name differs from your profile or the signature is empty, the account dialog offers “Use it”. Nothing is saved until you press “Save”.
+- **Only a suggestion:** If you change your name in the profile later, the sender name and signature of your accounts stay as they are. They still belong to each account.
+- Without names in the profile or on an older GateControl, Mail suggests your display name as before. On the update GateControl asks once for the new permission “User profile” (reads first and last name).
 
 ## New in 1.16.0
 

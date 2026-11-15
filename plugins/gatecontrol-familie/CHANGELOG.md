@@ -3,6 +3,27 @@
 Die Familie in der GateControl-App (eigener Tab), im Portal (eigener Tab „Familie“) und auf
 drei Admin-Seiten. Alles bleibt auf dem eigenen Server.
 
+## 1.26.0
+
+Nutzerprofil – der Geburtstag der Eltern kommt aus dem Profil (GateControl ≥ 1.280.0, `permissions.profile: ["birthday"]`).
+
+- **Erwachsene – das Profil führt** (`server/profile.js`): Der Geburtstag eines Elternteils kommt aus `gc.profile.get(member, { viewer })`,
+  so wie die anfragende Person ihn sehen darf (App, Portal, Admin-Seite: `members.load(gc, today, { viewer })`). Termine, Wand-Tablet,
+  Erinnerung und Notfall-Karte nehmen ihn. Auf „Mitglieder & Ortung“ nur noch angezeigt („aus dem Profil“); `POST`/`PATCH
+  admin/members` übergehen ein `birthdate` für Eltern. `GET admin/status` mit `profile` und je Mitglied `birthday { month, day, year }`
+  und `birthdaySource` (`profile` | `family`).
+- **Kinder** pflegen weiter die Eltern (`members.birthdate`): das Alter entscheidet über die Ortung.
+- **Einmalige Übernahme** (`migrations/016_profile_birthday.sql`, `members.birthdate_profile`): Ist `members.birthdate` eines
+  Elternteils leer und hat das Profil einen Geburtstag mit Jahr, übernimmt Familie ihn einmal – nur wenn ihn jemand anderes sieht
+  (dann teilt die Person ihn mindestens mit der Familie). Die Kopie dient dem Hintergrundlauf (Erinnerungen, ohne Betrachter); löscht
+  die Person den Geburtstag im Profil, geht die Kopie mit. Ein früher von Hand eingetragener Wert bleibt, solange das Profil leer ist.
+- **Ohne Jahr** (`year: null`): nur Tag und Monat – Termin ohne `years` und `baseDate`, Erinnerung ohne Alter.
+- **Hooks:** `profileChanged` mit `birthday` verwirft die zwischengespeicherte Sicht (10 Minuten) der Person; `myData` liefert
+  Rolle, Geburtstag (mit Herkunft), bei Kindern Ortungsart und Sterne-Ziel und die eigene Notfall-Karte (Notfallkontakte nur mit
+  Bezeichnung und Hinweis, ohne Nummern).
+- Älterer GateControl: kein `gc.profile`, der unbekannte Schlüssel wird übergangen – alles wie bisher.
+- Mock-Host: `tools/testing/mock-profile.js` (`opts.profile`, `host.profile.set/changed/myData`).
+
 ## 1.25.0
 
 „Andere Messenger“: ein zweiter Schalter je Kind und Dienst – **„Neue Chats per Nummer“**.

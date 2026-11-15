@@ -50,6 +50,12 @@ async function own(gc, userId, id) {
 const colorArg = (v, used) => (typeof v === 'string' && COLOR_RE.test(v) ? v.toUpperCase() : (PALETTE.find((c) => !used.includes(c)) || PALETTE[used.length % PALETTE.length]));
 const kindArg = (v, dflt) => (v === 'business' || v === 'personal' ? v : dflt);
 const nameArg = (v) => clip(line(v || ''), 80);
+/** 1.17.0: a signature on adding an account (the suggestion from the profile, confirmed by the person) — '': none. */
+const signatureArg = (v) => {
+  if (v == null || v === '') return '';
+  if (typeof v !== 'string' || v.length > 4000) throw fail('invalid', { field: 'signature' });
+  return v;
+};
 
 async function limitCheck(gc, cfg, userId) {
   const n = await store.one(gc, 'SELECT COUNT(*) AS n FROM accounts WHERE user_id = ?', [userId]);
@@ -95,7 +101,7 @@ async function verifySmtp(gc, srv, user, pass, provider, lang, s) {
   }
 }
 
-/** POST accounts { provider, email, password, username?, name?, color?, kind?, imap?, smtp? } → { account } */
+/** POST accounts { provider, email, password, username?, name?, color?, kind?, imap?, smtp?, signature? (1.17.0) } → { account } */
 async function add(gc, ctx, b) {
   const cfg = await config.get(gc);
   if (!gc.mail || !gc.mail.imap) throw fail('unreachable', { reason: 'no_mail_api' });
@@ -112,6 +118,7 @@ async function add(gc, ctx, b) {
   if (!smtpSrv) throw fail('invalid', { field: 'smtp' });
   await limitCheck(gc, cfg, ctx.userId);
   if (await store.one(gc, 'SELECT 1 AS x FROM accounts WHERE user_id = ? AND email = ?', [ctx.userId, addr])) throw fail('exists');
+  const signature = signatureArg(b.signature);
   // the login first (IMAP; SMTP with gc.mail.smtp.verify where GateControl has it)
   let s;
   const opts = { ...imapSrv, auth: { user: username || addr, pass: b.password }, timeoutMs: 30000 };
@@ -120,9 +127,9 @@ async function add(gc, ctx, b) {
   const used = (await list(gc, ctx.userId)).map((x) => x.color);
   const now = Date.now();
   const r = await store.run(gc, `INSERT INTO accounts (user_id, provider, email, name, color, kind, username, imap_host, imap_port, imap_security, smtp_host, smtp_port, smtp_security,
-      state, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'syncing', ?)`,
+      signature, state, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'syncing', ?)`,
   [ctx.userId, provider, addr, nameArg(b.name) || ctx.userName || '', colorArg(b.color, used), kindArg(b.kind, 'personal'), username,
-    imapSrv.host, imapSrv.port, imapSrv.security, smtpSrv.host, smtpSrv.port, smtpSrv.security, now]);
+    imapSrv.host, imapSrv.port, imapSrv.security, smtpSrv.host, smtpSrv.port, smtpSrv.security, signature, now]);
   const id = Number(r.lastInsertRowid);
   await secrets.set(gc, id, { password: b.password });
   const a = await store.one(gc, 'SELECT * FROM accounts WHERE id = ?', [id]);

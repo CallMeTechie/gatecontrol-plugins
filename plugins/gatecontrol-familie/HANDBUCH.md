@@ -1,5 +1,14 @@
-<!-- version: 1.25.0 -->
+<!-- version: 1.26.0 -->
 # Familie
+
+## Neu in 1.26.0
+
+- **Geburtstage der Eltern aus dem Profil:** Mit GateControl 1.280.0 hat jede Person ein eigenes Profil („Mein Profil“ im Portal und in der App) mit ihrem Geburtstag. Bei **Erwachsenen** (Eltern) führt jetzt das Profil: Familie zeigt den Geburtstag von dort, in den Terminen, auf dem Wand-Tablet und bei der Erinnerung am Tag. Auf der Admin-Seite **„Mitglieder & Ortung“** steht er nur noch zum Ansehen da, mit dem Zusatz „aus dem Profil“.
+- **Kinder bleiben bei den Eltern:** Den Geburtstag eines Kindes tragen weiter die Eltern auf „Mitglieder & Ortung“ ein. Daraus ergibt sich das Alter, und mit 18 endet die Ortung.
+- **Einmal übernommen:** Hat Familie für einen Elternteil noch keinen Geburtstag und steht im Profil einer mit Jahr, übernimmt Familie ihn einmal – aber nur, wenn die Person ihn mindestens der Familie zeigt. Ein Geburtstag, den jemand auf „Nur ich“ stellt, erscheint bei den anderen nicht. Löscht die Person ihn im Profil, verschwindet auch die Übernahme. Einen Wert, den ihr früher selbst eingetragen habt, behält Familie, solange das Profil leer ist.
+- **Ohne Jahr:** Hat jemand das Geburtsjahr verborgen, zeigt Familie nur Tag und Monat, ohne Alter.
+- **„Meine Daten herunterladen“** im Profil enthält jetzt auch deinen Teil von Familie: deine Rolle, deinen Geburtstag, wie Familie ihn führt, und deine eigene Notfall-Karte (nur deine; bei den Notfallkontakten nur Bezeichnung und Hinweis, keine Nummern).
+- Beim Update fragt GateControl einmal nach der neuen Berechtigung „Nutzerprofil“ (liest den Geburtstag). Auf einem älteren GateControl ändert sich nichts: Die Geburtstage pflegt ihr wie bisher auf „Mitglieder & Ortung“.
 
 ## Neu in 1.25.0
 
@@ -42,14 +51,14 @@ Die Familie in der GateControl-App (eigener Tab), im Portal (Tab „Familie“) 
 
 ## Voraussetzungen
 
-- GateControl **1.216.0** oder neuer (Anwesenheit über das Heimnetz ab 1.230.0, Internet zu Hause ab 1.231.0, „Internet pausieren“ in Regeln ab 1.259.0).
+- GateControl **1.216.0** oder neuer (Anwesenheit über das Heimnetz ab 1.230.0, Internet zu Hause ab 1.231.0, „Internet pausieren“ in Regeln ab 1.259.0, Geburtstage aus dem Profil ab 1.280.0).
 - GateControl-Konten für alle Familienmitglieder.
 - Für die Anwesenheit über das Heimnetz und Internet zu Hause: ein GateControl-Gateway mit Netzwerk-Wächter bzw. DNS-Filter, auf dem die Handys den Personen zugeordnet sind.
 - Für den Familien-Chat: das Plugin Messenger. Für Schalten im Smart Home: das Plugin des Geräts (z. B. Smart Home, Tür & Kamera).
 
 ## Einrichten
 
-1. **Mitglieder:** Admin-Seite **„Mitglieder & Ortung“** – GateControl-Konten als **Elternteil** oder **Kind** hinzufügen, mit Geburtsdatum (für Kinder Pflicht), Farbe, Sterne-Ziel und Ortungsart je Kind (*Kind bestätigt*, *Automatisch*, *Aus*).
+1. **Mitglieder:** Admin-Seite **„Mitglieder & Ortung“** – GateControl-Konten als **Elternteil** oder **Kind** hinzufügen, mit Geburtsdatum (für Kinder Pflicht), Farbe, Sterne-Ziel und Ortungsart je Kind (*Kind bestätigt*, *Automatisch*, *Aus*). Ab GateControl 1.280.0 kommt der Geburtstag der Eltern aus ihrem Profil; das Feld ist dann für Eltern gesperrt.
 2. **Funktionen:** Admin-Seite **„Funktionen“** – die gewünschten Funktionen einschalten. Mit „Vorschau als …“ siehst du den App-Tab so, wie ein Mitglied ihn sieht. Hier schaltest du auch die Gruppe „Familie“ im Messenger.
 3. **Einstellungen** (**Einstellungen › Plugins › Familie › Einstellungen**): Zeitzone, Sprache der Mitteilungen, Breiten- und Längengrad des Zuhauses (für „nach Sonnenuntergang“), „Kinder dürfen eigene Erinnerungen anlegen“, Einkaufen und früher Schulschluss.
 4. **Anwesenheit & Smart Home** (optional): Jede Person stimmt selbst zu („Anwesenheit teilen“ in der App bzw. im Portal die Karte „Wie erkennt die Familie, dass ich zu Hause bin?“). Für das Heim-WLAN ordnet ein Administrator das Handy am Gateway der Person zu; die Person schaltet es selbst ein. Regeln legen Eltern auf der Seite **„Anwesenheit & Smart Home“** oder im Portal an.
@@ -95,6 +104,9 @@ Ein Administrator-Konto oder ein deaktiviertes Konto kann kein Wand-Tablet sein.
 
 **Eine Änderung an der Pinnwand fehlt in „Notizen & Aufgaben“ (oder umgekehrt).**
 Änderungen in Familie gehen sofort hinüber, Änderungen im Hub kommen nach spätestens 15 Minuten (meist nach einer halben Minute). War „Notizen & Aufgaben“ nicht erreichbar, holt Familie das beim nächsten Lauf nach.
+
+**Der Geburtstag eines Elternteils fehlt oder lässt sich nicht ändern.**
+Ab GateControl 1.280.0 kommt er aus dem Profil der Person. Sie trägt ihn unter „Mein Profil“ ein und wählt bei „Wer sieht ihn?“ mindestens „Familie“. Steht er dort auf „Nur ich“, sehen ihn die anderen nicht.
 
 **Die Karte „Internet zu Hause“ fehlt.**
 Sie braucht GateControl 1.231.0 und ein Gateway mit DNS-Filter, und sie erscheint nur für Eltern nach der Anmeldung.

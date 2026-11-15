@@ -192,4 +192,19 @@ async function putContacts(gc, r) {
   return { contacts: f.contacts, updatedAt: iso(f.updatedAt), updatedBy: by(r.fam, f.updatedBy) };
 }
 
-module.exports = { BLOOD_TYPES, PHONE_RE, get, putMember, putContacts };
+/**
+ * 1.26.0 — "Meine Daten" (hook myData): the person's own card, nothing of the others. The contacts go with their label
+ * and note only: their numbers are of other people (and the export carries no telephone number).
+ */
+async function ownCard(gc, userId) {
+  const r = await store.one(gc, 'SELECT * FROM emergency_cards WHERE user_id = ?', [userId]);
+  if (!r) return null;
+  const c = rowToCard(r);
+  return {
+    bloodType: c.bloodType, weightKg: c.weightKg, allergies: c.allergies, medications: c.medications, conditions: c.conditions, notes: c.notes,
+    insurance: c.insurance, contacts: (Array.isArray(c.contacts) ? c.contacts : []).map((x) => ({ label: (x && x.label) || '', note: (x && x.note) || '' })),
+    updatedAt: iso(c.updatedAt),
+  };
+}
+
+module.exports = { BLOOD_TYPES, PHONE_RE, get, putMember, putContacts, ownCard };

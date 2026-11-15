@@ -386,7 +386,8 @@ async function route(req, gc, seg, cfg, now) {
   const user = req.user;
   if (!user || !Number.isSafeInteger(user.id)) throw fail('forbidden');
   const today = tz.localDate(now, cfg.tz);
-  const fam = await members.load(gc, today);
+  // 1.26.0: the parents' birthdays from the profile as this person may see them
+  const fam = await members.load(gc, today, { viewer: user.id });
   const m = fam.byId.get(user.id) || fam.walls.get(user.id);
   if (!m) throw fail('not_member');
   const method = String(req.method || 'GET').toUpperCase();

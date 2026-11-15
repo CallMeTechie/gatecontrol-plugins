@@ -273,6 +273,8 @@ async function withMail(opts, fn) {
     ...(o.groups ? { groups: o.groups } : {}), ...(o.licenseRefresh ? { licenseRefresh: o.licenseRefresh } : {}),
     // 1.8.0: GateControl's virus scan (the mock host's opts.scan — true or a scanner function)
     ...(o.scan ? { scan: o.scan } : {}),
+    // 1.17.0: the user profile (the mock host's opts.profile, GateControl ≥ 1.280.0)
+    ...(o.profile ? { profile: o.profile } : {}),
   });
   // a file Drive hands over: straight into this plugin's media (like gc.media.handOver of the real Drive)
   if (drive) {

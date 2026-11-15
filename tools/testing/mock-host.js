@@ -428,6 +428,9 @@
 // GateControl's messenger bridges (a preview, in no released version yet — opt-in only: opts.bridges) — gc.bridges, the
 // bridges to outside messengers (state, the administrator's switch, a person's own link; only with
 // permissions.bridges), with a stand-in for the bridge itself: see tools/testing/mock-bridges.js.
+//
+// GateControl 1.280.0 (opt-in: opts.gatecontrol: '1.280.0' or opts.profile) — gc.profile, the user profile (the fields of
+// permissions.profile, only what the viewer may see) and the hooks profileChanged / myData: see tools/testing/mock-profile.js.
 
 const fs = require('node:fs');
 const os = require('node:os');
@@ -439,6 +442,7 @@ const mockPrint = require('./mock-print');
 const mockVpnDns = require('./mock-vpn-dns');
 const mockCameras = require('./mock-cameras');
 const mockBridges = require('./mock-bridges');
+const mockProfile = require('./mock-profile');
 
 // GateControl's favourite colour palette (services/avatars.js PALETTE, GateControl ≥ 1.168.0)
 const PALETTE = Object.freeze([
@@ -3272,6 +3276,9 @@ async function createHost(pluginDir, opts = {}) {
     groupExists: (id) => groupStore.has(id),
     groupUsers: (ids) => { const out = new Set(); for (const id of ids) if (groupStore.has(id) && !groupStore.get(id).archived) for (const u of totalIds(id)) if (enabledUser(u)) out.add(u); return out; } });
   Object.assign(api, vd.api);
+  // ─── the user profile (GateControl ≥ 1.280.0, src/services/profile.js; tools/testing/mock-profile.js) ───
+  const pf = mockProfile.install({ opts, perms, atLeast, enabledUser, hostError, personCtx, wire });
+  Object.assign(api, pf.api);
   // ─── Messenger-Brücken (GateControl preview, src/services/bridges; tools/testing/mock-bridges.js) ───
   const br = mockBridges.install({ opts, perms, enabledUser, hostError, personCtx,
     // gc.bridges version 4: a file of a bridged chat into the plugin's media, a file of the plugin to be sent
@@ -3610,6 +3617,8 @@ async function createHost(pluginDir, opts = {}) {
     // GateControl ≥ 1.264.0: gc.vpnDns only with permissions.vpnDns (like the child bootstrap)
     ...(vd.on ? { vpnDns: vd.gcPart(call) } : {}),
     ...(br.on ? { bridges: br.gcPart(call) } : {}),
+    // GateControl ≥ 1.280.0: gc.profile for every plugin (the host refuses it without permissions.profile)
+    ...(pf.on ? { profile: pf.gcPart(call) } : {}),
     // GateControl ≥ 1.231.0: gc.homeCache only with permissions.homeCache (like the child bootstrap)
     ...(radioOn ? { radio: Object.freeze({ sensors: () => call('radio.sensors', {}),
       ...(zigbeeOn ? { zigbee: () => call('radio.zigbee', {}), command: (id, set) => call('radio.command', { id, set }) } : {}) }) } : {}),
@@ -3651,6 +3660,7 @@ async function createHost(pluginDir, opts = {}) {
   delete require.cache[require.resolve(entry)];
   const plugin = require(entry);
   const hook = async (name, ...a) => (typeof plugin[name] === 'function' ? wire(await plugin[name](...a.map(wire), gc)) : undefined);
+  pf.control.bind(plugin, hook);
   // gc.bridges version 3: the bridges delivered something → the hook bridgeEvents (fire and forget in the host; awaited here so a test sees the result)
   br.control.onWake(async (payload) => { try { await hook('bridgeEvents', payload); } catch { /* like the host: the answer is ignored */ } });
 
@@ -4284,6 +4294,8 @@ async function createHost(pluginDir, opts = {}) {
     vpnDns: vd.state,
     /** GateControl's messenger bridges (permissions.bridges, opts.bridges): { state, confirm, expire, logOut, setHost, oddStep } — see tools/testing/mock-bridges.js */
     bridges: br.control,
+    /** GateControl ≥ 1.280.0 (opts.profile): { set, changed, myData, calls } — see tools/testing/mock-profile.js */
+    profile: pf.control,
     vpnDnsSet: (x) => vd.hostSet(x || {}),
     vpnDnsEvent: (ev) => vd.hostEvent(ev),
     vpnDnsExpire: (now) => vd.hostExpire(now),
