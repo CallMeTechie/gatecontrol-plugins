@@ -1,4 +1,4 @@
-<!-- version: 1.4.0 -->
+<!-- version: 1.5.0 -->
 # Remote access – Handbook
 
 ## What the plugin does {#was-das-plugin-kann}
@@ -9,6 +9,8 @@ Remote access is GateControl's former "Remote desktops" as a plugin of its own. 
 - **in the GateControl apps** (Android, Windows) with RDP as before. The apps do not notice the move.
 
 On top: wake-on-LAN, maintenance windows, a reminder to renew credentials, rights per person and group, and the history of every session.
+
+Since 1.5.0 a **Windows PC can share its screen** too – with “Share screen” in the GateControl app for Windows, also on **Windows Home**. The helper sees the screen in the browser and may control it with mouse and keyboard after the confirmation at the PC (see [Share a Windows screen](#windows-teilen)).
 
 Since 1.4.0 the helper may also **control** the phone on request – tap, swipe, type, Back/Home/Overview – when the person at the phone allows it for this request. That needs the app **from GitHub**; the app from Google Play only shows the screen (see [Control a phone](#steuern)).
 
@@ -26,7 +28,8 @@ Passwords and SSH keys are not stored by the plugin but in GateControl's encrypt
 - For screen sharing from a phone: GateControl **1.286.0** or newer (remote access interface version 4, the relay of the picture) and the GateControl app for Android with "Share screen". An older GateControl refuses the phone's registration.
 - GateControl **1.285.0** or newer (remote access interface version 3: terminal in the core, tmux, host keys, recording; plus version 2: registration of the Windows PCs, firewall per session, silent signals to the PC).
 - For recordings: the drive `remote-recordings` of the `docker-compose.yml` of the new version (GateControl and guacd). Without it nothing is recorded.
-- For Windows PCs from the app: the GateControl app for Windows (Pro) with "Allow Remote Desktop" and Windows **Pro, Enterprise or Education**. Windows Home cannot offer Remote Desktop.
+- For Windows PCs from the app: the GateControl app for Windows (Pro) with "Allow Remote Desktop" and Windows **Pro, Enterprise or Education**. Windows Home cannot offer Remote Desktop – it has “Share screen”.
+- For “Share screen” on a Windows PC: GateControl **1.287.0** or newer and the GateControl app for Windows (Pro) with “Share screen”. Mouse and keyboard as they are (shortcuts, several displays) come with GateControl's remote access interface **version 6**; with version 5 control means clicking, dragging, scrolling and text.
 - A **licence of its own** for Remote access: month, year or a lifetime licence of the plugin. Remote access is **not** part of the GateControl plan or a server lifetime licence.
 - For devices in the home network: a home gateway that reaches the device.
 
@@ -90,6 +93,18 @@ When somebody switches on **"Allow Remote Desktop"** in the GateControl app for 
 - **Switch off:** the PC stays in the list as "Signed off", the history stays. Open sessions end, the code is void.
 - **Guessing:** after 5 wrong codes in 10 minutes a person waits 15 minutes. The whole server allows 30 attempts per hour. After 10 wrong codes on one PC its code is void.
 
+
+### Share a Windows screen {#windows-teilen}
+
+In the GateControl app for Windows, **Settings › Security** has the switch **“Share screen”** next to “Allow Remote Desktop” – for help: both see the same, nobody is signed off. It works with every Windows edition, **Windows Home** included.
+
+- **Helping:** open the tab Remote access in the portal, tap **“Enter code”**, type the code from the PC and pick “View and control” or “View only”. When the PC also offers Remote Desktop you choose the **connection** (“Share screen” or “Remote Desktop”). The PC asks with your name; the person there picks “Decline”, “View only” or “View and control”. Without an answer it ends after 30 seconds.
+- **While sharing** a red bar at the top of the PC's screen says “… is viewing your screen” or “… is controlling your screen”, with **“Stop”** (and **“View only”** while controlled). Stop disconnects at once and lets go of pressed keys. Then the PC shows a new code.
+- **Control:** mouse and keyboard go to the PC as you use them – shortcuts included. What your own browser or system catches (e.g. Alt+Tab) does not arrive. Pasting types text. With several displays you pick the one you see in the toolbar.
+- **What does not work:** Windows' prompt for administrator rights (UAC), the lock and sign-in screen and Ctrl+Alt+Del cannot be operated remotely – only the person at the PC can. While such a screen is open the picture stands still and a hint shows.
+- **Without a code for permitted people** only spares the code for the screen: **the PC always asks.**
+- **Through the server:** picture and input run over your GateControl server as for phones. It only passes them on, stores nothing and logs no input – but it is not end-to-end encryption.
+- Sharing needs no open port and no VPN address on the PC; Remote Desktop still does.
 ### Share a phone's screen {#handy}
 
 In the GateControl app for Android, **Remote access** has the switch **"Share screen"**. When it is on, the app registers the phone and shows a code of 9 digits.
@@ -192,6 +207,13 @@ The right is checked again on every connect.
 **"Too many wrong codes":** wait 15 minutes or let the PC show a new code.
 
 **In the browser Windows does not ask for the sign-in:** when the PC requires network level authentication (NLA), the session in the browser needs a user name and password that the session page does not ask for yet. Connect from the GateControl app then.
+
+## New in 1.5.0 {#neu-1-5-0}
+
+- **Share a Windows screen** – “Share screen” in the GateControl app for Windows, also on **Windows Home**: view, and after the confirmation at the PC control with mouse and keyboard, over the same relay as the phones.
+- **The person at the PC decides every time** (“View only” / “View and control”) and sees a bar at the top with “Stop”; also “without a code” the PC asks.
+- **Portal:** for a PC with Remote Desktop and the screen the choice of the connection; the device list says “Windows · Share screen”.
+- Windows Home shows up under Devices as soon as “Share screen” is on.
 
 ## New in 1.4.0 {#neu-1-4-0}
 

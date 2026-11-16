@@ -4,13 +4,13 @@
     "de": "Fernzugriff",
     "en": "Remote access"
   },
-  "version": "1.4.0",
+  "version": "1.5.0",
   "publisher": "CallMeTechie",
   "description": {
-    "de": "Die Remote Desktops von GateControl als eigenes Plugin: Geräte mit RDP, VNC, SSH und Telnet – im VPN, per Port-Forward oder Home-Gateway –, Wake-on-LAN, Wartungsfenster, Rechte, Verlauf. Windows-PCs melden sich aus der GateControl-App an, verbunden wird mit Code und Bestätigung am PC. Android-Handys geben ihren Bildschirm frei, mit Bestätigung am Handy – mit der App von GitHub auch zum Steuern. SSH im Terminal von GateControl mit tmux und geprüftem Host-Schlüssel, Aufzeichnung auf Wunsch. Übernimmt Ziele, Rechte und Verlauf aus „Remote Desktops“. Zugangsdaten bleiben im Tresor.",
-    "en": "GateControl's remote desktops as a plugin of their own: devices with RDP, VNC, SSH and Telnet – in the VPN, through a port forward or a home gateway –, wake-on-LAN, maintenance windows, rights, history. Windows PCs register from the GateControl app; one connects with a code and the confirmation at the PC. Android phones share their screen, confirmed on the phone – with the app from GitHub also to be controlled. SSH in GateControl's terminal with tmux and a checked host key, recording on request. Takes over targets, rights and history from “Remote desktops”. Credentials stay in the vault."
+    "de": "Die Remote Desktops von GateControl als eigenes Plugin: Geräte mit RDP, VNC, SSH und Telnet – im VPN, per Port-Forward oder Home-Gateway –, Wake-on-LAN, Wartungsfenster, Rechte, Verlauf. Windows-PCs melden sich aus der App an: Remote Desktop oder „Bildschirm teilen“ (auch Windows Home), mit Code und Bestätigung am PC. Android-Handys geben ihren Bildschirm frei – mit der App von GitHub auch zum Steuern. SSH im Terminal von GateControl mit tmux, Aufzeichnung auf Wunsch. Übernimmt Ziele, Rechte und Verlauf aus „Remote Desktops“. Zugangsdaten bleiben im Tresor.",
+    "en": "GateControl's remote desktops as a plugin of their own: devices with RDP, VNC, SSH and Telnet – in the VPN, through a port forward or a home gateway –, wake-on-LAN, maintenance windows, rights, history. Windows PCs register from the app: Remote Desktop or “Share screen” (Windows Home too), with a code and the confirmation at the PC. Android phones share their screen – with the app from GitHub also to be controlled. SSH in GateControl's terminal with tmux, recording on request. Takes over targets, rights and history from “Remote desktops”. Credentials stay in the vault."
   },
-  "gatecontrol": ">=1.286.0",
+  "gatecontrol": ">=1.287.0",
   "entry": "server/index.js",
   "permissions": {
     "remote": true,

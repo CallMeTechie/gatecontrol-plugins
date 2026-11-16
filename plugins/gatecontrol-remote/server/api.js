@@ -27,6 +27,8 @@
 //   POST devices/<id>/connect           a phone "ohne Code" → { request } (the phone always asks; then GET requests/<id>)
 //   POST requests/<id>/connect          a phone → { session: { ref, expiresAt, protocol: 'screen', engine: 'screen', mode: 'view', device } }
 //   GET  devices                        a phone: protocol 'screen', platform 'android', screen: { view: true, control: false }
+//   1.5: a PC with "Bildschirm teilen": screen: { view: true, control }, rdp: bool (Remote Desktop offered); protocol 'screen' when
+//        it only shares its screen (Windows Home). code/redeem and devices/<id>/connect take kind: 'screen' | 'rdp'.
 //
 // Since 1.4 (gc.remote version 5) — controlling a phone:
 //   POST code/redeem / devices/<id>/connect  { mode: 'control' } to a phone → a request of mode control when its app can be
@@ -66,7 +68,9 @@ function deviceView(d, names, x = {}) {
   if (x.recording) v.recording = x.recording;
   if (d.kind === 'host') {
     v.platform = d.host.platform;
-    if (devices.isPhone(d)) v.screen = { view: true, control: devices.phoneCanControl(x.gc, d) };
+    if (devices.screenOffered(d)) v.screen = { view: true, control: devices.screenCanControl(x.gc, d) };
+    // 1.5: a PC may offer Remote Desktop, its screen or both
+    if (!devices.isPhone(d)) v.rdp = devices.rdpOffered(d);
     v.owner = { id: d.host.owner, name: (names && names.get(d.host.owner)) || null };
     v.connect = { mode: devices.connectMode(d) };
     v.ready = devices.hostReady(d);
@@ -142,12 +146,13 @@ async function connectHost(gc, user, d, req, { admin = false } = {}) {
   const access = (await devices.accessLists(gc)).get(d.id) || devices.emptyAccess();
   if (!admin && !(await rights.mayUse(gc, user, d, access))) throw fail('no_right');
   const via = req.user && req.user.app === true ? 'app' : 'browser';
-  // a phone always asks its person (and Android asks again): "ohne Code" spares the code, never the question
-  if (devices.isPhone(d)) return { request: await support.create(gc, user, d, { mode: req.body && req.body.mode === 'control' ? 'control' : 'view', via, helperDevice: helperDevice(req) }) };
-  return support.connectTo(gc, user, d, { mode: req.body && req.body.mode === 'view' && via === 'browser' ? 'view' : 'control', via, helperDevice: helperDevice(req) });
+  const b = req.body && typeof req.body === 'object' ? req.body : {};
+  // the screen of a phone or (1.5) a PC is always asked at the device (Android asks again): "ohne Code" spares the code, never the question
+  if (support.kindFor(d, b.kind, via) === 'screen') return { request: await support.create(gc, user, d, { mode: b.mode === 'control' ? 'control' : 'view', via, helperDevice: helperDevice(req), kind: 'screen' }) };
+  return support.connectTo(gc, user, d, { mode: b.mode === 'view' && via === 'browser' ? 'view' : 'control', via, helperDevice: helperDevice(req) });
 }
 
-/** POST code/redeem { code, mode, via, deviceId? } → { request } */
+/** POST code/redeem { code, mode, via, deviceId?, kind? } → { request } */
 async function redeem(gc, user, req) {
   if (!gc.remote || !(gc.remote.version >= 2)) throw fail('offline');
   const b = req.body && typeof req.body === 'object' ? req.body : {};
@@ -164,7 +169,7 @@ async function redeem(gc, user, req) {
   const d = await devices.get(gc, id);
   if (!d || d.kind !== 'host') throw fail('code_invalid');
   await log.write(gc, 'remote_code_redeemed', { device: d, userId: user.id, details: { via } });
-  return { request: await support.create(gc, user, d, { mode: b.mode, via, helperDevice: helperDevice(req) }) };
+  return { request: await support.create(gc, user, d, { mode: b.mode, via, helperDevice: helperDevice(req), kind: b.kind }) };
 }
 
 /** host/* — the PC's own app (never the portal). */

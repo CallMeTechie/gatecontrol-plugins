@@ -31,6 +31,11 @@
 // and says why (modeReason). Asking is not allowing: control holds only when the person at the phone answers allow with
 // mode 'control' for this very request (no mode = view, as old apps answer). GateControl's relay lets input through only
 // while the phone says so; the phone may go down to view at any time — the event phase 'mode' marks the request.
+//
+// 1.5 (stage 7): a Windows PC shares its screen the same way ("Bildschirm teilen", also Windows Home). A request names its
+// kind — `screen` or `rdp` (missing: the screen when the helper uses the browser and the PC shares it, else Remote
+// Desktop when the PC offers it, else the screen). A screen request to a PC is always asked at the PC, also "ohne Code"
+// (unlike Remote Desktop "ohne Code"); control only when the person there chooses "Ansehen und steuern" for it.
 
 const crypto = require('node:crypto');
 const store = require('./store');
@@ -82,11 +87,25 @@ async function mayAsk(gc, user, d) {
   return rights.mayUse(gc, user, d, access, { rights: r });
 }
 
-function checkReady(d) {
+function checkReady(d, kind = 'rdp') {
   if (!d || d.kind !== 'host' || !d.enabled) throw fail('not_found');
   if (!d.host.registered) throw fail('offline');
-  if (d.host.rdpEnabled === false && !devices.isPhone(d)) throw fail('rdp_off');
+  if (kind === 'screen' && !devices.screenOffered(d)) throw fail('screen_off');
+  if (kind === 'rdp' && (!devices.rdpOffered(d) || d.host.rdpEnabled === false)) throw fail('rdp_off');
   if (!d.host.online) throw fail('offline');
+}
+
+/**
+ * 1.5: what a request to this device is for → 'screen' | 'rdp'. A phone: always its screen. A PC: as asked; nothing asked —
+ * the screen from the browser when the PC shares it (support), else Remote Desktop when offered (apps before 1.5 ask for
+ * nothing and connect with mstsc), else the screen.
+ */
+function kindFor(d, kind, via) {
+  if (devices.isPhone(d)) return 'screen';
+  if (kind === 'screen' || kind === 'rdp') return kind;
+  if (kind != null) throw fail('invalid', { field: 'kind' });
+  if (via !== 'app' && devices.screenOffered(d)) return 'screen';
+  return devices.rdpOffered(d) ? 'rdp' : 'screen';
 }
 
 async function personView(gc, userId) {
@@ -96,21 +115,23 @@ async function personView(gc, userId) {
 }
 
 /** A helper's request after a valid code → the request (the PC is asked now). */
-async function create(gc, user, d, { mode, via, helperDevice }, now = Date.now()) {
-  checkReady(d);
+async function create(gc, user, d, { mode, via, helperDevice, kind }, now = Date.now()) {
+  const v = via === 'app' ? 'app' : 'browser';
+  const k = d && d.kind === 'host' ? kindFor(d, kind, v) : 'rdp';
+  checkReady(d, k);
   if (!(await mayAsk(gc, user, d))) throw fail('no_right');
+  const screen = k === 'screen';
   const phone = devices.isPhone(d);
-  if (phone && (!gc.remote || typeof gc.remote.screen !== 'function')) throw fail('screen_unavailable');
-  // a phone (1.4): control only when its app and GateControl can do it — and its person allows it later
+  if (screen && (!gc.remote || typeof gc.remote.screen !== 'function')) throw fail('screen_unavailable');
+  // the screen (1.4 phones, 1.5 PCs): control only when its app and GateControl can do it — and its person allows it later
   let m = mode === 'view' ? 'view' : 'control';
   let modeReason = null;
-  if (phone) {
-    m = mode === 'control' && devices.phoneCanControl(gc, d) ? 'control' : 'view';
-    if (mode === 'control' && m === 'view') modeReason = d.host.screenControl ? 'server_view_only' : 'phone_view_only';
+  if (screen) {
+    m = mode === 'control' && devices.screenCanControl(gc, d) ? 'control' : 'view';
+    if (mode === 'control' && m === 'view') modeReason = d.host.screenControl ? 'server_view_only' : (phone ? 'phone_view_only' : 'pc_view_only');
   }
-  const v = via === 'app' ? 'app' : 'browser';
   // an app session (mstsc) cannot only watch
-  if (!phone && v === 'app' && m === 'view') throw fail('invalid', { field: 'mode' });
+  if (!screen && v === 'app' && m === 'view') throw fail('invalid', { field: 'mode' });
   // one open question per PC: a newer one replaces it
   for (const old of await store.all(gc, "SELECT * FROM requests WHERE device_id = ? AND state = 'waiting'", [d.id])) {
     await store.run(gc, "UPDATE requests SET state = 'expired', decided_at = ? WHERE id = ?", [now, old.id]);
@@ -118,9 +139,9 @@ async function create(gc, user, d, { mode, via, helperDevice }, now = Date.now()
   }
   const id = randomId('rq_');
   await store.run(gc, `INSERT INTO requests (id, device_id, helper_user_id, mode, via, helper_device_id, state, created_at, expires_at, kind)
-    VALUES (?, ?, ?, ?, ?, ?, 'waiting', ?, ?, ?)`, [id, d.id, user.id, m, v, helperDevice ? helperDevice.id : null, now, now + REQUEST_MS, phone ? 'screen' : 'rdp']);
+    VALUES (?, ?, ?, ?, ?, ?, 'waiting', ?, ?, ?)`, [id, d.id, user.id, m, v, helperDevice ? helperDevice.id : null, now, now + REQUEST_MS, k]);
   const row = await store.one(gc, 'SELECT * FROM requests WHERE id = ?', [id]);
-  await signal(gc, d, { type: 'remote.request', requestId: id, from: await personView(gc, user.id), mode: m, via: v, kind: phone ? 'screen' : 'rdp', expiresAt: iso(now + REQUEST_MS) }, 60);
+  await signal(gc, d, { type: 'remote.request', requestId: id, from: await personView(gc, user.id), mode: m, via: v, kind: k, expiresAt: iso(now + REQUEST_MS) }, 60);
   return requestView(row, d, modeReason ? { modeReason } : {});
 }
 
@@ -174,7 +195,7 @@ async function decide(gc, d, id, b, now = Date.now()) {
   } else if (r.kind === 'screen') {
     // a phone: a ticket of GateControl's relay — the phone sends, the helper watches (and, 1.4, controls only when the
     // person chose "Ansehen und steuern" for this request: mode 'control' in the answer; anything else is view)
-    const mode = r.mode === 'control' && b.mode === 'control' && devices.phoneCanControl(gc, d) ? 'control' : 'view';
+    const mode = r.mode === 'control' && b.mode === 'control' && devices.screenCanControl(gc, d) ? 'control' : 'view';
     let t;
     try {
       t = await gc.remote.screen({ viewer: r.helper_user_id, sender: { user: d.host.owner, device: d.host.tokenDeviceId }, target: { id: 'dev-' + d.id, name: d.name.slice(0, 100) }, mode, ttlS: Math.floor(CONNECT_MS / 1000) });
@@ -272,11 +293,21 @@ async function endAll(gc, d, reason, now = Date.now()) {
   for (const r of await store.all(gc, "SELECT session_key FROM firewall WHERE device_id = ? AND state != 'closed'", [d.id])) await close(gc, r.session_key, reason, now);
 }
 
+/** 1.5: one switch of a PC went off — what runs over it ends ('screen': its requests and relay; 'rdp': its requests and rules). */
+async function endKind(gc, d, kind, reason, now = Date.now()) {
+  for (const r of await store.all(gc, "SELECT * FROM requests WHERE device_id = ? AND kind = ? AND state IN ('waiting', 'allowed')", [d.id, kind])) {
+    await store.run(gc, "UPDATE requests SET state = 'ended', decided_at = COALESCE(decided_at, ?), end_reason = COALESCE(end_reason, ?) WHERE id = ?", [now, String(reason).slice(0, 40), r.id]);
+    if (r.state === 'waiting') await signal(gc, d, { type: 'remote.request.cancel', requestId: r.id });
+    await endScreen(gc, r);
+  }
+  if (kind === 'rdp') for (const r of await store.all(gc, "SELECT session_key FROM firewall WHERE device_id = ? AND state != 'closed'", [d.id])) await close(gc, r.session_key, reason, now);
+}
+
 // ─── Connecting ───
 
 /** The session of a helper to a PC (after an allowed request, or "ohne Code") → { session } | { connection }. */
 async function connectTo(gc, user, d, { mode = 'control', via = 'browser', helperDevice = null, requestId = null, server = null, waitMs } = {}) {
-  checkReady(d);
+  checkReady(d, 'rdp');
   if (via === 'app') {
     let allow = null;
     if (helperDevice) {
@@ -413,6 +444,6 @@ async function sweep(gc, now = Date.now()) {
 }
 
 module.exports = {
-  TOPIC, TIMING, REQUEST_MS, CONNECT_MS, signal, mayAsk, create, get, pendingFor, decide, open, close, report, openList, endAll,
+  TOPIC, TIMING, REQUEST_MS, CONNECT_MS, signal, mayAsk, create, get, pendingFor, decide, open, close, report, openList, endAll, endKind, kindFor,
   connectTo, connectRequest, connectionOf, onSession, onScreen, phoneEnded, appSessionEnded, sweep, requestView, checkReady, SCREEN_WS,
 };
