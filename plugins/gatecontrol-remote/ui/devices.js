@@ -5,7 +5,7 @@
   'use strict';
   var P = window.RM;
   var T = P.T, el = P.el, $ = P.$;
-  var S = { devices: [], gateways: [], pools: [], gwList: false, v3: false };
+  var S = { devices: [], gateways: [], pools: [], gwList: false, v3: false, wizard: false };
 
   // ─── the editor: tabs and fields (the settings of the former Remote Desktops) ───
   var GRAPHIC = function (v) { return v.protocol === 'rdp' || v.protocol === 'vnc'; };
@@ -179,20 +179,18 @@
     }).catch(P.warn);
   }
 
-  function editor(dev) {
-    var v = dev ? Object.assign({ name: dev.name, protocol: dev.protocol, enabled: dev.enabled }, dev.config) : { name: '', protocol: 'rdp', enabled: true, port: 3389, access_mode: 'internal', credential_mode: 'full', resolution_mode: 'fullscreen', color_depth: 32, redirect_clipboard: true, audio_mode: 'local', network_profile: 'auto', nla_enabled: true, health_check_enabled: true, tags: [], ssh_engine: 'term', tmux_enabled: true, recording: 'off' };
+  /**
+   * The fields of a device (the settings of the former Remote Desktops): an input per field, its row, the values, which
+   * rows show, and the body for the API. The old editor puts the rows on tabs, the editor of one page (1.7) into sections.
+   */
+  function fieldSet(dev) {
+    var v = dev ? Object.assign({ name: dev.name, protocol: dev.protocol, enabled: dev.enabled }, dev.config) : { name: '', protocol: 'rdp', enabled: true, port: 3389, access_mode: 'internal', credential_mode: 'full', resolution_mode: 'fullscreen', color_depth: 32, redirect_clipboard: true, audio_mode: 'local', network_profile: 'auto', nla_enabled: true, health_check_enabled: true, tags: [], ssh_engine: 'term', tmux_enabled: true, recording: 'off', browser_enabled: true };
     var cred = dev ? dev.credential : { set: false, has: {}, readable: true };
-    var inputs = {};
-    var rows = {};
-    var panels = {};
-    var tabBtns = {};
-    var current = 'connection';
-    var errBox = el('p', { class: 'rm-field-error', role: 'alert', hidden: true });
-
-    function values() {
+    var F = { inputs: {}, rows: {}, onChange: [] };
+    F.values = function () {
       var out = {};
-      Object.keys(inputs).forEach(function (k) {
-        var n = inputs[k];
+      Object.keys(F.inputs).forEach(function (k) {
+        var n = F.inputs[k];
         var f = n._f;
         if (f.type === 'check') out[k] = n.checked;
         else if (f.type === 'number') out[k] = n.value === '' ? null : parseInt(n.value, 10);
@@ -200,29 +198,13 @@
         else out[k] = n.value;
       });
       return out;
-    }
-    function refresh() {
-      var cur = values();
-      TABS.forEach(function (tab) {
-        var on = !tab.show || tab.show(cur);
-        tabBtns[tab.id].hidden = !on;
-        if (!on && current === tab.id) select('connection');
-        tab.fields.forEach(function (f) { if (rows[f.key]) rows[f.key].hidden = !!(f.show && !f.show(cur)); });
-      });
-    }
-    function select(id) {
-      current = id;
-      Object.keys(panels).forEach(function (k) { panels[k].hidden = k !== id; tabBtns[k].setAttribute('aria-selected', k === id ? 'true' : 'false'); });
-    }
-    var top = el('div', { class: 'rm-grid' });
-    var tabs = el('div', { class: 'rm-dtabs', role: 'tablist' });
-    var body = el('div');
+    };
+    F.refresh = function () {
+      var cur = F.values();
+      TABS.forEach(function (tab) { tab.fields.forEach(function (f) { if (F.rows[f.key]) F.rows[f.key].hidden = !!(f.show && !f.show(cur)); }); });
+      F.onChange.forEach(function (fn) { fn(cur); });
+    };
     TABS.forEach(function (tab) {
-      tabBtns[tab.id] = el('button', { type: 'button', role: 'tab', text: T('tab.' + tab.id), on: { click: function () { select(tab.id); } } });
-      tabs.appendChild(tabBtns[tab.id]);
-      var grid = el('div', { class: 'rm-grid' });
-      panels[tab.id] = el('div', { role: 'tabpanel' }, [grid]);
-      body.appendChild(panels[tab.id]);
       tab.fields.forEach(function (f) {
         var id = 'rm-f-' + f.key;
         var row;
@@ -233,11 +215,11 @@
         } else if (f.type === 'note') {
           row = el('p', { class: 'rm-note', text: T(f.text) });
         } else if (f.type === 'sshinfo') {
-          row = sshInfo(dev, function () { return inputs.username ? inputs.username.value : ''; });
+          row = sshInfo(dev, function () { return F.inputs.username ? F.inputs.username.value : ''; });
         } else {
           var input = f.type === 'gateway' ? gatewayInput(id) : fieldInput(f, id);
           input._f = f;
-          inputs[f.key] = input;
+          F.inputs[f.key] = input;
           var label = T('f.' + f.key);
           if (f.type === 'check') row = el('label', { class: 'check' }, [input, el('span', { text: label })]);
           else row = el('div', { class: 'form-group' }, [el('label', { class: 'form-label', for: id, text: label }), input]);
@@ -248,24 +230,18 @@
           else if (f.type === 'check') input.checked = !!v[f.key];
           else if (f.type === 'tags') input.value = (v.tags || []).join(', ');
           else if (!f.cred && v[f.key] != null) input.value = String(v[f.key]);
-          input.addEventListener('change', refresh);
-          if (f.key === 'protocol') input.addEventListener('change', function () { if (!dev) inputs.port.value = String({ rdp: 3389, vnc: 5900, ssh: 22, telnet: 23 }[input.value] || 3389); });
+          input.addEventListener('change', F.refresh);
+          if (f.key === 'protocol') input.addEventListener('change', function () { if (!dev) F.inputs.port.value = String({ rdp: 3389, vnc: 5900, ssh: 22, telnet: 23 }[input.value] || 3389); });
         }
         if (f.wide) row.classList.add('rm-wide-field');
-        rows[f.key] = row;
-        (f.top ? top : grid).appendChild(row);
+        F.rows[f.key] = row;
       });
     });
-    var content = el('div', null, [top, tabs, body, errBox,
-      dev && dev.source === 'import' ? el('p', { class: 'rm-hint', text: T('dev.imported_hint') }) : null]);
-    select('connection');
-    refresh();
-
-    function collect() {
-      var cur = values();
+    F.collect = function () {
+      var cur = F.values();
       var config = {};
       Object.keys(cur).forEach(function (k) {
-        var f = inputs[k]._f;
+        var f = F.inputs[k]._f;
         if (TOP.indexOf(k) >= 0 || f.cred || f.type === 'credstate') return;
         if (f.type === 'gateway') {
           var g = String(cur.gateway || '');
@@ -281,10 +257,59 @@
       var out = { name: cur.name.trim(), protocol: cur.protocol, enabled: cur.enabled, config: config };
       var c = {};
       if (cur.cred_clear) CRED_KEYS.forEach(function (k) { c[k] = ''; });
-      else CRED_KEYS.forEach(function (k) { if (inputs[k] && cur[k] !== '') c[k] = cur[k]; });
+      else CRED_KEYS.forEach(function (k) { if (F.inputs[k] && cur[k] !== '') c[k] = cur[k]; });
       if (Object.keys(c).length) out.credentials = c;
       return out;
+    };
+    /** set a value from outside (the target of the wizard) */
+    F.set = function (k, val) {
+      var n = F.inputs[k];
+      if (!n) return;
+      if (n._f.type === 'check') n.checked = !!val;
+      else if (n._f.type === 'gateway') n.value = val || '';
+      else n.value = val == null ? '' : String(val);
+    };
+    return F;
+  }
+
+  /** The text of an API error with the field it names. */
+  function saveError(e) {
+    var d = (e && e.data) || {};
+    return P.errText(e) + (d.field ? ' (' + T('f.' + d.field.replace(/^credentials\./, '')) + ')' : '') + (d.suggestedPort ? ' ' + T('f.suggested_port', { port: d.suggestedPort }) : '');
+  }
+
+  function editor(dev) {
+    var F = fieldSet(dev);
+    var panels = {};
+    var tabBtns = {};
+    var current = 'connection';
+    var errBox = el('p', { class: 'rm-field-error', role: 'alert', hidden: true });
+    function select(id) {
+      current = id;
+      Object.keys(panels).forEach(function (k) { panels[k].hidden = k !== id; tabBtns[k].setAttribute('aria-selected', k === id ? 'true' : 'false'); });
     }
+    var top = el('div', { class: 'rm-grid' });
+    var tabs = el('div', { class: 'rm-dtabs', role: 'tablist' });
+    var body = el('div');
+    TABS.forEach(function (tab) {
+      tabBtns[tab.id] = el('button', { type: 'button', role: 'tab', text: T('tab.' + tab.id), on: { click: function () { select(tab.id); } } });
+      tabs.appendChild(tabBtns[tab.id]);
+      var grid = el('div', { class: 'rm-grid' });
+      panels[tab.id] = el('div', { role: 'tabpanel' }, [grid]);
+      body.appendChild(panels[tab.id]);
+      tab.fields.forEach(function (f) { (f.top ? top : grid).appendChild(F.rows[f.key]); });
+    });
+    F.onChange.push(function (cur) {
+      TABS.forEach(function (tab) {
+        var on = !tab.show || tab.show(cur);
+        tabBtns[tab.id].hidden = !on;
+        if (!on && current === tab.id) select('connection');
+      });
+    });
+    var content = el('div', null, [top, tabs, body, errBox,
+      dev && dev.source === 'import' ? el('p', { class: 'rm-hint', text: T('dev.imported_hint') }) : null]);
+    select('connection');
+    F.refresh();
 
     function tabOf(key) {
       var hit = null;
@@ -300,11 +325,11 @@
         save.disabled = true;
         errBox.hidden = true;
         Object.keys(tabBtns).forEach(function (k) { tabBtns[k].removeAttribute('data-error'); });
-        var body2 = collect();
+        var body2 = F.collect();
         P.api(dev ? 'PUT' : 'POST', 'admin/devices' + (dev ? '/' + dev.id : ''), body2).then(function (r) { ov.remove(); P.toast(T('common.saved')); resolve(r.device); }).catch(function (e) {
           save.disabled = false;
           var d = (e && e.data) || {};
-          errBox.textContent = P.errText(e) + (d.field ? ' (' + T('f.' + d.field.replace(/^credentials\./, '')) + ')' : '') + (d.suggestedPort ? ' ' + T('f.suggested_port', { port: d.suggestedPort }) : '');
+          errBox.textContent = saveError(e);
           errBox.hidden = false;
           var t = d.field && tabOf(d.field.replace(/^credentials\./, ''));
           if (t) { tabBtns[t].setAttribute('data-error', '1'); select(t); }
@@ -317,7 +342,251 @@
         ]),
       ]);
       document.body.appendChild(ov);
-      inputs.name.focus();
+      F.inputs.name.focus();
+    });
+  }
+
+  // ─── 1.7: the editor of one page (GateControl with gc.remote version 7) ───
+  // Target and login on top, everything else in sections with a summary in their head; „Ziel ändern“ opens steps 1
+  // and 2 of the wizard. The stored data keep access_mode & co. — the way is only shown from them.
+  var SECTIONS = [
+    { id: 'access' },
+    { id: 'wol', keys: ['wol_enabled', 'wol_mac_address', 'maintenance_enabled', 'maintenance_schedule', 'credential_rotation_enabled', 'credential_rotation_days'] },
+    { id: 'display', show: function (v) { return v.protocol === 'rdp' || v.protocol === 'vnc'; }, keys: ['resolution_mode', 'resolution_width', 'resolution_height', 'color_depth', 'multi_monitor',
+      'redirect_clipboard', 'redirect_printers', 'redirect_drives', 'redirect_usb', 'redirect_smartcard', 'audio_mode', 'network_profile', 'bandwidth_limit', 'nla_enabled',
+      'disable_wallpaper', 'disable_themes', 'disable_animations', 'session_timeout', 'admin_session', 'remote_app', 'start_program', 'gateway_host', 'gateway_port'] },
+    { id: 'browser', keys: ['browser_enabled', 'browser_clipboard', 'rdp_disable_audio', 'recording', 'rec_always_note'] },
+    { id: 'terminal', show: function (v) { return v.protocol === 'ssh'; }, keys: ['privateKey', 'passphrase', 'ssh_engine', 'tmux_enabled', 'tmux_name', 'ssh_info'] },
+    { id: 'way', keys: ['name', 'protocol', 'enabled', 'host', 'port', 'access_mode', 'external_hostname', 'external_port', 'gateway', 'gateway_listen_port', 'health_check_enabled', 'credential_mode', 'domain', 'cred_state', 'cred_clear'] },
+    { id: 'notes', keys: ['description', 'tags', 'notes'] },
+  ];
+
+  function gwName(c) {
+    var g = S.gateways.filter(function (x) { return x.peerId === c.gateway_peer_id; })[0];
+    var p = S.pools.filter(function (x) { return x.poolId === c.gateway_pool_id; })[0];
+    return g ? g.name : (p ? p.name : '#' + (c.gateway_peer_id || c.gateway_pool_id || '?'));
+  }
+  /** The way of the values in the editor as one line (from the stored way while nothing changed). */
+  function wayLine(cur, w, changed) {
+    if (cur.access_mode === 'gateway') return T(cur.gateway && /^pool:/.test(cur.gateway) ? 'ed.via_pool' : 'ed.via_gateway', { name: gwName(gwConfig(cur)) });
+    if (cur.access_mode === 'external') return T('ed.via_internet');
+    if (!changed && w && w.kind === 'vpn') return w.peer ? T('ed.in_vpn_name', { name: w.peer.name }) : T('ed.in_vpn');
+    if (!changed && w && w.kind === 'internet') return T('ed.via_internet');
+    if (!changed && w && w.kind === 'server') return T('ed.in_server');
+    return T('ed.direct');
+  }
+  function gwConfig(cur) {
+    var g = String(cur.gateway || '');
+    var mp = /^peer:(\d+)$/.exec(g);
+    var ml = /^pool:(\d+)$/.exec(g);
+    return { gateway_peer_id: mp ? parseInt(mp[1], 10) : (/^\d+$/.test(g) ? parseInt(g, 10) : null), gateway_pool_id: ml ? parseInt(ml[1], 10) : null };
+  }
+
+  function editOne(dev) {
+    var F = fieldSet(dev);
+    var w = dev.way || null;
+    var changed = false;
+    var errBox = el('p', { class: 'rm-field-error', role: 'alert', hidden: true });
+    var cardName = el('span', { class: 'rmx-rname' });
+    var cardSub = el('span', { class: 'rmx-rsub' });
+    var secs = {};
+    var heads = {};
+    var people = null;
+
+    function accessText() {
+      var a = dev.access || { users: [], groups: [], tokens: [] };
+      if (a.open) return T('ed.access_open');
+      var names = [];
+      var adminsOnly = !a.groups.length && !a.tokens.length;
+      a.users.forEach(function (id) {
+        var p = people && people.people ? people.people.filter(function (x) { return x.id === id; })[0] : null;
+        if (!p || p.role !== 'admin') adminsOnly = false;
+        names.push(p ? p.name : '#' + id);
+      });
+      a.groups.forEach(function (id) {
+        var g = people && people.groups ? people.groups.filter(function (x) { return x.id === id; })[0] : null;
+        names.push(g ? g.path : '#' + id);
+      });
+      if (a.tokens.length) names.push(T('ed.tokens', { n: a.tokens.length }));
+      return people && adminsOnly ? T('wz.admins_only') : names.join(', ');
+    }
+    function accessCount() {
+      var a = dev.access || { users: [], groups: [], tokens: [] };
+      if (a.open) return T('ed.access_open_short');
+      var adminsOnly = !!(people && people.people) && !a.groups.length && !a.tokens.length && a.users.every(function (id) {
+        return people.people.some(function (x) { return x.id === id && x.role === 'admin'; });
+      });
+      return adminsOnly ? T('wz.admins_only') : T('ed.persons', { n: a.users.length + a.groups.length + a.tokens.length });
+    }
+    function summary(id, cur) {
+      if (id === 'access') return accessCount();
+      if (id === 'wol') return cur.wol_enabled ? T('ed.wol_on') : (cur.maintenance_enabled ? T('ed.maint_on') : null);
+      if (id === 'display') return [T('res.' + cur.resolution_mode), T('f.bits', { n: cur.color_depth })].join(' · ');
+      if (id === 'browser') return [T(cur.browser_enabled ? 'ed.browser_on' : 'ed.browser_off'), T('ed.rec_summary', { v: T('rec.' + cur.recording) })].join(' · ');
+      if (id === 'terminal') return T(cur.ssh_engine === 'term' ? 'dev.engine_term' : 'dev.engine_guac') + (cur.ssh_engine === 'term' && cur.tmux_enabled ? ' · tmux' : '');
+      if (id === 'way') return wayLine(cur, w, changed);
+      return cur.tags ? String(cur.tags).split(',').filter(function (x) { return x.trim(); }).length ? String(cur.tags) : null : null;
+    }
+    function drawCard(cur) {
+      cardName.textContent = (cur.host || '–') + ' · ' + T('proto.' + cur.protocol) + ' ' + (cur.port || '');
+      var sub = [wayLine(cur, w, changed)];
+      if (dev.source === 'import') sub.push(T('ed.imported'));
+      cardSub.textContent = sub.join(' · ');
+    }
+    // the kv of „Erweitert · Weg“
+    var kv = el('div', { class: 'rmx-kv' });
+    var kvNote = el('p', { class: 'rmx-small' });
+    function drawKv(cur) {
+      P.clear(kv);
+      var listen = cur.access_mode === 'gateway'
+        ? (cur.gateway_listen_port ? String(cur.gateway_listen_port) + (dev.source === 'import' && !changed ? ' ' + T('ed.kept') : '') : T('wz.listen_auto'))
+        : T('wz.none');
+      var apps = cur.access_mode === 'gateway' ? T('wz.apps_server')
+        : (cur.access_mode === 'external' || cur.access_mode === 'both' ? (cur.external_hostname || '–') + ':' + (cur.external_port || cur.port) : T('wz.apps_direct_vpn'));
+      [[T('wz.kv_way'), wayLine(cur, w, changed) + (cur.access_mode === 'gateway' ? ' ' + T('ed.automatic') : '')], [T('f.gateway_listen_port'), listen], [T('wz.kv_apps'), apps]].forEach(function (x) {
+        kv.appendChild(el('span', { text: x[0] }));
+        kv.appendChild(el('b', { text: x[1] }));
+      });
+      kvNote.textContent = dev.source === 'import' && dev.config.access_mode === 'gateway' && !changed ? T('ed.kept_note') : T('ed.way_text');
+    }
+    F.onChange.push(function (cur) {
+      SECTIONS.forEach(function (sec) {
+        if (secs[sec.id]) secs[sec.id].hidden = !!(sec.show && !sec.show(cur));
+        if (heads[sec.id]) { P.clear(heads[sec.id]); var t = summary(sec.id, cur); if (t) heads[sec.id].appendChild(el('span', { class: 'rmx-tag', text: t })); }
+      });
+      drawCard(cur);
+      drawKv(cur);
+    });
+
+    // the old device with a LAN address under „Nur VPN“: say where it is
+    var hintBox = el('div');
+    function drawHint() {
+      P.clear(hintBox);
+      var h = w && w.hint && !changed ? w.hint : null;
+      if (!h || h.kind !== 'lan' || !h.gateway) return;
+      var g = h.gateway;
+      hintBox.appendChild(el('div', { class: 'rmx-note warn', role: 'status' }, [el('div', null, [
+        el('b', { text: T('ed.lan_hint', { name: g.name }) }), el('span', { class: 'rmx-small', text: T('ed.lan_hint_text') }),
+        el('div', { class: 'acts' }, [el('button', { type: 'button', class: 'btn btn-sm', text: T('ed.lan_use'), on: { click: function () {
+          F.set('access_mode', 'gateway');
+          F.set('gateway', g.pool ? 'pool:' + g.pool.poolId : 'peer:' + g.peerId);
+          F.set('gateway_listen_port', '');
+          changed = true;
+          F.refresh();
+          drawHint();
+          if (secs.way) secs.way.open = true;
+        } } })]),
+      ])]));
+    }
+
+    var retarget = el('button', { type: 'button', class: 'btn btn-sm rmx-ghost', text: T('ed.retarget'), on: { click: function () {
+      window.RMW.open({ device: Object.assign({}, dev, { config: Object.assign({}, dev.config, F.collect().config) }) }).then(function (x) {
+        if (!x) return;
+        if (x.open) { ov.remove(); done(null); openEditor(x.open); return; }
+        if (!x.target) return;
+        var c = x.target.config;
+        ['host', 'port', 'access_mode', 'external_hostname', 'external_port', 'gateway_listen_port'].forEach(function (k) { F.set(k, c[k]); });
+        F.set('gateway', c.gateway_pool_id ? 'pool:' + c.gateway_pool_id : (c.gateway_peer_id ? 'peer:' + c.gateway_peer_id : ''));
+        F.set('protocol', x.target.protocol);
+        changed = true;
+        F.refresh();
+        drawHint();
+      });
+    } } });
+    var c0 = dev.config;
+    var top = el('div', { class: 'rmx-target' }, [window.RMW.ico(c0.access_mode === 'gateway' ? 'lan' : (w && w.kind === 'vpn' ? 'vpn' : (w && w.kind === 'internet' ? 'ext' : 'lan')),
+      dev.protocol === 'rdp' ? 'pc' : (dev.protocol === 'ssh' ? 'server' : 'laptop')), el('span', { class: 'rmx-rmain' }, [cardName, cardSub]), retarget]);
+    var login = el('div', { class: 'rmx-g2 rmx-g2-even' }, [F.rows.username, F.rows.password]);
+
+    var parts = [top, hintBox, login];
+    SECTIONS.forEach(function (sec) {
+      heads[sec.id] = el('span', { class: 'rmx-head-tags' });
+      var bodyBox = el('div', { class: 'advb' });
+      if (sec.id === 'access') {
+        var line = el('div');
+        var draw = function () {
+          P.clear(line);
+          line.appendChild(document.createTextNode(accessText() + ' · '));
+          line.appendChild(el('button', { type: 'button', class: 'rmx-lnk', text: T('ed.change'), on: { click: pickAccess } }));
+        };
+        var pickAccess = function () {
+          if (!window.GC || typeof window.GC.pickPrincipals !== 'function') { P.toast(T('wz.no_picker'), 'error'); return; }
+          window.GC.pickPrincipals({ groups: true, users: true, multiple: true, title: T('wz.share_title', { name: dev.name }) }).then(function (picked) {
+            if (!picked) return null;
+            return P.api('PUT', 'admin/devices/' + dev.id + '/access', {
+              users: picked.filter(function (x) { return x.type === 'user'; }).map(function (x) { return x.id; }),
+              groups: picked.filter(function (x) { return x.type === 'group'; }).map(function (x) { return x.id; }),
+            }).then(function (r) { dev.access = r.device.access; draw(); F.refresh(); });
+          }).catch(P.warn);
+        };
+        draw();
+        P.api('GET', 'admin/rights').then(function (r) { people = r; draw(); F.refresh(); }).catch(function () {});
+        bodyBox.appendChild(line);
+        bodyBox.appendChild(el('p', { class: 'rmx-small', text: T('ed.access_hint') }));
+      } else {
+        var grid = el('div', { class: 'rm-grid' });
+        if (sec.id === 'way') { bodyBox.appendChild(kv); bodyBox.appendChild(kvNote); }
+        sec.keys.forEach(function (k) { if (F.rows[k]) grid.appendChild(F.rows[k]); });
+        bodyBox.appendChild(grid);
+      }
+      secs[sec.id] = el('details', { class: 'rmx-adv', 'data-sec': sec.id }, [el('summary', null, [T('ed.sec_' + sec.id), heads[sec.id]]), bodyBox]);
+      parts.push(secs[sec.id]);
+    });
+    parts.push(errBox);
+    F.refresh();
+    drawHint();
+
+    var ov;
+    var done;
+    var result = new Promise(function (r) { done = r; });
+    var save = el('button', { type: 'button', class: 'btn btn-primary', text: T('common.save') });
+    var cancel = el('button', { type: 'button', class: 'btn rmx-ghost', text: T('common.cancel'), on: { click: function () { ov.remove(); done(null); } } });
+    var del = el('button', { type: 'button', class: 'btn rmx-ghost', text: T('dev.delete'), on: { click: function () {
+      P.confirmDialog(T('dev.delete_q', { name: dev.name }), T('dev.delete')).then(function (ok) {
+        if (!ok) return null;
+        return P.api('DELETE', 'admin/devices/' + dev.id).then(function () { P.toast(T('dev.deleted')); ov.remove(); done(true); });
+      }).catch(P.warn);
+    } } });
+    save.addEventListener('click', function () {
+      save.disabled = true;
+      errBox.hidden = true;
+      P.api('PUT', 'admin/devices/' + dev.id, F.collect()).then(function (r) { ov.remove(); P.toast(T('common.saved')); done(r.device); }).catch(function (e) {
+        save.disabled = false;
+        errBox.textContent = saveError(e);
+        errBox.hidden = false;
+        var d = (e && e.data) || {};
+        var key = d.field ? String(d.field).replace(/^credentials\./, '').replace(/^gateway_(peer|pool)_id$/, 'gateway') : null;
+        SECTIONS.forEach(function (sec) { if (key && sec.keys && sec.keys.indexOf(key) >= 0) secs[sec.id].open = true; });
+      });
+    });
+    var st = dev.status || {};
+    var stateTag = st.online === true ? el('span', { class: 'rmx-tag ok', text: T('state.online') + (st.responseTime != null ? ' · ' + st.responseTime + ' ms' : '') })
+      : (st.online === false ? el('span', { class: 'rmx-tag err', text: T('state.offline') }) : null);
+    var close = el('button', { type: 'button', class: 'rmx-x', 'aria-label': T('common.close'), text: '×', on: { click: function () { ov.remove(); done(null); } } });
+    ov = el('div', { class: 'modal-overlay', role: 'dialog', 'aria-modal': 'true', 'aria-label': T('dev.edit_name', { name: dev.name }) }, [
+      el('div', { class: 'modal rmx-modal' }, [
+        el('div', { class: 'rmx-head' }, [el('div', { class: 'rmx-title', text: dev.name }), stateTag, close]),
+        el('div', { class: 'rmx-body' }, parts),
+        el('div', { class: 'rmx-foot' }, [del, el('span', { class: 'rmx-sp' }), cancel, save]),
+      ]),
+    ]);
+    document.body.appendChild(ov);
+    return result;
+  }
+
+  /** Edit a device: the editor of one page with version 7 (a target), else the editor with tabs. */
+  function openEditor(id) {
+    return P.api('GET', 'admin/devices/' + id).then(function (r) {
+      return S.wizard && r.device.kind !== 'host' && window.RMW ? editOne(r.device) : editor(r.device);
+    }).then(function (x) { if (x) load(); }).catch(P.warn);
+  }
+
+  /** Add a device: the wizard with version 7, else the old form. */
+  function addDevice() {
+    if (!(S.wizard && window.RMW)) return editor(null).then(function (x) { if (x) load(); });
+    return window.RMW.open({}).then(function (x) {
+      if (x && x.saved) load();
+      if (x && x.open) openEditor(x.open);
     });
   }
 
@@ -363,9 +632,7 @@
         busy(ev.currentTarget, P.api('POST', 'admin/devices/' + d.id + '/allow-open', { allowOpen: !h.allowOpen }).then(load));
       } } }));
     }
-    acts.appendChild(el('button', { class: 'btn btn-sm', type: 'button', text: T('dev.edit'), on: { click: function () {
-      P.api('GET', 'admin/devices/' + d.id).then(function (r) { return editor(r.device); }).then(function (x) { if (x) load(); }).catch(P.warn);
-    } } }));
+    acts.appendChild(el('button', { class: 'btn btn-sm', type: 'button', text: T('dev.edit'), on: { click: function () { openEditor(d.id); } } }));
     acts.appendChild(el('button', { class: 'btn btn-sm', type: 'button', text: d.enabled ? T('dev.disable') : T('dev.enable'), on: { click: function (ev) {
       busy(ev.currentTarget, P.api('POST', 'admin/devices/' + d.id + '/toggle').then(load));
     } } }));
@@ -461,12 +728,13 @@
       S.gateways = r.gateways || [];
       S.pools = r.pools || [];
       S.gwList = !!r.available;
+      S.wizard = r.wizard === true;
       draw();
     }).catch(P.warn);
   }
 
   ['#rm-search', '#rm-proto', '#rm-state'].forEach(function (s) { $(s).addEventListener('input', draw); $(s).addEventListener('change', draw); });
-  $('#rm-add').addEventListener('click', function () { editor(null).then(function (x) { if (x) load(); }); });
+  $('#rm-add').addEventListener('click', function () { addDevice(); });
   $('#rm-switch-all').addEventListener('click', function () { switchEngine(null); });
   $('#rm-check').addEventListener('click', function () {
     var b = $('#rm-check');

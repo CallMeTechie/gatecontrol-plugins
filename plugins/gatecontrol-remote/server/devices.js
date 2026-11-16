@@ -365,7 +365,8 @@ async function nextId(gc) {
 
 /** Apply a patch from the admin page onto a device (new: d = null) → the device to store. */
 function applyPatch(d, b) {
-  const next = d ? { ...d, config: { ...d.config } } : { id: null, name: '', protocol: 'rdp', enabled: true, source: 'plugin', config: { ...DEFAULTS }, credential: null };
+  // 1.7: a new device connects in the browser unless the page says otherwise (an old one keeps its value)
+  const next = d ? { ...d, config: { ...d.config } } : { id: null, name: '', protocol: 'rdp', enabled: true, source: 'plugin', config: { ...DEFAULTS, browser_enabled: true }, credential: null };
   if (b.name !== undefined) next.name = clip(b.name, 100);
   if (b.protocol !== undefined) {
     if (!PROTOCOLS.includes(b.protocol)) throw fail('invalid', { field: 'protocol' });
@@ -400,13 +401,18 @@ function credentialPatch(b, domain) {
   return out;
 }
 
-/** The listener of a gateway device is made / changed / removed with the device. */
+/**
+ * The listener of a gateway device is made / changed / removed with the device. 1.7: without a port on the server
+ * GateControl with gc.remote version 7 picks one itself (listenPort 'auto', internal only); older ones take the port
+ * of the device as before.
+ */
 async function syncListener(gc, d, before) {
   const c = d.config;
   if (c.access_mode === 'gateway') {
     const key = listenerKey(d);
+    const auto = !c.gateway_listen_port && !!(gc.remote && gc.remote.version >= 7);
     try {
-      const l = await gc.remote.listener({ key, gateway: c.gateway_pool_id ? { poolId: c.gateway_pool_id } : { peerId: c.gateway_peer_id }, host: c.host, port: c.port, listenPort: c.gateway_listen_port || c.port });
+      const l = await gc.remote.listener({ key, gateway: c.gateway_pool_id ? { poolId: c.gateway_pool_id } : { peerId: c.gateway_peer_id }, host: c.host, port: c.port, listenPort: c.gateway_listen_port || (auto ? 'auto' : c.port) });
       return { listener: l.key, error: null, listenPort: l.listenPort };
     } catch (e) {
       const err = fromHost(e, 'listener_failed');
