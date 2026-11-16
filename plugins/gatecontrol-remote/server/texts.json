@@ -484,7 +484,9 @@
     "linux.enroll": "Linux-Gerät einrichten",
     "linux.step1": "1. Den Agenten installieren (Paket aus den Releases von gatecontrol-linux-agent):",
     "linux.step2": "2. Unter „Meine Geräte › Gerät hinzufügen“ einen Code erzeugen und damit anmelden:",
-    "linux.step3": "3. Freigeben (später jederzeit änderbar) und den Code für die helfende Person anzeigen:"
+    "linux.step3": "3. Freigeben (später jederzeit änderbar) und den Code für die helfende Person anzeigen:",
+    "portal.linux_confirm": "Am Gerät bestätigen: {{cmd}}",
+    "linux.step4": "4. Jede Anfrage am Gerät bestätigen (Standard; der Code allein verbindet nicht):"
   },
   "en": {
     "access.all": "Everybody with the right",
@@ -971,6 +973,8 @@
     "linux.enroll": "Set up a Linux device",
     "linux.step1": "1. Install the agent (package from the releases of gatecontrol-linux-agent):",
     "linux.step2": "2. Create a code under “My devices › Add device” and sign in with it:",
-    "linux.step3": "3. Share (can be changed any time) and show the code for the person helping you:"
+    "linux.step3": "3. Share (can be changed any time) and show the code for the person helping you:",
+    "portal.linux_confirm": "Confirm at the device: {{cmd}}",
+    "linux.step4": "4. Confirm every request at the device (default; the code alone does not connect):"
   }
 }

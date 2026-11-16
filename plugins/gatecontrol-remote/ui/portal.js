@@ -71,6 +71,14 @@
     var ov = el('div', { class: 'modal-overlay', role: 'dialog', 'aria-modal': 'true' }, [el('div', { class: 'modal' }, [body, el('div', { class: 'modal-foot' }, [cancel, ask])])]);
     var timer = null;
     var closed = false;
+    // 1.6: a Linux device asks its person by default — the command for the device (the helper passes it on)
+    var linuxHint = el('p', { class: 'rm-hint', hidden: true });
+    body.insertBefore(linuxHint, host);
+    function linuxConfirm(id) {
+      if (!linux || !id) return;
+      linuxHint.textContent = T('portal.linux_confirm', { cmd: 'sudo gatecontrol-agent allow ' + id });
+      linuxHint.hidden = false;
+    }
     function done() { closed = true; clearTimeout(timer); ov.remove(); }
     cancel.addEventListener('click', done);
     function poll(id) {
@@ -107,6 +115,7 @@
         // a phone or PC that turned out to be view only (its app, GateControl): the helper knows before the answer
         var why = r.request.modeReason === 'pc_view_only' ? 'portal.pc_view_only' : 'portal.phone_view_only';
         status.textContent = (r.request.modeReason ? T(why) + ' ' : '') + T('portal.waiting');
+        linuxConfirm(r.request.id);
         poll(r.request.id);
       }).catch(function (e) { status.textContent = P.errText(e); ask.disabled = false; });
     });
@@ -118,6 +127,7 @@
       ask.disabled = true;
       form.hidden = true;
       status.textContent = T('portal.waiting');
+      linuxConfirm(pending);
       poll(pending);
       cancel.focus();
       return;
@@ -289,6 +299,8 @@
       cmd('sudo gatecontrol-agent enroll https://<server> <code>'),
       el('p', { class: 'rm-hint', text: T('linux.step3') }),
       cmd('sudo gatecontrol-agent share ssh --as <konto> --tmux\nsudo gatecontrol-agent share desktop\ngatecontrol-agent code'),
+      el('p', { class: 'rm-hint', text: T('linux.step4') }),
+      cmd('gatecontrol-agent requests\nsudo gatecontrol-agent allow <id>    # oder: deny <id>'),
     ]);
     var list = $('#rm-list');
     list.parentNode.insertBefore(box, list.nextSibling);
