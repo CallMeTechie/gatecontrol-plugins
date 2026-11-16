@@ -286,7 +286,10 @@ const BOOK_NAMES_MS = 10 * 60000;
 const BOOK_NAMES_RETRY_MS = 60000;
 const bookNamesKept = new Map(); // `${viewer}|${net}` → { at, names: Map(chat reference → name) }
 
-/** → Map(chat reference of the bridge → the address book's name) for the viewer; empty when it cannot be known. */
+/**
+ * → Map(chat reference of the bridge → the address book's name; 1.25.2: also contactId → name) for the viewer; empty
+ * when it cannot be known. Chat references start with „r“, contactIds with „c“ — they never meet.
+ */
 async function bookNames(ctx, net, ref) {
   const k = `${ctx.viewer}|${net}`;
   const have = bookNamesKept.get(k);
@@ -310,6 +313,8 @@ async function bookNames(ctx, net, ref) {
         const m = await b.matchNumbers(ctx.viewer, net, nums);
         for (const hit of (m && Array.isArray(m.matches) ? m.matches : [])) {
           if (typeof hit.chatId === 'string' && hit.chatId && owner[hit.index] && !names.has(hit.chatId)) names.set(hit.chatId, owner[hit.index]);
+          // 1.25.2: by the contact too (its contactId, as the events name it) — a WhatsApp status of a contact without a chat
+          if (typeof hit.contactId === 'string' && hit.contactId && owner[hit.index] && !names.has(hit.contactId)) names.set(hit.contactId, owner[hit.index]);
         }
       }
       known = true;
@@ -330,4 +335,10 @@ async function bookNameOf(ctx, conv) {
   try { return (await bookNames(ctx, conv.bridge_net, conv.bridge_ref)).get(conv.bridge_ref) || null; } catch { return null; }
 }
 
-module.exports = { route, list, api, feature, bookContact, isNotOn, rememberNotOn, forget, purge, numberLike, bookNameOf, KEY_RE, REF_RE, NOT_ON_MS, _reset: () => { book.clear(); bookNamesKept.clear(); } };
+/** 1.25.2: the address book's name of a contact of the bridge, by its contactId (null: none). Never throws. */
+async function bookNameOfContact(ctx, net, contactId) {
+  if (!net || typeof contactId !== 'string' || !contactId || !(await mailOffers(ctx.gc))) return null;
+  try { return (await bookNames(ctx, net, contactId)).get(contactId) || null; } catch { return null; }
+}
+
+module.exports = { route, list, api, feature, bookContact, isNotOn, rememberNotOn, forget, purge, numberLike, bookNameOf, bookNameOfContact, pictureFor, KEY_RE, REF_RE, NOT_ON_MS, _reset: () => { book.clear(); bookNamesKept.clear(); } };

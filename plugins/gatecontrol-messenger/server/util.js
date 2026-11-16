@@ -169,11 +169,13 @@ function parseJson(s, fallback) {
  * first real test — this is the same check for what older servers delivered and what is stored already.
  */
 const NUMBER_RE = /^[\s+()\-./\u2219\u2022·0-9]+$/;
+// 1.25.2: a public WhatsApp name of only punctuation („.“, „-“, „…“ — people set it to show no name) is no name either
+const MARKS_RE = /^[\p{P}\p{Z}\p{Cf}~^`+=|<>]+$/u;
 function bridgeName(v, max = 120) {
   let n = typeof v === 'string' ? v.replace(/[\0-\x1f\x7f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max * 2) : '';
   if (n.endsWith(' (WA)')) n = n.slice(0, -5).trim();
   const digits = (n.match(/[0-9]/g) || []).length;
-  if (!n || (NUMBER_RE.test(n) && (digits >= 5 || (digits >= 1 && /[\u2219\u2022]/.test(n)))) || n.toLowerCase() === 'unknown user') return null;
+  if (!n || MARKS_RE.test(n) || (NUMBER_RE.test(n) && (digits >= 5 || (digits >= 1 && /[\u2219\u2022]/.test(n)))) || n.toLowerCase() === 'unknown user') return null;
   return n.slice(0, max);
 }
 

@@ -1,4 +1,4 @@
-<!-- version: 1.25.1 -->
+<!-- version: 1.25.2 -->
 # Messenger
 
 ## Was das Plugin kann
@@ -73,6 +73,11 @@ Er kommt nur beim Verknüpfen und erscheint nachts. Steht „Älteren Verlauf la
 
 **Alte Nachrichten sind weg.**
 Der Administrator hat eine Aufbewahrung eingestellt, oder der Chat ist selbstlöschend.
+
+## Neu in 1.25.2
+
+- **WhatsApp-Status mit richtigem Namen und Bild.** Ein Status stand manchmal mit dem Namen „.“ und ohne Profilbild in der Status-Reihe, obwohl WhatsApp den Kontakt mit Namen und Bild zeigt. WhatsApp gibt der Brücke für einen Status nur den öffentlichen Namen des Kontakts mit, und den setzen manche auf „.“. Jetzt heißt der Kontakt wie bei dir: zuerst wie in deinem Adressbuch (Mail), dann wie dein Chat mit ihm, dann wie in den Kontakten von WhatsApp. Ist nichts davon bekannt, steht „WhatsApp-Kontakt“ da, nie „.“ und nie die Nummer. Als Bild kommt das Bild eures Chats, sonst das des Kontakts. Das gilt für die Status-Reihe und die Status-Ansicht.
+- **Auch in der Chatliste** heißt ein Chat nicht mehr „.“, „-“ oder „…“, sondern wie in deinem Adressbuch oder „WhatsApp-Kontakt“.
 
 ## Neu in 1.25.1
 

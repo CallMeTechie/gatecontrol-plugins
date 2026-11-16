@@ -3,6 +3,31 @@
 Chats zwischen den GateControl-Konten – in der GateControl-App (eigener Tab „Chats“), im
 Windows-Client und im Portal (eigener Tab „Chats“). Alles bleibt auf dem eigenen Server.
 
+## 1.25.2
+**Fix: WhatsApp-Status mit dem Namen „.“ und ohne Profilbild.** Die Brücke schickt einen Status als Nachricht des
+LID-Ghosts des Kontakts (mautrix-whatsapp `pickLID`) mit dessen öffentlichem Namen (`displayname_template`
+`{{or .BusinessName .PushName}}`, nie der Name aus dem Adressbuch des Handys). Viele setzen den Pushnamen auf „.“, und
+`util.bridgeName` ließ ihn durch (nur Nummern wurden verworfen). Der Feed nahm den Namen des Einzelchats nur, wenn
+`persons.chatOfContact` ihn über Nachrichten desselben Ghosts fand, sonst den Ghost-Namen; das Bild nur vom Kontakt,
+und das wurde erst beim ersten Öffnen der Status-Reihe angefordert.
+- **Name** (`bridgestatus.whoOf`, Feed und damit Viewer): eigenes Adressbuch (Mail, über `matchNumbers`: zum Einzelchat,
+  neu auch zur `contactId`, `contactchat.bookNameOfContact`) → Name des Einzelchats → `contacts()` der Brücke (gleiche
+  `contactId`) → Ghost-Name → „WhatsApp-Kontakt“. Jeder nur, wenn er ein Name ist. Die Nummer hat das Plugin nie.
+- **Einzelchat:** über seine Nachrichten, sonst über `contacts()` (`chatId` des Kontakts mit derselben `contactId`).
+  `contacts()` wird je Feed höchstens einmal gefragt und nur, wenn ein Kontakt es braucht.
+- **Bild:** Bild des Einzelchats, sonst das des Kontakts, sonst das von `contacts()` (wenn schon geholt). Das Bild des
+  Absenders wird jetzt schon beim Eintreffen des Status angefordert (`filed`); kommt es an, geht
+  `story.bridged { action: 'contact' }` an die Apps (sie laden den Feed bei jedem `story.bridged` neu).
+- **`util.bridgeName`:** Ein Name nur aus Satzzeichen (`.`, `-`, `…`, `_`) ist kein Name, auch für Chats und Kontakte in
+  der Chatliste. Gespeicherte Namen räumt die Namenskorrektur beim nächsten Start auf.
+- **Geprüft (Befund „sechs Status, sechsmal dasselbe Bild“ in Android 1.126.0):** Der Feed liefert je Status seine
+  eigene `mediaId`/`url`, auch für Bilder, die kurz hintereinander abgelegt werden (neuer Test). Die Ursache lag in der
+  App (Bild-Laden behielt beim Wechsel der `mediaId` das erste Bild), behoben in der Android-App
+  (GateControl-Android-Client #247). Portal und Windows
+  laden je Status neu.
+- Keine Server-Änderung; weiterhin GateControl ≥ 1.294.0. Testhilfe `mock-bridges`: `contacts[].contactId`. Tests in
+  `test/bridgestatus.test.js` (LID-Ghost „.“ ohne Chat, mit Adressbuch, mit Chat und Bild über `contacts()`, Kontaktbild).
+
 ## 1.25.1
 **Fix: Status-Raum nachholen, wenn GateControl vor dem Messenger aktualisiert wurde.** GateControl 1.294.0 schickt nach
 Migration 156 (`events.refreshRooms`) genau ein `chat`-Ereignis mit `status: true` je Status-Raum. Lief da noch Messenger
