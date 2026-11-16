@@ -12,6 +12,13 @@
 //   POST code/redeem                  { code, mode, via, deviceId? } → { request } (server/support.js)
 //   GET  requests/<id>, POST requests/<id>/connect
 //   host/*                            the PC's own app (server/hosts.js)
+//
+// Since 1.2 (gc.remote version 3) — the native terminals of the apps and the recordings:
+//   GET  devices/<id>/tmux            { sessions: [{ name, windows, attached, created, activity, attachable }], tmux, hostKey }
+//   POST devices/<id>/connect         { via: 'app', tmux?: { attach | create }, record? } → { session: { ref, expiresAt, engine: 'term',
+//                                     recording, tmux } }; the app turns ref into a token: POST /api/v1/client/remote/term-token
+//   GET  recordings?device&limit      { recordings: [...] } — administrators all, others the recordings of their own devices
+//   POST recordings/<id>/play         { url, ref, expiresAt, format } — GateControl's playback page, for this person only
 
 const devices = require('./devices');
 const rights = require('./rights');
@@ -21,6 +28,7 @@ const hosts = require('./hosts');
 const codes = require('./codes');
 const support = require('./support');
 const log = require('./log');
+const recordings = require('./recordings');
 const { fail, iso, posInt } = require('./util');
 
 function personOf(req) {
@@ -29,14 +37,19 @@ function personOf(req) {
   return u;
 }
 
-/** A device as the portal shows it — no address, no secret. A PC: its owner, how one connects, its state. */
-function deviceView(d, names) {
+/** A device as the portal shows it — no address, no secret. A PC: its owner, how one connects, its state. 1.2: SSH engine, tmux, recording. */
+function deviceView(d, names, x = {}) {
   const v = {
     id: d.id, name: d.name, protocol: d.protocol, description: d.config.description || null,
     online: d.status.online, lastCheck: iso(d.status.lastCheck), browser: !!d.config.browser_enabled,
     maintenance: maintenance.inWindow(d.config), wake: !!(d.config.wol_enabled && d.config.wol_mac_address),
     credentialUnreadable: d.credentialUnreadable, tags: d.config.tags || [], kind: d.kind,
   };
+  if (d.protocol === 'ssh') {
+    v.engine = devices.engineOf(d, x.gc);
+    v.tmux = v.engine === 'term' ? devices.tmuxOf(d) : null;
+  }
+  if (x.recording) v.recording = x.recording;
   if (d.kind === 'host') {
     v.owner = { id: d.host.owner, name: (names && names.get(d.host.owner)) || null };
     v.connect = { mode: devices.connectMode(d) };
@@ -74,9 +87,13 @@ async function overview(gc, user) {
   const names = await namesOf(gc);
   // a switched-off PC is in the admin's list ("abgemeldet"), not in the portal
   const shown = list.filter((d) => d.kind !== 'host' || d.host.registered);
+  const v3 = !!(gc.remote && gc.remote.version >= 3);
+  const views = [];
+  for (const d of shown) views.push(deviceView(d, names, { gc, recording: v3 ? await rights.policyFor(gc, user, d, { rights: r }) : null }));
   return {
     rights: { rdp: r.rdp, ssh: r.ssh, support: r.support, share: r.share },
-    devices: shown.map((d) => deviceView(d, names)),
+    devices: views,
+    recordings: v3 ? { watch: user.role === 'admin' || shown.some((d) => d.kind === 'host' && d.host.owner === user.id) } : null,
     hasRemote: !!gc.remote,
     // "Code eingeben": with the right to redeem support codes, or a PC that asks for a code
     codeEntry: !!(gc.remote && gc.remote.version >= 2) && (r.support || shown.some((d) => d.kind === 'host' && devices.connectMode(d) === 'code')),
@@ -89,8 +106,10 @@ async function profile(gc, user) {
   const own = (await devices.all(gc)).filter((d) => d.kind === 'host' && d.host.owner === user.id);
   return {
     rights: { rdp: r.rdp, ssh: r.ssh, support: r.support, share: r.share }, source: r.source, admin: user.role === 'admin',
+    // 1.2: "immer aufzeichnen" is visible to the person (their own setting or a group's) and on their own PCs
+    recording: r.recording || null,
     devices: { total: list.length, rdp: list.filter((d) => rights.rightFor(d.protocol) === 'rdp').length, ssh: list.filter((d) => rights.rightFor(d.protocol) === 'ssh').length },
-    hosts: own.map((d) => ({ id: d.id, name: d.name, registered: d.host.registered, online: d.host.online, shareMode: d.host.shareMode, allowOpen: d.host.allowOpen })),
+    hosts: own.map((d) => ({ id: d.id, name: d.name, registered: d.host.registered, online: d.host.online, shareMode: d.host.shareMode, allowOpen: d.host.allowOpen, recording: d.config.recording || 'off' })),
     history: own.length ? await log.list(gc, { ownerUserId: user.id, limit: 30 }) : [],
   };
 }
@@ -163,11 +182,15 @@ async function route(req, gc, seg, cfg) {
     const o = await overview(gc, user);
     return { devices: o.devices, rights: o.rights, codeEntry: o.codeEntry };
   }
+  if (seg[0] === 'devices' && seg.length === 3 && seg[2] === 'tmux' && m === 'GET') return connect.tmuxSessions(gc, user, seg[1]);
   if (seg[0] === 'devices' && seg.length === 3 && m === 'POST') {
     if (seg[2] === 'connect') {
       const d = await devices.need(gc, seg[1]);
       if (d.kind === 'host') return connectHost(gc, user, d, req);
-      return { session: await connect.open(gc, user, seg[1], cfg, { admin: false }) };
+      const b = req.body && typeof req.body === 'object' ? req.body : {};
+      const via = b.via === 'app' && req.user && req.user.app === true ? 'app' : 'browser';
+      if (b.via === 'app' && via !== 'app') throw fail('invalid', { field: 'via' });
+      return { session: await connect.open(gc, user, seg[1], cfg, { admin: false, via, tmux: b.tmux, record: b.record }) };
     }
     if (seg[2] === 'wake') return { wake: await connect.wake(gc, user, seg[1], { admin: false }) };
   }
@@ -178,6 +201,11 @@ async function route(req, gc, seg, cfg) {
     return support.connectRequest(gc, user, seg[1], { via: app ? 'app' : 'browser', helperDevice: helperDevice(req) });
   }
   if (seg[0] === 'host') return hostRoute(req, gc, seg, m);
+  if (seg[0] === 'recordings' && seg.length === 1 && m === 'GET') {
+    const q = req.query || {};
+    return { recordings: await recordings.list(gc, user, { deviceId: q.device, limit: q.limit }) };
+  }
+  if (seg[0] === 'recordings' && seg.length === 3 && seg[2] === 'play' && m === 'POST') return recordings.play(gc, user, seg[1]);
   throw fail('not_found');
 }
 

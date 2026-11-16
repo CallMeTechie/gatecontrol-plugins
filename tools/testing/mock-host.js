@@ -4313,7 +4313,10 @@ async function createHost(pluginDir, opts = {}) {
     printJob: (id, x) => pr.setJob(id, x || {}),
     /** GateControl ≥ 1.281.0 (permissions.remote): { tickets, live, rows, vault, listeners, wakes, calls } — see tools/testing/mock-remote.js */
     remote: rm.state,
-    remoteOpen: (ref) => rm.open(ref),
+    remoteOpen: (ref, x) => rm.open(ref, x),
+    /** gc.remote version 3: the person opened a playback ticket / a terminal aborted before it was ready */
+    remoteView: (ref) => rm.view(ref),
+    remoteAbortTerm: (ref, reason) => rm.abortTerm(ref, reason),
     remoteClose: (sessionId, reason) => rm.close(sessionId, reason),
     remoteVaultSeed: (entry, source) => rm.vaultSeed(entry, source),
     remoteUnreadable: (handle) => rm.setUnreadable(handle),

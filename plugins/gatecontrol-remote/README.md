@@ -19,6 +19,8 @@ owns the devices, the rights, the history and the pages. User manual: [HANDBUCH.
 | History (apps and browser) | `server/history.js` |
 | Take-over of the built-in data (hook `legacyImport`) | `server/legacy.js` |
 | Old app API `/api/v1/client/rdp*` (hook `clientFacade`) | `server/facade.js` |
+| 1.2: SSH in GateControl's terminal (engine `term`), tmux, recording policy | `server/connect.js`, `server/rights.js` (`policyFor`) |
+| 1.2: recordings (list, watch, delete, retention) | `server/recordings.js` |
 
 ## Rights
 
@@ -28,6 +30,29 @@ not set): the person's own value wins, else a group with the right, else the def
 Administrators have every right and reach every device. A device without an access list is open to everybody with
 the right (the old rule); with people or groups only to them; with only API tokens (taken over) only to those tokens —
 the old apps. Checked on every connect.
+
+1.2: `recording` per person and group (`off` | `optional` | `always`, `NULL` = not set; the own row, else the strictest
+group). For a session the stricter of the device's `config.recording` and the person's holds (`rights.policyFor`).
+
+## SSH in GateControl's terminal and recordings (1.2, `gc.remote` version 3)
+
+* `config.ssh_engine`: `term` (GateControl's terminal: xterm.js in the browser, the apps' native terminal; protocol
+  `gc-term.v1`) or `guac` (Guacamole). New SSH devices `term`; devices of 1.0/1.1 and taken-over ones `guac`
+  (migration `003_terminal.sql`, `legacy.js`; a re-run of the take-over keeps the plugin's choice). With a GateControl
+  before version 3 every SSH device uses Guacamole and nothing is recorded.
+* `config.tmux_enabled` (default on), `config.tmux_name` (`^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$`, default `gc-<slug>`):
+  the ticket carries `options.tmux: { create | attach }`; GateControl runs `tmux new -A -s '<name>'`.
+* Host keys: GateControl pins on the first connection after the person confirmed the fingerprint; the plugin shows the
+  pin (`gc.remote.hostKeys.list`) and resets it (`remove`). A blocked connection (`host_key_mismatch`) reaches the
+  plugin as an `abort` event → protocol `remote_host_key_changed`.
+* `POST admin/devices/<id>/key` → `gc.remote.vault.generate` (ed25519; the private key stays in GateControl's vault,
+  the device keeps the handle, username and password stay) → `{ publicKey }`.
+* Recording: `decideRecording` — `off`: never (`record: true` → `invalid`); `optional`: when the caller sends
+  `record: true`; `always`: always — the browser gets GateControl's hint page, an app must send `record: true`
+  (`recording_required`). `recording_unavailable` when GateControl cannot record for the engine.
+* Recordings: `gc.remote.recordings.list` filtered to the devices the person may watch (administrators all, the owner
+  of a PC its PC's), `stream(id, { user })` → a playback ticket for that person (`GC.openSession(ref)`), `remove`;
+  hourly `recordingDays` (default 30). Events `recording_viewed` → protocol `remote_recording_viewed`.
 
 ## Person API (portal tab, profile section)
 
@@ -42,7 +67,10 @@ status of `server/util.js` `STATUS`.
 | `GET profile` | `{ rights, source, admin, devices: { total, rdp, ssh }, hosts: [own PCs], history: [share log of them] }` |
 | `POST code/redeem` | 1.1: `{ code, mode: control\|view, via: browser\|app, deviceId? }` → `{ request: { id, device, state: 'waiting', mode, via, expiresAt } }`; `code_invalid`, `code_locked`, `rate_limited`, `no_right`, `offline`, `rdp_off` |
 | `GET requests/<id>` · `POST requests/<id>/connect` | the helper waits (`waiting` → `allowed` \| `denied` \| `expired`); connect after `allowed`: browser `{ session }`, app `{ connection }`; `request_waiting`, `request_expired`, `firewall_timeout`, `firewall_failed` |
-| `GET devices` (apps) | like `overview`: `{ devices, rights, codeEntry }`; a PC with `kind: 'host'`, `owner`, `connect: { mode: code\|open }`, `ready`, `state` |
+| `GET devices` (apps) | like `overview`: `{ devices, rights, codeEntry }`; a PC with `kind: 'host'`, `owner`, `connect: { mode: code\|open }`, `ready`, `state`; 1.2: an SSH device with `engine: term\|guac`, `tmux` (the default session name or `null`), every device with `recording: off\|optional\|always` for this person |
+| `GET devices/<id>/tmux` | 1.2: `{ sessions: [{ name, windows, attached, created, activity, attachable }], tmux, hostKey: pinned\|unpinned }` — right `ssh` and access; `tmux_unavailable`, `host_key_mismatch`, `credential_required`, `offline` (GateControl before version 3) |
+| `POST devices/<id>/connect` (1.2) | `{ via?: browser\|app, tmux?: { attach\|create: name }, record?: bool }` → `{ session: { ref, expiresAt, protocol, mode, engine, recording, tmux, device } }`. `via: app` (app requests only, engine `term` only — no browser switch needed): the app sends `ref` to `POST /api/v1/client/remote/term-token` and opens `/api/v1/remote/ssh-tunnel` (`gc-term.v1`). Codes `recording_required`, `recording_unavailable`, `credential_required`, `invalid` (`tmux`, `record`, `via`) |
+| `GET recordings?device&limit` · `POST recordings/<id>/play` | 1.2: the recordings this person may watch (administrators all, owners of a PC its own) `{ recordings: [{ id, deviceId, deviceName, userId, userName, protocol, format, status, startedAt, durationSeconds, bytes }] }` · `{ ref, url, expiresAt, format }` (`not_found` for anybody else) |
 
 ## The PC's app (1.1, `host/*`, app requests only)
 
@@ -76,7 +104,12 @@ status of `server/util.js` `STATUS`.
 | `GET rights/user/<id>` | what this person may do and reach |
 | `GET sessions?status&device&user&before&limit` · `GET sessions/csv` · `POST sessions/<id>/end` | the history; end = `gc.remote.end({ sessionId })` of an open browser session |
 | `GET sessions/shares?device&before&limit` | 1.1: the protocol of the sharing `{ entries: [{ id, at, type, deviceId, deviceName, userId, userName, details }] }` |
-| `GET settings` · `PUT settings` | `{ maxPerUser 0…20, maxPerDevice 0…20, historyDays 30…3650, checkMinutes 1…60 }`, licence, take-over |
+| `GET settings` · `PUT settings` | `{ maxPerUser 0…20, maxPerDevice 0…20, historyDays 30…3650, checkMinutes 1…60, recordingDays 1…3650 }`, licence, take-over, `recordings` (GateControl's `recordings.available()`) |
+| `POST devices/ssh-engine` | 1.2: `{ engine: term\|guac, ids?: [ids] }` (no ids: every SSH device) → `{ switched, devices }`; protocol `remote_ssh_engine_changed` |
+| `POST devices/<id>/connect { engine: 'term' }` | 1.2: try GateControl's terminal on a Guacamole device; a successful start sets `config.term_tested_at` |
+| `POST devices/<id>/key` · `DELETE devices/<id>/hostkey` | 1.2: `{ username? }` → `{ publicKey, device }` · `{ removed, device }` (protocol `remote_host_key_reset`); `GET devices/<id>` has `ssh: { engine, tmux, hostKey, publicKey, termTestedAt, available }` |
+| `GET recordings?device&limit` · `POST recordings/<id>/play` · `DELETE recordings/<id>` | 1.2: `{ recordings, available }` · `{ ref, url, expiresAt, format }` · `{ removed }` (protocol `remote_recording_deleted`) |
+| `PUT rights/user/<id>` · `PUT rights/group/<id>` with `recording` | 1.2: `off` \| `optional` \| `always` \| `null` |
 
 ## Take-over (`legacyImport`, dataset `remote`)
 
@@ -115,4 +148,7 @@ beantwortet das Plugin über `clientFacade` (nur ECDH), sobald GateControl `payl
 der Kern. Eigene Lizenz `gatecontrol-remote` – nicht im Plan, nicht in einer Server-Lifetime; ohne Lizenz bleiben die
 Daten, neue Sitzungen gibt es nicht. Seit 1.1 (Stufe 2) melden sich Windows-PCs aus der GateControl-App an
 („Remote Desktop erlauben“): nur mit Code und Bestätigung am PC oder „ohne Code für Berechtigte“, Firewall je Sitzung.
+Seit 1.2 (Stufe 3, `gc.remote` Version 3) läuft SSH im eigenen Terminal von GateControl (Browser und Apps nativ) mit
+tmux und geprüftem Host-Schlüssel; alte Guacamole-SSH-Geräte stellt der Admin wählbar um. Aufzeichnung je Gerät und je
+Person/Gruppe (aus, wählbar, immer – „immer“ nur mit Hinweis), Abspielen und Löschen unter Sitzungen.
 Handbuch: [HANDBUCH.md](HANDBUCH.md).

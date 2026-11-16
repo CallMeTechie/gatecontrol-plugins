@@ -12,6 +12,11 @@
 // (rdp, ssh, support off — share on). Administrators always have every right
 // and reach every device.
 //
+// 1.2: the recording of a person or group (column recording: off | optional | always,
+// NULL = not set here): the own row decides, else the strictest of the groups. Together
+// with the device's setting the stricter one holds (policyFor) — "always" only with the
+// hint before the start (GateControl's session page, the apps).
+//
 // Which devices: a device without an access list is open to everybody with
 // the right (the rule of the former Remote Desktops); with people or groups
 // listed only to them; with only API tokens listed (old apps) only to those
@@ -21,6 +26,14 @@ const store = require('./store');
 const { fail, posInt } = require('./util');
 
 const KEYS = ['rdp', 'ssh', 'support', 'share'];
+const REC = ['off', 'optional', 'always'];
+const recRank = (v) => REC.indexOf(v);
+/** The stricter of two recording settings (null = none). */
+function stricter(a, b) {
+  if (recRank(a) < 0) return recRank(b) < 0 ? null : b;
+  if (recRank(b) < 0) return a;
+  return recRank(a) >= recRank(b) ? a : b;
+}
 const DEFAULTS = Object.freeze({ rdp: false, ssh: false, support: false, share: true });
 const ALL = Object.freeze({ rdp: true, ssh: true, support: true, share: true });
 const CACHE_MS = 30000;
@@ -45,8 +58,8 @@ const rowValue = (v) => (v == null ? null : v === 1 || v === true);
 
 /** Effective rights → { rdp, ssh, support, share, source: { key: 'admin'|'person'|'group'|'default' } } */
 async function of(gc, user) {
-  if (!user || !Number.isSafeInteger(user.id)) return { rdp: false, ssh: false, support: false, share: false, source: {} };
-  if (user.role === 'admin') return { ...ALL, source: Object.fromEntries(KEYS.map((k) => [k, 'admin'])) };
+  if (!user || !Number.isSafeInteger(user.id)) return { rdp: false, ssh: false, support: false, share: false, recording: null, source: {} };
+  if (user.role === 'admin') return { ...ALL, recording: null, source: { ...Object.fromEntries(KEYS.map((k) => [k, 'admin'])), recording: 'admin' } };
   const own = await store.one(gc, "SELECT * FROM rights WHERE kind = 'user' AND principal_id = ?", [user.id]);
   const groups = await groupsOf(gc, user.id);
   const rows = groups.length
@@ -60,7 +73,20 @@ async function of(gc, user) {
     out[k] = DEFAULTS[k];
     out.source[k] = 'default';
   }
+  const ownRec = own && recRank(own.recording) >= 0 ? own.recording : null;
+  if (ownRec) { out.recording = ownRec; out.source.recording = 'person'; } else {
+    let g = null;
+    for (const r of rows) g = stricter(g, recRank(r.recording) >= 0 ? r.recording : null);
+    out.recording = g;
+    out.source.recording = g ? 'group' : 'default';
+  }
   return out;
+}
+
+/** The recording of a session of this person on this device: the stricter of the device's and the person's → off | optional | always */
+async function policyFor(gc, user, device, o = {}) {
+  const r = o.rights || await of(gc, user);
+  return stricter(device && device.config ? device.config.recording : null, r.recording) || 'off';
 }
 
 /** The right a protocol needs. */
@@ -105,13 +131,13 @@ async function matrix(gc) {
   const rows = await store.all(gc, 'SELECT * FROM rights');
   const pick = (kind, id) => {
     const r = rows.find((x) => x.kind === kind && x.principal_id === id);
-    return Object.fromEntries(KEYS.map((k) => [k, r ? rowValue(r[k]) : null]));
+    return { ...Object.fromEntries(KEYS.map((k) => [k, r ? rowValue(r[k]) : null])), recording: r && recRank(r.recording) >= 0 ? r.recording : null };
   };
   const people = [];
   for (const u of users) {
     const eff = await of(gc, u);
     people.push({ id: u.id, name: u.name, role: u.role, color: u.colorHex || null, initials: u.initials || null, avatarUrl: u.avatarUrl || null,
-      set: pick('user', u.id), effective: Object.fromEntries(KEYS.map((k) => [k, eff[k]])), source: eff.source, groups: await groupsOf(gc, u.id) });
+      set: pick('user', u.id), effective: { ...Object.fromEntries(KEYS.map((k) => [k, eff[k]])), recording: eff.recording }, source: eff.source, groups: await groupsOf(gc, u.id) });
   }
   return {
     people,
@@ -136,19 +162,25 @@ async function set(gc, kind, id, b, now = Date.now()) {
   }
   const cur = await store.one(gc, 'SELECT * FROM rights WHERE kind = ? AND principal_id = ?', [kind, pid]);
   const next = Object.fromEntries(KEYS.map((k) => [k, cur ? cur[k] : null]));
+  next.recording = cur && recRank(cur.recording) >= 0 ? cur.recording : null;
   for (const [k, v] of Object.entries(b)) {
+    if (k === 'recording') {
+      if (v !== null && !REC.includes(v)) throw fail('invalid', { field: k });
+      next.recording = v;
+      continue;
+    }
     if (!KEYS.includes(k)) throw fail('invalid', { field: k });
     if (v !== null && typeof v !== 'boolean') throw fail('invalid', { field: k });
     next[k] = v == null ? null : (v ? 1 : 0);
   }
-  if (KEYS.every((k) => next[k] == null)) await store.run(gc, 'DELETE FROM rights WHERE kind = ? AND principal_id = ?', [kind, pid]);
+  if (KEYS.every((k) => next[k] == null) && next.recording == null) await store.run(gc, 'DELETE FROM rights WHERE kind = ? AND principal_id = ?', [kind, pid]);
   else {
-    await store.run(gc, `INSERT INTO rights (kind, principal_id, rdp, ssh, support, share, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(kind, principal_id) DO UPDATE SET rdp = excluded.rdp, ssh = excluded.ssh, support = excluded.support, share = excluded.share, updated_at = excluded.updated_at`,
-    [kind, pid, next.rdp, next.ssh, next.support, next.share, now]);
+    await store.run(gc, `INSERT INTO rights (kind, principal_id, rdp, ssh, support, share, recording, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(kind, principal_id) DO UPDATE SET rdp = excluded.rdp, ssh = excluded.ssh, support = excluded.support, share = excluded.share, recording = excluded.recording, updated_at = excluded.updated_at`,
+    [kind, pid, next.rdp, next.ssh, next.support, next.share, next.recording, now]);
   }
   reset();
-  return Object.fromEntries(KEYS.map((k) => [k, rowValue(next[k])]));
+  return { ...Object.fromEntries(KEYS.map((k) => [k, rowValue(next[k])])), recording: next.recording };
 }
 
 /** The take-over: grant a right to a person unless an administrator already decided it (never takes one away). */
@@ -158,4 +190,4 @@ async function grant(gc, userId, key, now = Date.now()) {
     ON CONFLICT(kind, principal_id) DO UPDATE SET ${key} = COALESCE(rights.${key}, 1), updated_at = excluded.updated_at`, [userId, now]);
 }
 
-module.exports = { KEYS, DEFAULTS, of, rightFor, canReach, mayUse, matrix, set, grant, groupsOf, reset };
+module.exports = { KEYS, REC, DEFAULTS, of, rightFor, canReach, mayUse, matrix, set, grant, groupsOf, reset, policyFor, stricter };

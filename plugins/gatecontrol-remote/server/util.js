@@ -37,6 +37,15 @@ const STATUS = {
   request_expired: 410,
   firewall_timeout: 504,
   firewall_failed: 502,
+  // 1.2: SSH in GateControl's terminal, tmux, host keys, recordings
+  host_key_mismatch: 409,
+  host_key_unpinned: 409,
+  tmux_unavailable: 409,
+  credential_required: 409,
+  auth_failed: 502,
+  recording_required: 409,
+  recording_unavailable: 409,
+  recording_busy: 409,
 };
 
 /** An API error: throw fail('limit', { max: 2 }). */
@@ -96,6 +105,16 @@ const HOST = {
   ERR_REMOTE_PORT_IN_USE: 'port_in_use',
   ERR_REMOTE_LISTENER_FAILED: 'listener_failed',
   ERR_REMOTE_LISTENER_OFF: 'offline',
+  // gc.remote version 3
+  ERR_REMOTE_HOST_KEY_MISMATCH: 'host_key_mismatch',
+  ERR_REMOTE_HOST_KEY_UNPINNED: 'host_key_unpinned',
+  ERR_REMOTE_TMUX_UNAVAILABLE: 'tmux_unavailable',
+  ERR_REMOTE_CREDENTIAL_REQUIRED: 'credential_required',
+  ERR_REMOTE_AUTH_FAILED: 'auth_failed',
+  ERR_REMOTE_KEY_UNREADABLE: 'credential_unreadable',
+  ERR_REMOTE_TIMEOUT: 'unreachable',
+  ERR_REMOTE_RECORDING_UNAVAILABLE: 'recording_unavailable',
+  ERR_REMOTE_BUSY: 'recording_busy',
 };
 
 function fromHost(e, dflt = 'internal') {

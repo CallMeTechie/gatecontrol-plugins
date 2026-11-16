@@ -3,8 +3,9 @@
 // The history (admin page "Sitzungen"): sessions of the apps (they report start,
 // heartbeat and end through the old app API, facade.js) and browser sessions
 // (GateControl's event gc.remote.on('session')). Taken-over rows keep the id
-// of rdp_sessions; new ones start at 1000000000. Recording comes in a later
-// version (gc.remote.recordings.available() says when).
+// of rdp_sessions; new ones start at 1000000000. Since 1.2 a row knows the engine of
+// GateControl (guac | term), whether an app's native terminal ran it (via app) and its
+// recording; the events of recordings and host keys go into the protocol (log.js).
 
 const store = require('./store');
 const { fail, iso, posInt } = require('./util');
@@ -23,18 +24,49 @@ function devIdOf(targetId) {
   return m ? Number(m[1]) : null;
 }
 
-/** GateControl's event of a browser session: start → a row, end / abort → closed. */
+const REC_RE = /^rr_[0-9a-f]{32}$/;
+
+/** 1.2: the protocol entries of an event (recording viewed, host key changed) and the terminal test of a Guacamole device. */
+async function sideEffects(gc, ev, deviceId, now) {
+  const devices = require('./devices');
+  const log = require('./log');
+  if (ev.phase === 'recording_viewed') {
+    const d = deviceId ? await devices.get(gc, deviceId) : null;
+    await log.write(gc, 'remote_recording_viewed', { device: d, userId: ev.userId || null, details: { recording: REC_RE.test(String(ev.recordingId)) ? ev.recordingId : null } }, now);
+    return;
+  }
+  if ((ev.phase === 'abort' || ev.phase === 'end') && ev.reason === 'host_key_mismatch') {
+    const d = deviceId ? await devices.get(gc, deviceId) : null;
+    await log.write(gc, 'remote_host_key_changed', { device: d, userId: ev.userId || null }, now);
+    return;
+  }
+  // an administrator tried the terminal on a device that still uses Guacamole: it worked
+  if (ev.phase === 'start' && ev.engine === 'term' && deviceId) {
+    const d = await devices.get(gc, deviceId);
+    if (d && d.protocol === 'ssh' && d.config.ssh_engine === 'guac' && !d.config.term_tested_at) {
+      d.config.term_tested_at = new Date(now).toISOString();
+      await devices.write(gc, d, now);
+    }
+  }
+}
+
+/** GateControl's event of a browser session (1.2: also an app's terminal): start → a row, end / abort → closed. */
 async function onEvent(gc, ev, now = Date.now()) {
-  if (!ev || typeof ev !== 'object' || !Number.isSafeInteger(ev.sessionId)) return;
+  if (!ev || typeof ev !== 'object') return;
   const deviceId = devIdOf(ev.targetId);
+  try { await sideEffects(gc, ev, deviceId, now); } catch (e) { gc.log.debug('session event side effect failed', (e && e.code) || 'error'); }
+  if (!Number.isSafeInteger(ev.sessionId)) return;
   if (ev.phase === 'start') {
     const d = deviceId ? await store.one(gc, 'SELECT name FROM devices WHERE id = ?', [deviceId]) : null;
     const started = Date.parse(ev.startedAt) || now;
+    const via = ev.via === 'app' ? 'app' : 'browser';
+    const engine = ev.engine === 'term' ? 'term' : (ev.engine === 'guac' ? 'guac' : null);
+    const rec = REC_RE.test(String(ev.recordingId || '')) ? ev.recordingId : null;
     await store.tx(gc, async () => {
       if (await store.one(gc, 'SELECT id FROM sessions WHERE host_session_id = ?', [ev.sessionId])) return;
-      await store.run(gc, `INSERT INTO sessions (id, device_id, device_name, user_id, status, protocol, mode, via, started_at, host_session_id)
-        VALUES (?, ?, ?, ?, 'active', ?, ?, 'browser', ?, ?)`,
-      [await nextId(gc), deviceId || 0, d ? d.name : null, ev.userId || null, ev.protocol || 'rdp', ev.mode || 'control', started, ev.sessionId]);
+      await store.run(gc, `INSERT INTO sessions (id, device_id, device_name, user_id, status, protocol, mode, via, started_at, host_session_id, engine, recording_id)
+        VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?)`,
+      [await nextId(gc), deviceId || 0, d ? d.name : null, ev.userId || null, ev.protocol || 'rdp', ev.mode || 'control', via, started, ev.sessionId, engine, rec]);
     });
     return;
   }
@@ -107,7 +139,7 @@ async function reconcile(gc, now = Date.now()) {
   let live;
   try { live = (await gc.remote.sessions({ active: true, limit: 500 })) || []; } catch { return 0; }
   const ids = new Set(live.map((s) => s.id));
-  const open = await store.all(gc, "SELECT id, host_session_id, started_at FROM sessions WHERE status = 'active' AND via = 'browser' AND host_session_id IS NOT NULL");
+  const open = await store.all(gc, "SELECT id, host_session_id, started_at FROM sessions WHERE status = 'active' AND via IN ('browser', 'app') AND host_session_id IS NOT NULL");
   let n = 0;
   for (const r of open) {
     if (ids.has(r.host_session_id)) continue;
@@ -124,7 +156,7 @@ function view(r, names) {
     id: r.id, deviceId: r.device_id, deviceName: r.device_name, userId: r.user_id, userName: r.user_id ? (names.get(r.user_id) || null) : null,
     tokenName: r.token_name, status: r.status, protocol: r.protocol, mode: r.mode, via: r.via,
     startedAt: iso(r.started_at), endedAt: iso(r.ended_at), durationSeconds: r.duration_seconds, endReason: r.end_reason, clientIp: r.client_ip,
-    hostSessionId: r.host_session_id, imported: r.imported === 1,
+    hostSessionId: r.host_session_id, imported: r.imported === 1, engine: r.engine || null, recordingId: r.recording_id || null,
   };
 }
 

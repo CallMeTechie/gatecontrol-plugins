@@ -4,9 +4,17 @@
 // may connect where, GateControl builds the session (gc.remote.session → a
 // single-use ticket for the session page /remote/session/<ref>, opened by the
 // frame with GC.openSession(ref)). Also wake-on-LAN and the device checks.
+//
+// 1.2 (gc.remote version 3): an SSH device with ssh_engine "term" opens GateControl's
+// own terminal (engine term) — in the browser on the session page, in the apps natively
+// (the app turns the ref into a WebSocket token at GateControl). tmux keeps the session
+// on the device; the recording follows the device and the person (rights.policyFor):
+// "optional" only when the person asks for it, "always" only with the hint before the
+// start (the session page shows it; an app must confirm it: record: true).
 
 const devices = require('./devices');
 const rights = require('./rights');
+const { TMUX_RE } = require('./devices');
 const maintenance = require('./maintenance');
 const { fail, fromHost } = require('./util');
 
@@ -36,11 +44,11 @@ function optionsOf(d) {
   return o;
 }
 
-/** Checks before any session of a device, in the order of the former browser sessions. */
-async function admit(gc, user, d, access, { admin = false } = {}) {
+/** Checks before any session of a device, in the order of the former browser sessions (an app's terminal needs no browser switch). */
+async function admit(gc, user, d, access, { admin = false, via = 'browser' } = {}) {
   if (!d.enabled) throw fail('disabled');
   if (!admin && !(await rights.mayUse(gc, user, d, access))) throw fail('no_right');
-  if (!d.config.browser_enabled) throw fail('no_browser');
+  if (!d.config.browser_enabled && via !== 'app') throw fail('no_browser');
   if (d.credentialUnreadable) throw fail('credential_unreadable');
   if (maintenance.inWindow(d.config)) throw fail('maintenance', { schedule: d.config.maintenance_schedule });
 }
@@ -53,20 +61,93 @@ async function limits(gc, user, d, cfg) {
   if (cfg.maxPerDevice && live.filter((s) => s.targetId === 'dev-' + d.id).length >= cfg.maxPerDevice) throw fail('limit', { max: cfg.maxPerDevice, per: 'device' });
 }
 
-/** A ticket for the person → { ref, expiresAt, protocol, mode } */
-async function open(gc, user, deviceId, cfg, { admin = false, mode = 'control' } = {}) {
+/** recordings.available() of GateControl (version 3), else none. */
+async function recordingsAvailable(gc) {
+  if (!gc.remote || !(gc.remote.version >= 3)) return { available: false, reason: 'not_yet', engines: { term: false, guac: false } };
+  try { return (await gc.remote.recordings.available()) || { available: false, engines: {} }; } catch { return { available: false, reason: 'error', engines: {} }; }
+}
+
+/**
+ * Whether this session is recorded: the policy of device and person, what GateControl can record, what the caller asked.
+ * → true | false (throws recording_required / recording_unavailable / invalid)
+ */
+async function decideRecording(gc, user, d, engine, { record, via, policy }) {
+  const p = policy || await rights.policyFor(gc, user, d);
+  if (record != null && typeof record !== 'boolean') throw fail('invalid', { field: 'record' });
+  if (p === 'off') {
+    if (record === true) throw fail('invalid', { field: 'record' });
+    return false;
+  }
+  const want = p === 'always' ? true : record === true;
+  // "immer": an app must have shown the hint and say so (the session page of GateControl shows it itself)
+  if (p === 'always' && via === 'app' && record !== true) throw fail('recording_required');
+  if (!want) return false;
+  const a = await recordingsAvailable(gc);
+  if (!a.available || !(a.engines && a.engines[engine])) throw fail('recording_unavailable', { reason: a.reason || (engine === 'guac' ? 'guacd_no_drive' : null) });
+  return true;
+}
+
+/** tmux of a terminal session: { attach | create } of the caller (checked), else the device's own session; null without tmux. */
+function tmuxFor(d, want) {
+  const own = devices.tmuxOf(d);
+  if (want == null) return own ? { create: own } : null;
+  if (!own) throw fail('invalid', { field: 'tmux' });
+  if (typeof want !== 'object' || Array.isArray(want)) throw fail('invalid', { field: 'tmux' });
+  const k = Object.keys(want);
+  if (k.length !== 1 || (k[0] !== 'attach' && k[0] !== 'create') || typeof want[k[0]] !== 'string' || !TMUX_RE.test(want[k[0]])) throw fail('invalid', { field: 'tmux' });
+  return { [k[0]]: want[k[0]] };
+}
+
+/**
+ * A ticket for the person → { ref, expiresAt, protocol, mode, engine, recording, tmux, device }
+ * o.via: browser | app; o.tmux / o.record from the caller; o.engine 'term' lets an administrator try the terminal on a
+ * device that still uses Guacamole (the test before switching it).
+ */
+async function open(gc, user, deviceId, cfg, { admin = false, mode = 'control', via = 'browser', tmux, record, engine: forced } = {}) {
   if (!gc.remote) throw fail('offline');
   const d = await devices.need(gc, deviceId);
   const access = (await devices.accessLists(gc)).get(d.id) || devices.emptyAccess();
-  await admit(gc, user, d, access, { admin });
+  let engine = devices.engineOf(d, gc) || 'guac';
+  if (forced === 'term' && admin && d.protocol === 'ssh' && gc.remote.version >= 3) engine = 'term';
+  if (via === 'app' && engine !== 'term') throw fail('invalid', { field: 'via' });
+  await admit(gc, user, d, access, { admin, via });
   await limits(gc, user, d, cfg);
+  const term = engine === 'term';
+  if (term && !d.credential) throw fail('credential_required');
+  const t2 = term ? tmuxFor(engine === devices.engineOf(d, gc) ? d : { ...d, config: { ...d.config, ssh_engine: 'term' } }, tmux) : null;
+  if (!term && tmux != null) throw fail('invalid', { field: 'tmux' });
+  const rec = gc.remote.version >= 3 ? await decideRecording(gc, user, d, term ? 'term' : 'guac', { record, via }) : false;
+  const options = optionsOf(d);
+  if (t2) options.tmux = t2;
   try {
     const t = await gc.remote.session({
       user: user.id, target: devices.targetOf(d), protocol: d.protocol, mode: mode === 'view' ? 'view' : 'control',
-      ...(d.credential ? { credential: d.credential } : {}), options: optionsOf(d), ttlS: 120,
+      ...(d.credential ? { credential: d.credential } : {}), options, ttlS: 120,
+      ...(gc.remote.version >= 3 ? { engine, record: rec } : {}),
     });
-    return { ref: t.ref, expiresAt: t.expiresAt, protocol: t.protocol, mode: t.mode, device: { id: d.id, name: d.name } };
+    return { ref: t.ref, expiresAt: t.expiresAt, protocol: t.protocol, mode: t.mode, engine, recording: rec, tmux: t2, device: { id: d.id, name: d.name } };
   } catch (e) { throw fromHost(e); }
+}
+
+/** GET devices/<id>/tmux — the tmux sessions of an SSH device in the terminal → { sessions, tmux, hostKey: 'pinned' | 'unpinned' } */
+async function tmuxSessions(gc, user, deviceId, { admin = false } = {}) {
+  if (!gc.remote || !(gc.remote.version >= 3)) throw fail('offline');
+  const d = await devices.need(gc, deviceId);
+  const access = (await devices.accessLists(gc)).get(d.id) || devices.emptyAccess();
+  if (!d.enabled) throw fail('disabled');
+  if (!admin && !(await rights.mayUse(gc, user, d, access))) throw fail('no_right');
+  if (devices.engineOf(d, gc) !== 'term') throw fail('invalid', { field: 'ssh_engine' });
+  const own = devices.tmuxOf(d);
+  if (!own) return { sessions: [], tmux: null, hostKey: null };
+  if (!d.credential) throw fail('credential_required');
+  try {
+    const list = (await gc.remote.tmux.list(devices.targetOf(d), { credential: d.credential })) || [];
+    return { sessions: list.slice(0, 200), tmux: own, hostKey: 'pinned' };
+  } catch (e) {
+    // the first connection pins the host key in the terminal; until then there is nothing to list
+    if (e && e.code === 'ERR_REMOTE_HOST_KEY_UNPINNED') return { sessions: [], tmux: own, hostKey: 'unpinned' };
+    throw fromHost(e);
+  }
 }
 
 /** Wake-on-LAN for a person who may use the device (administrators always). */
@@ -100,4 +181,4 @@ async function probeAll(gc, now = Date.now()) {
   return changed;
 }
 
-module.exports = { optionsOf, admit, open, wake, probe, probeAll };
+module.exports = { optionsOf, admit, open, wake, probe, probeAll, tmuxSessions, decideRecording, recordingsAvailable, tmuxFor };

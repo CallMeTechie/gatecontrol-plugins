@@ -13,7 +13,37 @@ const legacy = require('./legacy');
 const hosts = require('./hosts');
 const support = require('./support');
 const log = require('./log');
+const recordings = require('./recordings');
 const { fail, fromHost, posInt } = require('./util');
+
+const v3 = (gc) => !!(gc.remote && gc.remote.version >= 3);
+
+/** 1.2: the pinned SSH host key of a device (GateControl's, gc.remote.hostKeys) → { alg, sha256, source, pinnedAt } | null */
+async function hostKeyOf(gc, d) {
+  if (!v3(gc) || d.protocol !== 'ssh') return null;
+  try {
+    const p = ((await gc.remote.hostKeys.list()) || []).find((x) => x.targetId === 'dev-' + d.id);
+    return p ? { alg: p.alg, sha256: p.sha256, source: p.source, pinnedAt: p.pinnedAt } : null;
+  } catch { return null; }
+}
+
+/** Switch SSH devices between GateControl's terminal and Guacamole: { engine, ids? } (no ids: every SSH device). */
+async function switchEngine(gc, user, b) {
+  if (!v3(gc)) throw fail('offline');
+  const engine = b.engine;
+  if (engine !== 'term' && engine !== 'guac') throw fail('invalid', { field: 'engine' });
+  const ids = Array.isArray(b.ids) ? b.ids.map(posInt).filter(Boolean) : null;
+  if (b.ids != null && (!ids || !ids.length)) throw fail('invalid', { field: 'ids' });
+  let n = 0;
+  for (const d of await devices.all(gc)) {
+    if (d.protocol !== 'ssh' || d.config.ssh_engine === engine || (ids && !ids.includes(d.id))) continue;
+    d.config.ssh_engine = engine;
+    await devices.write(gc, d);
+    await log.write(gc, 'remote_ssh_engine_changed', { device: d, userId: user.id, details: { engine } });
+    n++;
+  }
+  return { switched: n };
+}
 
 /** Gateways and failover pools for the gateway target (gc.remote.gateways, GateControl after 1.281.0). */
 async function gateways(gc) {
@@ -42,7 +72,14 @@ async function deviceList(gc) {
 async function one(gc, id) {
   const d = await devices.need(gc, id);
   const lists = await devices.accessLists(gc);
-  return devices.adminView(d, lists.get(d.id), await devices.vaultInfo(gc));
+  const v = devices.adminView(d, lists.get(d.id), await devices.vaultInfo(gc));
+  // 1.2: the SSH terminal — the engine in use, tmux, the pinned host key, the public half of a key made in GateControl
+  if (d.protocol === 'ssh') {
+    const vault = d.credential ? (await devices.vaultInfo(gc)).get(d.credential) : null;
+    v.ssh = { engine: devices.engineOf(d, gc), tmux: devices.tmuxOf(d), hostKey: await hostKeyOf(gc, d), publicKey: vault && vault.publicKey ? vault.publicKey : null,
+      termTestedAt: d.config.term_tested_at || null, available: v3(gc) };
+  }
+  return v;
 }
 
 async function licence(gc) {
@@ -61,6 +98,8 @@ async function route(req, gc, seg, cfg) {
   if (what === 'devices') {
     if (m === 'GET' && seg.length === 2) return { devices: await deviceList(gc), ...(await gateways(gc)) };
     if (m === 'POST' && seg.length === 2) return { device: await one(gc, await devices.save(gc, null, b)) };
+    // 1.2: switch SSH devices to the terminal (or back) — one, some or all
+    if (m === 'POST' && seg.length === 3 && seg[2] === 'ssh-engine') return { ...(await switchEngine(gc, user, b)), devices: await deviceList(gc) };
     if (m === 'POST' && seg.length === 3 && seg[2] === 'check') {
       // a PC is not checked: 3389 is closed between sessions, its app reports its state
       for (const d of (await devices.all(gc)).filter((x) => x.enabled && x.kind !== 'host')) await connect.probe(gc, d);
@@ -89,13 +128,34 @@ async function route(req, gc, seg, cfg) {
         const d = await devices.need(gc, id);
         // a PC: the administrator, too, needs the code — or the owner's "ohne Code"
         if (d.kind === 'host') return require('./api').connectHost(gc, user, d, req, { admin: true });
-        return { session: await connect.open(gc, user, id, cfg, { admin: true, mode: b.mode === 'view' ? 'view' : 'control' }) };
+        // engine 'term': try GateControl's terminal on an SSH device that still uses Guacamole (before switching it)
+        return { session: await connect.open(gc, user, id, cfg, { admin: true, mode: b.mode === 'view' ? 'view' : 'control', tmux: b.tmux, record: b.record, engine: b.engine === 'term' ? 'term' : undefined }) };
+      }
+      // 1.2: a new SSH key made in GateControl (the private one stays in the vault) → the public key for authorized_keys
+      if (seg[3] === 'key') {
+        if (!v3(gc)) throw fail('offline');
+        const d = await devices.need(gc, id);
+        if (d.protocol !== 'ssh' || d.kind === 'host') throw fail('invalid', { field: 'protocol' });
+        const username = typeof b.username === 'string' && b.username.trim() ? b.username.trim().slice(0, 256) : undefined;
+        let k;
+        try { k = await gc.remote.vault.generate({ kind: 'ed25519', label: d.name.slice(0, 60), ...(username ? { username } : {}), ...(d.credential ? { handle: d.credential } : {}) }); } catch (e) { throw fromHost(e); }
+        if (d.credential !== k.handle) { d.credential = k.handle; d.credentialUnreadable = false; await devices.write(gc, d); }
+        return { publicKey: k.publicKey, device: await one(gc, id) };
       }
       if (seg[3] === 'rotated') { await devices.rotated(gc, id); return { device: await one(gc, id) }; }
       if (seg[3] === 'toggle') {
         const d = await devices.need(gc, id);
         return { device: await one(gc, await devices.save(gc, id, { enabled: !d.enabled })) };
       }
+    }
+    // 1.2: the pinned host key — reset after a planned change (the next connection asks again)
+    if (seg.length === 4 && seg[3] === 'hostkey' && m === 'DELETE') {
+      if (!v3(gc)) throw fail('offline');
+      const d = await devices.need(gc, id);
+      let r;
+      try { r = await gc.remote.hostKeys.remove('dev-' + d.id); } catch (e) { throw fromHost(e); }
+      if (r && r.removed) await log.write(gc, 'remote_host_key_reset', { device: d, userId: user.id });
+      return { removed: !!(r && r.removed), device: await one(gc, id) };
     }
     if (seg.length === 4 && seg[3] === 'access' && m === 'PUT') {
       await devices.need(gc, id);
@@ -123,7 +183,7 @@ async function route(req, gc, seg, cfg) {
   if (what === 'sessions') {
     if (m === 'GET' && seg.length === 2) {
       const q = req.query || {};
-      return { sessions: await history.list(gc, { deviceId: q.device, userId: q.user, status: q.status, before: q.before, limit: q.limit }), recordings: await recordings(gc) };
+      return { sessions: await history.list(gc, { deviceId: q.device, userId: q.user, status: q.status, before: q.before, limit: q.limit }), recordings: await recordingStatus(gc) };
     }
     if (m === 'GET' && seg.length === 3 && seg[2] === 'csv') return { csv: await history.csv(gc) };
     // the protocol of the sharing (filter "Freigaben")
@@ -136,16 +196,22 @@ async function route(req, gc, seg, cfg) {
       try { return await gc.remote.end({ sessionId: s.hostSessionId }); } catch (e) { throw fromHost(e); }
     }
   }
+  // 1.2: recordings — list, watch, delete
+  if (what === 'recordings') {
+    if (m === 'GET' && seg.length === 2) return { recordings: await recordings.list(gc, user, { deviceId: (req.query || {}).device, limit: (req.query || {}).limit }, { admin: true }), available: await recordingStatus(gc) };
+    if (m === 'POST' && seg.length === 4 && seg[3] === 'play') return recordings.play(gc, user, seg[2], { admin: true });
+    if (m === 'DELETE' && seg.length === 3) return recordings.remove(gc, user, seg[2]);
+  }
   if (what === 'settings') {
     if (m === 'GET' && seg.length === 2) {
-      return { settings: cfg, ranges: config.RANGES, license: await licence(gc), import: await legacy.lastImport(gc), remote: gc.remote ? gc.remote.version : null, recordings: await recordings(gc) };
+      return { settings: cfg, ranges: config.RANGES, license: await licence(gc), import: await legacy.lastImport(gc), remote: gc.remote ? gc.remote.version : null, recordings: await recordingStatus(gc) };
     }
     if (m === 'PUT' && seg.length === 2) return { settings: await config.save(gc, b) };
   }
   throw fail('not_found');
 }
 
-async function recordings(gc) {
+async function recordingStatus(gc) {
   try { return gc.remote ? await gc.remote.recordings.available() : { available: false, reason: 'not_yet' }; } catch { return { available: false, reason: 'not_yet' }; }
 }
 

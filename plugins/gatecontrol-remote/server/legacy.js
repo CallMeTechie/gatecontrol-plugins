@@ -42,6 +42,8 @@ function deviceOf(r, now) {
   if (typeof r.host === 'string' && r.host.trim()) config.host = r.host.trim().slice(0, 253);
   for (const k of devices.KEPT) if (r[k] !== undefined) config[k] = devices.BOOLS.includes(k) ? bool(r[k]) : r[k];
   if (config.access_mode === 'gateway' && !config.gateway_listen_port) config.gateway_listen_port = config.port;
+  // 1.2: a taken-over SSH target stays on Guacamole until an administrator switches it to the terminal
+  config.ssh_engine = 'guac';
   const created = parseTime(r.created_at) || now;
   return {
     id: r.id, name: clip(String(r.name || ''), 100) || ('#' + r.id), protocol, enabled: r.enabled === undefined ? true : bool(r.enabled), source: 'import', config,
@@ -114,6 +116,12 @@ async function importSnapshot(snapshot, gc, now = Date.now()) {
   }
   const before = (await devices.all(gc)).filter((d) => d.source === 'import');
   const keep = new Set(list.map((d) => d.id));
+  // a re-run keeps what only the plugin knows (1.2: terminal, tmux, recording)
+  for (const d of list) {
+    const prev = before.find((x) => x.id === d.id);
+    if (!prev) continue;
+    for (const k of ['ssh_engine', 'tmux_enabled', 'tmux_name', 'recording', 'term_tested_at']) if (prev.config[k] !== undefined) d.config[k] = prev.config[k];
+  }
   // a target of a gateway: the listener that reuses the old route's L4 port
   let listenerErrors = 0;
   if (gc.remote) {

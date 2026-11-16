@@ -38,6 +38,22 @@
 //   answer of session, gc.remote.peerAddress(userId, deviceId) → the device's `vpnIp` of opts.devices (null without) —
 //   only for a device of that person and only while a request of that person is in flight (ERR_REMOTE_NOT_ALLOWED), and
 //   the facade ops wake / statusAdmin / statusAll pass through host.clientFacade like the others.
+// GateControl with gc.remote version 3 (stage 3, SSH terminal and recordings; opt-in opts.gatecontrol ≥ '1.285.0' or
+// opts.remote.v3):
+//   session({ …, engine: guac|term, record, options.tmux: { attach | create } }) → { …, engine, record } — engine term for
+//     ssh only and with a credential that has a username and a password or key (ERR_REMOTE_CREDENTIAL_REQUIRED), tmux names
+//     ^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$ (ERR_INVALID), record only while recordings.available() allows the engine
+//     (ERR_REMOTE_RECORDING_UNAVAILABLE)
+//   vault.generate({ kind: 'ed25519', label, username, handle }) → metadata + publicKey ('ssh-ed25519 AAAA… <label>')
+//   tmux.list(target, { credential }) → opts.remote.tmux[target.id]: an array, or 'unavailable' | 'unpinned' | 'mismatch'
+//     (ERR_REMOTE_TMUX_UNAVAILABLE / _HOST_KEY_UNPINNED / _HOST_KEY_MISMATCH); default []
+//   hostKeys.pin / list / remove (in memory: host.remote.hostKeys)
+//   recordings.available() → opts.remote.recordings (default { available: true, reason: null, engines: { term: true, guac: true },
+//     usedBytes: 0, maxBytes: 10 GiB, days: 30 }); a ticket with record: true leaves a recording when its tunnel closes;
+//     list({ targetId, userId, limit }), stream(id, { user }) → { ref, url, expiresAt, format } (ERR_INVALID without user),
+//     remove(id) → { removed }
+//   host.remoteOpen(ref, { via, hostKey }) → start with engine, via, record, recordingId (and hostKey for a terminal);
+//   host.remoteView(ref) — the person opened a playback ticket: event phase recording_viewed
 // The session page and the old app API for tests:
 //   host.remoteOpen(ref)                    the person opens the page: a tunnel opens → { sessionId }, event phase start
 //   host.remoteClose(sessionId, reason)     the tunnel ends (normal → end, heartbeat … → abort)
@@ -56,6 +72,8 @@ const HOST_RE = /^[A-Za-z0-9.-]{1,253}$/;
 const MAC_RE = /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/;
 const HANDLE_RE = /^rv_[0-9a-f]{32}$/;
 const HUB = '10.8.0.1';
+const TMUX_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/;
+const REC_RE = /^rr_[0-9a-f]{32}$/;
 const OPTION_RULES = {
   browser_clipboard: 'bool', color_depth: [8, 16, 24, 32], nla_enabled: 'bool', network_profile: ['lan', 'broadband', 'modem', 'auto'],
   disable_wallpaper: 'bool', disable_themes: 'bool', disable_animations: 'bool', redirect_printers: 'bool', rdp_disable_audio: 'bool',
@@ -80,7 +98,11 @@ function install({ opts, perms, atLeast, enabledUser, hostError, license, person
   const on = host && perms.remote === true;
   const next = !!(o && (o.gateways || o.pools || o.connectHost)) || atLeast(283);
   const v2 = !!(o && o.v2) || atLeast(284);
-  const state = { tickets: new Map(), live: new Map(), rows: [], vault: new Map(), listeners: new Map(), wakes: new Map(), calls: [], handlers: [], seq: 0, routeSeq: 500 };
+  const v3 = !!(o && o.v3) || atLeast(285);
+  const state = { tickets: new Map(), live: new Map(), rows: [], vault: new Map(), listeners: new Map(), wakes: new Map(), calls: [], handlers: [], seq: 0, routeSeq: 500,
+    hostKeys: new Map(), recordings: [], plays: new Map() };
+  const recAvail = () => (v3 ? { available: true, reason: null, engines: { term: true, guac: true }, usedBytes: 0, maxBytes: 10 * 1024 ** 3, days: 30, ...((o && o.recordings) || {}) }
+    : { available: false, reason: 'not_yet' });
   const cfg = { gateways: (o && o.gateways) || [], pools: (o && o.pools) || [], l4: (o && o.l4) || [], limits: { global: 10, perUser: 2, perTarget: 2, ...((o && o.limits) || {}) } };
   const need = () => { if (perms.remote !== true) throw hostError('ERR_REMOTE_DENIED', 'this plugin has no remote permission'); };
   const iso = (ms) => new Date(ms).toISOString();
@@ -136,6 +158,7 @@ function install({ opts, perms, atLeast, enabledUser, hostError, license, person
     if (x == null) return out;
     if (typeof x !== 'object' || Array.isArray(x)) throw hostError('ERR_INVALID', 'options: an object');
     for (const [k, v] of Object.entries(x)) {
+      if (k === 'tmux' && v3) continue;
       const rule = OPTION_RULES[k];
       if (!rule) throw hostError('ERR_INVALID', `options.${k}: unknown`);
       if (v == null) continue;
@@ -149,7 +172,7 @@ function install({ opts, perms, atLeast, enabledUser, hostError, license, person
   }
   const meta = (e) => ({ handle: e.handle, kind: e.secret.privateKey ? 'ssh_key' : (e.secret.password ? 'password' : 'username'), label: e.label,
     has: Object.fromEntries(['username', 'password', 'domain', 'privateKey', 'passphrase'].map((k) => [k, !!e.secret[k]])), readable: e.readable !== false,
-    createdAt: iso(e.createdAt), updatedAt: iso(e.updatedAt) });
+    ...(v3 ? { publicKey: e.publicKey || null } : {}), createdAt: iso(e.createdAt), updatedAt: iso(e.updatedAt) });
   function vaultPut(entry, source) {
     const x = entry && typeof entry === 'object' ? entry : {};
     const fields = ['username', 'password', 'domain', 'privateKey', 'passphrase'];
@@ -166,14 +189,16 @@ function install({ opts, perms, atLeast, enabledUser, hostError, license, person
       state.vault.set(e.handle, e);
     }
     for (const k of fields) if (x[k] !== undefined) { if (x[k] === null || x[k] === '') delete e.secret[k]; else e.secret[k] = x[k]; }
+    if (x.privateKey !== undefined) e.publicKey = null;
     if (x.label !== undefined) e.label = x.label == null ? null : String(x.label).slice(0, 120);
     e.updatedAt = now;
     e.readable = true;
     return meta(e);
   }
   const ticketView = (t) => ({ ref: t.ref, url: '/remote/session/' + t.ref, expiresAt: iso(t.openBy), mode: t.mode, protocol: t.protocol,
-    ...(v2 ? { from: t.target.listener ? null : HUB } : {}) });
-  const rowView = (r) => ({ id: r.id, targetId: r.targetId, targetName: r.targetName, userId: r.userId, protocol: r.protocol, mode: r.mode, record: false,
+    ...(v2 ? { from: t.target.listener ? null : HUB } : {}), ...(v3 ? { engine: t.engine, record: t.record } : {}) });
+  const rowView = (r) => ({ id: r.id, targetId: r.targetId, targetName: r.targetName, userId: r.userId, protocol: r.protocol, mode: r.mode, record: !!r.record,
+    ...(v3 ? { engine: r.engine, via: r.via, recordingId: r.recordingId || null } : {}),
     status: r.endedAt ? 'ended' : 'active', startedAt: iso(r.startedAt), endedAt: r.endedAt ? iso(r.endedAt) : null, durationSeconds: r.durationSeconds == null ? null : r.durationSeconds, endReason: r.endReason || null });
   const openOf = (pred) => state.rows.filter((r) => !r.endedAt && pred(r)).length;
 
@@ -194,13 +219,27 @@ function install({ opts, perms, atLeast, enabledUser, hostError, license, person
       if (!PROTOCOLS.includes(a.protocol)) throw hostError('ERR_INVALID', 'protocol: rdp, vnc, ssh or telnet');
       const mode = a.mode == null ? 'control' : a.mode;
       if (mode !== 'view' && mode !== 'control') throw hostError('ERR_INVALID', 'mode: view or control');
-      if (a.record === true) throw hostError('ERR_REMOTE_RECORDING_UNAVAILABLE', 'recording comes with a later stage');
+      const engine = a.engine == null || !v3 ? 'guac' : a.engine;
+      if (engine !== 'guac' && engine !== 'term') throw hostError('ERR_INVALID', 'engine: guac or term');
+      if (engine === 'term' && a.protocol !== 'ssh') throw hostError('ERR_INVALID', 'engine term: protocol ssh only');
       if (a.record != null && typeof a.record !== 'boolean') throw hostError('ERR_INVALID', 'record: true or false');
+      if (a.record === true) {
+        const av = recAvail();
+        if (!av.available || (engine === 'guac' && !av.engines.guac)) throw hostError('ERR_REMOTE_RECORDING_UNAVAILABLE', av.reason || 'guacd_no_drive');
+      }
       const credential = a.credential == null ? null : String(a.credential);
       if (credential != null) {
         const e = HANDLE_RE.test(credential) ? state.vault.get(credential) : null;
         if (!e) throw hostError('ERR_REMOTE_CREDENTIAL_NOT_FOUND', 'no such vault entry of this plugin');
         if (e.readable === false) throw hostError('ERR_REMOTE_CREDENTIAL_UNREADABLE', 'the vault entry cannot be read');
+        if (engine === 'term' && !(e.secret.username && (e.secret.password || e.secret.privateKey))) throw hostError('ERR_REMOTE_CREDENTIAL_REQUIRED', 'username and a password or key');
+      } else if (engine === 'term') throw hostError('ERR_REMOTE_CREDENTIAL_REQUIRED', 'the terminal needs a vault entry');
+      let tmux = null;
+      if (v3 && a.options && a.options.tmux != null) {
+        const x = a.options.tmux;
+        const k = x && typeof x === 'object' ? Object.keys(x) : [];
+        if (engine !== 'term' || k.length !== 1 || (k[0] !== 'attach' && k[0] !== 'create') || typeof x[k[0]] !== 'string' || !TMUX_RE.test(x[k[0]])) throw hostError('ERR_INVALID', 'options.tmux');
+        tmux = { [k[0]]: x[k[0]] };
       }
       const options = cleanOptions(a.options);
       const ttl = a.ttlS == null ? 120 : Number(a.ttlS);
@@ -209,9 +248,9 @@ function install({ opts, perms, atLeast, enabledUser, hostError, license, person
         throw hostError('ERR_REMOTE_LIMIT', 'too many open sessions');
       }
       const ref = crypto.randomBytes(32).toString('base64url').slice(0, 43);
-      const tk = { ref, userId: uid, target: t, endpoint: ep, protocol: a.protocol, mode, credential, options, openBy: Date.now() + ttl * 1000, opened: false };
+      const tk = { ref, userId: uid, target: t, endpoint: ep, protocol: a.protocol, mode, credential, options, engine, record: a.record === true, tmux, openBy: Date.now() + ttl * 1000, opened: false };
       state.tickets.set(ref, tk);
-      state.calls.push({ op: 'session', ref, user: uid, target: t, protocol: a.protocol, mode, credential, options });
+      state.calls.push({ op: 'session', ref, user: uid, target: t, protocol: a.protocol, mode, credential, options, engine, record: a.record === true, tmux });
       return ticketView(tk);
     },
     'remote.end': async (a) => {
@@ -289,10 +328,65 @@ function install({ opts, perms, atLeast, enabledUser, hostError, license, person
       return { removed: state.listeners.delete(a.key) };
     },
     'remote.listeners': async () => { need(); return [...state.listeners.values()].map(({ peerId, poolId, ...v }) => v); },
-    'remote.recordings.available': async () => { need(); return { available: false, reason: 'not_yet' }; },
-    'remote.recordings.list': async () => { need(); return []; },
-    'remote.recordings.stream': async () => { need(); throw hostError('ERR_REMOTE_RECORDING_UNAVAILABLE', 'recording comes with a later stage'); },
-    'remote.recordings.remove': async () => { need(); return { removed: false }; },
+    'remote.recordings.available': async () => { need(); return recAvail(); },
+    'remote.recordings.list': async (a) => {
+      need();
+      const lim = Math.min(500, Number.isInteger(a.limit) && a.limit > 0 ? a.limit : 100);
+      return state.recordings.filter((r) => (a.targetId == null || r.targetId === String(a.targetId)) && (a.userId == null || r.userId === Number(a.userId))).slice().reverse().slice(0, lim).map((r) => ({ ...r }));
+    },
+    'remote.recordings.stream': async (a) => {
+      need();
+      if (!v3) throw hostError('ERR_REMOTE_RECORDING_UNAVAILABLE', 'recording comes with a later stage');
+      if (typeof a.id !== 'string' || !REC_RE.test(a.id)) throw hostError('ERR_INVALID', 'invalid recording id');
+      const r = state.recordings.find((x) => x.id === a.id);
+      if (!r) throw hostError('ERR_NOT_FOUND', 'no such recording');
+      const uid = Number(a.user);
+      if (!Number.isSafeInteger(uid) || uid <= 0 || !enabledUser(uid)) throw hostError('ERR_INVALID', 'user: a user id');
+      const ref = crypto.randomBytes(32).toString('base64url').slice(0, 43);
+      state.plays.set(ref, { ref, recordingId: r.id, targetId: r.targetId, userId: uid });
+      state.calls.push({ op: 'stream', id: r.id, user: uid });
+      return { ref, url: '/remote/session/' + ref, expiresAt: iso(Date.now() + 60000), format: r.format };
+    },
+    'remote.recordings.remove': async (a) => {
+      need();
+      if (typeof a.id !== 'string' || !REC_RE.test(a.id)) throw hostError('ERR_INVALID', 'invalid recording id');
+      const i = state.recordings.findIndex((x) => x.id === a.id);
+      if (i < 0) return { removed: false };
+      state.recordings.splice(i, 1);
+      return { removed: true };
+    },
+    'remote.vault.generate': async (a) => {
+      need();
+      if (a.kind != null && a.kind !== 'ed25519') throw hostError('ERR_INVALID', 'kind: ed25519');
+      const m = vaultPut({ privateKey: '-----BEGIN OPENSSH PRIVATE KEY-----\nmock\n-----END OPENSSH PRIVATE KEY-----\n', passphrase: null, ...(a.username ? { username: a.username } : {}), ...(a.label !== undefined ? { label: a.label } : {}), ...(a.handle != null ? { handle: a.handle } : {}) }, null);
+      const e = state.vault.get(m.handle);
+      e.publicKey = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI' + crypto.randomBytes(24).toString('base64').replace(/=/g, '') + ' ' + (a.label || 'gatecontrol');
+      return { ...meta(e), fingerprint: { alg: 'ssh-ed25519', sha256: crypto.randomBytes(32).toString('base64').replace(/=+$/, '') } };
+    },
+    'remote.tmux.list': async (a) => {
+      need();
+      const t = normalise(a.target);
+      endpoint(t);
+      const e = a.credential == null ? null : state.vault.get(String(a.credential));
+      if (!e || !e.secret.username) throw hostError('ERR_REMOTE_CREDENTIAL_REQUIRED', 'a vault entry with the username');
+      state.calls.push({ op: 'tmux.list', target: t });
+      const v = o && o.tmux ? o.tmux[t.id] : undefined;
+      if (v === 'unavailable') throw hostError('ERR_REMOTE_TMUX_UNAVAILABLE', 'tmux is not installed');
+      if (v === 'unpinned') throw hostError('ERR_REMOTE_HOST_KEY_UNPINNED', 'no host key pinned');
+      if (v === 'mismatch') throw hostError('ERR_REMOTE_HOST_KEY_MISMATCH', 'the host key changed');
+      return (Array.isArray(v) ? v : []).map((x) => ({ attachable: TMUX_RE.test(x.name), windows: 1, attached: 0, created: null, activity: null, ...x }));
+    },
+    'remote.hostKeys.pin': async (a) => {
+      need();
+      if (typeof a.targetId !== 'string' || !ID_RE.test(a.targetId)) throw hostError('ERR_INVALID', 'targetId');
+      const sha = String(a.sha256 || '').replace(/^SHA256:/, '');
+      if (!/^[A-Za-z0-9+/]{43}$/.test(sha) || !/^[a-z0-9@._-]{3,64}$/i.test(String(a.alg || ''))) throw hostError('ERR_INVALID', 'alg / sha256');
+      const p = { targetId: a.targetId, alg: a.alg, sha256: sha, source: 'plugin', pinnedBy: null, pinnedAt: iso(Date.now()) };
+      state.hostKeys.set(a.targetId, p);
+      return { ...p };
+    },
+    'remote.hostKeys.list': async () => { need(); return [...state.hostKeys.values()].map((p) => ({ ...p })); },
+    'remote.hostKeys.remove': async (a) => { need(); if (typeof a.targetId !== 'string' || !ID_RE.test(a.targetId)) throw hostError('ERR_INVALID', 'targetId'); return { removed: state.hostKeys.delete(a.targetId) }; },
     'remote.hubAddress': async () => { need(); return HUB; },
     'remote.peerAddress': async (a) => {
       need();
@@ -316,8 +410,12 @@ function install({ opts, perms, atLeast, enabledUser, hostError, license, person
     r.durationSeconds = Math.max(0, Math.round((now - r.startedAt) / 1000));
     r.endReason = reason;
     const phase = reason === 'normal' || reason === 'ended_by_plugin' ? 'end' : 'abort';
-    await emit({ phase, sessionId: r.id, ref: r.ref, targetId: r.targetId, userId: r.userId, protocol: r.protocol, mode: r.mode, record: false,
-      startedAt: iso(r.startedAt), reason, durationSeconds: r.durationSeconds, endedAt: iso(now) });
+    if (r.recordingId) {
+      state.recordings.push({ id: r.recordingId, sessionId: r.id, targetId: r.targetId, userId: r.userId, protocol: r.protocol, format: r.engine === 'term' ? 'asciicast' : 'guac',
+        status: 'ready', bytes: 4096, durationSeconds: r.durationSeconds, startedAt: iso(r.startedAt), endedAt: iso(now), createdAt: iso(now) });
+    }
+    await emit({ phase, sessionId: r.id, ref: r.ref, targetId: r.targetId, userId: r.userId, protocol: r.protocol, mode: r.mode, record: !!r.record,
+      ...(v3 ? { engine: r.engine, via: r.via, recordingId: r.recordingId || null } : {}), startedAt: iso(r.startedAt), reason, durationSeconds: r.durationSeconds, endedAt: iso(now) });
   }
 
   function gcPart(call) {
@@ -325,7 +423,7 @@ function install({ opts, perms, atLeast, enabledUser, hostError, license, person
     listener.remove = (key) => call('remote.listener.remove', { key });
     const ob = (x) => (x && typeof x === 'object' ? x : {});
     return Object.freeze({
-      version: v2 ? 2 : 1,
+      version: v3 ? 3 : (v2 ? 2 : 1),
       session: (x) => call('remote.session', ob(x)),
       end: (x) => call('remote.end', ob(x)),
       sessions: (x) => call('remote.sessions', ob(x)),
@@ -334,7 +432,12 @@ function install({ opts, perms, atLeast, enabledUser, hostError, license, person
         remove: (handle) => call('remote.vault.remove', { handle }),
         info: (handle) => call('remote.vault.info', { handle }),
         list: () => call('remote.vault.list', {}),
+        ...(v3 ? { generate: (x) => call('remote.vault.generate', ob(x)) } : {}),
       }),
+      ...(v3 ? {
+        tmux: Object.freeze({ list: (target, x) => call('remote.tmux.list', { ...ob(x), target: ob(target) }) }),
+        hostKeys: Object.freeze({ pin: (x) => call('remote.hostKeys.pin', ob(x)), list: () => call('remote.hostKeys.list', {}), remove: (targetId) => call('remote.hostKeys.remove', { targetId }) }),
+      } : {}),
       probe: (target) => call('remote.probe', { target: ob(target) }),
       wake: (target) => call('remote.wake', { target: ob(target) }),
       listener: Object.freeze(listener),
@@ -342,7 +445,7 @@ function install({ opts, perms, atLeast, enabledUser, hostError, license, person
       recordings: Object.freeze({
         available: () => call('remote.recordings.available', {}),
         list: (x) => call('remote.recordings.list', ob(x)),
-        stream: (id) => call('remote.recordings.stream', { id }),
+        stream: (id, x) => call('remote.recordings.stream', { ...ob(x), id }),
         remove: (id) => call('remote.recordings.remove', { id }),
       }),
       ...(next ? { gateways: () => call('remote.gateways', {}) } : {}),
@@ -356,15 +459,31 @@ function install({ opts, perms, atLeast, enabledUser, hostError, license, person
   }
 
   /** The person opens the session page: a tunnel → { sessionId } (event phase start). */
-  async function open(ref) {
+  async function open(ref, x = {}) {
     const t = state.tickets.get(ref);
     if (!t) throw new Error('mock host: no such ticket');
     if (!t.opened && Date.now() > t.openBy) throw new Error('mock host: ticket expired');
     t.opened = true;
-    const r = { id: ++state.seq, ref, targetId: t.target.id, targetName: t.target.name, userId: t.userId, protocol: t.protocol, mode: t.mode, startedAt: Date.now(), endedAt: null };
+    const r = { id: ++state.seq, ref, targetId: t.target.id, targetName: t.target.name, userId: t.userId, protocol: t.protocol, mode: t.mode, startedAt: Date.now(), endedAt: null,
+      engine: t.engine || 'guac', via: x.via === 'app' ? 'app' : 'browser', record: !!t.record, recordingId: t.record ? 'rr_' + crypto.randomBytes(16).toString('hex') : null };
     state.rows.push(r);
-    await emit({ phase: 'start', sessionId: r.id, ref, targetId: r.targetId, userId: r.userId, protocol: r.protocol, mode: r.mode, record: false, startedAt: iso(r.startedAt) });
-    return { sessionId: r.id };
+    await emit({ phase: 'start', sessionId: r.id, ref, targetId: r.targetId, userId: r.userId, protocol: r.protocol, mode: r.mode, record: r.record,
+      ...(v3 ? { engine: r.engine, via: r.via, recordingId: r.recordingId, ...(r.engine === 'term' ? { hostKey: x.hostKey || { alg: 'ssh-ed25519', sha256: 'A'.repeat(43) } } : {}) } : {}), startedAt: iso(r.startedAt) });
+    return { sessionId: r.id, recordingId: r.recordingId };
+  }
+  /** v3: the person opened a playback ticket → event phase recording_viewed. */
+  async function view(ref) {
+    const p = state.plays.get(ref);
+    if (!p) throw new Error('mock host: no such playback ticket');
+    state.plays.delete(ref);
+    await emit({ phase: 'recording_viewed', recordingId: p.recordingId, targetId: p.targetId, userId: p.userId, at: iso(Date.now()) });
+  }
+  /** v3: a terminal that never got ready (e.g. host_key_mismatch) — only the abort event, as the core sends it. */
+  async function abortTerm(ref, reason) {
+    const t = state.tickets.get(ref);
+    if (!t) throw new Error('mock host: no such ticket');
+    await emit({ phase: 'abort', sessionId: ++state.seq, ref, targetId: t.target.id, userId: t.userId, protocol: t.protocol, mode: t.mode, record: false,
+      engine: t.engine, via: 'browser', recordingId: null, startedAt: iso(Date.now()), reason, durationSeconds: 0, endedAt: iso(Date.now()) });
   }
   async function close(sessionId, reason = 'normal') {
     const r = state.rows.find((x) => x.id === sessionId && !x.endedAt);
@@ -411,7 +530,7 @@ function install({ opts, perms, atLeast, enabledUser, hostError, license, person
     return { status, body };
   }
 
-  return { on, v2, api, gcPart, state, open, close, facade, vaultSeed: (entry, source) => vaultPut(entry, source), setUnreadable: (h) => { const e = state.vault.get(h); if (e) e.readable = false; } };
+  return { on, v2, v3, api, gcPart, state, open, close, view, abortTerm, facade, vaultSeed: (entry, source) => vaultPut(entry, source), setUnreadable: (h) => { const e = state.vault.get(h); if (e) e.readable = false; } };
 }
 
 module.exports = { install };

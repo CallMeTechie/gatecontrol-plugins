@@ -28,6 +28,9 @@ const DEFAULT_PORT = { rdp: 3389, vnc: 5900, ssh: 22, telnet: 23 };
 const ACCESS_MODES = ['internal', 'external', 'both', 'gateway'];
 const MAC_RE = /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/;
 const HOST_RE = /^[A-Za-z0-9.:_-]{1,253}$/;
+// a tmux session name as GateControl's terminal accepts it (no ".", ":", quotes or spaces)
+const TMUX_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/;
+const RECORDING = ['off', 'optional', 'always'];
 const FIRST_OWN_ID = 100000;
 // a host without a heartbeat for three minutes (three missed host/state) is offline
 const HOST_OFFLINE_MS = 180000;
@@ -80,6 +83,11 @@ const FIELDS = Object.freeze({
   browser_enabled: 'bool',
   browser_clipboard: 'bool',
   rdp_disable_audio: 'bool',
+  // 1.2 (gc.remote version 3): SSH in GateControl's own terminal with tmux, recordings
+  ssh_engine: ['term', 'guac'],    // term: the terminal of GateControl (xterm.js / the apps' native one) · guac: Guacamole as before
+  tmux_enabled: 'bool',            // the terminal runs `tmux new -A -s <name>`: the session survives a lost connection
+  tmux_name: 'tmux',               // default: gc-<short name of the device>
+  recording: ['off', 'optional', 'always'],
 });
 
 // kept from the take-over and given back to the old apps, but not changed on the page in version 1
@@ -99,6 +107,7 @@ const DEFAULTS = Object.freeze({
   wol_enabled: false, wol_mac_address: null, maintenance_enabled: false, maintenance_schedule: null, credential_rotation_enabled: false,
   credential_rotation_days: null, credential_rotation_last: null, tags: [], notes: null, health_check_enabled: true, browser_enabled: false,
   browser_clipboard: false, rdp_disable_audio: false,
+  ssh_engine: 'term', tmux_enabled: true, tmux_name: null, recording: 'off',
 });
 
 function parseJson(s, fb) { try { const v = JSON.parse(s); return v && typeof v === 'object' ? v : fb; } catch { return fb; } }
@@ -113,6 +122,7 @@ function checkField(k, v) {
   if (rule === 'id') { const n = posInt(v); if (!n) throw fail('invalid', { field: k }); return n; }
   if (rule === 'mac') { const s = String(v).trim(); if (!MAC_RE.test(s)) throw fail('invalid', { field: k }); return s.toUpperCase().replace(/-/g, ':'); }
   if (rule === 'host') { const s = String(v).trim(); if (!HOST_RE.test(s)) throw fail('invalid', { field: k }); return s; }
+  if (rule === 'tmux') { const s = String(v).trim(); if (!TMUX_RE.test(s)) throw fail('invalid', { field: k }); return s; }
   if (rule === 'tags') {
     if (!Array.isArray(v) || v.length > 20) throw fail('invalid', { field: k });
     return [...new Set(v.map((x) => clip(x, 40)).filter(Boolean))];
@@ -209,6 +219,21 @@ async function accessLists(gc) {
 }
 
 const emptyAccess = () => ({ users: [], groups: [], tokens: [] });
+
+/** How an SSH device connects: 'term' (GateControl's terminal, gc.remote version 3) or 'guac'; null for other protocols. */
+function engineOf(d, gc) {
+  if (!d || d.protocol !== 'ssh') return null;
+  const v3 = !gc || !!(gc.remote && gc.remote.version >= 3);
+  return d.config.ssh_engine === 'term' && v3 ? 'term' : 'guac';
+}
+
+/** The tmux session of a device in the terminal: its own name or gc-<short name>; null with tmux off or another engine. */
+function tmuxOf(d) {
+  if (!d || d.protocol !== 'ssh' || d.config.ssh_engine !== 'term' || !d.config.tmux_enabled) return null;
+  if (d.config.tmux_name && TMUX_RE.test(d.config.tmux_name)) return d.config.tmux_name;
+  const slug = String(d.name || '').toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 29);
+  return 'gc-' + (slug || String(d.id));
+}
 
 /** Where gc.remote reaches the device: { id, name, host, port } | { id, name, listener } (+ mac) */
 function targetOf(d) {
@@ -411,7 +436,7 @@ async function setStatus(gc, id, s, now = Date.now()) {
 }
 
 module.exports = {
-  PROTOCOLS, DEFAULT_PORT, ACCESS_MODES, FIELDS, KEPT, BOOLS, DEFAULTS, FIRST_OWN_ID, HOST_OFFLINE_MS,
+  PROTOCOLS, DEFAULT_PORT, ACCESS_MODES, FIELDS, KEPT, BOOLS, DEFAULTS, FIRST_OWN_ID, HOST_OFFLINE_MS, TMUX_RE, RECORDING, engineOf, tmuxOf,
   hostOf, hostView, connectMode, hostReady,
   get, need, all, accessLists, emptyAccess, targetOf, listenerKey, vaultInfo, credentialView, adminView, rotationDue,
   applyPatch, checkField, save, remove, rotated, setStatus, setAccess, write, fromRow, nextId,

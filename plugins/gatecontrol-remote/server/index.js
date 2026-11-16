@@ -14,10 +14,12 @@
 //   the old app API /api/v1/client/rdp*        — server/facade.js (hook clientFacade)
 //   Windows PCs of the app (1.1, stage 2)      — server/hosts.js, codes.js, support.js, log.js
 //                                                (gc.remote version 2: GateControl after 1.283.0)
+//   SSH in GateControl's terminal with tmux,   — server/connect.js, server/recordings.js
+//   recordings (1.2, stage 3)                    (gc.remote version 3; older GateControl: SSH over Guacamole, no recordings)
 //
 // Background (every 60 s): the device checks (every `checkMinutes`), sessions of
 // apps that stopped reporting, requests and firewall rules that ran out, the
-// retention of the history and of the sharing protocol (hourly).
+// retention of the history, of the sharing protocol and (1.2) of the recordings (hourly).
 
 const ui = require('./ui');
 const api = require('./api');
@@ -31,6 +33,7 @@ const facade = require('./facade');
 const support = require('./support');
 const codes = require('./codes');
 const log = require('./log');
+const recordings = require('./recordings');
 const texts = require('./texts.json');
 const { STATUS, isKnown } = require('./util');
 
@@ -79,6 +82,7 @@ async function background(gc, now) {
     state.lastPurge = now;
     try { await history.purge(gc, cfg.historyDays, now); } catch (e) { gc.log.warn('purge failed', (e && e.code) || 'error'); }
     try { await log.purge(gc, cfg.historyDays, now); await codes.purge(gc, now); } catch (e) { gc.log.warn('purge failed', (e && e.code) || 'error'); }
+    try { await recordings.purge(gc, cfg.recordingDays, now); } catch (e) { gc.log.warn('recording purge failed', (e && e.code) || 'error'); }
   }
 }
 
@@ -100,6 +104,7 @@ module.exports = {
       try { await support.onSession(gc, ev); } catch (e) { gc.log.warn('firewall not closed', (e && e.code) || 'error'); }
     });
     if (!(gc.remote.version >= 2)) gc.log.info('gc.remote version 1: Windows PCs of the app need a newer GateControl');
+    if (!(gc.remote.version >= 3)) gc.log.info('gc.remote version ' + gc.remote.version + ': the SSH terminal and recordings need a newer GateControl');
     gc.log.info('remote started', gc.plugin.version);
   },
 

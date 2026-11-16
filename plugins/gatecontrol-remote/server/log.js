@@ -1,6 +1,8 @@
 'use strict';
 
-// The protocol of the sharing (stage 2): codes, requests, "Ohne Code", the firewall per session. The admin page
+// The protocol of the sharing (stage 2): codes, requests, "Ohne Code", the firewall per session — since 1.2 also
+// the viewings and deletions of recordings, changed or reset SSH host keys and the switch of SSH devices to the
+// terminal. The admin page
 // Sitzungen shows it under the filter "Freigaben"; the person at a PC sees the entries of their own PCs in the
 // profile section. Never a code, never a person's address.
 
@@ -8,7 +10,9 @@ const store = require('./store');
 const { iso, posInt } = require('./util');
 
 const TYPES = ['remote_code_redeemed', 'remote_code_failed', 'remote_share_changed', 'remote_request_allowed', 'remote_request_denied',
-  'remote_request_expired', 'remote_firewall_open', 'remote_firewall_close', 'remote_host_registered', 'remote_host_removed'];
+  'remote_request_expired', 'remote_firewall_open', 'remote_firewall_close', 'remote_host_registered', 'remote_host_removed',
+  // 1.2: recordings and SSH host keys
+  'remote_recording_viewed', 'remote_recording_deleted', 'remote_host_key_changed', 'remote_host_key_reset', 'remote_ssh_engine_changed'];
 
 /** One entry: write(gc, 'remote_code_redeemed', { device, userId, details }) — best-effort, never throws. */
 async function write(gc, type, { device = null, userId = null, details = null } = {}, now = Date.now()) {
