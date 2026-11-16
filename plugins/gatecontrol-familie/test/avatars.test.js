@@ -189,3 +189,18 @@ test('avatar renderer: picture or initials on the favourite colour inside the ri
 
   assert.equal(loadCommon('en').avatarLabel({ name: 'Anna', presence: 'away' }), 'Anna – away');
 });
+
+test('1.27.0: „Wer sieht dein Bild?“ — a member sees what the person shows the family; the wall only „Alle“', () => withFamily({
+  users: FACE_USERS, settings: { mod_wall: true },
+  avatarVisibility: { levels: { [ANNA.id]: 'family' }, families: [[ANNA.id, MARC.id, LENA.id, TIM.id]] },
+}, async (host, { as, admin, call }) => {
+  const me = (await as(MARC)('GET', '/me')).json;
+  assert.equal(me.members.find((m) => m.userId === ANNA.id).avatarUrl, PIC, 'the family sees it');
+  await admin('POST', 'members', { userId: KUECHE.id, role: 'wall' });
+  const w = (await call(kioskViewer(KUECHE), 'GET', '/wall')).json;
+  assert.equal(w.members.find((m) => m.userId === ANNA.id).avatarUrl, null, 'the wall tablet: initials');
+  assert.equal(w.members.find((m) => m.userId === ANNA.id).initials, 'AN');
+  host.avatarVisibility.set(ANNA.id, 'self');
+  assert.equal((await as(MARC)('GET', '/me')).json.members.find((m) => m.userId === ANNA.id).avatarUrl, null, '„Nur ich“');
+  assert.equal((await as(ANNA)('GET', '/me')).json.me.avatarUrl, PIC, 'the person herself');
+}));

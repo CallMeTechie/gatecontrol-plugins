@@ -1,5 +1,11 @@
-<!-- version: 1.26.0 -->
+<!-- version: 1.27.0 -->
 # Family
+
+## New in 1.27.0
+
+- **“Who can see your picture?” from the profile:** With the new GateControl everybody chooses in their profile who sees their picture. Family follows it: members, presence and wishes show the picture as the person shows it to the family. With “Only me” the others see the initials in the person’s colour.
+- **Wall tablet:** It shows only pictures shared with everyone on the server, otherwise the initials.
+- On an older GateControl nothing changes.
 
 ## New in 1.26.0
 

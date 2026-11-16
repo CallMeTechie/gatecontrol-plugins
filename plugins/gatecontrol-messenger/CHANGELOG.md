@@ -3,6 +3,21 @@
 Chats zwischen den GateControl-Konten – in der GateControl-App (eigener Tab „Chats“), im
 Windows-Client und im Portal (eigener Tab „Chats“). Alles bleibt auf dem eigenen Server.
 
+## 1.22.0
+**„Wer sieht dein Bild?“ aus dem Profil** (GateControl mit `gc.users.setAvatarVisibility` / `adoptAvatarVisibility`,
+feature-erkannt; ältere Server: alles wie bisher). `server/avatarvis.js`.
+- `people.users` holt auf solchen Servern jedes Bild mit `avatarVisibility` (`gc.users.list({ unmasked: true })`) und die
+  Familiengruppen von GateControl (`gc.groups`, Art `family`, direkte Mitglieder) — Cache 10 s, geleert von den Hooks
+  `profileChanged` (`avatar`, `displayName`) und `groupsChanged`.
+- `social.maskUsers` entscheidet je Betrachter: `all`, `contacts` (Familie + aktive Mitglieder eines gemeinsamen Chats oder
+  einer Gruppe), `family`, `self`; die Person selbst immer, eine Sperre verbirgt in beide Richtungen.
+- Push: das Bild des Absenders nur für Empfänger, die es sehen dürfen (eigene Gruppe je Empfänger-Art).
+- `GET me`: `avatarInProfile: true`; `prefs.privacy.avatar` spiegelt das Profil für ältere Apps (`contacts` → `family`,
+  `self` → `nobody`), `prefs.privacy.avatarProfile` trägt den echten Wert. `PUT/PATCH prefs { privacy: { avatar } }` wird
+  ans Profil weitergeleitet (`nobody` → `self`).
+- Beim Start einmal (`settings.avatar_profile_adopted`): `privacy.avatar` `family`/`nobody` je Person ins Profil
+  (`adoptAvatarVisibility`, nur solange dort nichts gewählt ist); ein Fehler lässt es für den nächsten Start offen.
+
 ## 1.21.0
 **Personen zusammenführen** („Chats v2 – Teil B“). Feature-Wort `chat_people` (für dieselben Personen wie `bridge_chats`);
 Clients schicken `?people=1` neben `?bridged=1`. Vorschläge brauchen GateControl mit `gc.bridges` Version 8

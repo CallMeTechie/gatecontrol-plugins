@@ -1,5 +1,11 @@
-<!-- version: 1.26.0 -->
+<!-- version: 1.27.0 -->
 # Familie
+
+## Neu in 1.27.0
+
+- **„Wer sieht dein Bild?“ aus dem Profil:** Mit dem neuen GateControl wählt jede Person in ihrem Profil, wer ihr Bild sieht. Familie hält sich daran: Mitglieder, Anwesenheit und Wünsche zeigen das Bild so, wie die Person es der Familie zeigt. Bei „Nur ich“ sehen die anderen ihre Initialen in ihrer Farbe.
+- **Wand-Tablet:** Dort erscheinen nur Bilder, die für alle auf dem Server freigegeben sind, sonst die Initialen.
+- Auf einem älteren GateControl ändert sich nichts.
 
 ## Neu in 1.26.0
 

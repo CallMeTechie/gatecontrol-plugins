@@ -20,12 +20,24 @@ const status = require('./status');
 const bridgechats = require('./bridgechats');
 const bridgemedia = require('./bridgemedia');
 const persons = require('./persons');
+const avatarvis = require('./avatarvis');
 const { route14 } = require('./api14');
 const { fail, posInt, iso } = require('./util');
 
+/**
+ * 1.22.0: where GateControl keeps „Wer sieht dein Bild?“ in the profile (avatarvis.js), prefs.privacy.avatar mirrors it
+ * for older apps (all | family | nobody — contacts shows as family, self as nobody) and privacy.avatarProfile carries
+ * the real level. `level`: the level just set, else the one of the viewer's gc.users entry.
+ */
+function profileAvatar(ctx, prefs, level = null) {
+  if (!avatarvis.inProfile(ctx.gc)) return prefs;
+  const l = level || avatarvis.levelOf(ctx.users.get(ctx.viewer)) || 'all';
+  return { ...prefs, privacy: { ...prefs.privacy, avatar: avatarvis.toOld(l), avatarProfile: l } };
+}
+
 /** GET me */
 async function me(ctx) {
-  const prefs = people.prefsOut(await people.prefsRow(ctx.gc, ctx.viewer, ctx.now));
+  const prefs = profileAvatar(ctx, people.prefsOut(await people.prefsRow(ctx.gc, ctx.viewer, ctx.now)));
   let usage = null;
   try { usage = await ctx.gc.media.usage(); } catch { usage = null; }
   let lic = null;
@@ -50,6 +62,8 @@ async function me(ctx) {
   return {
     user: u ? { id: u.id, name: u.name, avatarUrl: u.avatarUrl || null, initials: u.initials || null, colorHex: u.colorHex || null } : { id: ctx.viewer, name: null, avatarUrl: null, initials: null, colorHex: null },
     prefs,
+    // 1.22.0: „Profilbild“ in the privacy settings is the profile's „Wer sieht dein Bild?“ (the apps open the profile)
+    ...(avatarvis.inProfile(ctx.gc) ? { avatarInProfile: true } : {}),
     license: lic ? { licensed: lic.licensed !== false, state: lic.state || null, expiresAt: lic.expiresAt || null } : null,
     features: {
       direct: true, groups: true, voice: true, files: true, location: true, reactions: true, edit: cfg.editWindowMin > 0, search: true,
@@ -155,7 +169,14 @@ async function route(ctx, req, seg) {
     if (m === 'PUT') return json(200, await notices.routesSet(ctx, req.body));
   }
   if (a === 'prefs' && seg.length === 1 && (m === 'PUT' || m === 'PATCH')) {
-    return json(200, { prefs: await tx(() => people.updatePrefs(gc, ctx.viewer, req.body, ctx.now)) });
+    // 1.22.0: an older app that still writes privacy.avatar — the person's own change goes to the profile
+    const b = req.body;
+    let level = null;
+    if (avatarvis.inProfile(gc) && b && b.privacy && typeof b.privacy === 'object' && !Array.isArray(b.privacy) && people.AUDIENCE.includes(b.privacy.avatar)) {
+      level = await avatarvis.forward(gc, ctx.viewer, b.privacy.avatar);
+      people.reset();
+    }
+    return json(200, { prefs: profileAvatar(ctx, await tx(() => people.updatePrefs(gc, ctx.viewer, req.body, ctx.now)), level) });
   }
   if (a === 'people' && seg.length === 1 && m === 'GET') {
     // 1.4.0: online / lastSeenAt per privacy, blocked (by the caller), avatar per privacy

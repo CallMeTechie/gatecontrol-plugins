@@ -1,4 +1,4 @@
-<!-- version: 1.21.0 -->
+<!-- version: 1.22.0 -->
 # Messenger
 
 ## What the plugin does
@@ -70,6 +70,15 @@ It only comes when linking and appears at night. When “Load older history” i
 
 **Old messages are gone.**
 The administrator set a retention, or the chat is a disappearing chat.
+
+## New in 1.22.0
+
+- **“Who can see your picture?” now applies everywhere in GateControl.** The setting is no longer in the Messenger but in your profile (“My profile” in the portal, the profile in the app): Everyone on this server, **Contacts**, Family or Only me. It applies in chats, in Family, in Drive and everywhere else.
+- **Contacts** means your family and everyone you share a direct chat or a group with. Whoever may not see your picture sees your initials in your colour – in the list, the chat header, as the sender in groups and in the push notification.
+- **Taken over once:** On the first start with the new GateControl the Messenger takes over your earlier choice (“Family” stays Family, “Nobody” becomes “Only me”) – only if you have not chosen anything in the profile yet.
+- In the app's privacy settings, “Profile picture” now leads to your profile. Older apps that still change the setting in the Messenger change it in the profile.
+- WhatsApp, Signal and Telegram never get your GateControl picture.
+- On an older GateControl everything stays in the Messenger as before.
 
 ## New in 1.21.0
 
