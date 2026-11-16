@@ -799,7 +799,12 @@
       var tail = ph.state === 'loading' ? T('bc.ph_loading') : (ph.state === 'on_request' ? T('bc.ph_on_request') : (ph.state === 'failed' && ph.reason && CTX.texts['bc.ph_failed.' + ph.reason] ? T('bc.ph_failed.' + ph.reason, net) : T('bc.ph_later', net)));
       // 1.23.0: a view-once picture stays in the other messenger
       var phText = ph.kind === 'unsupported' ? T('bc.ph.unsupported', net) : (ph.kind === 'view_once' ? T('bc.ph.view_once', net) : T('bc.ph.' + ph.kind) + (ph.name ? ' · ' + ph.name : '') + (ph.kind === 'location' && ph.geo ? '' : ' – ' + tail));
-      b.appendChild(el('div', { class: 'ms-ph' + (ph.state === 'loading' ? ' is-loading' : '') }, [M.icon(ph.kind === 'unsupported' ? 'info' : (ph.kind === 'view_once' ? 'eye' : (ph.kind === 'location' ? 'pin' : (ph.kind === 'image' || ph.kind === 'sticker' ? 'image' : 'file'))), 15),
+      // 1.26.0: an old WhatsApp file — „Ältere Sprachnachricht – öffne sie in WhatsApp“ / „… – wird später vom Handy geladen“
+      if (ph.old && CTX.texts['bc.old.' + ph.kind]) {
+        var it = { network: net.network, it: T('bc.old_it.' + ph.kind) };
+        phText = T('bc.old.' + ph.kind) + (ph.name ? ' · ' + ph.name : '') + ' – ' + T('bc.old_' + ph.old, it);
+      }
+      b.appendChild(el('div', { class: 'ms-ph' + (ph.state === 'loading' && ph.old !== 'daily' ? ' is-loading' : '') }, [M.icon(ph.kind === 'unsupported' ? 'info' : (ph.kind === 'view_once' ? 'eye' : (ph.kind === 'location' ? 'pin' : (ph.kind === 'image' || ph.kind === 'sticker' ? 'image' : 'file'))), 15),
         el('span', { text: phText })]));
       if (ph.state === 'on_request') {
         b.appendChild(el('button', { type: 'button', class: 'ms-linkbtn', text: T('bc.ph_fetch'), on: { click: function (e) { e.stopPropagation(); fetchOld(m, e.currentTarget); } } }));

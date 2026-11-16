@@ -3,6 +3,29 @@
 Chats zwischen den GateControl-Konten – in der GateControl-App (eigener Tab „Chats“), im
 Windows-Client und im Portal (eigener Tab „Chats“). Alles bleibt auf dem eigenen Server.
 
+## 1.26.0
+**Alte Medien vom Handy nachladen** — für GateControl mit `gc.bridges` Version 13. **Braucht GateControl mit Version 13**
+(`plugin.json` `gatecontrol` und `gatecontrol.ref` werden nach dem Server-Release gesetzt). Mit älterem GateControl
+bleibt alles wie bisher.
+- **Platzhalter statt englischer Brücken-Notiz:** Eine WhatsApp-Datei aus dem Verlauf, deren Kopie bei WhatsApp
+  abgelaufen ist, kommt als `message.oldMedia { kind, name, request }` und wird ein Platzhalter ihrer Art
+  (`meta.bridge.old`: `off` | `daily` | `now` | `failed`; Bildunterschrift bleibt der Text). Portal: „Ältere
+  Sprachnachricht – öffne sie in WhatsApp“, „… – wird später vom Handy geladen“, „… – wird geladen“, „… – kam vom Handy
+  nicht; öffne sie in WhatsApp“ (DE/EN, Texte `bc.old.*`, `bc.old_it.*`, `bc.old_*`).
+- **Datei kommt später:** Die Bearbeitung der Brücke mit `media` ersetzt den Platzhalter — die Datei wird sofort geholt
+  (`ext_media = 'wait'`, Wartezeit ab jetzt über `ext_asked_at`), mit Virenprüfung, dann `message.update { media: true }`.
+  `edit.oldMedia { request: 'failed' }` markiert ihn als gescheitert. Nie der Text der Brücke auf einem Platzhalter; nur
+  der Absender der Nachricht (bzw. die Person selbst) ändert ihn.
+- **Ältere Apps:** `bridge.placeholder` trägt zusätzlich `old` und einen bekannten Zustand: `off` → `failed`/`gone`,
+  `daily`/`now` → `loading`, `failed` → `failed`/`unavailable` (`retry: false`).
+- **Admin, Karte „Brücken“:** Schalter „Alte Medien vom Handy nachladen“ mit Auswahl „Einmal am Tag (empfohlen)“ /
+  „Sofort“, Hinweis: Handy muss online sein, kostet Datenvolumen und Akku, ungefähre Uhrzeit (`dailyAt`, etwa 8 h nach
+  der nächtlichen Sicherung der Brücken). `PUT admin/bridges { mediaRequests: 'off' | 'daily' | 'now' }`
+  (`feature_off` vor Version 13). „Nachts“ ist mit der gepinnten Brücke nicht einstellbar (sie kennt keine Zeitzone je
+  Anmeldung); eine Sicherung am Abend verlegt die Anfragen in die Nacht.
+- Mock-Host: `gc.bridges` Version 13 (`status().mediaRequests`, `configure({ mediaRequests })`). Tests in
+  `test/oldmedia.test.js`.
+
 ## 1.25.1
 **Fix: Status-Raum nachholen, wenn GateControl vor dem Messenger aktualisiert wurde.** GateControl 1.294.0 schickt nach
 Migration 156 (`events.refreshRooms`) genau ein `chat`-Ereignis mit `status: true` je Status-Raum. Lief da noch Messenger

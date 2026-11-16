@@ -1268,6 +1268,30 @@ after it was posted (`expires_at`; the file goes with it), a deletion of the con
 `PUT prefs { privacy: { bridgedStatusSeen: boolean } }` — "WhatsApp mitteilen, wenn ich einen Status ansehe". Live event
 `story.bridged { network, storyId, action: 'new' | 'seen' | 'remove' }` → load the feed again.
 
+## Old media from the phone (since 1.26.0)
+
+Needs GateControl with `gc.bridges` version 13 (`message.oldMedia`, `edit.media`, `status().mediaRequests`). Tests:
+`test/oldmedia.test.js` against the mock host's version 13. With an older GateControl an old WhatsApp file stays the
+placeholder "not shown here yet" (GateControl 1.294.x sends the bridge's notice as a notice).
+
+A WhatsApp file of the history whose copy at WhatsApp ran out (only the phone still has it) is a placeholder of its kind
+with **`bridge.placeholder.old`**: `off` (nobody asks the phone — open it in WhatsApp), `daily` (the bridge asks the phone
+once a day), `now` (asked at once), `failed` (the phone could not send it). For apps that do not know `old` the
+placeholder also carries a state they already show: `off` → `state: "failed"`, `reason: "gone"`; `daily` / `now` →
+`state: "loading"`; `failed` → `state: "failed"`, `reason: "unavailable"` — `retry` is always `false` (there is nothing
+to ask for again here). The caption is the message's `text`. When the phone sent the file, the placeholder becomes a
+normal picture / voice message / file like any other file of a bridge (`message.update { media: true }`, virus scan).
+
+The portal's line: „Ältere Sprachnachricht – öffne sie in WhatsApp“ / „… – wird später vom Handy geladen“ / „… –
+wird geladen“ / „… – kam vom Handy nicht; öffne sie in WhatsApp“ (texts `bc.old.<kind>`, `bc.old_it.<kind>`,
+`bc.old_<state>`).
+
+**Admin** (card „Brücken“): `GET admin/bridges` → `mediaRequests: { mode: "off" | "daily" | "now", options, dailyAt,
+timeZone }` (GateControl's); `PUT admin/bridges { mediaRequests }` (`feature_off` before version 13). The switch „Alte
+Medien vom Handy nachladen“ with „Einmal am Tag (empfohlen)“ / „Sofort“. Once a day means about 8 hours after the
+bridges' nightly backup (`dailyAt`) — the pinned bridge knows no time zone of a login, so it cannot be set to a time of
+night (GateControl's docs/feature-messenger-bridges.md, "Old media from the phone").
+
 ## Persons — one chat per human over several ways (since 1.21.0)
 
 `features.chat_people` (for the same people as `bridge_chats`; `server/persons.js`, migration 013). A client that knows
