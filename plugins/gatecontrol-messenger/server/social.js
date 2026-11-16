@@ -12,6 +12,7 @@
 
 const store = require('./store');
 const people = require('./people');
+const avatarvis = require('./avatarvis');
 const { iso } = require('./util');
 
 const FAMILIE = 'gatecontrol-familie';
@@ -49,10 +50,26 @@ async function load(ctx) {
   const blocks = await blockMap(gc);
   const ids = [...ctx.users.keys()];
   const prefs = await people.prefsOf(gc, ids);
+  // 1.22.0: the pictures as GateControl's profile says (avatarvis.js) — the raw entries, the family groups and the
+  // viewer's chat partners (for „Kontakte“)
+  const raw = ctx.users;
+  const fams = people.families();
+  const partners = ctx.viewer != null && [...raw.values()].some((u) => avatarvis.levelOf(u) === 'contacts') ? await avatarvis.partnersOf(gc, ctx.viewer) : new Set();
   const s = {
     fam,
     blocks,
     prefs,
+    /**
+     * May `viewer` see the picture of `owner`? The level of the profile where GateControl names one, else the
+     * Messenger's privacy.avatar as before. A block is checked by the caller.
+     */
+    avatarShown(viewer, owner) {
+      if (viewer === owner) return true;
+      const level = avatarvis.levelOf(raw.get(owner));
+      if (level) return avatarvis.sees(level, viewer, owner, { fams, partner: viewer === ctx.viewer && partners.has(owner) });
+      const p = prefs.get(owner);
+      return !p || s.allows(p.privacy.avatar, viewer, owner);
+    },
     /** Did either of the two block the other? */
     blocked(a, b) { return !!((blocks.by.get(a) && blocks.by.get(a).has(b)) || (blocks.by.get(b) && blocks.by.get(b).has(a))); },
     /** Did `a` block `b`? */
@@ -93,16 +110,16 @@ function presence(s, viewer, target, now) {
 }
 
 /**
- * The accounts map as `viewer` sees it: avatarUrl null for people whose avatar privacy excludes the viewer.
+ * The accounts map as `viewer` sees it: avatarUrl null for people whose picture the viewer may not see
+ * (1.22.0: „Wer sieht dein Bild?“ of the profile — s.avatarShown) or who blocked / were blocked by the viewer.
  * Returns the same map when nothing is hidden.
  */
 function maskUsers(s, users, viewer) {
   if (viewer == null) return users;
   let out = null;
   for (const [id, u] of users) {
-    const p = s.prefs.get(id);
-    if (!p || id === viewer || !u.avatarUrl) continue;
-    if (s.allows(p.privacy.avatar, viewer, id) && !s.blocked(viewer, id)) continue;
+    if (id === viewer || !u.avatarUrl) continue;
+    if (s.avatarShown(viewer, id) && !s.blocked(viewer, id)) continue;
     if (!out) out = new Map(users);
     out.set(id, { ...u, avatarUrl: null });
   }

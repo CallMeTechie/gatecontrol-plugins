@@ -7,6 +7,7 @@
 
 const store = require('./store');
 const config = require('./config');
+const avatarvis = require('./avatarvis');
 const { fail, bool, parseJson } = require('./util');
 
 // 1.4.0: privacy, notifications and chat preferences (prefs.ext, JSON — no content)
@@ -49,19 +50,31 @@ function extOf(r) {
 }
 
 const CACHE_MS = 10000;
-let cache = { at: 0, map: null };
+let cache = { at: 0, map: null, fams: null };
 
-/** Map id → { id, name, role, avatarUrl, color, colorHex, initials } of the enabled accounts (cached 10 s). */
+/**
+ * Map id → { id, name, role, avatarUrl, color, colorHex, initials[, avatarVisibility] } of the enabled accounts (cached
+ * 10 s). 1.22.0: where GateControl keeps „Wer sieht dein Bild?“ in the profile, every picture with its level
+ * (unmasked) and the family groups — the Messenger decides per reader (social.maskUsers, avatarvis.js).
+ */
 async function users(gc, now = Date.now()) {
   if (cache.map && now - cache.at < CACHE_MS && now >= cache.at) return cache.map;
-  const list = await gc.users.list();
+  const prof = avatarvis.inProfile(gc);
+  const list = prof ? await gc.users.list({ unmasked: true }) : await gc.users.list();
   const map = new Map();
   for (const u of Array.isArray(list) ? list : []) if (u && Number.isSafeInteger(u.id)) map.set(u.id, u);
-  cache = { at: now, map };
+  let fams = null;
+  if (prof) {
+    try { fams = await avatarvis.coreFamilies(gc); } catch { fams = new Map(); }
+  }
+  cache = { at: now, map, fams };
   return map;
 }
 
-function reset() { cache = { at: 0, map: null }; }
+/** The family groups of GateControl (avatarvis.coreFamilies) as of the last users(), or null. */
+function families() { return cache.fams; }
+
+function reset() { cache = { at: 0, map: null, fams: null }; }
 
 /** The face of a person for the API: { userId, name, avatarUrl, initials, colorHex, color, gone }. */
 function face(id, map) {
@@ -154,5 +167,5 @@ async function list(gc, viewerId) {
 }
 
 module.exports = {
-  users, reset, face, prefsRow, prefsOf, prefsOut, extOf, touch, markKiosk, updatePrefs, list, EXT_DEFAULTS, AUDIENCE, STATUS_AUDIENCE, PLACE_AUDIENCE, REMINDER_MIN,
+  users, families, reset, face, prefsRow, prefsOf, prefsOut, extOf, touch, markKiosk, updatePrefs, list, EXT_DEFAULTS, AUDIENCE, STATUS_AUDIENCE, PLACE_AUDIENCE, REMINDER_MIN,
 };

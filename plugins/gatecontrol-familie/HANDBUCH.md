@@ -5,6 +5,12 @@
 
 - **Signal bei „Andere Messenger“:** Bietet dein Server die Signal-Brücke an (Plugin Messenger ab 1.23.0), steht in der Karte **„Andere Messenger“** neben WhatsApp eine Zeile **Signal** je Kind – mit eigenem Schalter, zunächst aus. Zurücknehmen trennt die Verknüpfung des Kindes bei Signal. Die Altersgrenzen der Dienste gelten weiter, das prüfen die Eltern selbst.
 
+## Neu in 1.27.0
+
+- **„Wer sieht dein Bild?“ aus dem Profil:** Mit dem neuen GateControl wählt jede Person in ihrem Profil, wer ihr Bild sieht. Familie hält sich daran: Mitglieder, Anwesenheit und Wünsche zeigen das Bild so, wie die Person es der Familie zeigt. Bei „Nur ich“ sehen die anderen ihre Initialen in ihrer Farbe.
+- **Wand-Tablet:** Dort erscheinen nur Bilder, die für alle auf dem Server freigegeben sind, sonst die Initialen.
+- Auf einem älteren GateControl ändert sich nichts.
+
 ## Neu in 1.26.0
 
 - **Geburtstage der Eltern aus dem Profil:** Mit GateControl 1.280.0 hat jede Person ein eigenes Profil („Mein Profil“ im Portal und in der App) mit ihrem Geburtstag. Bei **Erwachsenen** (Eltern) führt jetzt das Profil: Familie zeigt den Geburtstag von dort, in den Terminen, auf dem Wand-Tablet und bei der Erinnerung am Tag. Auf der Admin-Seite **„Mitglieder & Ortung“** steht er nur noch zum Ansehen da, mit dem Zusatz „aus dem Profil“.

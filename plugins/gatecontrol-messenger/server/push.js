@@ -27,6 +27,7 @@
 
 const store = require('./store');
 const people = require('./people');
+const avatarvis = require('./avatarvis');
 const live = require('./live');
 const log = require('./log');
 const texts = require('./texts.json');
@@ -152,12 +153,15 @@ async function send(gc, job, users, now = Date.now()) {
   const notice = row.kind === 'card' && job.meta && job.meta.card && job.meta.card.notice ? job.meta.card.notice : null;
   const senderName = senderId == null ? ((notice && notice.sourceLabel) || 'GateControl') : (sender ? sender.name : null);
   if (!senderName) return [];
+  // 1.22.0: the sender's picture only for those who may see it („Wer sieht dein Bild?“, avatarvis.js)
+  const seesPic = senderId == null ? new Set() : await avatarvis.pushReaders(gc, senderId, sender, to);
   const groups = new Map();
   for (const u of to) {
     const p = prefs.get(u) || {};
     const lang = p.lang === 'en' ? 'en' : 'de';
-    const k = `${p.preview ? 1 : 0}:${lang}`;
-    if (!groups.has(k)) groups.set(k, { users: [], preview: !!p.preview, lang });
+    const pic = seesPic.has(u);
+    const k = `${p.preview ? 1 : 0}:${lang}:${pic ? 1 : 0}`;
+    if (!groups.has(k)) groups.set(k, { users: [], preview: !!p.preview, lang, pic });
     groups.get(k).users.push(u);
   }
   const calls = [];
@@ -181,7 +185,7 @@ async function send(gc, job, users, now = Date.now()) {
       users: g.users,
       priority: (row.kind === 'card' && job.meta && job.meta.card && job.meta.card.kind === 'doorbell') || (notice && ['high', 'critical'].includes(notice.priority)) ? 'high' : 'normal',
       conversation: { id: String(conv.id), title: conv.kind === 'group' ? (job.title || null) : null, isGroup: conv.kind === 'group' },
-      sender: { id: senderId == null ? 'gatecontrol' : senderId, name: senderName, avatarUrl: sender && sender.avatarUrl ? sender.avatarUrl : null },
+      sender: { id: senderId == null ? 'gatecontrol' : senderId, name: senderName, avatarUrl: g.pic && sender && sender.avatarUrl ? sender.avatarUrl : null },
       data: { messageId: row.id, conversationId: conv.id, ...(person ? { person: { id: person.personId, conversationId: person.conversationId } } : {}), actions },
     };
     if (!n.title.trim()) continue;
@@ -224,12 +228,15 @@ async function custom(gc, job, users, now = Date.now()) {
   const prefs = await people.prefsOf(gc, to);
   const sender = job.senderId == null ? null : users.get(job.senderId);
   const senderName = job.senderId == null ? 'GateControl' : (sender ? sender.name : 'GateControl');
+  // 1.22.0: the sender's picture only for those who may see it (avatarvis.js)
+  const seesPic = job.senderId == null ? new Set() : await avatarvis.pushReaders(gc, job.senderId, sender, to);
   const groups = new Map();
   for (const u of to) {
     const p = prefs.get(u) || {};
     const lang = p.lang === 'en' ? 'en' : 'de';
-    const k = `${p.preview ? 1 : 0}:${lang}`;
-    if (!groups.has(k)) groups.set(k, { users: [], preview: !!p.preview, lang });
+    const pic = seesPic.has(u);
+    const k = `${p.preview ? 1 : 0}:${lang}:${pic ? 1 : 0}`;
+    if (!groups.has(k)) groups.set(k, { users: [], preview: !!p.preview, lang, pic });
     groups.get(k).users.push(u);
   }
   const calls = [];
@@ -247,7 +254,7 @@ async function custom(gc, job, users, now = Date.now()) {
     const n = {
       topic: TOPIC, title, body, users: g.users, priority: 'normal',
       conversation: { id: String(conv.id), title: title0, isGroup: conv.kind === 'group' },
-      sender: { id: job.senderId == null ? 'gatecontrol' : job.senderId, name: senderName, avatarUrl: sender && sender.avatarUrl ? sender.avatarUrl : null },
+      sender: { id: job.senderId == null ? 'gatecontrol' : job.senderId, name: senderName, avatarUrl: g.pic && sender && sender.avatarUrl ? sender.avatarUrl : null },
       collapseKey: `${job.kind}:${conv.id}:${job.messageId}`.slice(0, 120), data,
     };
     try {

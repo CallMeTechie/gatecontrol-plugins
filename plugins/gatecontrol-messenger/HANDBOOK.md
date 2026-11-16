@@ -15,7 +15,7 @@ Everything stays on your server. Texts, locations, file names and group titles a
 
 ## Requirements
 
-- GateControl **1.204.0** or later (group chats for GateControl groups from 1.200.0, virus scan from the version after 1.222.0).
+- GateControl **1.291.0** or later (Signal bridge; group chats for GateControl groups from 1.200.0, virus scan from the version after 1.222.0).
 - A licence for the plugin.
 - For “Save to Drive”: the Drive plugin. For the family chat: the Family plugin.
 
@@ -83,6 +83,15 @@ The administrator set a retention, or the chat is a disappearing chat.
 - **Disappearing messages** from Signal hold here too (“Messages disappear after 1 week”); only Signal can change them. Open a **view-once** message in Signal. Stickers arrive as pictures.
 - **Recognition per service:** after linking, the messenger asks once: “May others on this server recognise you by your Signal?” – separate from WhatsApp, changeable in “My profile” under “Recognition”.
 - **For administrators:** the card “Bridges” has a row for Signal and the switch “Convert animated stickers” (default off: a still picture). When the server's `docker-compose.yml` does not know Signal yet, the card says so – replace it once with the new one.
+
+## New in 1.22.0
+
+- **“Who can see your picture?” now applies everywhere in GateControl.** The setting is no longer in the Messenger but in your profile (“My profile” in the portal, the profile in the app): Everyone on this server, **Contacts**, Family or Only me. It applies in chats, in Family, in Drive and everywhere else.
+- **Contacts** means your family and everyone you share a direct chat or a group with. Whoever may not see your picture sees your initials in your colour – in the list, the chat header, as the sender in groups and in the push notification.
+- **Taken over once:** On the first start with the new GateControl the Messenger takes over your earlier choice (“Family” stays Family, “Nobody” becomes “Only me”) – only if you have not chosen anything in the profile yet.
+- In the app's privacy settings, “Profile picture” now leads to your profile. Older apps that still change the setting in the Messenger change it in the profile.
+- WhatsApp, Signal and Telegram never get your GateControl picture.
+- On an older GateControl everything stays in the Messenger as before.
 
 ## New in 1.21.0
 

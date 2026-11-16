@@ -5,7 +5,8 @@ Windows-Client und im Portal (eigener Tab „Chats“). Alles bleibt auf dem eig
 
 ## 1.23.0
 **Signal** („Brücken Stufe 7a“) — die zweite Brücke neben WhatsApp, für GateControl mit `gc.bridges` Version 10 (die
-Signal-Brücke, update.sh 10, die neue `docker-compose.yml`); mit älteren Servern bleibt alles wie bisher.
+Signal-Brücke, update.sh 10, die neue `docker-compose.yml`). **Braucht GateControl ≥ 1.291.0** (`plugin.json`
+`gatecontrol`; die genaue Nummer setzt die Server-Veröffentlichung von Stufe 7a).
 - **Netz `signal`** überall, wo bisher `whatsapp` stand (`bridges.js`, `bridgechats.js`, Personen, Kinder-Freigaben).
   `GET bridges` je Netz neu `flows` (Signal nur `qr`; `POST …/login` lehnt andere Wege ab), `history { maxDays,
   phoneConfirms }` (Signal: höchstens 30 Tage, nur beim Verknüpfen, das Handy fragt), `recognition { available, asked,
@@ -26,6 +27,21 @@ Signal-Brücke, update.sh 10, die neue `docker-compose.yml`); mit älteren Serve
   Standbild; `PUT admin/bridges { animatedStickers }`, gilt für Brücken, die umwandeln — Telegram folgt), Hinweis, wenn die
   `docker-compose.yml` des Servers Signal noch nicht kennt (`networks[].needs`).
 - Tests `test/signal.test.js`; `tools/testing/mock-bridges.js` kennt Version 10.
+
+## 1.22.0
+**„Wer sieht dein Bild?“ aus dem Profil** (GateControl mit `gc.users.setAvatarVisibility` / `adoptAvatarVisibility`,
+feature-erkannt; ältere Server: alles wie bisher). `server/avatarvis.js`.
+- `people.users` holt auf solchen Servern jedes Bild mit `avatarVisibility` (`gc.users.list({ unmasked: true })`) und die
+  Familiengruppen von GateControl (`gc.groups`, Art `family`, direkte Mitglieder) — Cache 10 s, geleert von den Hooks
+  `profileChanged` (`avatar`, `displayName`) und `groupsChanged`.
+- `social.maskUsers` entscheidet je Betrachter: `all`, `contacts` (Familie + aktive Mitglieder eines gemeinsamen Chats oder
+  einer Gruppe), `family`, `self`; die Person selbst immer, eine Sperre verbirgt in beide Richtungen.
+- Push: das Bild des Absenders nur für Empfänger, die es sehen dürfen (eigene Gruppe je Empfänger-Art).
+- `GET me`: `avatarInProfile: true`; `prefs.privacy.avatar` spiegelt das Profil für ältere Apps (`contacts` → `family`,
+  `self` → `nobody`), `prefs.privacy.avatarProfile` trägt den echten Wert. `PUT/PATCH prefs { privacy: { avatar } }` wird
+  ans Profil weitergeleitet (`nobody` → `self`).
+- Beim Start einmal (`settings.avatar_profile_adopted`): `privacy.avatar` `family`/`nobody` je Person ins Profil
+  (`adoptAvatarVisibility`, nur solange dort nichts gewählt ist); ein Fehler lässt es für den nächsten Start offen.
 
 ## 1.21.0
 **Personen zusammenführen** („Chats v2 – Teil B“). Feature-Wort `chat_people` (für dieselben Personen wie `bridge_chats`);

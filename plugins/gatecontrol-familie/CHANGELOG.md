@@ -12,6 +12,12 @@ Signal in der Karte „Andere Messenger“ (Plugin Messenger ab 1.23.0 auf einem
   Signal. Text `linked.net_signal`.
 - Test: Signal neben WhatsApp, ein Elternteil schaltet Signal allein frei.
 
+## 1.27.0
+
+„Wer sieht dein Bild?“ aus dem Profil von GateControl: `members.load(gc, today, { viewer })` gibt den Betrachter an
+`gc.users.list({ viewer })` weiter — ein Mitglied sieht ein Bild so, wie die Person es der Familie zeigt; ohne
+Betrachter (Hintergrund, Wand-Tablet) nur Bilder für alle. Ältere GateControl ignorieren den Betrachter.
+
 ## 1.26.0
 
 Nutzerprofil – der Geburtstag der Eltern kommt aus dem Profil (GateControl ≥ 1.280.0, `permissions.profile: ["birthday"]`).

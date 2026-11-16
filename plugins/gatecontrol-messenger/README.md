@@ -508,7 +508,8 @@ as `all`.
 * `lastSeen`: who sees `online` / `lastSeenAt`. Symmetric like read receipts:
   whoever hides theirs from someone sees nothing of that person.
 * `avatar`: who gets the person's `avatarUrl` (others get `null` everywhere:
-  people, members, peer, status feed).
+  people, members, peer, status feed). Since 1.22.0 on a GateControl that keeps
+  „Wer sieht dein Bild?“ in the user profile, see below.
 * `statusDefault`: the audience when `PUT status` / `POST status/stories`
   carry no `visibility`.
 * `groupAdd`: who may add the person to groups. Others are left out and listed
@@ -1467,6 +1468,29 @@ Familie) and, since 1.10.0, "In Drive speichern" for pictures, voice messages an
 no downloads) and block; chips for chat lists and the archive above the chat
 list; the settings dialog for privacy, notifications, chats and blocks. Each
 part only when `GET me` lists its feature.
+
+## Profile picture visibility from the profile (since 1.22.0)
+
+On a GateControl with `gc.users.setAvatarVisibility` the person chooses in her
+user profile who sees her picture, for all of GateControl: `all`, `contacts`,
+`family`, `self`. The apps change it there (`PATCH /api/v1/client/me/profile`
+`{ visibility: { avatar } }`), not here.
+
+* `GET me` → `avatarInProfile: true`. `prefs.privacy.avatarProfile` is the
+  level of the profile; `prefs.privacy.avatar` mirrors it for older apps
+  (`contacts` → `family`, `self` → `nobody`). The privacy row "Profilbild"
+  opens the profile.
+* `PUT/PATCH prefs { privacy: { avatar } }` (older apps) is forwarded to the
+  profile (`nobody` → `self`).
+* `avatarUrl` is `null` for a reader who may not see the picture: `contacts`
+  = the family (GateControl's groups of the kind family) and everybody who
+  shares a direct chat or a group with the person; `family`; `self` nobody.
+  The person always sees her own; a block hides it both ways. Pushes carry the
+  sender's picture only for recipients who may see it.
+* On the first start the person's old `privacy.avatar` (`family`, `nobody`)
+  is handed to the profile once, only while nothing is chosen there.
+
+Without `avatarInProfile` everything works as before (privacy.avatar here).
 
 ## Development
 

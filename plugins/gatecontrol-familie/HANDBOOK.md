@@ -5,6 +5,12 @@
 
 - **Signal under “Other messengers”:** when your server offers the Signal bridge (Messenger plugin 1.23.0 or later), the card **“Other messengers”** shows a row **Signal** next to WhatsApp for each child – with its own switch, off at first. Taking it back ends the child's link at Signal. The services' age limits still apply; parents check them themselves.
 
+## New in 1.27.0
+
+- **“Who can see your picture?” from the profile:** With the new GateControl everybody chooses in their profile who sees their picture. Family follows it: members, presence and wishes show the picture as the person shows it to the family. With “Only me” the others see the initials in the person’s colour.
+- **Wall tablet:** It shows only pictures shared with everyone on the server, otherwise the initials.
+- On an older GateControl nothing changes.
+
 ## New in 1.26.0
 
 - **The parents’ birthdays from the profile:** With GateControl 1.280.0 everybody has a profile of their own (“My profile” in the portal and the app) with their birthday. For **adults** (parents) the profile now leads: Family shows the birthday from there, in the dates, on the wall tablet and in the reminder on the day. On the admin page **“Members & locating”** it is shown only, marked “from the profile”.

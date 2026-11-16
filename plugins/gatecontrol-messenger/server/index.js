@@ -136,7 +136,21 @@ module.exports = {
     try { await ensureKey(gc); await require('./bridges').forgetRawLoginIds(gc); } catch (e) { gc.log.warn('login ids not replaced', (e && (e.code || e.message)) || 'error'); }
     // 1.17.0: the media area of the bridged chats' files (GateControl with media areas)
     require('./bridgemedia').ensureArea(gc).catch(() => {});
+    // 1.22.0: „Wer sieht dein Bild?“ moved to GateControl's profile — each person's old privacy.avatar once (avatarvis.js)
+    try {
+      const r = await require('./avatarvis').adoptAll(gc, people.extOf);
+      if (!r.skipped) gc.log.info('avatar privacy handed to the profile', r.adopted, r.failed ? `failed ${r.failed}` : '');
+    } catch (e) { gc.log.warn('avatar privacy not handed over', (e && (e.code || e.message)) || 'error'); }
     gc.log.info('messenger started', gc.plugin.version);
+  },
+
+  /**
+   * 1.22.0 (GateControl with the user profile): a profile changed — { userId, fields }, never a value. „Wer sieht dein
+   * Bild?“ (avatar) or a name: the accounts are read again at the next request. Never throws.
+   */
+  async profileChanged(arg) {
+    const fields = arg && Array.isArray(arg.fields) ? arg.fields : [];
+    if (fields.includes('avatar') || fields.includes('displayName')) people.reset();
   },
 
   /**
@@ -292,6 +306,7 @@ module.exports = {
    * follow (an archived or deleted group's chat becomes a normal chat) — server/groupchats.js. Never throws.
    */
   async groupsChanged(arg, gc) {
+    people.reset(); // 1.22.0: the family groups decide who sees a picture (avatarvis.js)
     try {
       await ensureKey(gc);
       await groupchats.changed(gc, arg && arg.changes);
