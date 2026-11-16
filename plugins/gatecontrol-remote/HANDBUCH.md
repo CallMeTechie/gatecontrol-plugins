@@ -1,4 +1,4 @@
-<!-- version: 1.6.0 -->
+<!-- version: 1.7.0 -->
 # Fernzugriff – Handbuch
 
 ## Was das Plugin kann {#was-das-plugin-kann}
@@ -9,6 +9,8 @@ Fernzugriff ist das frühere „Remote Desktops“ von GateControl als eigenes P
 - **in den GateControl-Apps** (Android, Windows) mit RDP wie bisher. Die Apps merken vom Umzug nichts.
 
 Dazu kommen Wake-on-LAN, Wartungsfenster, eine Erinnerung an das Erneuern der Zugangsdaten, Rechte je Person und Gruppe und der Verlauf aller Sitzungen.
+
+Seit 1.7.0 beginnt **„Gerät hinzufügen“ mit dem Ziel**: GateControl zeigt die Geräte im VPN, die Geräte hinter jedem Gateway und die freigegebenen Dienste zur Auswahl, prüft die Ports und wählt den Weg selbst (siehe [Gerät hinzufügen](#hinzufuegen)).
 
 Seit 1.5.0 kann auch ein **Windows-PC seinen Bildschirm teilen** – mit „Bildschirm teilen“ in der GateControl-App für Windows, auch mit **Windows Home**. Wer hilft, sieht den Bildschirm im Browser und darf ihn nach der Bestätigung am PC mit Maus und Tastatur steuern (siehe [Windows-Bildschirm teilen](#windows-teilen)).
 
@@ -24,6 +26,7 @@ Passwörter und SSH-Schlüssel speichert nicht das Plugin, sondern der verschlü
 
 ## Voraussetzungen {#voraussetzungen}
 
+- Für den neuen Dialog „Gerät hinzufügen“: GateControl mit der Fernzugriff-Schnittstelle **Version 7** (GateControl **1.292.0** oder neuer). Mit einem älteren GateControl bleibt das bisherige Formular mit Reitern.
 - Für Linux-Geräte: GateControl **1.289.0** oder neuer und auf dem Rechner der Agent **gatecontrol-agent** (siehe [Linux-Geräte](#linux)).
 - Für „Bildschirm teilen“ am Windows-PC: GateControl **1.287.0** oder neuer und die GateControl-App für Windows (Pro) mit „Bildschirm teilen“. Maus und Tastatur so, wie sie sind (auch Tastenkombinationen, mehrere Bildschirme), bringt GateControl mit der Fernzugriff-Schnittstelle **Version 6** (GateControl 1.288.0 oder neuer); mit Version 5 geht Steuern mit Klicken, Ziehen, Scrollen und Text.
 - Zum Steuern eines Handys: GateControl mit der Fernzugriff-Schnittstelle **Version 5** (GateControl 1.287.0 oder neuer) und die GateControl-App für Android **aus GitHub** mit eingeschalteter Bedienungshilfe „GateControl-Fernsteuerung“. Mit einem älteren GateControl oder der App aus Google Play geht nur Ansehen.
@@ -58,9 +61,35 @@ Wer bisher ein RDP- oder VNC-Ziel sehen konnte, bekommt das Recht „Remote Desk
 
 > **Hinweis:** Steht bei einem Gerät „Zugangsdaten neu eingeben“, konnte GateControl sie nicht mehr lesen, etwa nach einer Wiederherstellung auf einem anderen Server. Öffne das Gerät, gib Benutzername und Passwort neu ein und speichere.
 
+### Gerät hinzufügen {#hinzufuegen}
+
+„Gerät hinzufügen“ hat drei Schritte:
+
+1. **Ziel:** Du wählst aus einer Liste. „Im VPN“ stehen die VPN-Geräte mit ihrem Namen im VPN, „Hinter Gateway …“ die Geräte, die der Netzwerk-Wächter des Gateways im Heimnetz sieht (Name, Adresse, Hersteller und die offenen Ports SSH, RDP, VNC). Geräte ohne diese Ports stehen eine Zeile tiefer unter „anzeigen“. „Freigegebene Dienste“ sind L4-Routen, die nach SSH, RDP oder VNC aussehen, und „Anderes Ziel eingeben …“ nimmt einen Namen oder eine Adresse außerhalb deines Netzes. Suche und die Filter SSH, RDP, VNC helfen bei langen Listen. Grau steht, was schon ein Gerät ist oder sich selbst anmeldet (Windows-PCs mit der App, Linux-Rechner mit dem Agenten).
+2. **Verbindung:** Protokoll und Port stehen schon da. GateControl prüft beim Öffnen die Ports 22, 3389, 5900 und 23 dieses einen Geräts – über das Gateway oder vom Server aus – und zeigt den Weg als eine Zeile: **im VPN**, **über Gateway „…“** oder **übers Internet**. Was früher „Zugriff“ hieß, liegt unter „Erweitert“.
+3. **Anmeldung:** Benutzername und Passwort, bei SSH als Vorgabe ein Schlüssel von GateControl (den öffentlichen Teil kopierst du einmal in `~/.ssh/authorized_keys`). „Auch im Browser verbinden“ ist bei neuen Geräten an.
+
+Danach siehst du, was mit Vorgaben eingerichtet wurde. Sehen darf das Gerät zuerst nur, wer Admin ist – „Personen freigeben“ ändert das. Hat das Gerät noch ein zweites Protokoll offen, bietet GateControl „Auch per VNC anlegen?“ (bzw. SSH, RDP) mit allem vorausgefüllt an; ein Gerät hat ein Protokoll.
+
+**Wenn es nicht glatt läuft:**
+
+| Zustand | Was GateControl zeigt |
+|---|---|
+| Nicht erreichbar | Kein Port antwortet. Ist die MAC beim Wächter bekannt, kannst du das Gerät wecken. „Trotzdem anlegen“ geht, etwa für einen PC, der nur bei Bedarf läuft. |
+| Port zu | Das gewählte Protokoll antwortet nicht, andere schon – mit „VNC nehmen“, „Anderen Port eingeben“ oder „Trotzdem anlegen“. |
+| Gateway offline | Protokoll und Port stammen vom letzten Scan. Anlegen geht jetzt, prüfen erst, wenn das Gateway zurück ist. Steht das Gateway in einem Pool, nimmt GateControl den Pool. |
+| Doppelt bekannt | Ein Gerät mit VPN-Client, das auch im Heimnetz steht. GateControl schlägt das VPN vor und fragt nur in diesem Fall. |
+| Meldet sich selbst an | Windows-PCs mit der App und Linux-Rechner mit dem Agenten halten Adresse, Port und Firewall selbst aktuell – „Zum Gerät“ öffnet das vorhandene Gerät. |
+| Extern, Port offen | Der Server erreicht das Ziel. Gespeichert wird es wie „Beide“: Der Browser geht über den Server, die Apps verbinden sich direkt. |
+| Extern, kein Port | Der Hinweis, was fehlt: am einfachsten die GateControl-App auf dem PC, sonst ein Gateway in dem Netz oder eine Port-Freigabe am Router. |
+
+**Der Weg:** Eine VPN-Adresse geht direkt. Eine Adresse im Heimnetz eines Gateways geht über das Gateway – den Port auf dem Server wählt GateControl selbst (40000–40999, nur im VPN erreichbar). Alles andere geht vom Server aus.
+
+**Bearbeiten** zeigt alles auf einer Seite: oben Ziel und Anmeldung, darunter Klappen („Wer darf es nutzen“, „Wecken & Wartung“, „Anzeige, Ressourcen, Leistung“, „Browser & Aufzeichnung“, bei SSH „Terminal & Schlüssel“, „Erweitert · Weg“, „Notizen & Schlagwörter“) mit einer Zusammenfassung im Kopf. „Ziel ändern“ öffnet Schritt 1 und 2. Übernommene Geräte behalten ihre Daten, auch den Port auf dem Server. Liegt die Adresse eines Geräts unter „Nur VPN“ im Heimnetz eines Gateways, schlägt GateControl „Über das Gateway verbinden“ vor – vorher lief so ein Gerät ins Leere.
+
 ### Geräte {#geraete}
 
-Ein Gerät hat diese Reiter:
+Mit einem GateControl ohne Fernzugriff-Schnittstelle Version 7 (und für Geräte, die sich selbst anmelden) hat ein Gerät diese Reiter:
 
 | Reiter | Was du einstellst |
 |---|---|
@@ -223,6 +252,15 @@ Das Recht wird bei jedem Verbinden neu geprüft.
 **„Zu viele falsche Codes“:** Warte 15 Minuten oder lass dir am PC einen neuen Code zeigen.
 
 **Im Browser fragt Windows nach der Anmeldung nicht:** Verlangt der PC die Anmeldung auf Netzwerkebene (NLA), braucht die Sitzung im Browser Benutzername und Passwort, die die Sitzungsseite noch nicht abfragt. Verbinde dich dann aus der GateControl-App.
+
+## Neu in 1.7.0 {#neu-1-7-0}
+
+- **„Gerät hinzufügen“ neu in drei Schritten:** Ziel aus der Liste wählen (VPN, hinter jedem Gateway, freigegebene Dienste, anderes Ziel), Protokoll und Port stehen schon da, der Weg wird als eine Zeile gezeigt. Gezielte Prüfung von 22, 3389, 5900 und 23 des einen Geräts, kein neuer breiter Scan.
+- **Port auf dem Server automatisch** über ein Gateway; das Feld steht nur noch unter „Erweitert“.
+- **„Im Browser verbinden“ ist bei neuen Geräten an**; alte Geräte behalten ihren Wert. Neue Geräte sieht zuerst nur, wer Admin ist.
+- **Bearbeiten auf einer Seite** mit Klappen statt zehn Reitern, „Ziel ändern“, Hinweis für alte Geräte mit einer Heimnetz-Adresse unter „Nur VPN“.
+- **„Auch per VNC anlegen?“** nach dem Speichern, wenn das Gerät noch ein Protokoll offen hat.
+- Die Apps merken nichts: die Daten behalten „Zugriff“ wie bisher. Mit einem älteren GateControl bleibt das bisherige Formular.
 
 ## Neu in 1.6.0 {#neu-1-6-0}
 

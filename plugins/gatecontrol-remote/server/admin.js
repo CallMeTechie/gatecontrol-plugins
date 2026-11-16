@@ -14,9 +14,66 @@ const hosts = require('./hosts');
 const support = require('./support');
 const log = require('./log');
 const recordings = require('./recordings');
-const { fail, fromHost, posInt } = require('./util');
+const way = require('./way');
+const { fail, fromHost, posInt, clip } = require('./util');
 
 const v3 = (gc) => !!(gc.remote && gc.remote.version >= 3);
+// 1.7: the new „Gerät hinzufügen“ — GateControl with gc.remote version 7 (candidates, scan, listenPort 'auto')
+const v7 = (gc) => !!(gc.remote && gc.remote.version >= 7 && typeof gc.remote.candidates === 'function');
+const SCAN_PORTS = [22, 3389, 5900, 23];
+
+/**
+ * 1.7: what the wizard offers (gc.remote.candidates, only for this administrator in this request) and the devices of
+ * the plugin it is compared with. Nothing of it is stored.
+ */
+async function candidateList(gc, user, cfg) {
+  if (!v7(gc)) return { available: false };
+  let c;
+  try { c = await gc.remote.candidates({ user: user.id }); } catch (e) { throw fromHost(e); }
+  const known = (await devices.all(gc)).map((d) => ({
+    id: d.id, name: d.name, protocol: d.protocol, kind: d.kind, platform: d.host ? d.host.platform : null,
+    host: d.config.host || null, accessMode: d.config.access_mode, gatewayPeerId: d.config.gateway_peer_id || null, gatewayPoolId: d.config.gateway_pool_id || null,
+  }));
+  return { available: true, vpn: c.vpn || null, peers: c.peers || [], gateways: c.gateways || [], routes: c.routes || [], known, checkMinutes: cfg ? cfg.checkMinutes : null };
+}
+
+/** 1.7: a few ports of one target at once (gc.remote.scan): directly from the server or through its gateway. */
+async function scanTarget(gc, b) {
+  if (!v7(gc)) throw fail('offline');
+  const host = typeof b.host === 'string' ? b.host.trim() : '';
+  if (!host || host.length > 253 || !/^[A-Za-z0-9.:_-]+$/.test(host)) throw fail('invalid', { field: 'host' });
+  const gw = posInt(b.gatewayPeerId);
+  const ports = Array.isArray(b.ports) && b.ports.length ? b.ports.map(Number).filter((n) => Number.isInteger(n) && n >= 1 && n <= 65535).slice(0, 8) : SCAN_PORTS;
+  if (!ports.length) throw fail('invalid', { field: 'port' });
+  try { return await gc.remote.scan({ id: 'scan', host, ...(gw ? { gateway: { peerId: gw } } : {}) }, ports); } catch (e) { throw fromHost(e); }
+}
+
+/** 1.7: wake a device of the network watch (its MAC stays in GateControl). */
+async function wakeCandidate(gc, user, b) {
+  if (!v7(gc)) throw fail('offline');
+  const ref = typeof b.ref === 'string' && /^nw-[1-9][0-9]{0,15}$/.test(b.ref) ? b.ref : null;
+  const gw = posInt(b.gatewayPeerId);
+  const host = typeof b.host === 'string' ? b.host.trim() : '';
+  if (!ref || !gw || !host) throw fail('invalid');
+  try { return await gc.remote.wake({ id: 'wake', host, port: 9, gateway: { peerId: gw }, watch: ref }, { user: user.id }); } catch (e) { throw fromHost(e); }
+}
+
+/** 1.7: the way to an address after the rule of server/way.js (free text of the wizard). */
+async function wayTo(gc, user, b) {
+  if (!v7(gc)) throw fail('offline');
+  const host = typeof b.host === 'string' ? clip(b.host, 253) : '';
+  if (!host || !/^[A-Za-z0-9.:_-]+$/.test(host)) throw fail('invalid', { field: 'host' });
+  let c;
+  try { c = await gc.remote.candidates({ user: user.id }); } catch (e) { throw fromHost(e); }
+  const w = way.derive(host, c, b.gatewayPeerId);
+  return { way: w, access: way.accessOf(w, host, posInt(b.port)) };
+}
+
+/** 1.7: how a stored device is reached, for the editor (null without version 7). */
+async function wayOfDevice(gc, user, d) {
+  if (!v7(gc) || !user || d.kind === 'host') return null;
+  try { return way.ofDevice(d, await gc.remote.candidates({ user: user.id })); } catch (e) { gc.log.debug('candidates failed', (e && e.code) || 'error'); return null; }
+}
 
 /** 1.2: the pinned SSH host key of a device (GateControl's, gc.remote.hostKeys) → { alg, sha256, source, pinnedAt } | null */
 async function hostKeyOf(gc, d) {
@@ -69,10 +126,12 @@ async function deviceList(gc) {
   });
 }
 
-async function one(gc, id) {
+async function one(gc, id, user) {
   const d = await devices.need(gc, id);
   const lists = await devices.accessLists(gc);
   const v = devices.adminView(d, lists.get(d.id), await devices.vaultInfo(gc));
+  // 1.7: the way for the editor of one page
+  if (user) v.way = await wayOfDevice(gc, user, d);
   // 1.2: the SSH terminal — the engine in use, tmux, the pinned host key, the public half of a key made in GateControl
   if (d.protocol === 'ssh') {
     const vault = d.credential ? (await devices.vaultInfo(gc)).get(d.credential) : null;
@@ -95,9 +154,21 @@ async function route(req, gc, seg, cfg) {
   const b = req.body && typeof req.body === 'object' ? req.body : {};
   const user = req.user;
   const what = seg[1];
+  // 1.7: the wizard „Gerät hinzufügen“ (gc.remote version 7)
+  if (what === 'candidates') {
+    if (m === 'GET' && seg.length === 2) return candidateList(gc, user, cfg);
+    if (m === 'POST' && seg.length === 3 && seg[2] === 'scan') return { scan: await scanTarget(gc, b) };
+    if (m === 'POST' && seg.length === 3 && seg[2] === 'wake') return { wake: await wakeCandidate(gc, user, b) };
+  }
+  if (what === 'way' && m === 'POST' && seg.length === 2) return wayTo(gc, user, b);
   if (what === 'devices') {
-    if (m === 'GET' && seg.length === 2) return { devices: await deviceList(gc), ...(await gateways(gc)) };
-    if (m === 'POST' && seg.length === 2) return { device: await one(gc, await devices.save(gc, null, b)) };
+    if (m === 'GET' && seg.length === 2) return { devices: await deviceList(gc), ...(await gateways(gc)), wizard: v7(gc) };
+    if (m === 'POST' && seg.length === 2) {
+      // 1.7: the wizard makes a device that only administrators see at first (access: 'admins' → this administrator;
+      // administrators reach every device anyway)
+      const body = b.access === 'admins' ? { ...b, access: { users: [user.id], groups: [] } } : b;
+      return { device: await one(gc, await devices.save(gc, null, body), user) };
+    }
     // 1.2: switch SSH devices to the terminal (or back) — one, some or all
     if (m === 'POST' && seg.length === 3 && seg[2] === 'ssh-engine') return { ...(await switchEngine(gc, user, b)), devices: await deviceList(gc) };
     if (m === 'POST' && seg.length === 3 && seg[2] === 'check') {
@@ -108,8 +179,8 @@ async function route(req, gc, seg, cfg) {
     const id = posInt(seg[2]);
     if (!id) throw fail('not_found');
     if (seg.length === 3) {
-      if (m === 'GET') return { device: await one(gc, id) };
-      if (m === 'PUT') return { device: await one(gc, await devices.save(gc, id, b)) };
+      if (m === 'GET') return { device: await one(gc, id, user) };
+      if (m === 'PUT') return { device: await one(gc, await devices.save(gc, id, b), user) };
       if (m === 'DELETE') {
         const d = await devices.need(gc, id);
         if (d.kind === 'host') await hosts.retire(gc, d, support, 'deleted');
@@ -160,7 +231,7 @@ async function route(req, gc, seg, cfg) {
     if (seg.length === 4 && seg[3] === 'access' && m === 'PUT') {
       await devices.need(gc, id);
       await devices.setAccess(gc, id, { users: Array.isArray(b.users) ? b.users : [], groups: Array.isArray(b.groups) ? b.groups : [], ...(Array.isArray(b.tokens) ? { tokens: b.tokens } : {}) });
-      return { device: await one(gc, id) };
+      return { device: await one(gc, id, user) };
     }
   }
   if (what === 'rights') {
@@ -215,4 +286,4 @@ async function recordingStatus(gc) {
   try { return gc.remote ? await gc.remote.recordings.available() : { available: false, reason: 'not_yet' }; } catch { return { available: false, reason: 'not_yet' }; }
 }
 
-module.exports = { route, gateways, deviceList };
+module.exports = { route, gateways, deviceList, candidateList, v7 };

@@ -54,6 +54,8 @@ const STATUS = {
   desktop_off: 409,
   host_key_invalid: 400,
   key_unavailable: 409,
+  // 1.7: the new „Gerät hinzufügen“ (gc.remote version 7)
+  gateway_offline: 409,
 };
 
 /** An API error: throw fail('limit', { max: 2 }). */
@@ -123,6 +125,8 @@ const HOST = {
   ERR_REMOTE_TIMEOUT: 'unreachable',
   ERR_REMOTE_RECORDING_UNAVAILABLE: 'recording_unavailable',
   ERR_REMOTE_BUSY: 'recording_busy',
+  // gc.remote version 7
+  ERR_REMOTE_GATEWAY_OFFLINE: 'gateway_offline',
 };
 
 function fromHost(e, dflt = 'internal') {

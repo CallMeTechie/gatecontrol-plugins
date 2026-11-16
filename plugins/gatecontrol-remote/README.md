@@ -138,6 +138,10 @@ Helpers: `POST code/redeem` → `{ request }` (`kind: 'screen'`, `mode: 'view'`)
 | `POST devices/ssh-engine` | 1.2: `{ engine: term\|guac, ids?: [ids] }` (no ids: every SSH device) → `{ switched, devices }`; protocol `remote_ssh_engine_changed` |
 | `POST devices/<id>/connect { engine: 'term' }` | 1.2: try GateControl's terminal on a Guacamole device; a successful start sets `config.term_tested_at` |
 | `POST devices/<id>/key` · `DELETE devices/<id>/hostkey` | 1.2: `{ username? }` → `{ publicKey, device }` · `{ removed, device }` (protocol `remote_host_key_reset`); `GET devices/<id>` has `ssh: { engine, tmux, hostKey, publicKey, termTestedAt, available }` |
+| `GET candidates` | 1.7 (`gc.remote` version 7): `{ available, vpn, peers, gateways, routes, known, checkMinutes }` — the list of the wizard „Gerät hinzufügen“ (`gc.remote.candidates` for this administrator; never a MAC, nothing stored); `known`: the devices of the plugin to compare. Without version 7 `{ available: false }` and the old form |
+| `POST candidates/scan` · `POST candidates/wake` | 1.7: `{ host, gatewayPeerId?, ports? }` (default 22, 3389, 5900, 23) → `{ scan }` (`gc.remote.scan`; `gateway_offline`) · `{ ref: 'nw-<id>', host, gatewayPeerId }` → `{ wake }` (the MAC stays in GateControl) |
+| `POST way` | 1.7: `{ host, port?, gatewayPeerId? }` → `{ way: { kind: vpn\|gateway\|server\|internet, peer, gateway, choices }, access }` — the rule of `server/way.js`; `GET devices/<id>` has `way` (the editor of one page, `hint: { kind: 'lan' }` for an old device with a LAN address under „Nur VPN“) |
+| `POST devices` (1.7) | `browser_enabled` on unless sent; `access: 'admins'` = only administrators at first; a gateway device without `gateway_listen_port` gets the port GateControl picks (`listenPort: 'auto'`, version 7) |
 | `GET recordings?device&limit` · `POST recordings/<id>/play` · `DELETE recordings/<id>` | 1.2: `{ recordings, available }` · `{ ref, url, expiresAt, format }` · `{ removed }` (protocol `remote_recording_deleted`) |
 | `PUT rights/user/<id>` · `PUT rights/group/<id>` with `recording` | 1.2: `off` \| `optional` \| `always` \| `null` |
 
