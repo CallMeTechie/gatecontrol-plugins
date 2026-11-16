@@ -37,6 +37,10 @@
 // Desktop when the PC offers it, else the screen). A screen request to a PC is always asked at the PC, also "ohne Code"
 // (unlike Remote Desktop "ohne Code"); control only when the person there chooses "Ansehen und steuern" for it.
 
+// 1.6 (stage 4): a Linux device of the agent. A request names `ssh` (GateControl's terminal with the device's own key) or
+// `desktop` (RDP / VNC of the desktop server the agent found; the firewall opens its port for exactly one address, as for
+// a PC). The agent confirms by itself when its person handed out the code (setting "code") or asks at the device ("ask").
+
 const crypto = require('node:crypto');
 const store = require('./store');
 const devices = require('./devices');
@@ -51,6 +55,8 @@ const SESSION_MAX_MS = 8 * 3600000;
 const UNSTARTED_MS = 180000;       // a browser ticket that was never opened, an app session never reported
 const TIMING = { waitMs: 15000, facadeWaitMs: 8000, pollMs: 250 };   // tests make them shorter
 
+const KINDS = ['rdp', 'screen', 'ssh', 'desktop'];
+const kindOut = (k) => (KINDS.includes(k) ? k : 'rdp');
 const randomId = (prefix) => prefix + crypto.randomBytes(12).toString('base64url');
 const SCREEN_WS = '/api/v1/remote/screen-relay';
 // why a phone ended a request before the picture ran (POST host/screen/<id>/end)
@@ -69,7 +75,7 @@ async function signal(gc, d, data, ttl = 120) {
 }
 
 function requestView(r, d, extra = {}) {
-  return { ...extra, id: r.id, device: { id: r.device_id, name: d ? d.name : null }, state: r.state, mode: r.mode, via: r.via, kind: r.kind === 'screen' ? 'screen' : 'rdp',
+  return { ...extra, id: r.id, device: { id: r.device_id, name: d ? d.name : null }, state: r.state, mode: r.mode, via: r.via, kind: kindOut(r.kind),
     expiresAt: iso(r.expires_at), decidedAt: iso(r.decided_at), ...(r.end_reason ? { endReason: r.end_reason } : {}) };
 }
 
@@ -91,6 +97,9 @@ function checkReady(d, kind = 'rdp') {
   if (!d || d.kind !== 'host' || !d.enabled) throw fail('not_found');
   if (!d.host.registered) throw fail('offline');
   if (kind === 'screen' && !devices.screenOffered(d)) throw fail('screen_off');
+  // 1.6: Linux
+  if (kind === 'ssh' && !devices.sshOffered(d)) throw fail('ssh_off');
+  if (kind === 'desktop' && !(devices.desktopOffered(d) && d.host.desktop.ready)) throw fail('desktop_off');
   if (kind === 'rdp' && (!devices.rdpOffered(d) || d.host.rdpEnabled === false)) throw fail('rdp_off');
   if (!d.host.online) throw fail('offline');
 }
@@ -102,6 +111,13 @@ function checkReady(d, kind = 'rdp') {
  */
 function kindFor(d, kind, via) {
   if (devices.isPhone(d)) return 'screen';
+  // 1.6: a Linux device — SSH or its desktop (nothing asked: SSH when shared)
+  if (devices.isLinux(d)) {
+    if (kind === 'ssh' || kind === 'desktop') return kind;
+    if (kind != null) throw fail('invalid', { field: 'kind' });
+    return devices.sshOffered(d) ? 'ssh' : 'desktop';
+  }
+  if (kind === 'ssh' || kind === 'desktop') throw fail('invalid', { field: 'kind' });
   if (kind === 'screen' || kind === 'rdp') return kind;
   if (kind != null) throw fail('invalid', { field: 'kind' });
   if (via !== 'app' && devices.screenOffered(d)) return 'screen';
@@ -130,8 +146,9 @@ async function create(gc, user, d, { mode, via, helperDevice, kind }, now = Date
     m = mode === 'control' && devices.screenCanControl(gc, d) ? 'control' : 'view';
     if (mode === 'control' && m === 'view') modeReason = d.host.screenControl ? 'server_view_only' : (phone ? 'phone_view_only' : 'pc_view_only');
   }
-  // an app session (mstsc) cannot only watch
-  if (!screen && v === 'app' && m === 'view') throw fail('invalid', { field: 'mode' });
+  // an app session (mstsc, the Linux desktop) cannot only watch; GateControl's terminal is always typed in
+  if ((k === 'rdp' || k === 'desktop') && v === 'app' && m === 'view') throw fail('invalid', { field: 'mode' });
+  if (k === 'ssh') m = 'control';
   // one open question per PC: a newer one replaces it
   for (const old of await store.all(gc, "SELECT * FROM requests WHERE device_id = ? AND state = 'waiting'", [d.id])) {
     await store.run(gc, "UPDATE requests SET state = 'expired', decided_at = ? WHERE id = ?", [now, old.id]);
@@ -176,7 +193,7 @@ async function pendingFor(gc, d, now = Date.now()) {
   for (const r of await store.all(gc, "SELECT * FROM requests WHERE device_id = ? AND state = 'waiting' ORDER BY created_at", [d.id])) {
     const x = await expire(gc, r, now);
     if (x.state !== 'waiting') continue;
-    out.push({ requestId: x.id, from: await personView(gc, x.helper_user_id), mode: x.mode, via: x.via, kind: x.kind === 'screen' ? 'screen' : 'rdp', expiresAt: iso(x.expires_at) });
+    out.push({ requestId: x.id, from: await personView(gc, x.helper_user_id), mode: x.mode, via: x.via, kind: kindOut(x.kind), expiresAt: iso(x.expires_at) });
   }
   return out;
 }
@@ -223,13 +240,15 @@ async function decide(gc, d, id, b, now = Date.now()) {
 async function rowOf(gc, key) { return store.one(gc, 'SELECT * FROM firewall WHERE session_key = ?', [key]); }
 
 /** Ask the PC to open 3389 for `allow` and wait for its report (≤ waitMs) → the row; firewall_timeout / firewall_failed. */
-async function open(gc, d, { allow, via, helperUserId, helperTokenId = null, requestId = null, waitMs = TIMING.waitMs }, now = Date.now()) {
+async function open(gc, d, { allow, via, helperUserId, helperTokenId = null, requestId = null, waitMs = TIMING.waitMs, port = null }, now = Date.now()) {
   if (!allow) throw fail('no_vpn');
   const key = randomId('fw_');
   const until = now + SESSION_MAX_MS;
+  // 1.6: a Linux device opens the port of its desktop server
+  const p = port || d.config.port || 3389;
   await store.run(gc, `INSERT INTO firewall (session_key, device_id, request_id, helper_user_id, helper_token_id, via, allow_ip, port, state, until, opened_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`, [key, d.id, requestId, helperUserId || null, helperTokenId, via, allow, d.config.port || 3389, until, now]);
-  await signal(gc, d, { type: 'remote.firewall.open', sessionKey: key, allow, port: d.config.port || 3389, until: iso(until) }, 60);
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`, [key, d.id, requestId, helperUserId || null, helperTokenId, via, allow, p, until, now]);
+  await signal(gc, d, { type: 'remote.firewall.open', sessionKey: key, allow, port: p, until: iso(until) }, 60);
   const end = Date.now() + waitMs;
   for (;;) {
     const r = await rowOf(gc, key);
@@ -300,14 +319,18 @@ async function endKind(gc, d, kind, reason, now = Date.now()) {
     if (r.state === 'waiting') await signal(gc, d, { type: 'remote.request.cancel', requestId: r.id });
     await endScreen(gc, r);
   }
-  if (kind === 'rdp') for (const r of await store.all(gc, "SELECT session_key FROM firewall WHERE device_id = ? AND state != 'closed'", [d.id])) await close(gc, r.session_key, reason, now);
+  if (kind === 'rdp' || kind === 'desktop') for (const r of await store.all(gc, "SELECT session_key FROM firewall WHERE device_id = ? AND state != 'closed'", [d.id])) await close(gc, r.session_key, reason, now);
 }
 
 // ─── Connecting ───
 
 /** The session of a helper to a PC (after an allowed request, or "ohne Code") → { session } | { connection }. */
 async function connectTo(gc, user, d, { mode = 'control', via = 'browser', helperDevice = null, requestId = null, server = null, waitMs } = {}) {
-  checkReady(d, 'rdp');
+  const linux = devices.isLinux(d);
+  checkReady(d, linux ? 'desktop' : 'rdp');
+  // 1.6: the desktop server of a Linux device (RDP or VNC at its own port)
+  const protocol = linux ? d.host.desktop.protocol : 'rdp';
+  const port = linux ? d.host.desktop.port : null;
   if (via === 'app') {
     let allow = null;
     if (helperDevice) {
@@ -315,15 +338,16 @@ async function connectTo(gc, user, d, { mode = 'control', via = 'browser', helpe
       allow = allow || helperDevice.vpnIp || null;
     }
     if (!allow) throw fail('no_vpn');
-    await open(gc, d, { allow, via: 'app', helperUserId: user.id, helperTokenId: helperDevice ? Number(helperDevice.id) : null, requestId, waitMs });
+    await open(gc, d, { allow, via: 'app', helperUserId: user.id, helperTokenId: helperDevice ? Number(helperDevice.id) : null, requestId, waitMs, port });
     return { connection: connectionOf(d, server) };
   }
   if (typeof gc.remote.hubAddress !== 'function') throw fail('offline');
   const hub = await gc.remote.hubAddress();
-  const row = await open(gc, d, { allow: hub, via: 'browser', helperUserId: user.id, requestId, waitMs });
+  const row = await open(gc, d, { allow: hub, via: 'browser', helperUserId: user.id, requestId, waitMs, port });
   try {
-    const t = await gc.remote.session({ user: user.id, target: devices.targetOf(d), protocol: 'rdp', mode: mode === 'view' ? 'view' : 'control',
-      options: { browser_clipboard: !!d.config.browser_clipboard, nla_enabled: true }, ttlS: 120 });
+    const target = linux ? { id: 'dev-' + d.id, name: d.name.slice(0, 120), host: d.config.host, port } : devices.targetOf(d);
+    const options = protocol === 'rdp' ? { browser_clipboard: !!d.config.browser_clipboard, nla_enabled: true } : { browser_clipboard: !!d.config.browser_clipboard };
+    const t = await gc.remote.session({ user: user.id, target, protocol, mode: mode === 'view' ? 'view' : 'control', options, ttlS: 120 });
     await store.run(gc, 'UPDATE firewall SET ref = ? WHERE session_key = ?', [t.ref, row.session_key]);
     return { session: { ref: t.ref, expiresAt: t.expiresAt, protocol: t.protocol, mode: t.mode, device: { id: d.id, name: d.name } } };
   } catch (e) {
@@ -334,12 +358,17 @@ async function connectTo(gc, user, d, { mode = 'control', via = 'browser', helpe
 
 /** Where an app connects to the PC: its VPN address, Remote Desktop, no stored credentials (the helper signs in at the PC). */
 function connectionOf(d) {
+  if (devices.isLinux(d) && d.host.desktop) {
+    const p = d.host.desktop.port;
+    return { id: d.id, name: d.name, protocol: d.host.desktop.protocol, host: d.config.host, port: p, connect_address: d.config.host, connect_port: p,
+      access_mode: 'internal', credential_mode: 'none', domain: null, resolution_mode: d.config.resolution_mode || 'fullscreen', online: d.host.online };
+  }
   return { id: d.id, name: d.name, host: d.config.host, port: d.config.port || 3389, connect_address: d.config.host, connect_port: d.config.port || 3389,
     access_mode: 'internal', credential_mode: 'none', domain: null, resolution_mode: d.config.resolution_mode || 'fullscreen', online: d.host.online };
 }
 
 /** POST requests/<id>/connect — after "allowed". */
-async function connectRequest(gc, user, id, { via, helperDevice } = {}, now = Date.now()) {
+async function connectRequest(gc, user, id, { via, helperDevice, cfg = {}, tmux, record } = {}, now = Date.now()) {
   let r = await store.one(gc, 'SELECT * FROM requests WHERE id = ?', [String(id || '')]);
   if (!r || r.helper_user_id !== user.id) throw fail('not_found');
   r = await expire(gc, r, now);
@@ -352,6 +381,14 @@ async function connectRequest(gc, user, id, { via, helperDevice } = {}, now = Da
     // a phone: the viewer's side of the relay ticket (browser: GC.openSession(ref); app: POST /api/v1/client/remote/screen-token)
     if (!r.screen_ref || !d) throw fail('request_expired');
     return { session: { ref: r.screen_ref, expiresAt: iso(r.decided_at + CONNECT_MS), protocol: 'screen', engine: 'screen', mode: r.mode === 'control' ? 'control' : 'view', device: { id: d.id, name: d.name } } };
+  }
+  // 1.6: SSH of a Linux device — GateControl's terminal; the request allowed at the device stands for the access
+  if (r.kind === 'ssh') {
+    checkReady(d, 'ssh');
+    const s = await require('./connect').open(gc, user, d.id, cfg, { via: r.via, mode: 'control', tmux, record, granted: true });
+    // the code is used up: the agent shows a new one (a desktop session gets it when its rule closes)
+    await signal(gc, d, { type: 'remote.code.void' });
+    return { session: s };
   }
   return connectTo(gc, user, d, { mode: r.mode, via: r.via, helperDevice, requestId: r.id });
 }

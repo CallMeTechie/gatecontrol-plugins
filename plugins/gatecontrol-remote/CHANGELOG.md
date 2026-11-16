@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.6.0
+
+Stufe 4 „Linux-Agent“ (Agent `gatecontrol-agent`, Repository `gatecontrol-linux-agent`; Vertrag Stufe 4). Braucht `gc.remote` ≥ 3 (`vault.generate`, `hostKeys`, Terminal); die Mindestversion bleibt 1.287.0 (`gatecontrol.ref` = aktueller master) – der Kern-PR für Linux (Netz in der Antwort von `POST /api/v1/client/enroll`, `X-Client-Platform: linux` im Push, Anleitung in „Gerät hinzufügen“) ist für das Plugin nicht zwingend; nach dessen Release `gatecontrol.ref`/Mindestversion anheben.
+
+- **Linux-Geräte:** `host/register { platform: 'linux', name, appVersion, os, ssh: { offered, user, port: 22, tmux, hostKey }, desktop: { offered, kind, protocol, port, ready }, shareMode? }` → Gerät `kind: 'host'`, `platform: 'linux'`, an der VPN-Adresse (`no_vpn` ohne), `protocol: 'ssh'` (Terminal, `tmux_enabled` nach tmux) oder der Desktop (`rdp`/`vnc`). Migration `007_linux.sql` (`ssh_offered`, `ssh_user`, `tmux_version`, `host_key_*`, `desktop_*`, `os_id`). Geprüft: Konto (nicht root), Host-Schlüssel (`host_key_invalid`), Desktop-Art und -Port.
+- **SSH-Schlüssel je Gerät:** `gc.remote.vault.generate` beim ersten Anmelden und bei einem anderen Konto; die Antwort gibt `host.ssh: { publicKey, from }` (Hub-Adresse) für `authorized_keys`. `key_unavailable` ohne `vault.generate`.
+- **Host-Schlüssel:** `gc.remote.hostKeys.pin({ targetId: 'dev-<id>', … })` bei der Anmeldung und wenn der Herzschlag einen anderen meldet (Protokoll `remote_host_key_changed`, `source: 'agent'`).
+- **Anfragen `kind: 'ssh' | 'desktop'`:** `code/redeem`, `devices/<id>/connect` und das Signal `remote.request`; SSH ist immer `control`. Erlaubt → SSH: Ticket des Terminals (`requests/<id>/connect { tmux?, record? }`, die Erlaubnis am Gerät steht für den Zugriff), danach `remote.code.void`; Desktop: Firewall öffnet **den Port des Desktop-Servers** für genau eine Adresse, dann RDP/VNC zum Gerät. `ssh_off` / `desktop_off`. „Ohne Code“: SSH direkt ins Terminal für Berechtigte.
+- **Herzschlag Linux:** tmux, Desktop lauscht, VPN-Adresse, Host-Schlüssel.
+- **Anzeige:** `GET devices`/Portal mit `platform: 'linux'`, `ssh: { offered, tmux }`, `desktop`; Portal: Wahl SSH/Desktop beim Code, Knopf „Desktop“ neben SSH, Anleitung **„Linux-Gerät einrichten“** für Personen mit „Eigene Geräte freigeben“; Geräte (Admin): „Linux“, Konto, tmux, Desktop, Host-Schlüssel. Neue Fehlertexte `ssh_off`, `desktop_off`, `host_key_invalid`, `key_unavailable`.
+- Tests `test/linux.test.js`.
+
 ## 1.5.0
 
 Stufe 7 „Windows teilen“. Bildschirm-Freigaben von PCs brauchen GateControl mit dem Relais `gc-screen.v1` (`gc.remote` ≥ 4), Steuern `gc.remote` ≥ 5; Maus und Tastatur, wie sie sind, und mehrere Bildschirme kommen mit `gc.remote` Version 6 (gatecontrol#504). Volle Funktion ab GateControl 1.288.0.

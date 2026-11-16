@@ -1,4 +1,4 @@
-<!-- version: 1.5.0 -->
+<!-- version: 1.6.0 -->
 # Fernzugriff – Handbuch
 
 ## Was das Plugin kann {#was-das-plugin-kann}
@@ -105,6 +105,20 @@ In der GateControl-App für Windows steht unter **Einstellungen › Sicherheit**
 - **Über den Server:** Bild und Eingaben laufen über deinen GateControl-Server wie beim Handy. Er reicht sie nur weiter, speichert nichts und schreibt keine Eingabe ins Protokoll – es ist aber keine Ende-zu-Ende-Verschlüsselung.
 - Für das Teilen braucht der PC kein offenes Port und keine VPN-Adresse; Remote Desktop braucht sie weiter.
 
+### Linux-Geräte {#linux}
+
+Ein Linux-Rechner – mit oder ohne Desktop (Debian, Ubuntu, Raspberry Pi OS, CachyOS) – meldet sich über den Dienst **gatecontrol-agent** an (eigenes Paket, Repository `gatecontrol-linux-agent`). Im Portal steht im Tab Fernzugriff unter **„Linux-Gerät einrichten“** dieselbe Anleitung.
+
+1. Paket installieren: `sudo apt install ./gatecontrol-agent_<version>_<arch>.deb` (Debian, Ubuntu, Raspberry Pi OS) bzw. `sudo pacman -U gatecontrol-agent-<version>-1-x86_64.pkg.tar.zst` (CachyOS, Arch).
+2. Unter **Meine Geräte › Gerät hinzufügen** einen Code erzeugen und anmelden: `sudo gatecontrol-agent enroll https://<server> <code>`. Der Agent baut WireGuard nur für das VPN-Netz auf (keine Standardroute, kein DNS).
+3. Freigeben: `sudo gatecontrol-agent share ssh --as <konto> --tmux` und – mit Desktop – `sudo gatecontrol-agent share desktop`. `gatecontrol-agent code` zeigt den Code für die helfende Person, `gatecontrol-agent status` den Zustand.
+
+- **SSH:** GateControl erzeugt für jedes Linux-Gerät einen eigenen Schlüssel im Tresor; der Agent trägt den öffentlichen Teil in `authorized_keys` des Kontos ein, gültig nur vom Server aus. Der **Host-Schlüssel** des Rechners wird bei der Anmeldung angeheftet – schon die erste Verbindung wird geprüft. Ist tmux da, läuft die Sitzung in tmux weiter, wenn die Verbindung abreißt.
+- **Desktop:** erkannt werden KRdp (KDE), GNOME Remote Desktop, wayvnc (Raspberry Pi OS), xrdp und x11vnc. Den Port öffnet der Agent je Sitzung für genau eine Adresse.
+- **Standard „nur mit Code“:** Wer den Code am Gerät abruft und weitergibt, erlaubt damit genau eine Sitzung (am Gerät mit `confirm ask` stattdessen jede Anfrage einzeln bestätigen: `gatecontrol-agent allow <id>`). „Ohne Code für Berechtigte“: `sudo gatecontrol-agent share open`.
+- **Helfen:** Im Portal **„Code eingeben“**, bei einem Gerät mit SSH und Desktop die **Verbindung** wählen (SSH oder Desktop).
+- Unter Geräte (Admin) steht ein Linux-Gerät mit „Linux“, dem Konto, tmux, dem Desktop und dem angehefteten Host-Schlüssel.
+
 ### Handy-Bildschirm freigeben {#handy}
 
 In der GateControl-App für Android steht unter **Fernzugriff** der Schalter **„Bildschirm freigeben“**. Ist er an, meldet die App das Handy an und zeigt einen Code aus 9 Ziffern.
@@ -207,6 +221,12 @@ Das Recht wird bei jedem Verbinden neu geprüft.
 **„Zu viele falsche Codes“:** Warte 15 Minuten oder lass dir am PC einen neuen Code zeigen.
 
 **Im Browser fragt Windows nach der Anmeldung nicht:** Verlangt der PC die Anmeldung auf Netzwerkebene (NLA), braucht die Sitzung im Browser Benutzername und Passwort, die die Sitzungsseite noch nicht abfragt. Verbinde dich dann aus der GateControl-App.
+
+## Neu in 1.6.0 {#neu-1-6-0}
+
+- **Linux-Geräte** über den Agenten **gatecontrol-agent** – mit oder ohne Desktop: SSH im Terminal von GateControl (mit tmux) und der Desktop über RDP oder VNC, Standard „nur mit Code“.
+- **Eigener SSH-Schlüssel je Gerät** aus dem Tresor, der **Host-Schlüssel wird gleich angeheftet**.
+- **Portal:** Anleitung „Linux-Gerät einrichten“, Wahl zwischen SSH und Desktop beim Code; Geräte-Liste mit „Linux“.
 
 ## Neu in 1.5.0 {#neu-1-5-0}
 
