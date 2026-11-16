@@ -169,10 +169,12 @@ async function route(ctx, req, seg) {
     if (m === 'PUT') return json(200, await notices.routesSet(ctx, req.body));
   }
   if (a === 'prefs' && seg.length === 1 && (m === 'PUT' || m === 'PATCH')) {
-    // 1.22.0: an older app that still writes privacy.avatar — the person's own change goes to the profile
+    // 1.22.0: an older app that still writes privacy.avatar — the person's own change goes to the profile. Apps send the
+    // whole privacy object with every change: only a value other than the mirror of the profile is a change
     const b = req.body;
     let level = null;
-    if (avatarvis.inProfile(gc) && b && b.privacy && typeof b.privacy === 'object' && !Array.isArray(b.privacy) && people.AUDIENCE.includes(b.privacy.avatar)) {
+    if (avatarvis.inProfile(gc) && b && b.privacy && typeof b.privacy === 'object' && !Array.isArray(b.privacy) && people.AUDIENCE.includes(b.privacy.avatar)
+      && b.privacy.avatar !== avatarvis.toOld(avatarvis.levelOf(ctx.users.get(ctx.viewer)) || 'all')) {
       level = await avatarvis.forward(gc, ctx.viewer, b.privacy.avatar);
       people.reset();
     }

@@ -65,6 +65,12 @@ test('GET me: avatarInProfile and the mirror; an older app writing privacy.avata
     me = (await c.as(ANNA)('GET', 'me')).json;
     assert.equal(me.prefs.privacy.avatarProfile, 'self');
     assert.equal((await c.as(ANNA)('PUT', 'prefs', { privacy: { avatar: 'friends' } })).status, 400);
+    // an app sends the whole privacy object: the unchanged mirror changes nothing in the profile
+    host.avatarVisibility.set(ANNA.id, 'contacts');
+    c.clock.add(11 * SEC);
+    await c.as(ANNA)('PUT', 'prefs', { privacy: { lastSeen: 'family', avatar: 'family' } });
+    assert.equal(host.avatarVisibility.level(ANNA.id), 'contacts', 'contacts stays (its mirror is family)');
+    assert.equal(host.avatarVisibility.calls.filter((x) => x.op === 'set').length, 1);
   });
 });
 
