@@ -19,18 +19,24 @@
    1.23.0: Signal — only by QR code (networks[].flows), its own notes (safety numbers only in the Signal app), after the
    scan „Signal fragt jetzt auf deinem Handy, ob es den Verlauf überträgt“ with what of it GateControl takes (at most 30
    days, networks[].history), the question „Erkennen“ per network (networks[].recognition), and a step a phone sent to
-   this screen („Im Portal fortsetzen“, GET bridges handoff): the dialog opens right at the QR code. */
+   this screen („Im Portal fortsetzen“, GET bridges handoff): the dialog opens right at the QR code.
+   1.24.0: Telegram — the QR code first (on a computer the quickest way), by number as the second way: the number, the
+   code Telegram sends into its app, the password when the two-step verification is on. Number, code and password go
+   straight to the server and are never kept on this page (the fields are emptied as soon as they are sent). Not set up by
+   an administrator yet (networks[].needs 'app'): the row says so. */
 (function () {
   'use strict';
   var M = window.MS;
   var T = M.T;
   var el = M.el;
 
-  var NOTES = { whatsapp: ['unofficial', 'ban', 'phone', 'e2e'], signal: ['unofficial', 'phone', 'e2e', 'safety'] };
+  var NOTES = { whatsapp: ['unofficial', 'ban', 'phone', 'e2e'], signal: ['unofficial', 'phone', 'e2e', 'safety'], telegram: ['unofficial', 'e2e'] };
   var FLOWS = ['phone', 'qr'];
+  // 1.24.0: the way chosen first on this screen — Telegram by QR code (a computer), the others by number as before
+  var FIRST = { telegram: 'qr' };
   /** 1.23.0: the ways in a network offers (an older server names none: both). */
   function flowsOf(n) { return n && n.flows && n.flows.length ? n.flows.filter(function (f) { return FLOWS.indexOf(f) >= 0; }) : FLOWS; }
-  function firstFlow(n) { var f = flowsOf(n); return f.indexOf('phone') >= 0 ? 'phone' : (f[0] || 'qr'); }
+  function firstFlow(n) { var f = flowsOf(n); if (FIRST[n.id] && f.indexOf(FIRST[n.id]) >= 0) return FIRST[n.id]; return f.indexOf('phone') >= 0 ? 'phone' : (f[0] || 'qr'); }
   /** A text of this page when it exists for the network (else null). */
   function has(key) { return T(key) !== key; }
   var open = null; // the open dialog: { body, close, run (the link in progress), alive }
@@ -73,7 +79,10 @@
     var unlink = function (label) {
       return el('button', { type: 'button', class: 'btn btn-sm', text: label, on: { click: function () { disconnect(n, l); } } });
     };
-    if (n.state === 'unreachable' || n.state === 'starting' || n.state === 'failed') {
+    // 1.24.0: Telegram is not set up on this server yet (an administrator enters the application id once)
+    if (n.needs === 'app') {
+      sub = T('br.sub_noapp');
+    } else if (n.state === 'unreachable' || n.state === 'starting' || n.state === 'failed') {
       sub = T(n.state === 'starting' ? 'br.sub_starting' : 'br.sub_unreachable');
       right.push(pill(T(n.state === 'starting' ? 'br.pill_starting' : 'br.pill_unreachable'), 'limit'));
     } else if (l && (l.state === 'connected' || l.state === 'connecting')) {
@@ -241,7 +250,7 @@
     var flows = flowsOf(n);
     if (flows.length < 2) return null;
     return el('div', { class: 'ms-brp-tabs', role: 'tablist' }, flows.map(function (f) {
-      return el('button', { type: 'button', role: 'tab', class: 'ms-chip', 'aria-pressed': f === flow ? 'true' : 'false', 'aria-selected': f === flow ? 'true' : 'false', text: T('br.flow_' + f),
+      return el('button', { type: 'button', role: 'tab', class: 'ms-chip', 'aria-pressed': f === flow ? 'true' : 'false', 'aria-selected': f === flow ? 'true' : 'false', text: T(has('br.flow_' + f + '_' + n.id) ? 'br.flow_' + f + '_' + n.id : 'br.flow_' + f),
         on: { click: function () { if (f !== flow) { stopRun(true); link(n, f); } } } });
     }));
   }
@@ -335,11 +344,18 @@
     if (step.type === 'complete') {
       open.run = null; run.stopped = true;
       M.toast(T('br.linked', { name: name(n.id) }));
-      if (n.history && n.history.phoneConfirms) afterLink(n); else askRecognition(n);
+      if (n.history && n.history.phoneConfirms) afterLink(n);
+      // 1.24.0: „Telegram ist verknüpft.“, then the question „Erkennen“
+      else if (has('br.linked_' + n.id)) askRecognition(n, [head(T('br.link_title', { name: name(n.id) })), el('p', { class: 'ms-brp-ok', role: 'status' }, [M.icon('check', 14), el('span', { text: T('br.linked_' + n.id) })])]);
+      else askRecognition(n);
     } else if (step.type === 'display_and_wait') {
       showWait(n, flow, run, step); // WhatsApp renews the QR code a few times: each one is a new step
     } else if (step.type === 'user_input') {
-      askPhone(n, flow, run, step);
+      // 1.24.0: what the service asks for next — the number, the code, the password (Telegram)
+      var ft = ((step.fields || [])[0] || {}).type;
+      if (ft === '2fa_code') askSecret(n, flow, run, step, 'code');
+      else if (ft === 'password') askSecret(n, flow, run, step, 'password');
+      else askPhone(n, flow, run, step);
     } else {
       stopRun(true);
       failed(n, flow, { data: { code: 'bridge_unsupported' } });
@@ -428,10 +444,53 @@
     input.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); submit(); } });
     show([
       head(T('br.link_title', { name: name(n.id) })), tabs(n, flow),
-      el('label', { class: 'ms-brp-label', for: 'ms-brp-phone', text: T('br.phone_label', { name: name(n.id) }) }),
+      el('label', { class: 'ms-brp-label', for: 'ms-brp-phone', text: T(has('br.phone_label_' + n.id) ? 'br.phone_label_' + n.id : 'br.phone_label', { name: name(n.id) }) }),
       input, err,
-      el('p', { class: 'ms-brp-foot', text: T('br.phone_hint') }),
+      el('p', { class: 'ms-brp-foot', text: T(has('br.phone_hint_' + n.id) ? 'br.phone_hint_' + n.id : 'br.phone_hint') }),
       el('div', { class: 'ms-brp-bar' }, [el('span'), go]),
+    ]);
+    setTimeout(function () { input.focus(); }, 30);
+  }
+
+  /**
+   * 1.24.0: the code Telegram sent into its app, or the password of the two-step verification. Sent once, straight to the
+   * server; the field is emptied right away and the value is kept nowhere on this page. A wrong one: the step comes again
+   * (step.retry) and says so.
+   */
+  function askSecret(n, flow, run, step, what) {
+    var field = (step.fields || [])[0] || {};
+    var pw = what === 'password';
+    var input = el('input', { type: pw ? 'password' : 'text', class: 'form-input', id: 'ms-brp-secret', autocomplete: pw ? 'off' : 'one-time-code', inputmode: pw ? null : 'numeric', spellcheck: 'false', maxlength: pw ? '256' : '12' });
+    var err = el('p', { class: 'ms-brp-err', role: 'alert', hidden: !step.retry, text: step.retry ? T(pw ? 'br.pw_wrong' : 'br.code_wrong') : '' });
+    var go = el('button', { type: 'button', class: 'btn btn-primary', text: T(pw ? 'br.pw_send' : 'br.next_step') });
+    var submit = function () {
+      var v = pw ? input.value : input.value.replace(/\s/g, '');
+      if (!v) { input.focus(); return; }
+      input.value = '';
+      busy(go, true);
+      var body = { input: {} };
+      body.input[field.id] = v;
+      v = null;
+      M.api('POST', 'bridges/' + n.id + '/login/' + encodeURIComponent(run.process) + '/' + encodeURIComponent(step.id), body).then(function (r) {
+        body = null;
+        if (run.stopped) return;
+        onStep(n, flow, run, r.login || {});
+      }).catch(function (e) {
+        body = null;
+        if (run.stopped) return;
+        open.run = null; run.stopped = true;
+        failed(n, flow, e);
+      });
+    };
+    go.addEventListener('click', submit);
+    input.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); submit(); } });
+    var other = pw ? null : el('button', { type: 'button', class: 'btn', text: T('br.other_number'), on: { click: function () { link(n, 'phone'); } } });
+    show([
+      head(T('br.link_title', { name: name(n.id) })), tabs(n, flow),
+      el('label', { class: 'ms-brp-label', for: 'ms-brp-secret', text: T(pw ? 'br.pw_label_' + n.id : 'br.code_label_' + n.id) }),
+      input, err,
+      el('p', { class: 'ms-brp-foot', text: T(pw ? 'br.pw_hint_' + n.id : 'br.code_hint_' + n.id) }),
+      el('div', { class: 'ms-brp-bar' }, [other || el('span'), go]),
     ]);
     setTimeout(function () { input.focus(); }, 30);
   }

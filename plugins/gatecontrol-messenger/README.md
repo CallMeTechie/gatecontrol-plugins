@@ -1290,6 +1290,21 @@ A Signal chat: `conversation.disappearingS` is the chat's timer at Signal (any l
 nothing runs out here, the bridge deletes), its change a system message `{ event: "disappearing", by: null, seconds,
 network }`; a view-once picture `bridge.placeholder.kind: "view_once"` (no file).
 
+1.24.0 — Telegram (GateControl with `gc.bridges` version 11; see `apps-contract-7b` in the release notes):
+
+| Call | Answer |
+|---|---|
+| `GET bridges` → `networks[]` | + `needs` (`"app"`: Telegram is not set up — an administrator enters the application id; `"script"` / `"compose"`: the server is too old; missing: nothing); Telegram's `flows` `["qr", "phone"]` |
+| `POST bridges/telegram/login { flow: "phone" }` | a `user_input` step with a field `phone_number`; then `2fa_code`; then (two-step verification) `password` — each sent as `{ input: { <field id>: value } }` to `…/login/:process/:step`; a wrong code or password: the same kind of step again with `retry: true`. Nothing of it is kept |
+| `PUT admin/bridges { telegramApp: { apiId, apiHash } \| null }` | the admin view with `telegramApp { set, setAt, setBy }` — alone in its request (`400 invalid` with other keys), `403 feature_off` before version 11; the values only pass through |
+| `GET admin/bridges` | + `telegramApp { set, setAt, setBy }` |
+| service `bridge_children` / `bridge_child_set` | + `channels: ["telegram"]`, per child `channels { telegram }` — „Telegram-Kanäle“ (default off, only next to the permission) |
+
+A Telegram chat: `bridge.bot: true` (a bot), `bridge.members` (a group's member count; 200 and more: created muted); a
+Telegram channel is a channel (`bridge.channel`); a message's `bridge.buttons: true` — „Diese Nachricht hat Knöpfe. Öffne
+sie in Telegram.“ (not sent by the pinned bridge yet); a file too large for GateControl: `bridge.placeholder { kind:
+"file", state: "failed", reason: "too_large" }`. A child without „Telegram-Kanäle“ gets no Telegram channel.
+
 `person`: `{ id, name, nameFrom: "account" | <conversationId>, userId, conversationId (the lead), names (every name — the
 search finds each), ways: [{ way, label, conversationId, title, avatarUrl, avatarMediaId, unread, muted, archived,
 lastMessageAt, bridge, can: { send, sendReason, react } }], reply: { way, label, conversationId }, createdAt }`. With

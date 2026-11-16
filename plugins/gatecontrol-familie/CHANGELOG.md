@@ -3,6 +3,15 @@
 Die Familie in der GateControl-App (eigener Tab), im Portal (eigener Tab „Familie“) und auf
 drei Admin-Seiten. Alles bleibt auf dem eigenen Server.
 
+## 1.29.0
+
+Telegram in der Karte „Andere Messenger“ (Plugin Messenger ab 1.24.0 auf einem GateControl-Server mit der Telegram-Brücke).
+
+- `server/linked.js`: `NETWORKS` kennt `telegram`; unter Telegram der zweite Schalter **„Telegram-Kanäle“** (`channels`,
+  Standard aus, nur neben der Freigabe für Telegram, nur wenn der Messenger ihn nennt — `bridge_children.channels`).
+  Texte `linked.net_telegram`, `linked.channels_*`.
+- Test: Telegram mit „Telegram-Kanäle“.
+
 ## 1.28.0
 
 Signal in der Karte „Andere Messenger“ (Plugin Messenger ab 1.23.0 auf einem GateControl-Server mit der Signal-Brücke).

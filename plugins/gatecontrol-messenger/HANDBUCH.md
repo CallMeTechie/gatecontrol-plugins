@@ -1,4 +1,4 @@
-<!-- version: 1.23.0 -->
+<!-- version: 1.24.0 -->
 # Messenger
 
 ## Was das Plugin kann
@@ -73,6 +73,14 @@ Er kommt nur beim Verknüpfen und erscheint nachts. Steht „Älteren Verlauf la
 
 **Alte Nachrichten sind weg.**
 Der Administrator hat eine Aufbewahrung eingestellt, oder der Chat ist selbstlöschend.
+
+## Neu in 1.24.0
+
+- **Telegram im Messenger.** Unter „Verknüpfte Dienste“ verknüpfst du dein eigenes Telegram. Telegram-Chats stehen mit Papierflieger-Logo in derselben Liste, mit Chip „Telegram“; Telegram-Kanäle stehen auf der Kanal-Seite.
+- **Zwei Wege:** Am PC ist der QR-Code vorgewählt (Telegram › Einstellungen › Geräte › Desktop-Gerät verbinden). Auf dem Handy geht es mit der Telefonnummer: Telegram schickt den Code in die Telegram-App. Hast du die zweistufige Bestätigung an, fragt GateControl einmal das Passwort ab – es geht nur an Telegram und wird nirgends gespeichert.
+- **Bots** sind Einzelchats mit dem Zusatz „Bot“; ihre Knöpfe gehen nur in Telegram. **Große Gruppen** ab 200 Mitgliedern sind anfangs stumm. Dateien, die zu groß für GateControl sind, öffnest du in Telegram. **Geheime Chats** kommen nie an, sie bleiben auf deinem Handy.
+- **Für Administratoren:** Telegram startet erst mit einer eigenen Anwendungskennung. In der Karte „Brücken“ → Telegram → „Einrichten“: bei my.telegram.org mit deiner Telegram-Nummer anmelden, unter „API development tools“ eine Anwendung anlegen (Name „GateControl“, Plattform „Other“) und `api_id` und `api_hash` ins Formular eintragen – nie in einen Chat oder eine Datei. GateControl speichert beides verschlüsselt und zeigt es nie wieder an. Der Schalter „Animierte Sticker umwandeln“ wirkt jetzt für Telegram.
+- **Eltern** schalten in Familie je Kind Telegram frei und zusätzlich „Telegram-Kanäle“ (Standard aus).
 
 ## Neu in 1.23.0
 

@@ -3,6 +3,30 @@
 Chats zwischen den GateControl-Konten – in der GateControl-App (eigener Tab „Chats“), im
 Windows-Client und im Portal (eigener Tab „Chats“). Alles bleibt auf dem eigenen Server.
 
+## 1.24.0
+**Telegram** („Brücken Stufe 7b“) — die dritte Brücke, für GateControl mit `gc.bridges` Version 11. **Braucht GateControl
+≥ 1.291.0** (`plugin.json` `gatecontrol`; die genaue Nummer setzt die Server-Veröffentlichung von Stufe 7b).
+- **Netz `telegram`** überall, wo ein Netz steht. `GET bridges` je Netz neu `needs` (`app`: Telegram noch nicht
+  eingerichtet), ein Schritt nach falschem Code oder Passwort trägt `retry: true`; Telegram bietet `qr` und `phone`.
+- **Verwaltung — „Telegram einrichten“:** In der Karte „Brücken“ zeigt Telegram „Anwendungskennung fehlt“ mit
+  „Einrichten“: Anleitung für my.telegram.org und das Formular für `api_id` / `api_hash`. `PUT admin/bridges
+  { telegramApp: { apiId, apiHash } | null }` reicht beides nur an GateControl durch (dort verschlüsselt); hier wird
+  nichts davon gespeichert oder protokolliert — das Protokoll sagt „Telegram-Anwendung hinterlegt / entfernt“. Danach die
+  Zeile „Telegram-Anwendung · Hinterlegt am … von … · Inhalt verborgen“ mit „Neu eintragen“ und „Entfernen“. Der Schalter
+  „Animierte Sticker umwandeln“ wirkt jetzt (Telegram).
+- **Verknüpfte Dienste (Portal):** Telegram mit eigenen Hinweisen, QR-Code vorgewählt, „Mit Telefonnummer“ als zweiter
+  Weg: Nummer, Code aus der Telegram-App, Passwort der zweistufigen Bestätigung. Nummer, Code und Passwort gehen nur
+  durch (Felder werden sofort geleert); falscher Code / falsches Passwort wird erneut abgefragt.
+- **Telegram-Chats:** Logo (Papierflieger) und Chip, Bot-Chats mit dem Zusatz „Bot“, Gruppen ab 200 Mitgliedern
+  anfangs stumm (mit „340 Mitglieder“ in der Liste), Telegram-Kanäle auf der Kanal-Seite wie WhatsApp-Kanäle, dort Filter
+  „Alle · WhatsApp · Telegram“, sobald Kanäle aus zwei Diensten da sind. Eine Datei, die zu groß für GateControl ist:
+  „Datei – zu groß, öffne es in Telegram“. Der Hinweis „Diese Nachricht hat Knöpfe. Öffne sie in Telegram.“ erscheint,
+  sobald GateControl Knöpfe meldet (`message.buttons`; die gepinnte Brücke meldet sie noch nicht).
+- **Kinder:** zweiter Schalter **„Telegram-Kanäle“** je Kind (Migration 014, `bridge_grants.channels`, Standard aus, nur
+  neben der Freigabe für Telegram): ohne ihn erscheinen die Telegram-Kanäle des Kindes nicht (Ereignisse verworfen,
+  Liste ohne sie). `bridge_children` nennt `channels: ['telegram']`, `bridge_child_set` nimmt `channels`.
+- Tests `test/telegram.test.js`; `tools/testing/mock-bridges.js` kennt Version 11.
+
 ## 1.23.0
 **Signal** („Brücken Stufe 7a“) — die zweite Brücke neben WhatsApp, für GateControl mit `gc.bridges` Version 10 (die
 Signal-Brücke, update.sh 10, die neue `docker-compose.yml`). **Braucht GateControl ≥ 1.291.0** (`plugin.json`

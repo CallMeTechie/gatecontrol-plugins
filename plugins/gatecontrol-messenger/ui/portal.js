@@ -62,7 +62,7 @@
     // 1.16.0: chats just started by number (conversation id → { number, name }) — this page only, never kept
     started: {},
     // 1.20.0: chans — the channels (GET channels); chanSum — { count, unread } of GET conversations; chanView — the page
-    chans: [], chanSum: null, chanView: false,
+    chans: [], chanSum: null, chanView: false, chanNet: null,
     // 1.21.0: sugg — the open suggestions (GET persons/suggestions); way — lead conversation id → the source chip
     sugg: [], way: {},
   };
@@ -287,16 +287,23 @@
         isPerson(c) ? P.marks(c.person, 10) : null,
         // 1.6.0: a notice channel of GateControl's notifications
         c.notice ? el('span', { class: 'ms-row-tag', text: T('notice.badge') }) : null,
+        // 1.24.0: a chat with a Telegram bot
+        c.bridge && c.bridge.bot ? el('span', { class: 'ms-row-tag', text: T('bc.bot') }) : null,
         el('span', { class: 'ms-row-time', text: M.listTime(c.lastMessage ? c.lastMessage.createdAt : c.createdAt) }),
       ]),
       el('span', { class: 'ms-row-bottom' }, [
-        el('span', { class: 'ms-row-pv' + (typ ? ' is-typing' : ''), text: typ || preview(c) }),
+        el('span', { class: 'ms-row-pv' + (typ ? ' is-typing' : ''), text: typ || membersPrefix(c) + preview(c) }),
         icons,
         c.listPinned ? el('span', { class: 'ms-row-icons', title: T('portal.pinned') }, [M.icon('pin', 14)]) : null,
         c.unread ? el('span', { class: 'ms-badge' + (c.muted ? ' is-muted' : ''), text: c.unread > 99 ? '99+' : String(c.unread), 'aria-label': T('portal.unread', { n: c.unread }) }) : null,
       ]),
     ]));
     return b;
+  }
+  /** 1.24.0: a large group of another messenger says its size before the preview („340 Mitglieder · …“). */
+  function membersPrefix(c) {
+    var n = c.bridge && c.bridge.members;
+    return n && n >= 200 ? T('bc.members', { n: n }) + ' · ' : '';
   }
   /** The pinned entry "GateControl": the viewer's own core inbox (GC.inbox, GateControl 1.179+), not a chat. */
   function inboxRow() {
@@ -363,7 +370,16 @@
       el('button', { type: 'button', class: 'ms-ib ms-ib-flat', 'aria-label': T('common.back'), title: T('common.back'), on: { click: function () { S.chanView = false; renderList(); } } }, [M.icon('back', 18)]),
       el('span', { class: 'ms-chan-ht' }, [el('b', { text: T('ch.title') }), Object.keys(nets).length ? el('small', { text: Object.keys(nets).map(function (k) { return nets[k]; }).join(' · ') }) : null]),
     ]));
-    var list = S.chans.filter(function (c) { return !q || convTitle(c).toLowerCase().indexOf(q) >= 0 || preview(c).toLowerCase().indexOf(q) >= 0; });
+    // 1.24.0: one filter per service once channels of two services are there (Alle · WhatsApp · Telegram)
+    if (S.chanNet && !nets[S.chanNet]) S.chanNet = null;
+    if (Object.keys(nets).length > 1) {
+      var box = el('div', { class: 'ms-chips', role: 'group', 'aria-label': T('ch.title') });
+      var chip = function (label, on, fn) { box.appendChild(el('button', { type: 'button', class: 'ms-chip', 'aria-pressed': on ? 'true' : 'false', text: label, on: { click: fn } })); };
+      chip(T('lists.all'), !S.chanNet, function () { S.chanNet = null; renderList(); });
+      Object.keys(nets).forEach(function (n) { chip(nets[n], S.chanNet === n, function () { S.chanNet = S.chanNet === n ? null : n; renderList(); }); });
+      rows.appendChild(box);
+    }
+    var list = S.chans.filter(function (c) { return (!S.chanNet || c.bridge.network === S.chanNet) && (!q || convTitle(c).toLowerCase().indexOf(q) >= 0 || preview(c).toLowerCase().indexOf(q) >= 0); });
     list.forEach(function (c) { rows.appendChild(row(c)); });
     if (list.length && !q) rows.appendChild(el('p', { class: 'ms-chan-hint', text: T('ch.page_hint') }));
     var empty = $('#ms-list-empty');
@@ -801,6 +817,8 @@
       // 1.20.0: the format of the text and clickable addresses (every chat)
       b.appendChild(M.richText(m.text, m.marks));
     }
+    // 1.24.0: a bot's message had buttons — they stay in the other messenger
+    if (m.bridge && m.bridge.buttons) b.appendChild(el('div', { class: 'ms-bot-hint' }, [M.icon('info', 12), el('span', { text: T('bc.buttons', { network: c.bridge ? c.bridge.label : '' }) })]));
     if (m.mine && m.bridge && m.bridge.state === 'failed') {
       b.appendChild(el('div', { class: 'ms-failed' }, [el('span', { text: T('bc.failed') + ' ' + bridgeReason(m.bridge.reason) }),
         c.can.send ? el('button', { type: 'button', class: 'ms-linkbtn', text: T('bc.resend'), on: { click: function (e) { e.stopPropagation(); resend(m); } } }) : null]));

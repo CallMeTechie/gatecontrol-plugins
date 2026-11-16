@@ -113,6 +113,16 @@ input,select,textarea{font-family:var(--font)}
 .ms-br-mark{flex:none;width:34px;height:34px;box-sizing:border-box;border-radius:10px;background:var(--surface-2);border:1px solid var(--line);display:inline-flex;align-items:center;justify-content:center;color:var(--muted)}
 .ms-br-mark-whatsapp{color:#1f8f5a}
 .ms-br-mark-signal{color:#3a76f0}
+.ms-br-mark-telegram{color:#27a7e7}
+.ms-br-tg{border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin:10px 0;display:flex;flex-direction:column;gap:10px}
+.ms-br-tg h4{margin:0;font-size:15px}
+.ms-br-tg p{margin:0;font-size:13px}
+.ms-br-tg ol{margin:0;padding-left:20px;font-size:13px;display:flex;flex-direction:column;gap:4px}
+.ms-br-tg-f{display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:600}
+.ms-br-tg-f small{font-weight:500;color:var(--muted)}
+.ms-br-tg-f small.is-bad{color:var(--crit)}
+.ms-br-tg-f input{max-width:360px;font-family:var(--mono,ui-monospace,monospace)}
+.ms-br-tg-bar{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
 .ms-pill.is-off{background:var(--surface-2);color:var(--muted)}
 .ms-br-nc-in{width:90px;flex:none}
 /* 1.17.0: the night window of older messages, the snapshot */

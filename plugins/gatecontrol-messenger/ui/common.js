@@ -124,6 +124,8 @@
     gatecontrol: { fill: 'M12 2.5l7.5 2.8v5.9c0 4.8-3.2 8.6-7.5 10.3-4.3-1.7-7.5-5.5-7.5-10.3V5.3z' },
     // 1.23.0: Signal — a speech bubble in a dashed ring (only to say which service it is)
     signal: { fill: 'M12 5.6a6.4 6.4 0 0 0-5.5 9.7l-.8 3 3.1-.7A6.4 6.4 0 1 0 12 5.6z', ring: true },
+    // 1.24.0: Telegram — a paper plane (only to say which service it is)
+    telegram: { fill: 'M3.4 11.3l15.9-6.2c.8-.3 1.4.2 1.2 1.3l-2.7 12.7c-.2.9-.7 1.1-1.5.7l-4.1-3-2 1.9c-.2.2-.4.4-.8.4l.3-4.2 7.7-7c.3-.3-.1-.4-.5-.2l-9.5 6-4.1-1.3c-.9-.3-.9-.9.2-1.3z' },
   };
   function netGlyph(network, size) {
     var NS = 'http://www.w3.org/2000/svg';

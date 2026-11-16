@@ -1,4 +1,4 @@
-<!-- version: 1.23.0 -->
+<!-- version: 1.24.0 -->
 # Messenger
 
 ## What the plugin does
@@ -73,6 +73,14 @@ It only comes when linking and appears at night. When “Load older history” i
 
 **Old messages are gone.**
 The administrator set a retention, or the chat is a disappearing chat.
+
+## New in 1.24.0
+
+- **Telegram in the messenger.** Under “Linked services” you link your own Telegram. Telegram chats are in the same list with the paper-plane logo and the chip “Telegram”; Telegram channels are on the channels page.
+- **Two ways:** on a computer the QR code comes first (Telegram › Settings › Devices › Link Desktop Device). On a phone you use your phone number: Telegram sends the code into the Telegram app. With two-step verification on, GateControl asks for the password once – it goes to Telegram only and is stored nowhere.
+- **Bots** are direct chats marked “Bot”; their buttons work only in Telegram. **Large groups** of 200 members and more are muted at first. Files too large for GateControl open in Telegram. **Secret chats** never arrive, they stay on your phone.
+- **For administrators:** Telegram starts only with an application id of its own. In the card “Bridges” → Telegram → “Set up”: sign in at my.telegram.org with your Telegram number, create an application under “API development tools” (name “GateControl”, platform “Other”) and enter `api_id` and `api_hash` in the form – never in a chat or a file. GateControl stores both encrypted and never shows them again. The switch “Convert animated stickers” now works for Telegram.
+- **Parents** allow Telegram per child in Familie, and additionally “Telegram channels” (off by default).
 
 ## New in 1.23.0
 

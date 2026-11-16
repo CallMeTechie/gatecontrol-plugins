@@ -1,5 +1,9 @@
-<!-- version: 1.28.0 -->
+<!-- version: 1.29.0 -->
 # Family
+
+## New in 1.29.0
+
+- **Telegram under “Other messengers”:** when your server offers the Telegram bridge (Messenger plugin 1.24.0 or later), each child has a row **Telegram** with its own switch, off at first. Below it the switch **“Telegram channels”** – only once Telegram is allowed, and off at first: off means Telegram channels do not appear for the child.
 
 ## New in 1.28.0
 

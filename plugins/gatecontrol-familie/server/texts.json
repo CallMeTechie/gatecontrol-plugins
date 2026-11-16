@@ -1262,7 +1262,13 @@
     "linked.new_state_on": "An · {{name}} darf selbst Chats mit einer Telefonnummer beginnen",
     "linked.new_state_locked": "Erst möglich, wenn {{service}} freigeschaltet ist",
     "linked.new_on": "{{name}} darf jetzt neue {{service}}-Chats per Nummer beginnen",
-    "linked.new_off": "{{name}} kann keine neuen {{service}}-Chats per Nummer mehr beginnen – Antworten in bestehenden Chats gehen weiter"
+    "linked.new_off": "{{name}} kann keine neuen {{service}}-Chats per Nummer mehr beginnen – Antworten in bestehenden Chats gehen weiter",
+    "linked.net_telegram": "Telegram",
+    "linked.channels_title_telegram": "Telegram-Kanäle",
+    "linked.channels_on": "An: Telegram-Kanäle erscheinen beim Kind.",
+    "linked.channels_off": "Aus: Telegram-Kanäle erscheinen beim Kind nicht.",
+    "linked.channels_switch_telegram": "Telegram-Kanäle für {{name}} freischalten",
+    "linked.channels_hint_telegram": "„Telegram-Kanäle“ gibt es erst, wenn Telegram frei ist. Aus heißt: Kanäle erscheinen beim Kind nicht."
   },
   "en": {
     "account.admin": "Admin",
@@ -2527,6 +2533,12 @@
     "linked.new_state_on": "On · {{name}} may start chats with a phone number",
     "linked.new_state_locked": "Possible once {{service}} is allowed",
     "linked.new_on": "{{name}} may start new {{service}} chats by number now",
-    "linked.new_off": "{{name}} can no longer start new {{service}} chats by number – answers in existing chats still work"
+    "linked.new_off": "{{name}} can no longer start new {{service}} chats by number – answers in existing chats still work",
+    "linked.net_telegram": "Telegram",
+    "linked.channels_title_telegram": "Telegram channels",
+    "linked.channels_on": "On: Telegram channels appear for the child.",
+    "linked.channels_off": "Off: Telegram channels do not appear for the child.",
+    "linked.channels_switch_telegram": "Allow Telegram channels for {{name}}",
+    "linked.channels_hint_telegram": "“Telegram channels” exist only once Telegram is allowed. Off means: channels do not appear for the child."
   }
 }

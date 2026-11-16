@@ -85,6 +85,12 @@
 //   number), status().networks[] with flows, history { maxDays, phoneConfirms }, needs, scriptNeeded;
 //   status().stickers { animated } and configure({ animatedStickers }); recognition.get / set per network (whatsapp,
 //   signal, telegram) — host.bridges.recognition(userId, network); host.bridges.setNeeds(network, 'compose' | 'script' | null)
+// Version 11 (Telegram, stage 7b; createHost(dir, { bridges: { …, version: 11, networks: { whatsapp, signal, telegram } } })):
+//   the network 'telegram' (QR code or number → code → password, as mautrix-telegram: a wrong code or password comes back
+//   as the same kind of step with retry: true; host.bridges.tgPassword = '…' turns the two-step verification on, the
+//   code is '47000'); status().telegramApp { set, setAt, setBy } and configure({ telegramApp: { apiId, apiHash } | null })
+//   — without it Telegram's needs is 'app' and every call for a person answers ERR_BRIDGES_UNAVAILABLE / no_app;
+//   host.bridges.tgApps lists what configure was given (the test checks it went nowhere else)
 // events.pull / events.ack need no person; chats() a request of that person; send / react / redact / read / typing a
 // changing request of that person, their own chat (else ERR_INVALID 'unknown chat'), a bridge that runs.
 //
@@ -107,25 +113,29 @@ const FLOWS = [
 const NET_FACTS = {
   whatsapp: { flows: ['phone', 'qr'], history: { maxDays: null, phoneConfirms: false }, scriptNeeded: 8 },
   signal: { flows: ['qr'], history: { maxDays: 30, phoneConfirms: true }, scriptNeeded: 10 },
+  telegram: { flows: ['qr', 'phone'], history: { maxDays: null, phoneConfirms: false }, scriptNeeded: 10 },
 };
+const TG = 'fi.mau.telegram.login.';
 
 function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) {
   const o = opts.bridges === true ? {} : (opts.bridges && typeof opts.bridges === 'object' ? opts.bridges : null);
-  const v10 = !!(o && o.version === 10);
+  const v10 = !!(o && o.version >= 10);
+  // version 11: Telegram as well
+  const v11 = !!(o && o.version >= 11);
   // version 10: Signal next to WhatsApp
-  const NETS = v10 ? ['whatsapp', 'signal'] : NETWORKS;
+  const NETS = v11 ? ['whatsapp', 'signal', 'telegram'] : (v10 ? ['whatsapp', 'signal'] : NETWORKS);
   const host = !!o;
   if (host && perms.bridges != null && typeof perms.bridges !== 'boolean') throw hostError('ERR_INVALID', 'plugin.json: permissions.bridges: invalid');
   const on = host && perms.bridges === true;
   const st = {
     preview: !(o && o.preview === false),
     enabled: !!(o && o.enabled),
-    networks: { whatsapp: !!(o && o.networks && o.networks.whatsapp), ...(v10 ? { signal: !!(o && o.networks && o.networks.signal) } : {}) },
-    stickers: false, needs: {},
+    networks: { whatsapp: !!(o && o.networks && o.networks.whatsapp), ...(v10 ? { signal: !!(o && o.networks && o.networks.signal) } : {}), ...(v11 ? { telegram: !!(o && o.networks && o.networks.telegram) } : {}) },
+    stickers: false, needs: {}, tgApp: o && o.telegramApp ? { setAt: '2026-11-16T09:00:00.000Z', setBy: 'Max Berger' } : null, tgApps: [], tgPassword: null,
     host: { state: o && o.running ? 'running' : null, error: null, running: !!(o && o.running), memMb: o && o.running ? 88 : null, outdated: false, probe: null },
     logins: new Map(), processes: new Map(), log: [], seq: 0, oddStep: null, elsewhere: new Map(),
   };
-  const version = o && [1, 3, 4, 5, 6, 7, 8, 9, 10].includes(o.version) ? o.version : 2;
+  const version = o && [1, 3, 4, 5, 6, 7, 8, 9, 10, 11].includes(o.version) ? o.version : 2;
   Object.assign(st, { inbox: [], inboxSeq: 0, chats: new Map(), sent: [], failSend: null, wake: null });
   Object.assign(st, { files: new Map(), fetches: [], numbers: new Map(), lookups: new Map(), dms: new Map(), failFetch: null });
   Object.assign(st, { contacts: [], contactRefs: new Map(), contactDms: new Map() });
@@ -146,14 +156,18 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
         let state = 'off';
         if (st.enabled && st.networks[id]) state = up ? 'running' : (st.host.state === 'failed' ? 'failed' : 'starting');
         if (st.enabled && st.networks[id] && st.needs[id] === 'compose') state = 'failed';
+        // version 11: Telegram without the application id is not started
+        const noApp = id === 'telegram' && st.networks[id] && !st.tgApp;
+        if (noApp) state = st.enabled ? 'stopped' : 'off';
         return {
           id, enabled: st.networks[id], state, version: up ? (st.host.outdated ? '0.2609.0' : '0.2610.0') : null, memMb: up ? st.host.memMb : null, limitMb: up ? 512 : null,
           ...(version >= 2 ? { outdated: up && st.host.outdated === true, wantVersion: '0.2610.0' } : {}),
           ...(version >= 5 ? { clientOutdated: [...st.logins.values()].some((l) => l.some((x) => x.clientOutdated)) } : {}),
-          ...(v10 ? { flows: [...NET_FACTS[id].flows], history: { ...NET_FACTS[id].history }, needs: st.needs[id] || null, scriptNeeded: NET_FACTS[id].scriptNeeded } : {}),
+          ...(v10 ? { flows: [...NET_FACTS[id].flows], history: { ...NET_FACTS[id].history }, needs: noApp ? 'app' : (st.needs[id] || null), scriptNeeded: NET_FACTS[id].scriptNeeded } : {}),
         };
       }),
       ...(v10 ? { stickers: { animated: st.stickers } } : {}),
+      ...(v11 ? { telegramApp: { set: !!st.tgApp, setAt: st.tgApp ? st.tgApp.setAt : null, setBy: st.tgApp ? st.tgApp.setBy : null } } : {}),
       host: {
         state: st.enabled ? st.host.state : 'stopped', error: st.enabled ? st.host.error : null, checkedAt: st.host.state ? new Date().toISOString() : null,
         cron: 'ok', script: { host: version >= 5 ? 8 : (version >= 3 ? 7 : (version >= 2 ? 6 : 5)), needed: version >= 5 ? 8 : (version >= 3 ? 7 : (version >= 2 ? 6 : 5)) },
@@ -190,6 +204,7 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
     if (!NETS.includes(network)) throw hostError('ERR_INVALID', 'unknown network');
     if (!st.preview) throw err('ERR_BRIDGES_UNAVAILABLE', 'the bridges are not offered on this server', 'preview_off');
     if (!st.enabled || !st.networks[network]) throw err('ERR_BRIDGES_UNAVAILABLE', 'this bridge is switched off', 'off');
+    if (network === 'telegram' && !st.tgApp) throw err('ERR_BRIDGES_UNAVAILABLE', 'this bridge is not set up yet', 'no_app');
     if (!st.host.running || st.host.bridgeDown) throw err('ERR_BRIDGE_UNREACHABLE', 'connect ENOENT', 'not_running');
   }
   const id = (v) => { if (!ID_RE.test(String(v || ''))) throw hostError('ERR_INVALID', 'invalid id'); return v; };
@@ -207,7 +222,7 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
     st.logins.set(p.userId, list);
     st.processes.delete(p.id);
     st.log.push({ op: 'linked', userId: p.userId, network: p.network, loginId });
-    return { processId: p.id, step: { id: `fi.mau.${p.network}.login.complete`, type: 'complete', instructions: p.network === 'signal' ? 'Signal is linked.' : 'Successfully logged in', loginId } };
+    return { processId: p.id, step: { id: `fi.mau.${p.network}.login.complete`, type: 'complete', instructions: p.network === 'signal' ? 'Signal is linked.' : (p.network === 'telegram' ? 'Telegram is linked.' : 'Successfully logged in'), loginId } };
   }
 
   const api = {
@@ -218,8 +233,15 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
       if (!st.preview) throw err('ERR_BRIDGES_UNAVAILABLE', 'the bridges are not offered on this server', 'preview_off');
       const p = patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : null;
       if (!p) throw hostError('ERR_INVALID', 'patch: an object');
-      const keys = version >= 5 ? ['enabled', 'networks', 'history', 'backupNow', 'backupTime', ...(v10 ? ['animatedStickers'] : [])] : ['enabled', 'networks'];
+      const keys = version >= 5 ? ['enabled', 'networks', 'history', 'backupNow', 'backupTime', ...(v10 ? ['animatedStickers'] : []), ...(v11 ? ['telegramApp'] : [])] : ['enabled', 'networks'];
       for (const k of Object.keys(p)) if (!keys.includes(k)) throw hostError('ERR_INVALID', 'unknown key');
+      // version 11: the Telegram application id — kept as "set" only (the value goes into tgApps for the test, nowhere else)
+      if (p.telegramApp !== undefined) {
+        const t = p.telegramApp;
+        if (t !== null && (!t || !/^[1-9][0-9]{4,9}$/.test(String(t.apiId)) || !/^[0-9a-f]{32}$/.test(String(t.apiHash)))) throw err('ERR_INVALID', 'telegramApp: { apiId, apiHash } or null', 'telegram_app');
+        st.tgApps.push(t);
+        st.tgApp = t ? { setAt: new Date().toISOString(), setBy: who.display_name || who.username || null } : null;
+      }
       if (p.animatedStickers !== undefined) { if (typeof p.animatedStickers !== 'boolean') throw hostError('ERR_INVALID', 'animatedStickers: a boolean'); st.stickers = p.animatedStickers; }
       if (p.history !== undefined) { if (typeof p.history !== 'boolean') throw hostError('ERR_INVALID', 'history: a boolean'); st.history = p.history; }
       if (p.backupTime !== undefined) { if (!/^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(String(p.backupTime))) throw hostError('ERR_INVALID', 'backupTime: HH:MM'); st.backupTime = p.backupTime; }
@@ -243,6 +265,10 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
       if (st.oddStep) { st.oddStep = null; throw refuse('unsupported_step'); }
       const p = { id: `proc-${++st.seq}`, userId, network, flow: flowId, phone: null, settled: null };
       st.processes.set(p.id, p);
+      if (network === 'telegram' && flowId === 'phone') {
+        return { processId: p.id, step: { id: `${TG}phone_number`, type: 'user_input', instructions: '', fields: [{ id: `${TG}phone_number`, type: 'phone_number', name: '', description: '', optional: false }] } };
+      }
+      if (network === 'telegram') return { processId: p.id, step: { id: `${TG}show_qr`, type: 'display_and_wait', instructions: '', display: { type: 'qr', data: 'tg://login?token=ZmFrZVRva2Vu' } } };
       if (flowId === 'phone') {
         return { processId: p.id, step: { id: 'fi.mau.whatsapp.login.phone', type: 'user_input', instructions: 'Enter your phone number',
           fields: [{ id: 'phone_number', type: 'phone_number', name: 'Phone number', description: 'Include the country code with a +', optional: false }] } };
@@ -258,6 +284,22 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
       if (kind === 'user_input') {
         if (!input || typeof input !== 'object' || Array.isArray(input) || !Object.keys(input).length) throw hostError('ERR_INVALID', 'input: an object');
         for (const [k, v] of Object.entries(input)) if (!ID_RE.test(k) || typeof v !== 'string' || v.length > 500) throw hostError('ERR_INVALID', 'input: invalid field');
+        // version 11: Telegram — number → code → (password) → complete; a wrong code or password: the step again, retry
+        if (network === 'telegram') {
+          const field = (fid, type, retry) => ({ processId: p.id, step: { id: fid + (retry ? '.incorrect' : ''), type: 'user_input', instructions: '', fields: [{ id: fid, type, name: '', description: '', optional: false }], ...(retry ? { retry: true } : {}) } });
+          if (!p.stage) {
+            if (!/^\+[0-9]{6,15}$/.test(String(input[`${TG}phone_number`] || ''))) throw refuse('fi_mau_telegram_phone_number_invalid');
+            p.phone = input[`${TG}phone_number`]; p.stage = 'code';
+            return field(`${TG}code`, '2fa_code', false);
+          }
+          if (p.stage === 'code') {
+            if (input[`${TG}code`] !== '47000') return field(`${TG}code`, '2fa_code', true);
+            if (st.tgPassword) { p.stage = 'password'; return field(`${TG}password`, 'password', false); }
+            return complete(p);
+          }
+          if (input[`${TG}password`] !== st.tgPassword) return field(`${TG}password`, 'password', true);
+          return complete(p);
+        }
         if (!/^\+[0-9]{6,15}$/.test(String(input.phone_number || ''))) throw refuse('m_bad_json');
         p.phone = input.phone_number;
         return { processId: p.id, step: { id: 'fi.mau.whatsapp.login.pairing_code', type: 'display_and_wait', instructions: 'Enter the code in the app', display: { type: 'code', data: 'K7P2-M4X9' } } };
@@ -671,6 +713,9 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
     set accounts(v) { st.accounts = v; },
     recognition(userId, network) { return recOf(userId, network); },
     setNeeds(network, needs) { st.needs[network] = needs || null; },
+    // version 11: the two-step verification of the Telegram test account, what configure got as the application id
+    set tgPassword(v) { st.tgPassword = v || null; },
+    get tgApps() { return st.tgApps; },
     async deliver(events, { wake = true } = {}) {
       for (const e of events) st.inbox.push({ network: 'whatsapp', at: Date.now(), ...JSON.parse(JSON.stringify(e)), seq: ++st.inboxSeq });
       if (wake && st.wake) await st.wake({ pending: st.inbox.length, ephemeral: [] });

@@ -186,6 +186,8 @@ async function list(ctx, query, opts = {}) {
     if (conv.bridge_net && (!ctx.bridged || !conv.last_msg_id)) continue;
     // 1.20.0: channels on their own page for a client that knows them
     if (opts.channels ? !conv.bridge_channel : (ctx.channels && conv.bridge_channel)) continue;
+    // 1.24.0: a child's Telegram channels only with the parents' „Telegram-Kanäle“
+    if (conv.bridge_channel && conv.bridge_net && !(await require('./bridges').channelsAllowed(ctx.gc, ctx.viewer, conv.bridge_net, ctx.now))) continue;
     // a direct chat without a message is shown to the person who opened it only
     if (conv.kind === 'direct' && !conv.last_msg_id && conv.created_by !== ctx.viewer) continue;
     if (since != null && conv.updated_at <= since && (me.updated_at || 0) <= since && me.joined_at <= since) continue;
