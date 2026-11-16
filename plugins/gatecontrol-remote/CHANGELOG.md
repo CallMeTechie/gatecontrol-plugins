@@ -2,7 +2,7 @@
 
 ## 1.2.0
 
-Stufe 3 „SSH mit tmux und Aufzeichnung“. Volle Funktion mit dem GateControl nach 1.284.0 (`gc.remote` Version 3: Terminal im Kern, `tmux.list`, `hostKeys`, `vault.generate`, Aufzeichnungen); mit 1.284.0 läuft SSH weiter über Guacamole, ohne Aufzeichnung.
+Stufe 3 „SSH mit tmux und Aufzeichnung“. Benötigt GateControl ≥ 1.285.0 (`gc.remote` Version 3: Terminal im Kern, `tmux.list`, `hostKeys`, `vault.generate`, Aufzeichnungen).
 
 - **SSH im Terminal von GateControl:** Feld `ssh_engine` (`term` | `guac`) je SSH-Gerät; neue Geräte bekommen das Terminal (xterm.js im Browser, nativ in den Apps), vorhandene und übernommene bleiben bei Guacamole (Migration `003_terminal.sql`). Umstellen wählbar je Gerät, „Alle SSH-Geräte umstellen“, vorher „Im Terminal testen“ (Admin-Verbinden mit `engine: 'term'`, ein erfolgreicher Start merkt sich das Gerät: `term_tested_at`). Protokoll `remote_ssh_engine_changed`.
 - **tmux:** `tmux_enabled` (Standard an) und `tmux_name` (Standard `gc-<Kurzname>`, Namen nur `A-Z a-z 0-9 _ -`, bis 32 Zeichen, vom Plugin und von GateControl geprüft). Portal: „Fortsetzen: <Sitzung>“ (Liste über `gc.remote.tmux.list`) oder „Neue Sitzung starten“. App-API `GET devices/<id>/tmux`.

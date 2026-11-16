@@ -10,7 +10,7 @@
     "de": "Die Remote Desktops von GateControl als eigenes Plugin: Geräte mit RDP, VNC, SSH und Telnet – im VPN, über einen Port-Forward oder ein Home-Gateway –, Wake-on-LAN, Wartungsfenster, Rechte je Person und Gruppe, Verlauf. Windows-PCs melden sich aus der GateControl-App an, verbunden wird mit Code und Bestätigung am PC. SSH im eigenen Terminal von GateControl (Browser und Apps) mit tmux und geprüftem Host-Schlüssel, Aufzeichnung auf Wunsch („immer“ nur mit Hinweis). Übernimmt Ziele, Rechte und Verlauf aus „Remote Desktops“. Zugangsdaten bleiben im Tresor von GateControl.",
     "en": "GateControl's remote desktops as a plugin of their own: devices with RDP, VNC, SSH and Telnet – in the VPN, through a port forward or a home gateway –, wake-on-LAN, maintenance windows, rights per person and group, history. Windows PCs register from the GateControl app; one connects with a code and the confirmation at the PC. SSH in GateControl's own terminal (browser and apps) with tmux and a checked host key, recording on request (“always” only with a hint). Takes over targets, rights and history from “Remote desktops”. Credentials stay in GateControl's vault."
   },
-  "gatecontrol": ">=1.284.0",
+  "gatecontrol": ">=1.285.0",
   "entry": "server/index.js",
   "permissions": {
     "remote": true,

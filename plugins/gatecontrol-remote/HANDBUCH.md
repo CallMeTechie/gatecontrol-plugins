@@ -18,7 +18,7 @@ Passwörter und SSH-Schlüssel speichert nicht das Plugin, sondern der verschlü
 
 ## Voraussetzungen {#voraussetzungen}
 
-- GateControl **1.284.0** oder neuer (Fernzugriff-Schnittstelle Version 2: Anmeldung der Windows-PCs, Firewall je Sitzung, stille Signale an den PC). Für das Terminal und die Aufzeichnung braucht es das GateControl nach 1.284.0 (Schnittstelle Version 3) – davor läuft SSH weiter über Guacamole.
+- GateControl **1.285.0** oder neuer (Fernzugriff-Schnittstelle Version 3: Terminal im Kern, tmux, Host-Schlüssel, Aufzeichnung; dazu Version 2: Anmeldung der Windows-PCs, Firewall je Sitzung, stille Signale an den PC).
 - Für Aufzeichnungen: das Laufwerk `remote-recordings` aus der `docker-compose.yml` der neuen Version (GateControl und guacd). Ohne es wird nicht aufgezeichnet.
 - Für Windows-PCs aus der App: die GateControl-App für Windows (Pro) mit „Remote Desktop erlauben“ und Windows **Pro, Enterprise oder Education**. Windows Home kann keinen Remote Desktop anbieten.
 - Eine **eigene Lizenz** für Fernzugriff: Monat, Jahr oder Lifetime des Plugins. Fernzugriff ist **nicht** im GateControl-Plan und nicht in einer Server-Lifetime-Lizenz enthalten.

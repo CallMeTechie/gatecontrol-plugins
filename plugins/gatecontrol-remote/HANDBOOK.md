@@ -18,7 +18,7 @@ Passwords and SSH keys are not stored by the plugin but in GateControl's encrypt
 
 ## Requirements {#voraussetzungen}
 
-- GateControl **1.284.0** or newer (remote access interface version 2: registration of the Windows PCs, firewall per session, silent signals to the PC). The terminal and recording need the GateControl after 1.284.0 (interface version 3) – before it, SSH keeps running over Guacamole.
+- GateControl **1.285.0** or newer (remote access interface version 3: terminal in the core, tmux, host keys, recording; plus version 2: registration of the Windows PCs, firewall per session, silent signals to the PC).
 - For recordings: the drive `remote-recordings` of the `docker-compose.yml` of the new version (GateControl and guacd). Without it nothing is recorded.
 - For Windows PCs from the app: the GateControl app for Windows (Pro) with "Allow Remote Desktop" and Windows **Pro, Enterprise or Education**. Windows Home cannot offer Remote Desktop.
 - A **licence of its own** for Remote access: month, year or a lifetime licence of the plugin. Remote access is **not** part of the GateControl plan or a server lifetime licence.
