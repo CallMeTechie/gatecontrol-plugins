@@ -1,4 +1,4 @@
-<!-- version: 1.7.1 -->
+<!-- version: 1.7.2 -->
 # Remote access – Handbook
 
 ## What the plugin does {#was-das-plugin-kann}
@@ -66,6 +66,8 @@ Whoever could see an RDP or VNC target gets the right "Use remote desktops". Who
 “Add device” has three steps:
 
 1. **Target:** you pick from a list. “In the VPN” shows the VPN devices with their name in the VPN, “Behind gateway …” the devices the gateway’s network watch sees in the home network (name, address, vendor and the open ports SSH, RDP, VNC). Devices without these ports are one line down under “show”. “Shared services” are L4 routes that look like SSH, RDP or VNC, and “Enter another target …” takes a name or an address outside your network. Search and the filters SSH, RDP, VNC help with long lists. Greyed out is what already is a device or registers itself (Windows PCs with the app, Linux computers with the agent).
+
+   **Gateways in a pool:** the gateways of a failover pool see the same home network. They therefore share *one* section “Home network · pool …” with the state “Online (2 of 2)” or “1 of 2 online”, and each device is listed once – the same address in the same subnet is one device; the ports of all gateways are merged. A device from it goes through the pool: if one gateway fails, the other takes over. Checking and waking go through a gateway of the pool that is online right now. Gateways without a pool keep their own section “Behind gateway …”.
 2. **Connection:** protocol and port are filled in. On opening, GateControl checks the ports 22, 3389, 5900 and 23 of this one device – through the gateway or from the server – and shows the way as one line: **in the VPN**, **through gateway “…”** or **over the internet**. What used to be “Access” is under “Advanced”.
 3. **Login:** user name and password, for SSH by default a key made by GateControl (you copy its public part once into `~/.ssh/authorized_keys`). “Connect in the browser too” is on for new devices.
 
@@ -255,6 +257,11 @@ The right is checked again on every connect.
 **"Too many wrong codes":** wait 15 minutes or let the PC show a new code.
 
 **In the browser Windows does not ask for the sign-in:** when the PC requires network level authentication (NLA), the session in the browser needs a user name and password that the session page does not ask for yet. Connect from the GateControl app then.
+
+## New in 1.7.2 {#neu-1-7-2}
+
+- **Gateways of a pool once:** two gateways of the same failover pool show one section “Home network · pool …” in “Add device”, with “Online (2 of 2)” or “1 of 2 online”, each device once. New devices from it go through the pool; checking and waking through a gateway that is online. Typing an address in the pool’s home network no longer asks which gateway.
+- **No light band when scrolling any more:** the wizard keeps to the visible space and scrolls inside; the head with the steps and the buttons stay in place.
 
 ## New in 1.7.1 {#neu-1-7-1}
 

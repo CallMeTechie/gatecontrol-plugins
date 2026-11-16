@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.7.2
+
+Nur das Plugin; GateControl unverändert (Mindestversion 1.292.0, `gatecontrol.ref` bleibt).
+
+- **Gateways eines Pools zusammen:** `GET admin/candidates` liefert zusätzlich `homes` (`server/homes.js`): die Gateways eines Failover-Pools (`pool` je Gateway aus `gc.remote.candidates`) als ein Heimnetz mit `members`, `onlineCount`/`total` und den Geräten aller Gateways – dieselbe Adresse im selben Subnetz des Pools ist ein Gerät (ohne gemeldetes Subnetz: dieselbe Adresse), Ports vereinigt, Name und Hersteller vom besten Eintrag (Gateway online, Gerät online, Name, Hersteller, zuletzt gesehen), `via` je Gateway mit dessen `ref`. Gateways ohne Pool bleiben je ein Heimnetz wie bisher. `gateways` bleibt unverändert.
+- **Assistent:** ein Abschnitt „Heimnetz · Pool „…““ mit „Online (2 von 2)“ / „1 von 2 online“; das Ziel läuft über den Pool (`gateway_pool_id`, Listener `{ poolId }` – die L4-Route bekommt `target_pool_id`, der Kern wählt das Gateway). Prüfen über ein Gateway des Pools, das online ist und das Gerät sieht; Wecken über eines, das die MAC kennt (dessen `ref`), ein Gateway online zuerst. Freigegebene Dienste mit Pool-Ziel werden ebenfalls über ein Gateway des Pools geprüft.
+- **Weg-Regel** (`server/way.js`): die Gateways eines Pools sind bei freier Eingabe *eine* Wahl (ein Gateway online daraus), keine Frage „Welches Gateway?“ mehr zwischen ihnen.
+- **Heller Streifen beim Scrollen behoben:** Der Assistent wuchs über das Fenster, der Rahmen und mit ihm die Seite von GateControl scrollten, und der Rahmen glitt unter die klebende, halbdurchsichtige Kopfzeile von GateControl – die dort nicht abgedunkelt wird, weil das Abdunkeln der Seite die Fläche des Rahmens ausspart. Jetzt hält sich der Dialog an die Höhe aus `GC.viewport` (mindestens 420 px), nur sein Inhalt scrollt (`overscroll-behavior: contain`), Kopf mit Schritten und Fuß bleiben stehen; jeder Schritt beginnt oben.
+- Texte DE/EN, Handbuch „Gerät hinzufügen“ und „Neu in 1.7.2“. Tests `test/pools.test.js`.
+
 ## 1.7.1
 
 - **Linux-Agent herunterladen:** „Linux-Gerät einrichten“ im Portal und die Handbücher (Abschnitt „Linux-Geräte“) nennen die festen Links von `gatecontrol-linux-agent`, die immer die neueste Version liefern (`releases/latest/download/gatecontrol-agent_<arch>.deb` mit `amd64`/`arm64`/`armhf`, `gatecontrol-agent_x86_64.pkg.tar.zst`, `gatecontrol-agent_x86_64.rpm`), und die Seite mit allen Releases – statt Platzhaltern wie `./gatecontrol-agent_<version>_<arch>.deb` ohne Bezugsquelle. Im Portal holt `$(dpkg --print-architecture)` das passende `.deb`. Handbuch „Neu in 1.7.1“.
