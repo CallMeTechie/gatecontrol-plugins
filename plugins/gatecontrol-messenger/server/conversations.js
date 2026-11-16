@@ -44,6 +44,8 @@ async function access(ctx, idRaw) {
   // 1.14.0: a bridged chat exists only for a client that says it knows them (?bridged=1) — an older app would show
   // it as a chat with a deleted account
   if (conv.bridge_net && !ctx.bridged) throw fail('not_found');
+  // 1.25.0: the room of the WhatsApp status updates is no chat (bridgestatus.js) — no route opens it
+  if (conv.bridge_status) throw fail('not_found');
   const me = await store.one(ctx.gc, 'SELECT * FROM members WHERE conv_id = ? AND user_id = ? AND left_at IS NULL', [id, ctx.viewer]);
   if (!me) throw fail('not_found');
   return { conv, me, members: await membersOf(ctx.gc, id) };
@@ -184,6 +186,8 @@ async function list(ctx, query, opts = {}) {
     }
     // 1.14.0: bridged chats only for clients that know them, and only once something was said in them
     if (conv.bridge_net && (!ctx.bridged || !conv.last_msg_id)) continue;
+    // 1.25.0: the room of the WhatsApp status updates is in the status row, not in the list
+    if (conv.bridge_status) continue;
     // 1.20.0: channels on their own page for a client that knows them
     if (opts.channels ? !conv.bridge_channel : (ctx.channels && conv.bridge_channel)) continue;
     // 1.24.0: a child's Telegram channels only with the parents' „Telegram-Kanäle“

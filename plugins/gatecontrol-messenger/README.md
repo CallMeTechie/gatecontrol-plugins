@@ -1248,6 +1248,26 @@ Message fields (bridged chats; `null` elsewhere):
 `message.update { media: true }` follows when a preview's picture arrived. `conversation.update { reason: "bridge" }`
 when a chat turned out to be a channel, an admins-only group opened or closed, or reacting in channels went off.
 
+## WhatsApp status in the status row (since 1.25.0)
+
+Needs GateControl with `gc.bridges` version 12 (`chat.status`; `features.bridge_status` once the person linked WhatsApp;
+`server/bridgestatus.js`, migration 015). Tests: `test/bridgestatus.test.js` against the mock host's version 12. With an
+older GateControl the room "WhatsApp Status Broadcast" stays a chat as before.
+
+The bridge keeps the contacts' status updates in a room of their own. Its conversation (`bridge_status = 1`) is **never a
+chat**: not in `GET conversations` (nor in `?channels=1`, search, unread, filters), every route answers `not_found`,
+muted, no push, no `message.new`, never a read receipt from `POST conversations/:id/read`. Each status runs out 24 h
+after it was posted (`expires_at`; the file goes with it), a deletion of the contact removes it at once.
+
+| Route | Answer |
+|---|---|
+| `GET status/feed` | as before, plus `bridged: [{ network, contact: { id, name, avatarMediaId, avatarUrl }, chatId, canReply, stories: [{ id, kind, text, mediaId, thumbMediaId, video, url, thumbUrl, createdAt, expiresAt, seen }], unseen }]` — one entry per contact, unseen first, then the newest. `kind`: `text` (no colour or font: WhatsApp does not pass them on — the apps use their own colour), `image`, `video` (caption in `text`), `unsupported` ("open it in WhatsApp"). A status whose file is still on its way is left out until it is there. `chatId`: the WhatsApp direct chat with the contact, when known. Older clients read `items` only (their entries need an account) |
+| `POST status/bridged/:id/seen` | `{ seen: true, reported }` — watched here (the ring turns grey). WhatsApp is told (`reported: true`) only with `prefs.privacy.bridgedStatusSeen` on (default off) and `readReceipts` on, and only up to the newest status before which every status in the room was watched too — the bridge marks everything up to the message it is told, for every sender |
+| `POST status/bridged/:id/reply` | `{ text, clientId? }` or `{ emoji, clientId? }` → `{ message, conversationId, emoji? }` — a normal message into the WhatsApp direct chat with the contact (found by the contact, else by the bridge's contacts — opened when needed); an emoji as the text "❤️ auf deinen Status" (the bridge refuses reactions on a status). `not_found` with reason `no_chat` when there is no way to the contact; the bridge's refusals as for `POST conversations/:id/messages` |
+
+`PUT prefs { privacy: { bridgedStatusSeen: boolean } }` — "WhatsApp mitteilen, wenn ich einen Status ansehe". Live event
+`story.bridged { network, storyId, action: 'new' | 'seen' | 'remove' }` → load the feed again.
+
 ## Persons — one chat per human over several ways (since 1.21.0)
 
 `features.chat_people` (for the same people as `bridge_chats`; `server/persons.js`, migration 013). A client that knows

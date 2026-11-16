@@ -91,6 +91,10 @@
 //   code is '47000'); status().telegramApp { set, setAt, setBy } and configure({ telegramApp: { apiId, apiHash } | null })
 //   — without it Telegram's needs is 'app' and every call for a person answers ERR_BRIDGES_UNAVAILABLE / no_app;
 //   host.bridges.tgApps lists what configure was given (the test checks it went nowhere else)
+// Version 12 (WhatsApp status; createHost(dir, { bridges: { …, version: 12 } })): host.bridges.chat(userId, { status: true })
+//   makes the room of the contacts' status updates (kind 'group', readOnly); send / react / redact there answer
+//   ERR_BRIDGE / status_room, read there sends nothing without { status: true } ({ ok: true, skipped: 'status' }) —
+//   host.bridges.sent shows the reads that went out, with status: true; chats() names status.
 // events.pull / events.ack need no person; chats() a request of that person; send / react / redact / read / typing a
 // changing request of that person, their own chat (else ERR_INVALID 'unknown chat'), a bridge that runs.
 //
@@ -135,7 +139,7 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
     host: { state: o && o.running ? 'running' : null, error: null, running: !!(o && o.running), memMb: o && o.running ? 88 : null, outdated: false, probe: null },
     logins: new Map(), processes: new Map(), log: [], seq: 0, oddStep: null, elsewhere: new Map(),
   };
-  const version = o && [1, 3, 4, 5, 6, 7, 8, 9, 10, 11].includes(o.version) ? o.version : 2;
+  const version = o && [1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].includes(o.version) ? o.version : 2;
   Object.assign(st, { inbox: [], inboxSeq: 0, chats: new Map(), sent: [], failSend: null, wake: null });
   Object.assign(st, { files: new Map(), fetches: [], numbers: new Map(), lookups: new Map(), dms: new Map(), failFetch: null });
   Object.assign(st, { contacts: [], contactRefs: new Map(), contactDms: new Map() });
@@ -354,6 +358,8 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
     if (c.closed) throw refuse('chat_closed');
     return c;
   }
+  /** version 12: the status room takes nothing from the person */
+  function noStatusRoom(c) { if (c && c.status) throw refuse('status_room'); }
   const out = (op, userId, network, chatId, extra) => {
     if (st.failSend && op !== 'read' && op !== 'typing') { const f = st.failSend; st.failSend = null; throw err(f.code || 'ERR_BRIDGE', 'the bridge refused or failed', f.reason || 'bridge_error'); }
     const row = { op, userId, network, chatId, ...extra };
@@ -378,7 +384,7 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
     'bridges.chats': async ({ userId, network }) => {
       need(); person(userId, false);
       if (!NETS.includes(network)) throw hostError('ERR_INVALID', 'unknown network');
-      return [...st.chats.entries()].filter(([, c]) => c.userId === userId && c.network === network).map(([id, c]) => ({ id, kind: c.kind, open: !c.closed, ...(version >= 7 ? { channel: !!c.channel, readOnly: !!c.readOnly } : {}) }));
+      return [...st.chats.entries()].filter(([, c]) => c.userId === userId && c.network === network).map(([id, c]) => ({ id, kind: c.kind, open: !c.closed, ...(version >= 7 ? { channel: !!c.channel, readOnly: !!c.readOnly || !!c.status } : {}), ...(version >= 12 && c.status ? { status: true } : {}) }));
     },
     'bridges.send': async ({ userId, network, chatId, message }) => {
       need();
@@ -386,6 +392,7 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
       const file = version >= 4 && message && typeof message === 'object' && message.media != null ? mediaHost.servable(message.media && message.media.mediaId) : null;
       person(userId, true); bridge(network);
       const c = chatOf(userId, network, chatId);
+      noStatusRoom(c);
       const m = message && typeof message === 'object' && !Array.isArray(message) ? message : null;
       if (file) {
         if (!['image', 'video', 'audio', 'voice', 'file'].includes(m.media.kind) || m.edit != null || !TXN_RE.test(String(m.txnId || ''))) throw hostError('ERR_INVALID', 'media: { kind: image | video | audio | voice | file }');
@@ -409,7 +416,7 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
     },
     'bridges.react': async ({ userId, network, chatId, reaction }) => {
       need(); person(userId, true); bridge(network);
-      chatOf(userId, network, chatId);
+      noStatusRoom(chatOf(userId, network, chatId));
       const r = reaction && typeof reaction === 'object' ? reaction : {};
       if (typeof r.emoji !== 'string' || !r.emoji || !EVENT_RE.test(String(r.target || '')) || !TXN_RE.test(String(r.txnId || ''))) throw hostError('ERR_INVALID', 'reaction: { txnId, target, emoji }');
       const id = `$react${++st.seq}`;
@@ -418,17 +425,19 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
     },
     'bridges.redact': async ({ userId, network, chatId, redaction }) => {
       need(); person(userId, true); bridge(network);
-      chatOf(userId, network, chatId);
+      noStatusRoom(chatOf(userId, network, chatId));
       const r = redaction && typeof redaction === 'object' ? redaction : {};
       if (!EVENT_RE.test(String(r.target || '')) || !TXN_RE.test(String(r.txnId || ''))) throw hostError('ERR_INVALID', 'redaction: { txnId, target }');
       out('redact', userId, network, chatId, { txnId: r.txnId, target: r.target });
       return { ok: true };
     },
-    'bridges.read': async ({ userId, network, chatId, messageId }) => {
+    'bridges.read': async ({ userId, network, chatId, messageId, status }) => {
       need(); person(userId, true); bridge(network);
-      chatOf(userId, network, chatId);
+      const c = chatOf(userId, network, chatId);
       if (!EVENT_RE.test(String(messageId || ''))) throw hostError('ERR_INVALID', 'messageId: a message id');
-      out('read', userId, network, chatId, { messageId });
+      // version 12: in the status room only on the plugin's explicit word
+      if (c.status && status !== true) return { ok: true, skipped: 'status' };
+      out('read', userId, network, chatId, { messageId, ...(c.status ? { status: true } : {}) });
       return { ok: true };
     },
     'bridges.typing': async ({ userId, network, chatId, on }) => {
@@ -632,7 +641,7 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
       send: (userId, network, chatId, message) => call('bridges.send', { userId, network, chatId, message }),
       react: (userId, network, chatId, reaction) => call('bridges.react', { userId, network, chatId, reaction }),
       redact: (userId, network, chatId, redaction) => call('bridges.redact', { userId, network, chatId, redaction }),
-      read: (userId, network, chatId, messageId) => call('bridges.read', { userId, network, chatId, messageId }),
+      read: (userId, network, chatId, messageId, opts) => call('bridges.read', { userId, network, chatId, messageId, ...(version >= 12 ? { status: !!(opts && opts.status === true) } : {}) }),
       typing: (userId, network, chatId, on) => call('bridges.typing', { userId, network, chatId, on: on === true }),
     } : {}),
     ...(version >= 4 ? {
@@ -689,9 +698,9 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
     set failFetch(v) { st.failFetch = v ? { ...v } : null; },
     /** the mock host hands over how it calls a hook of the plugin */
     onWake(fn) { st.wake = fn; },
-    chat(userId, { kind = 'direct', name = null, network = 'whatsapp', channel = false, readOnly = false } = {}) {
+    chat(userId, { kind = 'direct', name = null, network = 'whatsapp', channel = false, readOnly = false, status = false } = {}) {
       const id = 'r' + String(++st.seq).padStart(20, '0');
-      st.chats.set(id, { userId, network, kind, name, closed: false, txns: new Map(), channel, readOnly });
+      st.chats.set(id, { userId, network, kind: status ? 'group' : kind, name, closed: false, txns: new Map(), channel, readOnly, status: version >= 12 && status === true });
       return id;
     },
     closeChat(id) { const c = st.chats.get(id); if (c) c.closed = true; },

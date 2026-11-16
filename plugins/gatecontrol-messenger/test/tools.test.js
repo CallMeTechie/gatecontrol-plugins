@@ -15,7 +15,7 @@ test('prefs: privacy / notify / chats with defaults, partial updates, strict val
   await withHost({}, async (host, c) => {
     const anna = c.as(ANNA);
     const p = (await anna('GET', 'me')).json.prefs;
-    assert.deepEqual(p.privacy, { lastSeen: 'all', avatar: 'all', statusDefault: 'all', placeInStatus: 'family', groupAdd: 'all', defaultDisappearingS: 0 });
+    assert.deepEqual(p.privacy, { lastSeen: 'all', avatar: 'all', statusDefault: 'all', placeInStatus: 'family', groupAdd: 'all', defaultDisappearingS: 0, bridgedStatusSeen: false });
     assert.deepEqual(p.notify, { groupsMentionsOnly: false, reactions: true, statusDigest: false, eventReminderMin: 60 });
     assert.deepEqual(p.chats, { keepArchived: true });
     const r = await anna('PUT', 'prefs', { privacy: { lastSeen: 'nobody' }, notify: { eventReminderMin: 15 }, chats: { keepArchived: false } });
