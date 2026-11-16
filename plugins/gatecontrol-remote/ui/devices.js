@@ -398,7 +398,7 @@
       if (d.config.ssh_engine === 'guac' && d.config.term_tested_at) badges.appendChild(el('span', { class: 'rm-badge', text: T('dev.term_tested') }));
     }
     if (d.config.recording === 'optional' || d.config.recording === 'always') badges.appendChild(el('span', { class: 'rm-badge', 'data-tone': d.config.recording === 'always' ? 'warn' : null, text: T('dev.rec_' + d.config.recording) }));
-    var sub = [h && h.platform === 'android' ? T('dev.phone_addr') : address(d)];
+    var sub = [h && h.platform === 'android' ? T(h.screenControl ? 'dev.phone_addr_control' : 'dev.phone_addr') : address(d)];
     if (h) {
       sub.push(T('dev.owner', { name: h.ownerName || '#' + h.owner }));
       if (h.osUser) sub.push(T('dev.os_user', { name: h.osUser }));

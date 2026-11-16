@@ -83,7 +83,7 @@ test('code → request (always view) → the phone allows → relay ticket: send
     assert.equal(ok.request.mode, 'view');
     assert.equal(ok.screen.wsPath, '/api/v1/remote/screen-relay');
     const call = s.host.remote.calls.find((c) => c.op === 'screen');
-    assert.deepEqual(call, { op: 'screen', viewer: ADMIN.id, sender: { user: LEA.id, device: '803' }, target: 'dev-' + id });
+    assert.deepEqual(call, { op: 'screen', viewer: ADMIN.id, sender: { user: LEA.id, device: '803' }, target: 'dev-' + id, mode: 'view' });
     const t = [...s.host.remote.tickets.values()].find((x) => x.engine === 'screen');
     assert.equal(ok.screen.ref, t.senderRef);
     assert.ok(!JSON.stringify(ok).includes(t.ref), 'the phone never gets the viewer side');

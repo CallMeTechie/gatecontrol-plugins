@@ -1,4 +1,4 @@
-<!-- version: 1.3.0 -->
+<!-- version: 1.4.0 -->
 # Fernzugriff – Handbuch
 
 ## Was das Plugin kann {#was-das-plugin-kann}
@@ -10,6 +10,8 @@ Fernzugriff ist das frühere „Remote Desktops“ von GateControl als eigenes P
 
 Dazu kommen Wake-on-LAN, Wartungsfenster, eine Erinnerung an das Erneuern der Zugangsdaten, Rechte je Person und Gruppe und der Verlauf aller Sitzungen.
 
+Seit 1.4.0 darf die helfende Person das Handy auf Wunsch auch **steuern** – tippen, wischen, schreiben, Zurück/Start/Übersicht –, wenn die Person am Handy das für diese Anfrage erlaubt. Das geht nur mit der App **von GitHub**; die App aus Google Play zeigt den Bildschirm nur (siehe [Handy steuern](#steuern)).
+
 Seit 1.3.0 kann ein **Android-Handy seinen Bildschirm freigeben**: In der GateControl-App für Android schaltet die Person „Bildschirm freigeben“ ein, gibt den Code an die Person weiter, die helfen soll, und bestätigt am Handy. Wer hilft, sieht den Bildschirm im Browser – zunächst **nur ansehen** (siehe [Handy-Bildschirm freigeben](#handy)).
 
 Seit 1.2.0 läuft **SSH im eigenen Terminal von GateControl** – im Browser und nativ in den Apps, mit **tmux** (die Sitzung läuft auf dem Gerät weiter, wenn die Verbindung abreißt) und geprüftem Host-Schlüssel. Sitzungen lassen sich auf Wunsch **aufzeichnen** und im Browser abspielen (siehe [SSH im Terminal](#terminal) und [Aufzeichnung](#aufzeichnung)).
@@ -20,6 +22,7 @@ Passwörter und SSH-Schlüssel speichert nicht das Plugin, sondern der verschlü
 
 ## Voraussetzungen {#voraussetzungen}
 
+- Zum Steuern eines Handys: GateControl mit der Fernzugriff-Schnittstelle **Version 5** (GateControl 1.287.0 oder neuer) und die GateControl-App für Android **aus GitHub** mit eingeschalteter Bedienungshilfe „GateControl-Fernsteuerung“. Mit einem älteren GateControl oder der App aus Google Play geht nur Ansehen.
 - Für die Bildschirm-Freigabe vom Handy: GateControl **1.286.0** oder neuer (Fernzugriff-Schnittstelle Version 4, Relais für den Bildstrom) und die GateControl-App für Android mit „Bildschirm freigeben“. Ein älteres GateControl lehnt die Anmeldung des Handys ab.
 - GateControl **1.285.0** oder neuer (Fernzugriff-Schnittstelle Version 3: Terminal im Kern, tmux, Host-Schlüssel, Aufzeichnung; dazu Version 2: Anmeldung der Windows-PCs, Firewall je Sitzung, stille Signale an den PC).
 - Für Aufzeichnungen: das Laufwerk `remote-recordings` aus der `docker-compose.yml` der neuen Version (GateControl und guacd). Ohne es wird nicht aufgezeichnet.
@@ -92,12 +95,23 @@ Schaltet jemand in der GateControl-App für Windows **„Remote Desktop erlauben
 In der GateControl-App für Android steht unter **Fernzugriff** der Schalter **„Bildschirm freigeben“**. Ist er an, meldet die App das Handy an und zeigt einen Code aus 9 Ziffern.
 
 - **Helfen:** Im Portal den Tab Fernzugriff öffnen, **„Code eingeben“** tippen und den Code vom Handy eintragen. Am Handy erscheint „… möchte deinen Bildschirm sehen“ mit deinem Namen und Bild. Nach „Erlauben“ fragt Android noch einmal („Jetzt starten“). Erst dann öffnet sich bei dir die Seite mit dem Bildschirm des Handys.
-- **Nur ansehen:** In dieser Version kann die helfende Person nur zusehen, nicht tippen. Die Steuerung kommt mit einer späteren Version.
+- **Ansehen oder steuern:** Wähle beim Code „Ansehen und steuern“ oder „Nur ansehen“. Steuern geht nur, wenn die App des Handys von GitHub kommt – sonst bietet das Portal nur „Nur ansehen“ an (siehe [Handy steuern](#steuern)).
 - **Während der Freigabe** zeigt das Handy eine rote Leiste und eine Mitteilung „Bildschirm wird geteilt“, beide mit **„Beenden“**. Beenden trennt sofort. Danach zeigt das Handy gleich einen neuen Code.
 - **Ohne Code für Berechtigte:** Auch am Handy gibt es den zweiten Schalter. Dann tippen Personen mit Zugriff auf das Handy im Portal auf „Verbinden“ und sparen sich den Code. **Die Frage am Handy und die Abfrage von Android bleiben immer.**
 - **Wer es sieht:** zuerst nur die Person selbst und die Administratoren; freigeben wie bei einem PC. Mit dem Recht „Support-Codes einlösen“ geht es mit dem Code auch ohne Zugriff.
 - **Über den Server:** Das Bild läuft über deinen GateControl-Server. Er reicht es nur weiter und speichert nichts, es ist aber keine Ende-zu-Ende-Verschlüsselung. Banking-Apps, Passwortfelder und die Tresor-Seiten der App bleiben beim Helfer schwarz.
 - Das Handy braucht kein VPN für die Freigabe. Es gilt als offline, wenn sich die App 20 Minuten nicht gemeldet hat.
+
+### Handy steuern {#steuern}
+
+Mit der GateControl-App für Android **aus GitHub** darf die helfende Person das Handy bedienen – aber nur, wenn die Person am Handy es **für genau diese Anfrage** erlaubt.
+
+- **Am Handy einmal einrichten:** In der Karte „Bildschirm freigeben“ steht „Steuerung ist noch aus“. **„Steuerung einrichten“** erklärt, was der Bedienungshilfe-Dienst tut, und führt zu den Bedienungshilfen von Android. Dort „GateControl-Fernsteuerung“ einschalten. Ab Android 13 muss bei einer App von GitHub vorher in der App-Info „Eingeschränkte Einstellungen zulassen“ gewählt werden – die App zeigt den Weg. Abschalten geht jederzeit in den Bedienungshilfen.
+- **Anfragen:** Im Portal „Ansehen und steuern“ wählen (bei „ohne Code“ den gleichnamigen Knopf). Am Handy steht dann „… möchte deinen Bildschirm sehen und steuern“ mit dem Feld **„Nur ansehen lassen“**. Ohne Haken darf die helfende Person steuern, mit Haken nur zusehen. Ist die Bedienungshilfe aus, bleibt es beim Ansehen.
+- **Während gesteuert wird** zeigt das Handy eine rote Leiste „… steuert deinen Bildschirm“, eine Mitteilung und einen roten Rahmen mit „Steuern beenden“ über allen Apps. **„Nur ansehen“** (Leiste, Mitteilung) oder „Steuern beenden“ (Rahmen) nimmt die Steuerung sofort weg, das Ansehen läuft weiter. Zurück zum Steuern geht nur mit einer neuen Anfrage. „Beenden“ trennt ganz.
+- **Was die helfende Person kann:** auf dem Bild klicken (tippen), gedrückt halten (lange drücken), ziehen (wischen), mit dem Mausrad scrollen, mit der rechten Maustaste zurück; Knöpfe Zurück, Start, Übersicht und Text. Getippter Text landet im Feld, das am Handy ausgewählt ist.
+- **Was nicht geht:** die Sperre, die PIN-Eingabe und die Abfragen von Android lassen sich nicht fernbedienen. In Passwortfelder kann nicht ferngeschrieben werden. Ist nur eine App geteilt, gibt es keine Steuerung.
+- **Datenschutz:** Der Dienst tippt und wischt nur in einer Sitzung, die bestätigt wurde, und sendet nichts außerhalb davon. Eingaben laufen wie das Bild über deinen GateControl-Server und landen in keinem Protokoll.
 
 ### SSH im Terminal {#terminal}
 
@@ -165,6 +179,10 @@ Das Recht wird bei jedem Verbinden neu geprüft.
 
 **Das Handy erscheint nicht / „Bildschirm-Freigaben brauchen ein neueres GateControl“:** Die Person braucht das Recht „Eigene Geräte freigeben“, und GateControl braucht die Fernzugriff-Schnittstelle Version 4.
 
+**Im Portal gibt es bei einem Handy nur „Nur ansehen“:** Die App am Handy kommt aus Google Play oder ist älter, oder GateControl hat die Fernzugriff-Schnittstelle Version 5 noch nicht. Steuern geht nur mit der App von GitHub.
+
+**„Die Person am Gerät hat auf ‚Nur ansehen‘ gestellt“:** Am Handy wurde die Steuerung beendet. Du kannst weiter zusehen; zum Steuern brauchst du eine neue Anfrage.
+
 **Der Helfer sieht nur „Warte auf das Bild vom Gerät …“:** Am Handy wurde die Abfrage von Android noch nicht mit „Jetzt starten“ bestätigt, oder die Person hat sie abgelehnt. Dann endet die Anfrage und der Helfer sieht „Die Freigabe wurde am Gerät beendet“.
 
 **Der PC erscheint nicht:** Die Person braucht das Recht „Eigene Geräte freigeben“. Unter Windows Home gibt es keinen Remote Desktop – die App zeigt dann einen Hinweis.
@@ -174,6 +192,13 @@ Das Recht wird bei jedem Verbinden neu geprüft.
 **„Zu viele falsche Codes“:** Warte 15 Minuten oder lass dir am PC einen neuen Code zeigen.
 
 **Im Browser fragt Windows nach der Anmeldung nicht:** Verlangt der PC die Anmeldung auf Netzwerkebene (NLA), braucht die Sitzung im Browser Benutzername und Passwort, die die Sitzungsseite noch nicht abfragt. Verbinde dich dann aus der GateControl-App.
+
+## Neu in 1.4.0 {#neu-1-4-0}
+
+- **Handy steuern** – „Ansehen und steuern“ für Handys mit der App von GitHub: tippen, wischen, scrollen, schreiben, Zurück/Start/Übersicht.
+- **Die Person am Handy entscheidet jedes Mal** („Nur ansehen lassen“) und kann jederzeit auf „Nur ansehen“ stellen.
+- Die App aus Google Play bleibt beim Ansehen; das Portal zeigt bei solchen Handys nur „Nur ansehen“.
+- Verlauf: „steuern erlaubt“ und „Auf ‚Nur ansehen‘ gestellt“.
 
 ## Neu in 1.3.0 {#neu-1-3-0}
 

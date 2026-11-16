@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.4.0
+
+Stufe 6 „Android steuern“. Steuern braucht GateControl mit `gc.remote` Version 5 (`gc.remote.screen` mit `mode: 'control'`, Rückkanal im Relais `gc-screen.v1`, Ereignis-Phase `mode`) und die GateControl-App für Android **aus GitHub** (Bedienungshilfe-Dienst); ohne beides bleibt es beim Ansehen wie in 1.3. `gatecontrol.ref` und die Mindestversion bleiben auf dem aktuellen master (1.286.0) – nach dem Server-Release anheben.
+
+- **Anfrage „Ansehen und steuern“ an ein Handy:** `POST code/redeem { mode: 'control' }` und „ohne Code“ `POST devices/<id>/connect { mode: 'control' }` ergeben eine Anfrage mit `mode: 'control'` nur, wenn die App des Handys gesteuert werden kann (`screen.control` aus `host/register` / `host/state`, Migration `005_control.sql`) und GateControl Version 5 hat – sonst `mode: 'view'` mit `modeReason` (`phone_view_only` | `server_view_only`). Signal `remote.request` und `pending` tragen den Modus.
+- **Die Person am Handy entscheidet jedes Mal:** `POST host/requests/<id> { decision: 'allow', mode: 'control' }` – Steuern nur, wenn angefragt **und** ausdrücklich gewählt; ohne `mode` (alte Apps, „Nur ansehen lassen“) wird es Ansehen. Das Ticket von `gc.remote.screen` bekommt genau diesen Modus; `requests/<id>/connect` nennt ihn.
+- **Herabstufen:** Das Ereignis `phase: 'mode'` von GateControl (das Handy hat auf „Nur ansehen“ gestellt, die Bedienungshilfe ging aus, nur eine App geteilt) setzt Anfrage und Verlauf auf `view`; Protokoll `remote_screen_mode { mode, reason }`. `remote_request_allowed.details.mode` ist der erlaubte Modus (`asked`, wenn weniger erlaubt wurde).
+- **Rechte:** unverändert – „Support-Codes einlösen“ oder Zugriff auf das Handy mit „Remote Desktops nutzen“.
+- **Anzeige:** Geräte (Admin) „Bildschirm über den Server · ansehen und steuern (App von GitHub)“, Portal mit „Ansehen und steuern“ / „Nur ansehen“, Hinweis bei Handys, die nur angesehen werden können, und „Die Person am Handy erlaubt nur Ansehen.“; Verlauf mit „steuern erlaubt“ und „Auf ‚Nur ansehen‘ gestellt“.
+- Mock-Host: `gc.remote` Version 5 (`opts.gatecontrol ≥ '1.287.0'` oder `opts.remote.v5`), `host.remoteScreenMode(ref, reason)`.
+
 ## 1.3.0
 
 Stufe 5 „Android ansehen“. Für Handys braucht es GateControl ≥ 1.286.0 mit `gc.remote` Version 4 (`gc.remote.screen`, Relais `gc-screen.v1`); ohne sie bleibt alles wie in 1.2 und ein Handy bekommt `screen_unavailable`.

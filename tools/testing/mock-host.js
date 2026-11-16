@@ -4320,6 +4320,7 @@ async function createHost(pluginDir, opts = {}) {
     /** gc.remote version 4: both sides of a screen relay are there / the relay ends */
     remoteScreenStart: (ref, x) => rm.screenStart(ref, x),
     remoteScreenEnd: (ref, reason) => rm.screenEnd(ref, reason),
+    remoteScreenMode: (ref, reason) => rm.screenMode(ref, reason),
     remoteClose: (sessionId, reason) => rm.close(sessionId, reason),
     remoteVaultSeed: (entry, source) => rm.vaultSeed(entry, source),
     remoteUnreadable: (handle) => rm.setUnreadable(handle),

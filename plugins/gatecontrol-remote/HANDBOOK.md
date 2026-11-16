@@ -1,4 +1,4 @@
-<!-- version: 1.3.0 -->
+<!-- version: 1.4.0 -->
 # Remote access – Handbook
 
 ## What the plugin does {#was-das-plugin-kann}
@@ -10,6 +10,8 @@ Remote access is GateControl's former "Remote desktops" as a plugin of its own. 
 
 On top: wake-on-LAN, maintenance windows, a reminder to renew credentials, rights per person and group, and the history of every session.
 
+Since 1.4.0 the helper may also **control** the phone on request – tap, swipe, type, Back/Home/Overview – when the person at the phone allows it for this request. That needs the app **from GitHub**; the app from Google Play only shows the screen (see [Control a phone](#steuern)).
+
 Since 1.3.0 an **Android phone can share its screen**: in the GateControl app for Android the person switches on "Share screen", passes the code to the person who helps and confirms on the phone. The helper sees the screen in the browser – for now **view only** (see [Share a phone's screen](#handy)).
 
 Since 1.2.0 **SSH runs in GateControl's own terminal** – in the browser and natively in the apps, with **tmux** (the session keeps running on the device when the connection drops) and a checked host key. Sessions can be **recorded** on request and played back in the browser (see [SSH in the terminal](#terminal) and [Recording](#aufzeichnung)).
@@ -20,6 +22,7 @@ Passwords and SSH keys are not stored by the plugin but in GateControl's encrypt
 
 ## Requirements {#voraussetzungen}
 
+- To control a phone: GateControl with remote access interface **version 5** (GateControl 1.287.0 or newer) and the GateControl app for Android **from GitHub** with the accessibility service "GateControl remote control" switched on. With an older GateControl or the app from Google Play only viewing works.
 - For screen sharing from a phone: GateControl **1.286.0** or newer (remote access interface version 4, the relay of the picture) and the GateControl app for Android with "Share screen". An older GateControl refuses the phone's registration.
 - GateControl **1.285.0** or newer (remote access interface version 3: terminal in the core, tmux, host keys, recording; plus version 2: registration of the Windows PCs, firewall per session, silent signals to the PC).
 - For recordings: the drive `remote-recordings` of the `docker-compose.yml` of the new version (GateControl and guacd). Without it nothing is recorded.
@@ -92,12 +95,23 @@ When somebody switches on **"Allow Remote Desktop"** in the GateControl app for 
 In the GateControl app for Android, **Remote access** has the switch **"Share screen"**. When it is on, the app registers the phone and shows a code of 9 digits.
 
 - **Helping:** open the Remote access tab in the portal, tap **"Enter code"** and type the code from the phone. The phone asks "… wants to see your screen" with your name and picture. After "Allow", Android asks once more ("Start now"). Only then the page with the phone's screen opens for you.
-- **View only:** in this version the helper can only watch, not tap. Control comes with a later version.
+- **View or control:** choose "View and control" or "View only" with the code. Control only works when the phone's app comes from GitHub – otherwise the portal offers "View only" alone (see [Control a phone](#steuern)).
 - **While sharing** the phone shows a red bar and a notification "Screen is being shared", both with **"Stop"**. Stop disconnects at once. Right after, the phone shows a new code.
 - **No code for permitted people:** the phone has the second switch, too. People with access to the phone then tap "Connect" in the portal and skip the code. **The question on the phone and Android's prompt always stay.**
 - **Who sees it:** at first only the person and the administrators; share it like a PC. With the right "Redeem support codes" it works with the code without access.
 - **Through the server:** the picture runs through your GateControl server. It only passes it on and stores nothing, but it is not end-to-end encryption. Banking apps, password fields and the app's vault pages stay black for the helper.
 - The phone needs no VPN for sharing. It counts as offline when its app has not reported for 20 minutes.
+
+### Control a phone {#steuern}
+
+With the GateControl app for Android **from GitHub** the helper may operate the phone – but only when the person at the phone allows it **for this very request**.
+
+- **Set it up once on the phone:** the card "Share screen" says "Control is still off". **"Set up control"** explains what the accessibility service does and leads to Android's accessibility settings. Switch on "GateControl remote control" there. From Android 13, an app from GitHub first needs "Allow restricted settings" in its app info – the app shows the way. It can be switched off at any time in the accessibility settings.
+- **Asking:** choose "View and control" in the portal (with "no code", the button of that name). The phone then shows "… wants to see and control your screen" with the box **"View only"**. Without the tick the helper may control, with it only watch. With the accessibility service off it stays at viewing.
+- **While being controlled** the phone shows a red bar "… is controlling your screen", a notification and a red frame with "Stop control" over all apps. **"View only"** (bar, notification) or "Stop control" (frame) takes control away at once; viewing goes on. Control again only with a new request. "Stop" disconnects completely.
+- **What the helper can do:** click on the picture (tap), hold (long press), drag (swipe), scroll with the wheel, right button for back; buttons Back, Home, Overview and Text. Typed text goes into the field selected on the phone.
+- **What does not work:** the lock screen, the PIN entry and Android's own prompts cannot be operated remotely. Password fields cannot be typed into remotely. With only one app shared there is no control.
+- **Privacy:** the service only taps and swipes in a session that was approved and sends nothing outside it. Input runs through your GateControl server like the picture and lands in no log.
 
 ### SSH in the terminal {#terminal}
 
@@ -165,6 +179,10 @@ The right is checked again on every connect.
 
 **The phone does not show up / "Screen sharing needs a newer GateControl":** the person needs the right "Share own devices", and GateControl needs remote access interface version 4.
 
+**The portal offers only "View only" for a phone:** the phone's app comes from Google Play or is older, or GateControl does not have remote access interface version 5 yet. Control only works with the app from GitHub.
+
+**"The person at the device switched to 'View only'":** control was ended on the phone. You can keep watching; to control again you need a new request.
+
 **The helper only sees "Waiting for the picture from the device …":** Android's prompt on the phone has not been confirmed with "Start now" yet, or the person declined it. Then the request ends and the helper sees "Sharing was ended on the device".
 
 **The PC does not show up:** the person needs the right "Share own devices". Windows Home has no Remote Desktop – the app says so.
@@ -174,6 +192,13 @@ The right is checked again on every connect.
 **"Too many wrong codes":** wait 15 minutes or let the PC show a new code.
 
 **In the browser Windows does not ask for the sign-in:** when the PC requires network level authentication (NLA), the session in the browser needs a user name and password that the session page does not ask for yet. Connect from the GateControl app then.
+
+## New in 1.4.0 {#neu-1-4-0}
+
+- **Control a phone** – "View and control" for phones with the app from GitHub: tap, swipe, scroll, type, Back/Home/Overview.
+- **The person at the phone decides every time** ("View only") and can switch to "View only" at any time.
+- The app from Google Play stays at viewing; the portal shows "View only" alone for such phones.
+- History: "control allowed" and "Switched to 'View only'".
 
 ## New in 1.3.0 {#neu-1-3-0}
 

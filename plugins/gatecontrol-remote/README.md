@@ -106,6 +106,19 @@ An Android phone ("Bildschirm freigeben") uses the same calls with `platform: 'a
 Helpers: `POST code/redeem` → `{ request }` (`kind: 'screen'`, `mode: 'view'`); a phone "ohne Code": `POST devices/<id>/connect`
 → `{ request }`; `POST requests/<id>/connect` → `{ session: { ref, expiresAt, protocol: 'screen', engine: 'screen', mode: 'view', device } }`.
 
+### Controlling a phone (1.4, gc.remote version 5)
+
+* `screen: { view, control }` of `host/register` and `host/state` is stored: `control: true` = this app can carry input out
+  (the GitHub build with its accessibility service). `GET devices` → `screen: { view: true, control }` (control also needs
+  GateControl with `gc.remote.version >= 5`).
+* `POST code/redeem { mode: 'control' }` / `POST devices/<id>/connect { mode: 'control' }` to a phone → a request of mode
+  `control` only when the phone can be controlled, else `view` with `modeReason: phone_view_only | server_view_only`. The
+  signal `remote.request` and `pending` carry the mode.
+* `POST host/requests/<id> { decision: 'allow', mode: 'control' | 'view' }` — control only when asked **and** chosen
+  (no `mode` = view). The ticket of `gc.remote.screen` gets that mode, `requests/<id>/connect` names it.
+* GateControl's event `phase: 'mode'` (the phone went down to view, for good) sets the request and the history row to view;
+  protocol `remote_screen_mode { mode: 'view', reason }`. Contract: gc-screen.v1 input frames, docs/plugins.md of GateControl.
+
 ## Admin API (`admin/*`, GateControl's admin UI only)
 
 | Call | Answer |
