@@ -13,6 +13,11 @@
 //                                                  vault handle, never a value)
 //   browserSession    POST   /rdp/:id/browser-session   → GateControl makes the guacamole token
 //   sessionStart / sessionHeartbeat / sessionEnd   the app's own session reports (history.js)
+//   wake / statusAdmin / statusAll   (GateControl with gc.remote version 2) what the Windows app asks of the
+//                                    admin API /api/v1/rdp: POST /:id/wol, GET /:id/status, GET /status
+//
+// A PC that registered itself (kind host, stage 2) is in `list` only while it is shared "ohne Code" and
+// ready; `connect` opens its firewall for the app's own VPN address (selfIp) first, `sessionEnd` closes it.
 //
 // The same rules as the portal: the right of the protocol and the access list
 // of the device (rights.js), the token's scope (client:rdp or full-access),
@@ -26,6 +31,7 @@ const rights = require('./rights');
 const history = require('./history');
 const connect = require('./connect');
 const maintenance = require('./maintenance');
+const support = require('./support');
 const { iso, posInt, isKnown } = require('./util');
 
 const json = (status, body) => ({ status, body });
@@ -96,6 +102,8 @@ async function list(gc, p, user) {
   for (const d of all) {
     if (d.protocol !== 'rdp' || !d.enabled) continue;
     if (selfIp && d.config.host === selfIp) continue;
+    // a PC: only "ohne Code" and ready (with a code the old apps cannot ask)
+    if (d.kind === 'host' && (devices.connectMode(d) !== 'open' || !devices.hostReady(d))) continue;
     const access = lists.get(d.id) || devices.emptyAccess();
     if (!(await allowed(gc, p, user, d, access, r))) continue;
     out.push({ ...routeView(d, access, p.server), status: statusOf(d) });
@@ -122,6 +130,7 @@ async function connectOp(gc, p, user) {
   if (p.user.selfIp && p.user.selfIp === d.config.host) return err(400, 'Cannot RDP to the host you are running on');
   if (!x.ok) return err(403, 'Not authorized for this RDP route');
   if (maintenance.inWindow(d.config)) return err(503, 'Route is in maintenance window', { maintenance: true, maintenance_schedule: d.config.maintenance_schedule });
+  if (d.kind === 'host') return connectHost(gc, p, user, d);
   const connection = connectionOf(d, p.server);
   connection.online = d.status.online === true;
   if (d.config.credential_mode !== 'none' && (d.credential || d.credentialUnreadable)) {
@@ -132,12 +141,59 @@ async function connectOp(gc, p, user) {
   return json(200, { ok: true, connection });
 }
 
+/** A PC "ohne Code": its firewall opens for the app's own VPN address, then the connection (no stored credentials). */
+async function connectHost(gc, p, user, d) {
+  if (devices.connectMode(d) !== 'open') return err(403, 'code_required');
+  if (!devices.hostReady(d)) return err(503, 'Host is offline');
+  if (!user || !p.user.selfIp) return err(400, 'no_vpn');
+  try {
+    await support.open(gc, d, { allow: p.user.selfIp, via: 'app', helperUserId: user.id, helperTokenId: posInt(p.user.tokenId), waitMs: support.TIMING.facadeWaitMs });
+  } catch (e) {
+    if (isKnown(e) && (e.code === 'firewall_timeout' || e.code === 'firewall_failed')) return err(504, e.code);
+    throw e;
+  }
+  return json(200, { ok: true, connection: { ...support.connectionOf(d), online: true } });
+}
+
+/** The state of a device: a PC as its app reports it, any other device checked now. */
+async function stateNow(gc, d) {
+  if (d.kind === 'host') return { online: d.status.online === true, responseTime: null, lastCheck: iso(d.status.lastCheck) };
+  return connect.probe(gc, d);
+}
+
 async function statusOp(gc, p, user) {
   const x = await deviceFor(gc, p, user);
   if (x.error) return x.error;
   if (!x.ok) return err(403, 'Not authorized for this RDP route');
-  const s = await connect.probe(gc, x.d);
-  return json(200, { ok: true, status: s });
+  return json(200, { ok: true, status: await stateNow(gc, x.d) });
+}
+
+/** The admin API the Windows app uses (GateControl with gc.remote version 2): wake, statusAdmin, statusAll. */
+async function adminOp(gc, p, user) {
+  if (p.op === 'statusAll') {
+    const lists = await devices.accessLists(gc);
+    const r = user ? await rights.of(gc, user) : null;
+    const statuses = {};
+    for (const d of await devices.all(gc)) {
+      if (d.protocol !== 'rdp' || !d.enabled) continue;
+      if (!(await allowed(gc, p, user, d, lists.get(d.id) || devices.emptyAccess(), r))) continue;
+      statuses[d.id] = { online: d.status.online === true, responseTime: d.status.responseTime, lastCheck: iso(d.status.lastCheck) };
+    }
+    return json(200, { ok: true, statuses });
+  }
+  const x = await deviceFor(gc, p, user);
+  if (x.error) return x.error;
+  if (!x.ok) return err(403, 'Not authorized for this RDP route');
+  if (p.op === 'statusAdmin') return json(200, { ok: true, id: x.d.id, ...(await stateNow(gc, x.d)) });
+  if (!x.d.config.wol_enabled || !x.d.config.wol_mac_address) return err(400, 'Wake-on-LAN is not configured for this route');
+  try {
+    const w = await connect.wake(gc, user, x.d.id, { admin: true });
+    return json(200, { ok: true, message: w && w.via === 'gateway' ? 'Magic packet sent via gateway' : 'Magic packet sent' });
+  } catch (e) {
+    if (isKnown(e) && e.code === 'rate_limited') return err(429, 'WoL cooldown — try again in a few seconds');
+    if (isKnown(e)) return err(500, 'Failed to send Wake-on-LAN packet');
+    throw e;
+  }
 }
 
 const BROWSER_ERR = {
@@ -150,6 +206,8 @@ async function browserOp(gc, p, user, cfg) {
   if (x.error) return err(404, 'not_found');
   const d = x.d;
   if (!user || !x.ok) return err(403, 'not_authorized');
+  // a PC: browser sessions only from the portal (the firewall belongs to the ticket there)
+  if (d.kind === 'host') return err(403, 'not_enabled');
   try {
     await connect.admit(gc, user, d, x.access, { admin: true });
     // the plugin's own limits; GateControl checks its own when it makes the token
@@ -186,7 +244,10 @@ async function sessionOp(gc, p, user) {
       return json(200, { ok: true });
     }
     const id = posInt(p.id);
-    return json(200, { ok: true, session: await history.nativeEnd(gc, id, b.sessionId == null ? null : b.sessionId, b.endReason, who(p, user)) });
+    const ended = await history.nativeEnd(gc, id, b.sessionId == null ? null : b.sessionId, b.endReason, who(p, user));
+    // a PC: the rule for this app closes with its session
+    if (id) await support.appSessionEnded(gc, id, posInt(p.user.tokenId));
+    return json(200, { ok: true, session: ended });
   } catch (e) {
     if (!isKnown(e)) throw e;
     const msg = (e.extra && e.extra.message) || e.code;
@@ -207,6 +268,7 @@ async function handle(p, gc, cfg) {
     case 'connect': return connectOp(gc, p, user);
     case 'browserSession': return browserOp(gc, p, user, cfg);
     case 'sessionStart': case 'sessionHeartbeat': case 'sessionEnd': return sessionOp(gc, p, user);
+    case 'wake': case 'statusAdmin': case 'statusAll': return adminOp(gc, p, user);
     default: return { handled: false };
   }
 }

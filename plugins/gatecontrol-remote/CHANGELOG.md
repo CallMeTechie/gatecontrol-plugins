@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.1.0
+
+Stufe 2 „Windows-Schalter“. GateControl ≥ 1.284.0 (`gc.remote` Version 2: `req.user.device.vpnIp`, `hubAddress`, `peerAddress`, `from`, Signal-Topics, Fassade `wake`/`statusAdmin`/`statusAll`).
+
+- **Windows-PCs aus der App:** App-API `host/register`, `host/state` (Herzschlag alle 60 s, 3 verpasste = offline), `PUT host/share`, `DELETE host`, `host/code`, `GET/PUT host/access`, `host/requests/<id>`, `GET/POST host/firewall`. Ein PC wird ein Gerät der Art `host` (Besitzer, App-Installation, Edition, RDP an/aus, angemeldete Person); zuerst sieht ihn nur der Besitzer (und Admins). Recht „Eigene Geräte freigeben“ nötig (`no_share_right`); Windows Home: `home_edition`, kein Gerät.
+- **Codes:** 9 Ziffern (3 × 3) aus `crypto.randomInt`, ≤ 10 Minuten, einmal, nur als HMAC gespeichert; ein neuer ersetzt den alten. Raten: 5 falsche in 10 Minuten je Person → 15 Minuten `code_locked`, 30 Versuche je Stunde für den Server, 10 falsche auf einen PC → dessen Code verfällt (Signal `remote.code.void`).
+- **Einlösen und Bestätigung:** `POST code/redeem` (Portal und App) → Anfrage; der PC bekommt ein stilles Signal `remote.request` mit Name und Bild, die Person dort erlaubt („Ansehen“ / „Ansehen und steuern“) oder lehnt ab; 30 Sekunden ohne Antwort → abgelaufen. `GET requests/<id>`, `POST requests/<id>/connect` (Browser → Sitzung, App → Verbindungsdaten). Recht „Support-Codes einlösen“ oder „Remote Desktops nutzen“ mit Zugriff auf den PC.
+- **Ohne Code für Berechtigte:** Schalter des Besitzers (`shareMode: open`), je PC vom Admin sperrbar („„Ohne Code“ sperren“, `allow_open`). Dann `POST devices/<id>/connect` ohne Code und ohne Frage – auch für die alten Apps über die Fassade.
+- **Firewall je Sitzung:** Signal `remote.firewall.open` (nur die Hub-Adresse für den Browser, nur die VPN-Adresse des Helfers für eine App, `until` ≤ 8 h), der PC meldet `host/firewall`; ohne Meldung in 15 s `firewall_timeout`. Schließen mit dem Ende der Sitzung (Ereignis von GateControl, `sessionEnd` der App), nach `until`, beim Abschalten, bei nie geöffneten Sitzungen.
+- **Sichtbarkeit:** Geräte (Spalte Besitzer, „Angemeldet von der App“, Nur mit Code / Ohne Code), Portal-Tab („Code eingeben“, „Warte auf Bestätigung am Gerät …“), neue App-API `GET devices`, alte Apps nur „ohne Code“. Live über `gc.events` (`devices`).
+- **Fassade:** `wake`, `statusAdmin`, `statusAll` für die Admin-API, die die Windows-App nutzt (`/api/v1/rdp/:id/wol`, `/:id/status`, `/status`).
+- **Protokoll:** eigene Tabelle `share_log` (`remote_code_redeemed`, `remote_code_failed`, `remote_share_changed`, `remote_request_allowed|denied|expired`, `remote_firewall_open|close`, `remote_host_registered|removed`), Filter „Freigaben“ unter Sitzungen, die eigenen PCs und ihr Verlauf im Profil-Abschnitt.
+- Neue Berechtigung `notify` mit dem stillen Signal-Topic `remote_signal` (der Admin bestätigt sie beim Update). Migration `002_hosts.sql`.
+
 ## 1.0.0
 
 Erste Version: „Remote Desktops“ von GateControl als Shop-Plugin **Fernzugriff** (`gatecontrol-remote`), mit dem heutigen Funktionsumfang. GateControl ≥ 1.281.0 (`gc.remote` Version 1); der Kern behält guacd, die Tunnel, die Sitzungsseite, den Schlüsseltresor, die L4-Ports der Gateways und Wake-on-LAN.

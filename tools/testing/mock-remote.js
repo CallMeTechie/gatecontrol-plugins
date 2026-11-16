@@ -33,6 +33,11 @@
 // GateControl after 1.281.0 (the server part of Fernzugriff 1.0; opt-in opts.gatecontrol ≥ '1.283.0' or opts.remote.gateways):
 //   gc.remote.gateways() → { gateways: [{ peerId, name, online }], pools: [{ poolId, name }] }, and `server: { connectHost }`
 //   in the payload of the hook clientFacade (opts.remote.connectHost, default 'gc.example.test').
+// GateControl with gc.remote version 2 (stage 2, the Windows switch; opt-in opts.gatecontrol ≥ '1.284.0' or opts.remote.v2):
+//   gc.remote.version 2, gc.remote.hubAddress() → '10.8.0.1', `from` (the hub address; null for a listener target) in the
+//   answer of session, gc.remote.peerAddress(userId, deviceId) → the device's `vpnIp` of opts.devices (null without) —
+//   only for a device of that person and only while a request of that person is in flight (ERR_REMOTE_NOT_ALLOWED), and
+//   the facade ops wake / statusAdmin / statusAll pass through host.clientFacade like the others.
 // The session page and the old app API for tests:
 //   host.remoteOpen(ref)                    the person opens the page: a tunnel opens → { sessionId }, event phase start
 //   host.remoteClose(sessionId, reason)     the tunnel ends (normal → end, heartbeat … → abort)
@@ -68,12 +73,13 @@ function blocked(ip) {
   return l === '::1' || l === '::' || l.startsWith('fe80:') || l.startsWith('ff');
 }
 
-function install({ opts, perms, atLeast, enabledUser, hostError, license }) {
+function install({ opts, perms, atLeast, enabledUser, hostError, license, personCtx, deviceList }) {
   const o = opts.remote && typeof opts.remote === 'object' ? opts.remote : null;
   const host = !!o || atLeast(281);
   if (host && perms.remote != null && typeof perms.remote !== 'boolean') throw hostError('ERR_INVALID', 'plugin.json: permissions.remote: invalid');
   const on = host && perms.remote === true;
   const next = !!(o && (o.gateways || o.pools || o.connectHost)) || atLeast(283);
+  const v2 = !!(o && o.v2) || atLeast(284);
   const state = { tickets: new Map(), live: new Map(), rows: [], vault: new Map(), listeners: new Map(), wakes: new Map(), calls: [], handlers: [], seq: 0, routeSeq: 500 };
   const cfg = { gateways: (o && o.gateways) || [], pools: (o && o.pools) || [], l4: (o && o.l4) || [], limits: { global: 10, perUser: 2, perTarget: 2, ...((o && o.limits) || {}) } };
   const need = () => { if (perms.remote !== true) throw hostError('ERR_REMOTE_DENIED', 'this plugin has no remote permission'); };
@@ -165,7 +171,8 @@ function install({ opts, perms, atLeast, enabledUser, hostError, license }) {
     e.readable = true;
     return meta(e);
   }
-  const ticketView = (t) => ({ ref: t.ref, url: '/remote/session/' + t.ref, expiresAt: iso(t.openBy), mode: t.mode, protocol: t.protocol });
+  const ticketView = (t) => ({ ref: t.ref, url: '/remote/session/' + t.ref, expiresAt: iso(t.openBy), mode: t.mode, protocol: t.protocol,
+    ...(v2 ? { from: t.target.listener ? null : HUB } : {}) });
   const rowView = (r) => ({ id: r.id, targetId: r.targetId, targetName: r.targetName, userId: r.userId, protocol: r.protocol, mode: r.mode, record: false,
     status: r.endedAt ? 'ended' : 'active', startedAt: iso(r.startedAt), endedAt: r.endedAt ? iso(r.endedAt) : null, durationSeconds: r.durationSeconds == null ? null : r.durationSeconds, endReason: r.endReason || null });
   const openOf = (pred) => state.rows.filter((r) => !r.endedAt && pred(r)).length;
@@ -286,6 +293,20 @@ function install({ opts, perms, atLeast, enabledUser, hostError, license }) {
     'remote.recordings.list': async () => { need(); return []; },
     'remote.recordings.stream': async () => { need(); throw hostError('ERR_REMOTE_RECORDING_UNAVAILABLE', 'recording comes with a later stage'); },
     'remote.recordings.remove': async () => { need(); return { removed: false }; },
+    'remote.hubAddress': async () => { need(); return HUB; },
+    'remote.peerAddress': async (a) => {
+      need();
+      const uid = Number(a.userId);
+      if (!Number.isSafeInteger(uid) || uid <= 0) throw hostError('ERR_INVALID', 'userId required');
+      const did = a.deviceId == null ? '' : String(a.deviceId);
+      if (!/^[1-9]\d{0,14}$/.test(did)) throw hostError('ERR_INVALID', 'deviceId required');
+      if (!personCtx || !personCtx.has(uid)) throw hostError('ERR_REMOTE_NOT_ALLOWED', 'only in a request of this person');
+      const raw = (Array.isArray(opts.devices) ? opts.devices : []).find((d) => String(d.id) === did);
+      const dev = deviceList ? deviceList().find((d) => d.id === did) : null;
+      if (!dev || dev.userId !== uid) throw hostError('ERR_REMOTE_NOT_ALLOWED', 'not an app device of this person');
+      state.calls.push({ op: 'peerAddress', userId: uid, deviceId: did });
+      return (raw && raw.vpnIp) || null;
+    },
     'remote.gateways': async () => { need(); return { gateways: cfg.gateways.map((g) => ({ peerId: g.peerId, name: g.name, online: g.online !== false })), pools: cfg.pools.map((p) => ({ poolId: p.poolId, name: p.name })) }; },
   };
 
@@ -304,7 +325,7 @@ function install({ opts, perms, atLeast, enabledUser, hostError, license }) {
     listener.remove = (key) => call('remote.listener.remove', { key });
     const ob = (x) => (x && typeof x === 'object' ? x : {});
     return Object.freeze({
-      version: 1,
+      version: v2 ? 2 : 1,
       session: (x) => call('remote.session', ob(x)),
       end: (x) => call('remote.end', ob(x)),
       sessions: (x) => call('remote.sessions', ob(x)),
@@ -325,6 +346,7 @@ function install({ opts, perms, atLeast, enabledUser, hostError, license }) {
         remove: (id) => call('remote.recordings.remove', { id }),
       }),
       ...(next ? { gateways: () => call('remote.gateways', {}) } : {}),
+      ...(v2 ? { hubAddress: () => call('remote.hubAddress', {}), peerAddress: (userId, deviceId) => call('remote.peerAddress', { userId, deviceId }) } : {}),
       on: (name, handler) => {
         if (name !== 'session' || typeof handler !== 'function') throw new TypeError("gc.remote.on('session', handler)");
         state.handlers.push(handler);
@@ -389,7 +411,7 @@ function install({ opts, perms, atLeast, enabledUser, hostError, license }) {
     return { status, body };
   }
 
-  return { on, api, gcPart, state, open, close, facade, vaultSeed: (entry, source) => vaultPut(entry, source), setUnreadable: (h) => { const e = state.vault.get(h); if (e) e.readable = false; } };
+  return { on, v2, api, gcPart, state, open, close, facade, vaultSeed: (entry, source) => vaultPut(entry, source), setUnreadable: (h) => { const e = state.vault.get(h); if (e) e.readable = false; } };
 }
 
 module.exports = { install };

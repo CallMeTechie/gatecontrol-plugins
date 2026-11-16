@@ -24,6 +24,19 @@ const STATUS = {
   listener_failed: 502,
   offline: 503,
   internal: 500,
+  // 1.1: Windows PCs of the app, codes, requests, the firewall per session
+  no_device: 400,
+  no_vpn: 409,
+  no_share_right: 403,
+  home_edition: 409,
+  rdp_off: 409,
+  code_required: 409,
+  code_invalid: 422,
+  code_locked: 429,
+  request_waiting: 409,
+  request_expired: 410,
+  firewall_timeout: 504,
+  firewall_failed: 502,
 };
 
 /** An API error: throw fail('limit', { max: 2 }). */

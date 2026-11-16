@@ -96,3 +96,6 @@ body{padding:2px 2px 24px}
 .rm-right-list li{display:flex;gap:10px;align-items:center;font-size:14px}
 .rm-mark{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;font-weight:800;font-size:13px;border:1px solid var(--line-2);color:var(--muted)}
 .rm-mark[data-on="1"]{color:var(--good);border-color:var(--good)}
+/* 1.1: "Code eingeben" (portal), the PCs of the app */
+.rm-code-form{display:grid;gap:6px;margin-top:10px}
+.rm-code-input{font-size:22px;letter-spacing:.12em;font-variant-numeric:tabular-nums;text-align:center;min-height:44px}

@@ -1,4 +1,4 @@
-<!-- version: 1.0.0 -->
+<!-- version: 1.1.0 -->
 # Remote access – Handbook
 
 ## What the plugin does {#was-das-plugin-kann}
@@ -10,11 +10,14 @@ Remote access is GateControl's former "Remote desktops" as a plugin of its own. 
 
 On top: wake-on-LAN, maintenance windows, a reminder to renew credentials, rights per person and group, and the history of every session.
 
+Since 1.1.0 **Windows PCs register themselves**: when somebody switches on "Allow Remote Desktop" in the GateControl app for Windows, the PC shows up at once under Remote access › Devices. One connects with the code shown on the PC and only after the confirmation at the PC (see [Windows PCs from the app](#windows-pcs)).
+
 Passwords and SSH keys are not stored by the plugin but in GateControl's encrypted vault. The plugin only knows a reference to them.
 
 ## Requirements {#voraussetzungen}
 
-- GateControl **1.281.0** or newer. The plugin answers the old app interface only with the next version of GateControl. Until then GateControl answers it itself from "Remote desktops", and nothing changes for the apps.
+- GateControl **1.284.0** or newer (remote access interface version 2: registration of the Windows PCs, firewall per session, silent signals to the PC).
+- For Windows PCs from the app: the GateControl app for Windows (Pro) with "Allow Remote Desktop" and Windows **Pro, Enterprise or Education**. Windows Home cannot offer Remote Desktop.
 - A **licence of its own** for Remote access: month, year or a lifetime licence of the plugin. Remote access is **not** part of the GateControl plan or a server lifetime licence.
 - For devices in the home network: a home gateway that reaches the device.
 
@@ -65,15 +68,26 @@ A device has these tabs:
 
 Empty credential fields stay as they are. "Delete the stored credentials" removes all of them.
 
+### Windows PCs from the app {#windows-pcs}
+
+When somebody switches on **"Allow Remote Desktop"** in the GateControl app for Windows, the app registers the PC. It shows up at once under **Remote access › Devices** marked "Registered by the app", with its owner and the person signed in at the PC.
+
+- **Who sees it:** at first only the owner and the administrators. The owner can share it with more people and groups in the app.
+- **Code only (default):** the PC shows a code of 9 digits (e.g. 482-913-075). Whoever wants to help opens the tab Remote access in the portal, taps **"Enter code"** and picks "View and control" or "View only". The PC asks with the person's name and picture. Only when somebody allows it there does the session open. Without an answer it ends after 30 seconds. A code works once and for at most 10 minutes. After every session the PC shows a new one.
+- **Without a code for permitted people:** a second switch in the app. Then people with the right "Use remote desktops" and access to the PC connect directly, without a code and without a question. As an administrator you can forbid that per PC with **"Lock “without a code”"**.
+- **Firewall per session:** between sessions port 3389 on the PC is closed. For a session the app opens it for exactly one counterpart – in the browser for GateControl itself, in an app for the helper's device – and closes it when the session ends, after 8 hours at the latest.
+- **Switch off:** the PC stays in the list as "Signed off", the history stays. Open sessions end, the code is void.
+- **Guessing:** after 5 wrong codes in 10 minutes a person waits 15 minutes. The whole server allows 30 attempts per hour. After 10 wrong codes on one PC its code is void.
+
 ## Using it {#benutzen}
 
-**In the portal:** the tab **Remote access** shows your devices with their state. "Connect" opens the session in a new tab. If "Open session" appears instead, tap it. "Wake up" sends a wake-on-LAN packet.
+**In the portal:** the tab **Remote access** shows your devices with their state. "Connect" opens the session in a new tab. If "Open session" appears instead, tap it. "Wake up" sends a wake-on-LAN packet. A Windows PC with "Code only" shows "Enter code" there. With the right "Redeem support codes" there is "Enter code" at the top as well, for PCs that are not in your list.
 
 **In the apps:** RDP devices are listed in the GateControl apps under Remote Desktop as before.
 
-**As an administrator:** under **Remote access › Devices** you can connect to every device. **Sessions** shows the history, ends open browser sessions and downloads everything as CSV.
+**As an administrator:** under **Remote access › Devices** you can connect to every device – to a Windows PC from the app only "without a code", otherwise with the code like everybody. **Sessions** shows the history, ends open browser sessions and downloads everything as CSV. The filter **"Sharing"** shows redeemed and wrong codes, requests, changes of "without a code" and the opening and closing of the firewall.
 
-**In the profile:** in the portal under "My devices" the section **Remote access** shows what you may do.
+**In the profile:** in the portal under "My devices" the section **Remote access** shows what you may do, your registered PCs and the history of their sharing.
 
 ## Permissions {#berechtigungen}
 
@@ -81,8 +95,8 @@ Empty credential fields stay as they are. "Delete the stored credentials" remove
 |---|---|
 | Use remote desktops | RDP and VNC to the devices the person may reach |
 | Use SSH | SSH and Telnet |
-| Redeem support codes | prepared, takes effect with a later version |
-| Share own devices | prepared, takes effect with a later version; on by default |
+| Redeem support codes | connect with the code of a Windows PC, also without access to that PC; off by default |
+| Share own devices | register the own PC in the app and show codes; on by default |
 
 - You set a right per **group** or per **person**. "yes" or "no" for a person wins over their groups.
 - Without an entry a person has a right as soon as one of their groups has it.
@@ -105,6 +119,24 @@ The right is checked again on every connect.
 **The apps show other devices than the portal:** the apps show RDP devices only. Until GateControl has the new interface, their list still comes from "Remote desktops".
 
 **Recording:** recording sessions comes with a later version.
+
+**The PC does not show up:** the person needs the right "Share own devices". Windows Home has no Remote Desktop – the app says so.
+
+**"The PC did not open the connection in time":** the app on the PC did not report within 15 seconds that port 3389 is open. Is the app running and connected to GateControl?
+
+**"Too many wrong codes":** wait 15 minutes or let the PC show a new code.
+
+**In the browser Windows does not ask for the sign-in:** when the PC requires network level authentication (NLA), the session in the browser needs a user name and password that the session page does not ask for yet. Connect from the GateControl app then.
+
+## New in 1.1.0 {#neu-1-1-0}
+
+- **Windows PCs from the app:** "Allow Remote Desktop" in the GateControl app for Windows registers the PC. It shows up at once under Devices and for everybody permitted.
+- **Code only** (default) with the confirmation at the PC, or **without a code for permitted people**. As an administrator you can lock "without a code" per PC.
+- **"Enter code"** in the portal tab, with "Waiting for the confirmation on the device …".
+- **Firewall per session:** port 3389 opens for exactly one counterpart and only for the length of the session.
+- The rights "Redeem support codes" and "Share own devices" take effect now.
+- Filter "Sharing" under Sessions, your PCs and their history in the profile.
+- New permission **Notifications** (only silent signals to the own PC) – you confirm it with the update.
 
 ## New in 1.0.0 {#neu}
 

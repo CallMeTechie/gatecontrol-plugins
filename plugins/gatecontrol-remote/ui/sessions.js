@@ -1,4 +1,5 @@
-/* Admin page "Sitzungen": the history of the apps' and the browser sessions, end an open browser session, CSV export. */
+/* Admin page "Sitzungen": the history of the apps' and the browser sessions, end an open browser session, CSV export;
+   1.1: the filter "Freigaben" — the protocol of codes, requests, "ohne Code" and the firewall of the Windows PCs. */
 (function () {
   'use strict';
   var P = window.RM;
@@ -32,14 +33,36 @@
     ]);
   }
 
+  var shares = false;
+  function shareLine(e) {
+    var label = T('log.' + e.type) !== 'log.' + e.type ? T('log.' + e.type) : e.type;
+    var sub = [P.when(e.at)];
+    if (e.userName) sub.push(e.userName);
+    if (e.details && e.details.via) sub.push(T('ses.via.' + (e.details.via === 'app' ? 'native' : 'browser')));
+    if (e.details && e.details.shareMode) sub.push(T(e.details.shareMode === 'open' ? 'dev.share_open' : 'dev.share_code'));
+    if (e.details && e.details.mode === 'view') sub.push(T('ses.view'));
+    return el('div', { class: 'rm-hist' }, [
+      el('div', { class: 'rm-hist-main' }, [el('div', { class: 'rm-item-title', text: (e.deviceName || (e.deviceId ? '#' + e.deviceId : '–')) + ' · ' + label }), el('div', { class: 'rm-item-sub', text: sub.join(' · ') })]),
+      el('div', { class: 'rm-badges' }, [el('span', { class: 'rm-badge', 'data-tone': e.type === 'remote_code_failed' || e.type === 'remote_request_denied' ? 'warn' : null, text: label })]),
+    ]);
+  }
+
   function draw() {
     var box = P.clear($('#rm-sessions'));
-    rows.forEach(function (s) { box.appendChild(line(s)); });
+    rows.forEach(function (s) { box.appendChild(shares ? shareLine(s) : line(s)); });
+    $('#rm-s-none').textContent = shares ? T('ses.shares_none') : T('ses.none');
     $('#rm-s-none').hidden = rows.length > 0;
   }
 
   function query(before) {
     var q = [];
+    shares = $('#rm-status').value === 'shares';
+    if (shares) {
+      if ($('#rm-device').value) q.push('device=' + encodeURIComponent($('#rm-device').value));
+      if (before) q.push('before=' + before);
+      q.push('limit=100');
+      return 'admin/sessions/shares?' + q.join('&');
+    }
     if ($('#rm-status').value) q.push('status=' + encodeURIComponent($('#rm-status').value));
     if ($('#rm-device').value) q.push('device=' + encodeURIComponent($('#rm-device').value));
     if (before) q.push('before=' + before);
@@ -49,7 +72,7 @@
 
   function reload() {
     return P.api('GET', query()).then(function (r) {
-      rows = r.sessions || [];
+      rows = (shares ? r.entries : r.sessions) || [];
       $('#rm-more').hidden = rows.length < 100;
       if (r.recordings && r.recordings.available) $('#rm-rec').textContent = T('ses.rec_available');
       draw();
@@ -60,8 +83,9 @@
     var last = rows[rows.length - 1];
     if (!last) return;
     P.api('GET', query(last.id)).then(function (r) {
-      rows = rows.concat(r.sessions || []);
-      $('#rm-more').hidden = (r.sessions || []).length < 100;
+      var more = (shares ? r.entries : r.sessions) || [];
+      rows = rows.concat(more);
+      $('#rm-more').hidden = more.length < 100;
       draw();
     }).catch(P.warn);
   });
