@@ -11,6 +11,9 @@
 //               to the end of the watched run
 //   answer      a text or an emoji goes as a message into the direct chat with the contact
 //   older       a GateControl before version 12 never says chat.status: the chat stays a chat
+//   catch-up    1.25.1: the one event with chat.status went to Messenger 1.24.x (server updated first) — the person's
+//               next GET conversations / status/feed (then hourly until done) asks the bridge's chat list
+//               (gc.bridges.chats, status: true) and puts it right
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -205,5 +208,70 @@ test('a chat „WhatsApp Status Broadcast“ from before turns into the status r
     await host.bridges.deliver([{ userId: ANNA.id, type: 'chat', chat: { ...room, status: true } }]);
     assert.deepEqual((await get(c, 'conversations')).json.conversations.map((x) => x.title), []);
     assert.deepEqual((await feedOf(c)).bridged.map((x) => x.stories.map((s) => s.text)), [['Vorher']]);
+  });
+});
+
+/** The server updated first: its one event with chat.status reached Messenger 1.24.x, which kept the room as a group. */
+async function setupOld(c, host) {
+  await link(c, host);
+  const st = host.bridges.chat(ANNA.id, { name: 'WhatsApp Status Broadcast', status: true });
+  const old = { id: st, kind: 'group', name: 'WhatsApp Status Broadcast', avatar: null, channel: false, readOnly: true };
+  await host.bridges.deliver([{ userId: ANNA.id, type: 'chat', chat: old }]);
+  return old;
+}
+
+test('1.25.1: the status room an older version kept as a chat is caught up on the next list — hidden, muted, 24 h, in the feed', async () => {
+  await withHost({ bridges: V12 }, async (host, c) => {
+    const old = await setupOld(c, host);
+    const now = Date.now();
+    await host.bridges.deliver([msg(old, KIM, 'Vorher', { at: now - HOUR }), msg(old, JO, 'Ganz alt', { at: now - 30 * HOUR })]);
+    // as Messenger 1.24.x left it: a group chat with messages, no status room
+    assert.deepEqual({ ...query(host, "SELECT kind, bridge_status FROM conversations WHERE bridge_net = 'whatsapp'") }, { kind: 'group', bridge_status: 0 });
+    assert.deepEqual((await get(c, 'conversations')).json.conversations.map((x) => x.title), []);
+    const conv = query(host, 'SELECT * FROM conversations WHERE bridge_status = 1');
+    assert.ok(conv, 'the status room');
+    assert.equal(query(host, 'SELECT notify FROM members WHERE conv_id = ?', conv.id).notify, 'none');
+    const m = query(host, 'SELECT COUNT(*) AS n, SUM(CASE WHEN expires_at IS NULL THEN 1 ELSE 0 END) AS open, MIN(expires_at) AS first FROM messages WHERE conv_id = ?', conv.id);
+    assert.equal(m.open, 0, 'every message runs out');
+    assert.equal(m.first, now - 30 * HOUR + 24 * HOUR);
+    assert.deepEqual((await feedOf(c)).bridged.map((x) => x.stories.map((s) => s.text)), [['Vorher']]);
+    assert.equal((await get(c, 'me')).json.features.bridge_status, true);
+    assert.ok(query(host, 'SELECT value FROM settings WHERE key = ?', `bridge_status_catchup:${ANNA.id}`), 'done — never again');
+    assert.ok(query(host, "SELECT 1 AS x FROM log WHERE code = 'bridge_status_caught_up'"));
+  });
+});
+
+test('1.25.1: the catch-up looks again an hour later while the bridge names no chats, and ends once it did', async () => {
+  await withHost({ bridges: V12 }, async (host, c) => {
+    const old = await setupOld(c, host);
+    await host.bridges.deliver([msg(old, KIM, 'Vorher', { at: Date.now() - HOUR })]);
+    const titles = async () => (await get(c, 'conversations')).json.conversations.map((x) => x.title);
+    const done = () => query(host, 'SELECT value FROM settings WHERE key = ?', `bridge_status_catchup:${ANNA.id}`);
+    // the bridges answer with no chats at all (away for a while): nothing changes, not done
+    const chats = host.bridges.state.chats;
+    const kept = new Map(chats);
+    chats.clear();
+    assert.deepEqual(await titles(), ['WhatsApp Status Broadcast']);
+    assert.equal(done(), undefined);
+    for (const [k, v] of kept) chats.set(k, v);
+    // within the hour: not again
+    c.clock.add(30 * 60000);
+    assert.deepEqual(await titles(), ['WhatsApp Status Broadcast']);
+    // an hour on: caught up (the status feed asks as well), done
+    c.clock.add(31 * 60000);
+    assert.deepEqual((await feedOf(c)).bridged.map((x) => x.stories.map((s) => s.text)), [['Vorher']]);
+    assert.deepEqual(await titles(), []);
+    assert.ok(done());
+  });
+});
+
+test('1.25.1: no catch-up without gc.bridges version 12', async () => {
+  await withHost({ bridges: V11 }, async (host, c) => {
+    const { room } = await setup(c, host, { status: false });
+    await host.bridges.deliver([msg(room, KIM, 'Status')]);
+    assert.ok((await get(c, 'conversations')).json.conversations.some((x) => x.title === 'WhatsApp Status Broadcast'));
+    await feedOf(c);
+    assert.equal(query(host, 'SELECT COUNT(*) AS n FROM conversations WHERE bridge_status = 1').n, 0);
+    assert.equal(query(host, 'SELECT value FROM settings WHERE key = ?', `bridge_status_catchup:${ANNA.id}`), undefined, 'looked at once GateControl has it');
   });
 });

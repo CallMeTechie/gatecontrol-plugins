@@ -150,6 +150,8 @@ async function refreshLinks(ctx) {
     linkChecked.set(k, ctx.now);
     try { await require('./bridges').refresh(ctx, n); } catch { /* as last seen */ }
   }
+  // 1.25.1: a status room an older version kept as a chat
+  await catchUpStatus(ctx);
 }
 
 // ─── what a conversation and a message say about the bridge ────────────────
@@ -268,6 +270,21 @@ async function convOf(gc, userId, net, ref) {
   return store.one(gc, 'SELECT * FROM conversations WHERE bridge_owner = ? AND bridge_net = ? AND bridge_ref = ?', [userId, net, ref]);
 }
 
+/**
+ * 1.25.0: a chat „WhatsApp Status Broadcast“ known from before turns out to be the status room: it leaves the list
+ * (muted, read, its messages run out 24 h after they were posted — older ones go at once). From an event that says
+ * chat.status, and since 1.25.1 from catchUpStatus (the event went to an older version). → the conversation
+ */
+async function toStatusRoom(c, conv) {
+  const u = conv.bridge_owner;
+  await store.run(c.gc, "UPDATE members SET notify = 'none', last_read_id = MAX(last_read_id, ?), updated_at = ? WHERE conv_id = ? AND user_id = ?", [conv.last_msg_id || 0, c.now, conv.id, u]);
+  await store.run(c.gc, 'UPDATE messages SET expires_at = MIN(COALESCE(expires_at, created_at + ?), created_at + ?) WHERE conv_id = ?', [bridgestatus.TTL_MS, bridgestatus.TTL_MS, conv.id]);
+  await store.run(c.gc, 'UPDATE conversations SET bridge_status = 1, updated_at = ? WHERE id = ?', [c.now, conv.id]);
+  live.queue(c.box, [u], 'conversation.update', { conversationId: conv.id, reason: 'bridge' });
+  bridgestatus.changed(c.box, u, conv.id, null, 'new');
+  return store.one(c.gc, 'SELECT * FROM conversations WHERE id = ?', [conv.id]);
+}
+
 /** The conversation of a chat (made when it is first heard of; listed only once it has a message). */
 async function ensureConv(c, ev) {
   const chat = ev.chat && typeof ev.chat === 'object' ? ev.chat : {};
@@ -294,16 +311,7 @@ async function ensureConv(c, ev) {
     await bridgemedia.chatAvatar(c, conv, chat.avatar);
     return conv;
   }
-  if (status && !conv.bridge_status) {
-    // 1.25.0: a chat „WhatsApp Status Broadcast“ known from before turns out to be the status room: it leaves the list
-    // (muted, read, its messages run out 24 h after they were posted — older ones go at once)
-    await store.run(c.gc, "UPDATE members SET notify = 'none', last_read_id = MAX(last_read_id, ?), updated_at = ? WHERE conv_id = ? AND user_id = ?", [conv.last_msg_id || 0, c.now, conv.id, ev.userId]);
-    await store.run(c.gc, 'UPDATE messages SET expires_at = MIN(COALESCE(expires_at, created_at + ?), created_at + ?) WHERE conv_id = ?', [bridgestatus.TTL_MS, bridgestatus.TTL_MS, conv.id]);
-    await store.run(c.gc, 'UPDATE conversations SET bridge_status = 1, updated_at = ? WHERE id = ?', [c.now, conv.id]);
-    conv = await store.one(c.gc, 'SELECT * FROM conversations WHERE id = ?', [conv.id]);
-    live.queue(c.box, [ev.userId], 'conversation.update', { conversationId: conv.id, reason: 'bridge' });
-    bridgestatus.changed(c.box, ev.userId, conv.id, null, 'new');
-  }
+  if (status && !conv.bridge_status) conv = await toStatusRoom(c, conv);
   if ((bot != null && bot !== conv.bridge_bot) || (members != null && members !== conv.bridge_members)) {
     // a group that turns out large before anything was said in it: muted as if it were new
     if (large && !conv.last_msg_id && !(conv.bridge_members >= LARGE_GROUP)) await store.run(c.gc, "UPDATE members SET notify = 'none', updated_at = ? WHERE conv_id = ? AND user_id = ?", [c.now, conv.id, ev.userId]);
@@ -991,8 +999,55 @@ async function hasChats(gc, userId) {
   return !!(await store.one(gc, 'SELECT 1 AS x FROM conversations WHERE bridge_owner = ? AND bridge_net IS NOT NULL AND bridge_status = 0 AND last_msg_id IS NOT NULL LIMIT 1', [userId]));
 }
 
+/**
+ * 1.25.1: the status room whose event went to an older version. GateControl (gc.bridges version 12) looks at every
+ * WhatsApp room once more after its update (events.refreshRooms) and says chat.status ONCE — when the server is updated
+ * first, Messenger 1.24.x still runs, ignores it, and nothing says it again until a contact posts a new status. So, in
+ * a request of the person (gc.bridges.chats is asked only then: GET conversations with ?bridged=1 through
+ * refreshLinks, GET status/feed), at most hourly per person until done: the person's chats at the bridge (status: true
+ * names the status room), and a conversation of such a room that is still a chat becomes the status room
+ * (toStatusRoom). Only with version 12, a WhatsApp link and WhatsApp conversations that are no status room. Done once
+ * the bridge named the person's chats (an empty list or an error: the bridges are away — again in an hour) → settings
+ * `bridge_status_catchup:<id>`, never again: every event says chat.status itself from then on. → changed (null: not
+ * looked). Never throws.
+ */
+const CATCHUP_KEY = 'bridge_status_catchup:';
+const CATCHUP_EVERY_MS = 3600 * 1000;
+const catchUpAt = new Map(); // person → when last looked (this process)
+async function catchUpStatus(ctx) {
+  const gc = ctx.gc;
+  const b = gc && gc.bridges;
+  const u = ctx.viewer;
+  if (!b || Number(b.version) < 12 || typeof b.chats !== 'function' || u == null) return null;
+  const now = ctx.now || Date.now();
+  if (now - (catchUpAt.get(u) || 0) < CATCHUP_EVERY_MS) return null;
+  if (catchUpAt.size > 2000) catchUpAt.clear();
+  catchUpAt.set(u, now);
+  try {
+    if (await store.one(gc, 'SELECT 1 AS x FROM settings WHERE key = ?', [CATCHUP_KEY + u])) return null;
+    if (!await store.one(gc, "SELECT 1 AS x FROM bridge_links WHERE user_id = ? AND network = 'whatsapp' LIMIT 1", [u])) return null;
+    if (!await store.one(gc, "SELECT 1 AS x FROM conversations WHERE bridge_owner = ? AND bridge_net = 'whatsapp' AND bridge_status = 0 LIMIT 1", [u])) return null;
+    let list;
+    try { list = await b.chats(u, 'whatsapp'); } catch { return null; }
+    if (!Array.isArray(list) || !list.length) return null;
+    let changed = 0;
+    const box = live.outbox();
+    for (const ch of list) {
+      if (!ch || ch.status !== true || !REF_RE.test(String(ch.id || ''))) continue;
+      const conv = await convOf(gc, u, 'whatsapp', ch.id);
+      if (!conv || conv.bridge_status) continue;
+      await toStatusRoom({ gc, now, box }, conv);
+      changed++;
+    }
+    await store.run(gc, 'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', [CATCHUP_KEY + u, JSON.stringify({ at: now, changed })]);
+    await live.flush(gc, box);
+    if (changed) await log.add(gc, 'bridge_status_caught_up', `rooms ${changed}`, now);
+    return changed;
+  } catch (e) { gc.log.warn('bridge status not caught up', (e && (e.code || e.message)) || 'error'); return null; }
+}
+
 module.exports = {
   api, isBridged, via, convInfo, marks, marksFor, decorate, apply, applyEphemeral, pump, sweep, push, gate, writable, checkBody, sendOut, resend, editOut, deleteOut, reactOut, readOut, typingOut,
-  refreshLinks, stateFor, hasChats, openChat, mapped, fixNames, titleFor, titleLabel, NETWORKS, LABEL, SUPPORTS, PLACEHOLDERS, LARGE_GROUP,
-  _reset: () => { linkChecked.clear(); pumping = Promise.resolve(); namesFixed = false; },
+  refreshLinks, stateFor, hasChats, openChat, mapped, fixNames, catchUpStatus, toStatusRoom, titleFor, titleLabel, NETWORKS, LABEL, SUPPORTS, PLACEHOLDERS, LARGE_GROUP,
+  _reset: () => { linkChecked.clear(); pumping = Promise.resolve(); namesFixed = false; catchUpAt.clear(); },
 };

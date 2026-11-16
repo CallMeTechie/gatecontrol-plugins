@@ -31,13 +31,15 @@
 //                       counts in detail). Level info
 //   bridge_channel_react_off the bridge refused a reaction in a channel — reacting in channels of that network is off until the
 //                       bridge runs another version (1.20.0; the network in detail). Level info
+//   bridge_status_caught_up conversations of the WhatsApp status room that an older version had kept as chats became the
+//                       status room (1.25.1; the count in detail). Level info
 
 const store = require('./store');
 
 const MERGE_MS = 10 * 60000;
 const KEEP_MS = 30 * 86400000;
-const CODES = ['push_rate_limit', 'push_failed', 'events_rate_limit', 'events_failed', 'media_claim_failed', 'media_delete_failed', 'decrypt_failed', 'service_refused', 'job_failed', 'action_failed', 'notice_failed', 'group_chat_failed', 'bridge_refused', 'bridge_send_failed', 'bridge_event_failed', 'bridge_event_locked', 'bridge_media_failed', 'bridge_picture_failed', 'bridge_number_checked', 'bridge_names_fixed', 'bridge_channel_react_off'];
-const LEVEL = { push_rate_limit: 'limit', events_rate_limit: 'limit', bridge_number_checked: 'info', bridge_names_fixed: 'info', bridge_channel_react_off: 'info' };
+const CODES = ['push_rate_limit', 'push_failed', 'events_rate_limit', 'events_failed', 'media_claim_failed', 'media_delete_failed', 'decrypt_failed', 'service_refused', 'job_failed', 'action_failed', 'notice_failed', 'group_chat_failed', 'bridge_refused', 'bridge_send_failed', 'bridge_event_failed', 'bridge_event_locked', 'bridge_media_failed', 'bridge_picture_failed', 'bridge_number_checked', 'bridge_names_fixed', 'bridge_channel_react_off', 'bridge_status_caught_up'];
+const LEVEL = { push_rate_limit: 'limit', events_rate_limit: 'limit', bridge_number_checked: 'info', bridge_names_fixed: 'info', bridge_channel_react_off: 'info', bridge_status_caught_up: 'info' };
 
 /** Record one entry; never throws. `detail` must not carry content (a code, a count, a plugin id). */
 async function add(gc, code, detail, now = Date.now()) {

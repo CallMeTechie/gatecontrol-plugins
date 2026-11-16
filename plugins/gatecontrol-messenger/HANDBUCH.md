@@ -1,4 +1,4 @@
-<!-- version: 1.25.0 -->
+<!-- version: 1.25.1 -->
 # Messenger
 
 ## Was das Plugin kann
@@ -73,6 +73,10 @@ Er kommt nur beim Verknüpfen und erscheint nachts. Steht „Älteren Verlauf la
 
 **Alte Nachrichten sind weg.**
 Der Administrator hat eine Aufbewahrung eingestellt, oder der Chat ist selbstlöschend.
+
+## Neu in 1.25.1
+
+- **WhatsApp-Status kommen auch nach einem Update in der „falschen“ Reihenfolge an.** Wurde GateControl vor dem Messenger aktualisiert, blieb der Chat „WhatsApp Status Broadcast“ in der Chatliste (mit Gruppen-Symbol) und die Status-Reihe zeigte keine WhatsApp-Status – bis ein Kontakt einen neuen Status postete. Jetzt holt der Messenger das beim nächsten Öffnen der Chatliste oder der Status-Reihe nach: Der Chat verschwindet aus der Liste, seine Status stehen in der Status-Reihe. Nichts geht verloren; Status älter als 24 Stunden werden wie üblich gelöscht.
 
 ## Neu in 1.25.0
 
