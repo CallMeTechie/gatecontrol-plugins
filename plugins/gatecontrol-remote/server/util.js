@@ -49,6 +49,11 @@ const STATUS = {
   // 1.3: the screen of a phone (GateControl's relay, gc.remote version 4)
   screen_unavailable: 409,
   screen_off: 409,
+  // 1.6: Linux devices of the agent
+  ssh_off: 409,
+  desktop_off: 409,
+  host_key_invalid: 400,
+  key_unavailable: 409,
 };
 
 /** An API error: throw fail('limit', { max: 2 }). */

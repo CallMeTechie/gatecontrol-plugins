@@ -45,9 +45,10 @@ function optionsOf(d) {
 }
 
 /** Checks before any session of a device, in the order of the former browser sessions (an app's terminal needs no browser switch). */
-async function admit(gc, user, d, access, { admin = false, via = 'browser' } = {}) {
+async function admit(gc, user, d, access, { admin = false, via = 'browser', granted = false } = {}) {
   if (!d.enabled) throw fail('disabled');
-  if (!admin && !(await rights.mayUse(gc, user, d, access))) throw fail('no_right');
+  // granted (1.6): the person at the Linux device allowed exactly this request (code redeemed, request answered)
+  if (!admin && !granted && !(await rights.mayUse(gc, user, d, access))) throw fail('no_right');
   if (!d.config.browser_enabled && via !== 'app') throw fail('no_browser');
   if (d.credentialUnreadable) throw fail('credential_unreadable');
   if (maintenance.inWindow(d.config)) throw fail('maintenance', { schedule: d.config.maintenance_schedule });
@@ -103,15 +104,15 @@ function tmuxFor(d, want) {
  * o.via: browser | app; o.tmux / o.record from the caller; o.engine 'term' lets an administrator try the terminal on a
  * device that still uses Guacamole (the test before switching it).
  */
-async function open(gc, user, deviceId, cfg, { admin = false, mode = 'control', via = 'browser', tmux, record, engine: forced } = {}) {
+async function open(gc, user, deviceId, cfg, { admin = false, mode = 'control', via = 'browser', tmux, record, engine: forced, granted = false } = {}) {
   if (!gc.remote) throw fail('offline');
   const d = await devices.need(gc, deviceId);
   const access = (await devices.accessLists(gc)).get(d.id) || devices.emptyAccess();
   let engine = devices.engineOf(d, gc) || 'guac';
   if (forced === 'term' && admin && d.protocol === 'ssh' && gc.remote.version >= 3) engine = 'term';
   if (via === 'app' && engine !== 'term') throw fail('invalid', { field: 'via' });
-  await admit(gc, user, d, access, { admin, via });
-  await limits(gc, user, d, cfg);
+  await admit(gc, user, d, access, { admin, via, granted });
+  await limits(gc, user, d, cfg || {});
   const term = engine === 'term';
   if (term && !d.credential) throw fail('credential_required');
   const t2 = term ? tmuxFor(engine === devices.engineOf(d, gc) ? d : { ...d, config: { ...d.config, ssh_engine: 'term' } }, tmux) : null;

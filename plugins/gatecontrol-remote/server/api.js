@@ -30,6 +30,11 @@
 //   1.5: a PC with "Bildschirm teilen": screen: { view: true, control }, rdp: bool (Remote Desktop offered); protocol 'screen' when
 //        it only shares its screen (Windows Home). code/redeem and devices/<id>/connect take kind: 'screen' | 'rdp'.
 //
+// Since 1.6 (stage 4) — Linux devices of the agent gatecontrol-agent (platform linux):
+//   host/register { platform: 'linux', ssh, desktop, … }   → host.ssh: { publicKey, from } (server/hosts.js)
+//   GET  devices                        a Linux device: platform 'linux', ssh: { offered, tmux }, desktop: { protocol, kind, ready } | null
+//   code/redeem / devices/<id>/connect  kind: 'ssh' | 'desktop'; requests/<id>/connect { tmux?, record? } → SSH: { session } of the terminal
+//
 // Since 1.4 (gc.remote version 5) — controlling a phone:
 //   POST code/redeem / devices/<id>/connect  { mode: 'control' } to a phone → a request of mode control when its app can be
 //                                       controlled, else mode view with modeReason (phone_view_only | server_view_only)
@@ -70,7 +75,12 @@ function deviceView(d, names, x = {}) {
     v.platform = d.host.platform;
     if (devices.screenOffered(d)) v.screen = { view: true, control: devices.screenCanControl(x.gc, d) };
     // 1.5: a PC may offer Remote Desktop, its screen or both
-    if (!devices.isPhone(d)) v.rdp = devices.rdpOffered(d);
+    if (!devices.isPhone(d) && !devices.isLinux(d)) v.rdp = devices.rdpOffered(d);
+    // 1.6: a Linux device — SSH (tmux) and / or its desktop
+    if (devices.isLinux(d)) {
+      v.ssh = { offered: devices.sshOffered(d), tmux: d.host.tmux };
+      v.desktop = d.host.desktop ? { protocol: d.host.desktop.protocol, kind: d.host.desktop.kind, ready: d.host.desktop.ready } : null;
+    }
     v.owner = { id: d.host.owner, name: (names && names.get(d.host.owner)) || null };
     v.connect = { mode: devices.connectMode(d) };
     v.ready = devices.hostReady(d);
@@ -141,7 +151,7 @@ function helperDevice(req) {
 }
 
 /** "Verbinden" with a PC: only "ohne Code" (owner's switch, admin allows) and with the right and access. */
-async function connectHost(gc, user, d, req, { admin = false } = {}) {
+async function connectHost(gc, user, d, req, { admin = false, cfg = {} } = {}) {
   if (devices.connectMode(d) !== 'open') throw fail('code_required');
   const access = (await devices.accessLists(gc)).get(d.id) || devices.emptyAccess();
   if (!admin && !(await rights.mayUse(gc, user, d, access))) throw fail('no_right');
@@ -149,6 +159,11 @@ async function connectHost(gc, user, d, req, { admin = false } = {}) {
   const b = req.body && typeof req.body === 'object' ? req.body : {};
   // the screen of a phone or (1.5) a PC is always asked at the device (Android asks again): "ohne Code" spares the code, never the question
   if (support.kindFor(d, b.kind, via) === 'screen') return { request: await support.create(gc, user, d, { mode: b.mode === 'control' ? 'control' : 'view', via, helperDevice: helperDevice(req), kind: 'screen' }) };
+  // 1.6: SSH of a Linux device "ohne Code" — GateControl's terminal like any SSH device (rights and access checked above)
+  if (support.kindFor(d, b.kind, via) === 'ssh') {
+    support.checkReady(d, 'ssh');
+    return { session: await connect.open(gc, user, d.id, cfg, { admin, via, tmux: b.tmux, record: b.record }) };
+  }
   return support.connectTo(gc, user, d, { mode: b.mode === 'view' && via === 'browser' ? 'view' : 'control', via, helperDevice: helperDevice(req) });
 }
 
@@ -210,7 +225,7 @@ async function route(req, gc, seg, cfg) {
   if (seg[0] === 'devices' && seg.length === 3 && m === 'POST') {
     if (seg[2] === 'connect') {
       const d = await devices.need(gc, seg[1]);
-      if (d.kind === 'host') return connectHost(gc, user, d, req);
+      if (d.kind === 'host') return connectHost(gc, user, d, req, { cfg });
       const b = req.body && typeof req.body === 'object' ? req.body : {};
       const via = b.via === 'app' && req.user && req.user.app === true ? 'app' : 'browser';
       if (b.via === 'app' && via !== 'app') throw fail('invalid', { field: 'via' });
@@ -222,7 +237,8 @@ async function route(req, gc, seg, cfg) {
   if (seg[0] === 'requests' && seg.length === 2 && m === 'GET') return support.get(gc, user, seg[1]);
   if (seg[0] === 'requests' && seg.length === 3 && seg[2] === 'connect' && m === 'POST') {
     const app = req.user && req.user.app === true;
-    return support.connectRequest(gc, user, seg[1], { via: app ? 'app' : 'browser', helperDevice: helperDevice(req) });
+    const b = req.body && typeof req.body === 'object' ? req.body : {};
+    return support.connectRequest(gc, user, seg[1], { via: app ? 'app' : 'browser', helperDevice: helperDevice(req), cfg, tmux: b.tmux, record: b.record });
   }
   if (seg[0] === 'host') return hostRoute(req, gc, seg, m);
   if (seg[0] === 'recordings' && seg.length === 1 && m === 'GET') {

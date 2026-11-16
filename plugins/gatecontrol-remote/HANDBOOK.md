@@ -1,4 +1,4 @@
-<!-- version: 1.5.0 -->
+<!-- version: 1.6.0 -->
 # Remote access – Handbook
 
 ## What the plugin does {#was-das-plugin-kann}
@@ -29,6 +29,7 @@ Passwords and SSH keys are not stored by the plugin but in GateControl's encrypt
 - GateControl **1.285.0** or newer (remote access interface version 3: terminal in the core, tmux, host keys, recording; plus version 2: registration of the Windows PCs, firewall per session, silent signals to the PC).
 - For recordings: the drive `remote-recordings` of the `docker-compose.yml` of the new version (GateControl and guacd). Without it nothing is recorded.
 - For Windows PCs from the app: the GateControl app for Windows (Pro) with "Allow Remote Desktop" and Windows **Pro, Enterprise or Education**. Windows Home cannot offer Remote Desktop – it has “Share screen”.
+- For Linux devices: GateControl **1.289.0** or newer and the agent **gatecontrol-agent** on the computer (see [Linux devices](#linux)).
 - For “Share screen” on a Windows PC: GateControl **1.287.0** or newer and the GateControl app for Windows (Pro) with “Share screen”. Mouse and keyboard as they are (shortcuts, several displays) come with GateControl's remote access interface **version 6** (GateControl 1.288.0 or newer); with version 5 control means clicking, dragging, scrolling and text.
 - A **licence of its own** for Remote access: month, year or a lifetime licence of the plugin. Remote access is **not** part of the GateControl plan or a server lifetime licence.
 - For devices in the home network: a home gateway that reaches the device.
@@ -105,6 +106,21 @@ In the GateControl app for Windows, **Settings › Security** has the switch **�
 - **Without a code for permitted people** only spares the code for the screen: **the PC always asks.**
 - **Through the server:** picture and input run over your GateControl server as for phones. It only passes them on, stores nothing and logs no input – but it is not end-to-end encryption.
 - Sharing needs no open port and no VPN address on the PC; Remote Desktop still does.
+### Linux devices {#linux}
+
+A Linux computer – with or without a desktop (Debian, Ubuntu, Raspberry Pi OS, CachyOS) – signs up through the service **gatecontrol-agent** (a package of its own, repository `gatecontrol-linux-agent`). The portal tab Remote access shows the same steps under **“Set up a Linux device”**.
+
+1. Install the package: `sudo apt install ./gatecontrol-agent_<version>_<arch>.deb` (Debian, Ubuntu, Raspberry Pi OS) or `sudo pacman -U gatecontrol-agent-<version>-1-x86_64.pkg.tar.zst` (CachyOS, Arch).
+2. Create a code under **My devices › Add device** and sign in: `sudo gatecontrol-agent enroll https://<server> <code>`. The agent sets up WireGuard for the VPN network only (no default route, no DNS).
+3. Share: `sudo gatecontrol-agent share ssh --as <account> --tmux` and – with a desktop – `sudo gatecontrol-agent share desktop`. `gatecontrol-agent code` shows the code for the helper, `gatecontrol-agent status` the state.
+
+- **SSH:** GateControl makes a key of its own for each Linux device in the vault; the agent adds the public half to the account's `authorized_keys`, valid only from the server. The computer's **host key** is pinned at sign-up – the first connection is checked too. With tmux the session keeps running when the connection drops.
+- **Desktop:** detected are KRdp (KDE), GNOME Remote Desktop, wayvnc (Raspberry Pi OS), xrdp and x11vnc. The agent opens the port per session for exactly one address.
+- **Default “code only” and confirmation at the device:** the code alone does not connect. Each request waits 30 seconds at the device: `gatecontrol-agent requests` shows it, `sudo gatecontrol-agent allow <id>` allows, `deny <id>` declines. The portal shows the helper the matching command with the request's number. “No code for permitted people”: `sudo gatecontrol-agent share open`.
+- **Devices without a screen and nobody at them:** with `sudo gatecontrol-agent confirm code` the code is enough – whoever has it connects without being asked. That is a deliberate setting (the CLI warns); back with `confirm ask`.
+- **Helping:** in the portal **“Enter code”**; for a device with SSH and a desktop choose the **connection** (SSH or desktop).
+- Under Devices (admin) a Linux device shows “Linux”, the account, tmux, the desktop and the pinned host key.
+
 ### Share a phone's screen {#handy}
 
 In the GateControl app for Android, **Remote access** has the switch **"Share screen"**. When it is on, the app registers the phone and shows a code of 9 digits.
@@ -207,6 +223,12 @@ The right is checked again on every connect.
 **"Too many wrong codes":** wait 15 minutes or let the PC show a new code.
 
 **In the browser Windows does not ask for the sign-in:** when the PC requires network level authentication (NLA), the session in the browser needs a user name and password that the session page does not ask for yet. Connect from the GateControl app then.
+
+## New in 1.6.0 {#neu-1-6-0}
+
+- **Linux devices** through the agent **gatecontrol-agent** – with or without a desktop: SSH in GateControl's terminal (with tmux) and the desktop over RDP or VNC, default “code only” and **every request confirmed at the device** (`gatecontrol-agent allow <id>`).
+- **A key of its own per device** from the vault, the **host key is pinned right away**.
+- **Portal:** “Set up a Linux device”, choice between SSH and desktop with a code; device list with “Linux”.
 
 ## New in 1.5.0 {#neu-1-5-0}
 
