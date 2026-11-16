@@ -2,7 +2,7 @@
 
 ## 1.3.0
 
-Stufe 5 „Android ansehen“. Für Handys braucht es GateControl mit `gc.remote` Version 4 (`gc.remote.screen`, Relais `gc-screen.v1`); ohne sie bleibt alles wie in 1.2 und ein Handy bekommt `screen_unavailable`.
+Stufe 5 „Android ansehen“. Für Handys braucht es GateControl ≥ 1.286.0 mit `gc.remote` Version 4 (`gc.remote.screen`, Relais `gc-screen.v1`); ohne sie bleibt alles wie in 1.2 und ein Handy bekommt `screen_unavailable`.
 
 - **Handys aus der App:** `host/register { platform: 'android', name, appVersion, screen: { view, control }, shareMode? }` legt ein Gerät der Art `host` mit `platform: 'android'` und `protocol: 'screen'` an (ohne VPN-Adresse, ohne Firewall – das Handy verbindet sich selbst mit dem Relais von GateControl). Code, `host/state`, `host/share`, `host/access`, `DELETE host` wie bei Windows; ein Handy gilt 20 Minuten nach dem letzten Lebenszeichen als offline.
 - **Anfrage und Bestätigung:** eine Anfrage an ein Handy ist immer „Nur ansehen“ (`kind: 'screen'` in Anfrage und Signal `remote.request`), auch „ohne Code“ fragt das Handy immer (`POST devices/<id>/connect` → `{ request }`). Erlaubt → Ticket des Relais über `gc.remote.screen`: das Handy bekommt die Sender-Seite in der Antwort von `POST host/requests/<id>` (`screen: { ref, expiresAt, wsPath }`), der Helfer die Betrachter-Seite aus `POST requests/<id>/connect` (`session: { ref, engine: 'screen', protocol: 'screen', mode: 'view' }`) → `GC.openSession(ref)` im Browser, `POST /api/v1/client/remote/screen-token` in einer App.
