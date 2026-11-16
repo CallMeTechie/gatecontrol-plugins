@@ -27,6 +27,12 @@
 //   POST devices/<id>/connect           a phone "ohne Code" → { request } (the phone always asks; then GET requests/<id>)
 //   POST requests/<id>/connect          a phone → { session: { ref, expiresAt, protocol: 'screen', engine: 'screen', mode: 'view', device } }
 //   GET  devices                        a phone: protocol 'screen', platform 'android', screen: { view: true, control: false }
+//
+// Since 1.4 (gc.remote version 5) — controlling a phone:
+//   POST code/redeem / devices/<id>/connect  { mode: 'control' } to a phone → a request of mode control when its app can be
+//                                       controlled, else mode view with modeReason (phone_view_only | server_view_only)
+//   POST host/requests/<id> allow       { decision: 'allow', mode: 'control' | 'view' } — control only when asked and chosen
+//   GET  devices                        a phone: screen: { view: true, control } (control: its app and GateControl can do it)
 
 const devices = require('./devices');
 const rights = require('./rights');
@@ -60,7 +66,7 @@ function deviceView(d, names, x = {}) {
   if (x.recording) v.recording = x.recording;
   if (d.kind === 'host') {
     v.platform = d.host.platform;
-    if (devices.isPhone(d)) v.screen = { view: true, control: false };
+    if (devices.isPhone(d)) v.screen = { view: true, control: devices.phoneCanControl(x.gc, d) };
     v.owner = { id: d.host.owner, name: (names && names.get(d.host.owner)) || null };
     v.connect = { mode: devices.connectMode(d) };
     v.ready = devices.hostReady(d);
@@ -137,7 +143,7 @@ async function connectHost(gc, user, d, req, { admin = false } = {}) {
   if (!admin && !(await rights.mayUse(gc, user, d, access))) throw fail('no_right');
   const via = req.user && req.user.app === true ? 'app' : 'browser';
   // a phone always asks its person (and Android asks again): "ohne Code" spares the code, never the question
-  if (devices.isPhone(d)) return { request: await support.create(gc, user, d, { mode: 'view', via, helperDevice: helperDevice(req) }) };
+  if (devices.isPhone(d)) return { request: await support.create(gc, user, d, { mode: req.body && req.body.mode === 'control' ? 'control' : 'view', via, helperDevice: helperDevice(req) }) };
   return support.connectTo(gc, user, d, { mode: req.body && req.body.mode === 'view' && via === 'browser' ? 'view' : 'control', via, helperDevice: helperDevice(req) });
 }
 

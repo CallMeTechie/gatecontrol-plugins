@@ -3,7 +3,9 @@
    1.2: SSH in GateControl's terminal — "Fortsetzen <tmux session>" / "Neue Sitzung"; the recording of a session
    ("optional": the person asks for it, "always": the hint here and on GateControl's page before the start).
    1.3: the screen of an Android phone — only watching; "Code eingeben" (or "Verbinden" ohne Code) → the person at the
-   phone confirms, Android asks again → GateControl's viewer page. */
+   phone confirms, Android asks again → GateControl's viewer page.
+   1.4: "Ansehen und steuern" for a phone whose app can be controlled (screen.control); the person at the phone chooses
+   for every request — the answer may be "Nur ansehen", which the dialog says before the page opens. */
 (function () {
   'use strict';
   var P = window.RM;
@@ -16,12 +18,14 @@
    * "Code eingeben": code and kind → the request → "Warte auf Bestätigung am Gerät …" → the session (dev: a PC or phone of
    * the list, or none). pending (1.3): a request that exists already ("Verbinden" of a phone ohne Code) — straight to waiting.
    */
-  function codeDialog(dev, pending) {
+  function codeDialog(dev, pending, pendingMode) {
     var phone = !!(dev && dev.platform === 'android');
+    // 1.4: a phone that can only be viewed (Play build, older app or GateControl) offers only that
+    var viewOnly = phone && !(dev.screen && dev.screen.control);
     var input = el('input', { class: 'form-input rm-code-input', type: 'text', id: 'rm-code-in', inputmode: 'numeric', autocomplete: 'one-time-code', maxlength: '11', placeholder: '000-000-000' });
-    // a phone: only watching (control comes later)
-    var mode = el('select', { class: 'form-select', id: 'rm-code-mode' }, phone ? [el('option', { value: 'view', text: T('portal.mode_view') })] : [
+    var mode = el('select', { class: 'form-select', id: 'rm-code-mode' }, viewOnly ? [el('option', { value: 'view', text: T('portal.mode_view') })] : [
       el('option', { value: 'control', text: T('portal.mode_control') }), el('option', { value: 'view', text: T('portal.mode_view') })]);
+    var asked = null;
     var status = el('p', { class: 'rm-hint', role: 'status', 'aria-live': 'polite' });
     var host = el('div', { class: 'rm-actions' });
     var ask = el('button', { class: 'btn btn-primary', type: 'button', text: T('portal.redeem') });
@@ -30,7 +34,7 @@
       el('label', { class: 'form-label', for: 'rm-code-in', text: T('portal.code_label') }), input,
       el('p', { class: 'rm-hint', text: T('portal.code_hint') }),
       el('label', { class: 'form-label', for: 'rm-code-mode', text: T('portal.mode') }), mode,
-      phone ? el('p', { class: 'rm-hint', text: T('portal.phone_hint') }) : null,
+      phone ? el('p', { class: 'rm-hint', text: T(viewOnly ? 'portal.phone_view_only' : 'portal.phone_hint') }) : null,
     ]);
     var body = el('div', { class: 'modal-body' }, [el('h3', { class: 'rm-card-title', text: dev ? T('portal.code_title_dev', { name: dev.name }) : T('portal.code_title') }), form, status, host]);
     var ov = el('div', { class: 'modal-overlay', role: 'dialog', 'aria-modal': 'true' }, [el('div', { class: 'modal' }, [body, el('div', { class: 'modal-foot' }, [cancel, ask])])]);
@@ -44,7 +48,8 @@
         var st = r.request.state;
         if (st === 'waiting') { timer = setTimeout(function () { poll(id); }, 1500); return null; }
         if (st === 'allowed') {
-          status.textContent = T('portal.allowed');
+          // a phone may allow less than asked: say so before the page opens
+          status.textContent = (r.request.kind === 'screen' && asked === 'control' && r.request.mode === 'view' ? T('portal.granted_view') + ' ' : '') + T('portal.allowed');
           return P.api('POST', 'requests/' + encodeURIComponent(id) + '/connect', {}).then(function (c) {
             return P.openSession(c.session.ref, host).then(function (ok) { if (ok) done(); });
           });
@@ -64,15 +69,18 @@
       P.clear(host);
       var b = { code: input.value, mode: mode.value, via: 'browser' };
       if (dev) b.deviceId = dev.id;
+      asked = mode.value;
       P.api('POST', 'code/redeem', b).then(function (r) {
         form.hidden = true;
-        status.textContent = T('portal.waiting');
+        // a phone that turned out to be view only (its app, GateControl): the helper knows before the answer
+        status.textContent = (r.request.modeReason ? T('portal.phone_view_only') + ' ' : '') + T('portal.waiting');
         poll(r.request.id);
       }).catch(function (e) { status.textContent = P.errText(e); ask.disabled = false; });
     });
     input.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') ask.click(); });
     document.body.appendChild(ov);
     if (pending) {
+      asked = pendingMode || null;
       ask.disabled = true;
       form.hidden = true;
       status.textContent = T('portal.waiting');
@@ -149,17 +157,27 @@
     if (pc && d.ready && d.connect && d.connect.mode === 'code') {
       acts.appendChild(el('button', { class: 'btn btn-primary', type: 'button', text: T('portal.code_enter'), 'aria-label': T('portal.code_title_dev', { name: d.name }), on: { click: function () { codeDialog(d); } } }));
     } else if (d.browser && !d.maintenance && !d.credentialUnreadable && (!pc || d.ready)) {
-      var c = el('button', { class: 'btn btn-primary', type: 'button', text: T('dev.connect'), 'aria-label': T('portal.connect_to', { name: d.name }) });
+      // 1.4: a phone that can be controlled ohne Code — "Ansehen und steuern" or "Nur ansehen" (the phone asks either way)
+      var phoneControl = pc && d.platform === 'android' && d.screen && d.screen.control;
+      var connectWith = function (btn, mode) {
+        busy(btn, P.api('POST', 'devices/' + d.id + '/connect', mode ? { mode: mode } : {}).then(function (r) {
+          // a phone ohne Code: it still asks its person — wait for the answer like after a code
+          if (r.request) { codeDialog(d, r.request.id, mode); return null; }
+          return P.openSession(r.session.ref, acts);
+        }));
+      };
+      var c = el('button', { class: 'btn btn-primary', type: 'button', text: phoneControl ? T('portal.mode_control') : T('dev.connect'), 'aria-label': T('portal.connect_to', { name: d.name }) });
       c.addEventListener('click', function () {
         // a terminal with tmux, or a recording to ask for / to announce: the dialog first
         if (d.tmux || d.recording === 'optional' || d.recording === 'always') { connectDialog(d); return; }
-        busy(c, P.api('POST', 'devices/' + d.id + '/connect', {}).then(function (r) {
-          // a phone ohne Code: it still asks its person — wait for the answer like after a code
-          if (r.request) { codeDialog(d, r.request.id); return null; }
-          return P.openSession(r.session.ref, acts);
-        }));
+        connectWith(c, phoneControl ? 'control' : null);
       });
       acts.appendChild(c);
+      if (phoneControl) {
+        var v = el('button', { class: 'btn', type: 'button', text: T('portal.view_only_btn') });
+        v.addEventListener('click', function () { connectWith(v, 'view'); });
+        acts.appendChild(v);
+      }
     }
     if (d.wake) {
       var w = el('button', { class: 'btn', type: 'button', text: T('dev.wake') });
@@ -173,7 +191,7 @@
     else if (!d.browser) note = d.protocol === 'rdp' ? T('portal.app_only') : T('portal.no_browser');
     var sub = [];
     if (d.recording === 'always') sub.push(T('portal.rec_badge'));
-    if (pc && d.platform === 'android') sub.push(T('dev.phone') + ' · ' + T('portal.mode_view'));
+    if (pc && d.platform === 'android') sub.push(T('dev.phone') + ' · ' + T(d.screen && d.screen.control ? 'portal.mode_control' : 'portal.mode_view'));
     if (pc && d.owner && d.owner.name) sub.push(T('portal.owner', { name: d.owner.name }));
     if (pc && d.connect) sub.push(T(d.connect.mode === 'open' ? 'portal.no_code' : 'portal.with_code'));
     if (!pc && d.lastCheck) sub.push(T('dev.checked', { ago: P.ago(d.lastCheck) }));

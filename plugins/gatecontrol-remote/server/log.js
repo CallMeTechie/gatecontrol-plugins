@@ -14,7 +14,9 @@ const TYPES = ['remote_code_redeemed', 'remote_code_failed', 'remote_share_chang
   // 1.2: recordings and SSH host keys
   'remote_recording_viewed', 'remote_recording_deleted', 'remote_host_key_changed', 'remote_host_key_reset', 'remote_ssh_engine_changed',
   // 1.3: the screen of a phone
-  'remote_screen_started', 'remote_screen_ended'];
+  'remote_screen_started', 'remote_screen_ended',
+  // 1.4: the phone went down from "Ansehen und steuern" to "Nur ansehen"
+  'remote_screen_mode'];
 
 /** One entry: write(gc, 'remote_code_redeemed', { device, userId, details }) — best-effort, never throws. */
 async function write(gc, type, { device = null, userId = null, details = null } = {}, now = Date.now()) {

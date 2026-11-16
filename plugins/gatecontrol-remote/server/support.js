@@ -25,6 +25,12 @@
 // connects to the relay itself. GateControl's session events end the request; the phone hears it as
 //   { type: 'remote.screen.end', requestId, reason }   (the helper or the plugin ended it)
 // The signal remote.request carries kind: 'screen' | 'rdp'.
+//
+// 1.4 (stage 6, gc.remote version 5): a helper may ask a phone for "Ansehen und steuern" (mode control) — only when its
+// app can carry input out (screen.control, the GitHub build) and GateControl knows control; else the request is "view"
+// and says why (modeReason). Asking is not allowing: control holds only when the person at the phone answers allow with
+// mode 'control' for this very request (no mode = view, as old apps answer). GateControl's relay lets input through only
+// while the phone says so; the phone may go down to view at any time — the event phase 'mode' marks the request.
 
 const crypto = require('node:crypto');
 const store = require('./store');
@@ -57,8 +63,8 @@ async function signal(gc, d, data, ttl = 120) {
   }
 }
 
-function requestView(r, d) {
-  return { id: r.id, device: { id: r.device_id, name: d ? d.name : null }, state: r.state, mode: r.mode, via: r.via, kind: r.kind === 'screen' ? 'screen' : 'rdp',
+function requestView(r, d, extra = {}) {
+  return { ...extra, id: r.id, device: { id: r.device_id, name: d ? d.name : null }, state: r.state, mode: r.mode, via: r.via, kind: r.kind === 'screen' ? 'screen' : 'rdp',
     expiresAt: iso(r.expires_at), decidedAt: iso(r.decided_at), ...(r.end_reason ? { endReason: r.end_reason } : {}) };
 }
 
@@ -95,8 +101,13 @@ async function create(gc, user, d, { mode, via, helperDevice }, now = Date.now()
   if (!(await mayAsk(gc, user, d))) throw fail('no_right');
   const phone = devices.isPhone(d);
   if (phone && (!gc.remote || typeof gc.remote.screen !== 'function')) throw fail('screen_unavailable');
-  // a phone: only watching (control is stage 6)
-  const m = phone || mode === 'view' ? 'view' : 'control';
+  // a phone (1.4): control only when its app and GateControl can do it — and its person allows it later
+  let m = mode === 'view' ? 'view' : 'control';
+  let modeReason = null;
+  if (phone) {
+    m = mode === 'control' && devices.phoneCanControl(gc, d) ? 'control' : 'view';
+    if (mode === 'control' && m === 'view') modeReason = d.host.screenControl ? 'server_view_only' : 'phone_view_only';
+  }
   const v = via === 'app' ? 'app' : 'browser';
   // an app session (mstsc) cannot only watch
   if (!phone && v === 'app' && m === 'view') throw fail('invalid', { field: 'mode' });
@@ -110,7 +121,7 @@ async function create(gc, user, d, { mode, via, helperDevice }, now = Date.now()
     VALUES (?, ?, ?, ?, ?, ?, 'waiting', ?, ?, ?)`, [id, d.id, user.id, m, v, helperDevice ? helperDevice.id : null, now, now + REQUEST_MS, phone ? 'screen' : 'rdp']);
   const row = await store.one(gc, 'SELECT * FROM requests WHERE id = ?', [id]);
   await signal(gc, d, { type: 'remote.request', requestId: id, from: await personView(gc, user.id), mode: m, via: v, kind: phone ? 'screen' : 'rdp', expiresAt: iso(now + REQUEST_MS) }, 60);
-  return requestView(row, d);
+  return requestView(row, d, modeReason ? { modeReason } : {});
 }
 
 /** A waiting request whose 30 s ran out, an allowed one not used in time → expired (lazy and in the background). */
@@ -161,16 +172,18 @@ async function decide(gc, d, id, b, now = Date.now()) {
     await store.run(gc, "UPDATE requests SET state = 'denied', decided_at = ? WHERE id = ?", [now, r.id]);
     await log.write(gc, 'remote_request_denied', { device: d, userId: r.helper_user_id }, now);
   } else if (r.kind === 'screen') {
-    // a phone: a ticket of GateControl's relay — the phone sends, the helper watches
+    // a phone: a ticket of GateControl's relay — the phone sends, the helper watches (and, 1.4, controls only when the
+    // person chose "Ansehen und steuern" for this request: mode 'control' in the answer; anything else is view)
+    const mode = r.mode === 'control' && b.mode === 'control' && devices.phoneCanControl(gc, d) ? 'control' : 'view';
     let t;
     try {
-      t = await gc.remote.screen({ viewer: r.helper_user_id, sender: { user: d.host.owner, device: d.host.tokenDeviceId }, target: { id: 'dev-' + d.id, name: d.name.slice(0, 100) }, mode: 'view', ttlS: Math.floor(CONNECT_MS / 1000) });
+      t = await gc.remote.screen({ viewer: r.helper_user_id, sender: { user: d.host.owner, device: d.host.tokenDeviceId }, target: { id: 'dev-' + d.id, name: d.name.slice(0, 100) }, mode, ttlS: Math.floor(CONNECT_MS / 1000) });
     } catch (e) {
       await store.run(gc, "UPDATE requests SET state = 'ended', decided_at = ?, end_reason = 'screen_failed' WHERE id = ?", [now, r.id]);
       throw fromHost(e);
     }
-    await store.run(gc, "UPDATE requests SET state = 'allowed', mode = 'view', decided_at = ?, screen_ref = ? WHERE id = ?", [now, t.ref, r.id]);
-    await log.write(gc, 'remote_request_allowed', { device: d, userId: r.helper_user_id, details: { mode: 'view', via: r.via, kind: 'screen' } }, now);
+    await store.run(gc, "UPDATE requests SET state = 'allowed', mode = ?, decided_at = ?, screen_ref = ? WHERE id = ?", [mode, now, t.ref, r.id]);
+    await log.write(gc, 'remote_request_allowed', { device: d, userId: r.helper_user_id, details: { mode, via: r.via, kind: 'screen', ...(r.mode !== mode ? { asked: r.mode } : {}) } }, now);
     return {
       request: requestView(await store.one(gc, 'SELECT * FROM requests WHERE id = ?', [r.id]), d),
       screen: { ref: t.senderRef, expiresAt: t.senderExpiresAt || t.expiresAt, wsPath: SCREEN_WS },
@@ -307,7 +320,7 @@ async function connectRequest(gc, user, id, { via, helperDevice } = {}, now = Da
   if (r.kind === 'screen') {
     // a phone: the viewer's side of the relay ticket (browser: GC.openSession(ref); app: POST /api/v1/client/remote/screen-token)
     if (!r.screen_ref || !d) throw fail('request_expired');
-    return { session: { ref: r.screen_ref, expiresAt: iso(r.decided_at + CONNECT_MS), protocol: 'screen', engine: 'screen', mode: 'view', device: { id: d.id, name: d.name } } };
+    return { session: { ref: r.screen_ref, expiresAt: iso(r.decided_at + CONNECT_MS), protocol: 'screen', engine: 'screen', mode: r.mode === 'control' ? 'control' : 'view', device: { id: d.id, name: d.name } } };
   }
   return connectTo(gc, user, d, { mode: r.mode, via: r.via, helperDevice, requestId: r.id });
 }
@@ -324,11 +337,23 @@ async function phoneEnded(gc, d, id, b, now = Date.now()) {
   return { ended: true };
 }
 
-/** GateControl's events of a phone's relay (1.3): start → protocol; end / abort → the request is over, the phone hears it. */
+// why a phone went down to view (GateControl's event phase mode)
+const MODE_REASONS = ['sender', 'service_off', 'locked', 'sender_no_control', 'app_scope'];
+
+/**
+ * GateControl's events of a phone's relay (1.3): start → protocol; end / abort → the request is over, the phone hears it.
+ * 1.4: mode → the phone went down to view (for good): the request says so, the protocol too.
+ */
 async function onScreen(gc, ev, now = Date.now()) {
   const r = await store.one(gc, 'SELECT * FROM requests WHERE screen_ref = ?', [ev.ref]);
   if (!r) return;
   const d = await devices.get(gc, r.device_id);
+  if (ev.phase === 'mode') {
+    if (ev.mode !== 'view' || r.mode === 'view') return;
+    await store.run(gc, "UPDATE requests SET mode = 'view' WHERE id = ?", [r.id]);
+    await log.write(gc, 'remote_screen_mode', { device: d, userId: r.helper_user_id, details: { mode: 'view', reason: MODE_REASONS.includes(ev.reason) ? ev.reason : 'sender' } }, now);
+    return;
+  }
   if (ev.phase === 'start') {
     if (r.screen_started_at) return;
     await store.run(gc, 'UPDATE requests SET screen_started_at = ? WHERE id = ?', [now, r.id]);

@@ -23,6 +23,10 @@
 // "ohne Code" work as for a PC, but the phone always asks its person (and Android asks again); an allowed request gives
 // the phone the sending side of a ticket of gc.remote.screen (server/support.js). POST host/screen/<id>/end: the phone
 // ended a request before the picture ran (Android's question declined, stopped, failed).
+//
+// 1.4 (stage 6): screen.control of host/register and host/state says whether this app can carry input out (the GitHub
+// build of the Android app with its accessibility service; the Google Play build only shows the screen). Only then may a
+// helper ask for "Ansehen und steuern" — and the person at the phone decides for every request (server/support.js).
 
 const store = require('./store');
 const devices = require('./devices');
@@ -142,6 +146,7 @@ async function registerPhone(gc, req, now = Date.now()) {
   const shareMode = b.shareMode === 'open' ? 'open' : (b.shareMode === 'code' || b.shareMode == null ? null : undefined);
   if (shareMode === undefined) throw fail('invalid', { field: 'shareMode' });
   const appVersion = clip(b.appVersion, 40) || null;
+  const control = screenControlOf(b);
   let d = await byToken(gc, dev.id);
   if (d && d.host.platform !== 'android') throw fail('invalid', { field: 'platform' });
   const first = !d || !d.host.registered;
@@ -150,9 +155,9 @@ async function registerPhone(gc, req, now = Date.now()) {
       const id = await devices.nextId(gc);
       const config = { ...devices.DEFAULTS, host: '', port: 0, access_mode: 'internal', browser_enabled: true, health_check_enabled: false, credential_mode: 'none' };
       await store.run(gc, `INSERT INTO devices (id, name, protocol, enabled, source, config, kind, owner_user_id, token_device_id, platform, edition,
-        rdp_available, rdp_enabled, os_user, app_version, share_mode, allow_open, registered, last_seen, created_at, updated_at)
-        VALUES (?, ?, 'screen', 1, 'app', ?, 'host', ?, ?, 'android', NULL, NULL, NULL, NULL, ?, ?, 1, 1, ?, ?, ?)`,
-      [id, name, JSON.stringify(config), user.id, dev.id, appVersion, shareMode || 'code', now, now, now]);
+        rdp_available, rdp_enabled, os_user, app_version, share_mode, allow_open, registered, last_seen, created_at, updated_at, screen_control)
+        VALUES (?, ?, 'screen', 1, 'app', ?, 'host', ?, ?, 'android', NULL, NULL, NULL, NULL, ?, ?, 1, 1, ?, ?, ?, ?)`,
+      [id, name, JSON.stringify(config), user.id, dev.id, appVersion, shareMode || 'code', now, now, now, control ? 1 : 0]);
       // a new phone: only its owner (and the administrators) see it until the owner shares it
       await store.run(gc, "INSERT INTO device_access (device_id, kind, principal_id) VALUES (?, 'user', ?)", [id, user.id]);
       return;
@@ -163,7 +168,7 @@ async function registerPhone(gc, req, now = Date.now()) {
       await store.run(gc, 'DELETE FROM codes WHERE device_id = ?', [d.id]);
     }
     await store.run(gc, `UPDATE devices SET name = ?, owner_user_id = ?, app_version = ?, share_mode = COALESCE(?, share_mode), registered = 1, last_seen = ?,
-      updated_at = ? WHERE id = ?`, [d.host.owner === user.id ? d.name : name, user.id, appVersion, shareMode, now, now, d.id]);
+      updated_at = ?, screen_control = ? WHERE id = ?`, [d.host.owner === user.id ? d.name : name, user.id, appVersion, shareMode, now, now, control ? 1 : 0, d.id]);
   });
   d = await byToken(gc, dev.id);
   if (d.host.shareMode === 'open' && !d.host.allowOpen) {
@@ -175,6 +180,11 @@ async function registerPhone(gc, req, now = Date.now()) {
   return { host: hostAnswer(d), codeRequired: devices.connectMode(d) !== 'open' };
 }
 
+/** 1.4: { screen: { control: true } } — this app can carry input out (anything else: only watching). */
+function screenControlOf(b) {
+  return !!(b && b.screen && typeof b.screen === 'object' && b.screen.control === true);
+}
+
 /** host/state — the heartbeat → { shareMode, allowOpen, pending } */
 async function heartbeat(gc, req, support, now = Date.now()) {
   const dev = appDevice(req);
@@ -184,10 +194,13 @@ async function heartbeat(gc, req, support, now = Date.now()) {
   const rdpOn = b.rdp && typeof b.rdp === 'object' && typeof b.rdp.enabled === 'boolean' ? (b.rdp.enabled ? 1 : 0) : null;
   const osUser = b.osUser === undefined ? undefined : (clip(b.osUser, 100) || null);
   const wasOnline = d.host.online;
+  // 1.4: a phone may say again whether its app can be controlled (an update from the Play build to the APK)
+  const control = devices.isPhone(d) && b.screen && typeof b.screen === 'object' && typeof b.screen.control === 'boolean' ? (b.screen.control ? 1 : 0) : null;
   await store.run(gc, `UPDATE devices SET rdp_enabled = COALESCE(?, rdp_enabled), os_user = ${osUser === undefined ? 'os_user' : '?'}, last_seen = ?,
-    config = ? WHERE id = ?`, [rdpOn, ...(osUser === undefined ? [] : [osUser]), now,
-    JSON.stringify(dev.vpnIp && !devices.isPhone(d) ? { ...d.config, host: dev.vpnIp } : d.config), d.id]);
-  if (!wasOnline || (rdpOn != null && (rdpOn === 1) !== (d.host.rdpEnabled === true)) || (dev.vpnIp && !devices.isPhone(d) && dev.vpnIp !== d.config.host)) await changed(gc, [d.id]);
+    config = ?, screen_control = COALESCE(?, screen_control) WHERE id = ?`, [rdpOn, ...(osUser === undefined ? [] : [osUser]), now,
+    JSON.stringify(dev.vpnIp && !devices.isPhone(d) ? { ...d.config, host: dev.vpnIp } : d.config), control, d.id]);
+  if (!wasOnline || (rdpOn != null && (rdpOn === 1) !== (d.host.rdpEnabled === true)) || (dev.vpnIp && !devices.isPhone(d) && dev.vpnIp !== d.config.host)
+    || (control != null && (control === 1) !== d.host.screenControl)) await changed(gc, [d.id]);
   return { shareMode: d.host.shareMode, allowOpen: d.host.allowOpen, pending: await support.pendingFor(gc, d, now) };
 }
 

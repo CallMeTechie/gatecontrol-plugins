@@ -44,6 +44,9 @@
     if (e.details && e.details.via) sub.push(T('ses.via.' + (e.details.via === 'app' ? 'native' : 'browser')));
     if (e.details && e.details.shareMode) sub.push(T(e.details.shareMode === 'open' ? 'dev.share_open' : 'dev.share_code'));
     if (e.details && e.details.mode === 'view') sub.push(T('ses.view'));
+    // 1.4: a phone the helper may control, and why it went down to view
+    if (e.details && e.details.mode === 'control') sub.push(T('ses.control'));
+    if (e.type === 'remote_screen_mode' && e.details && e.details.reason && T('ses.mode_reason.' + e.details.reason) !== 'ses.mode_reason.' + e.details.reason) sub.push(T('ses.mode_reason.' + e.details.reason));
     return el('div', { class: 'rm-hist' }, [
       el('div', { class: 'rm-hist-main' }, [el('div', { class: 'rm-item-title', text: (e.deviceName || (e.deviceId ? '#' + e.deviceId : '–')) + ' · ' + label }), el('div', { class: 'rm-item-sub', text: sub.join(' · ') })]),
       el('div', { class: 'rm-badges' }, [el('span', { class: 'rm-badge', 'data-tone': e.type === 'remote_code_failed' || e.type === 'remote_request_denied' ? 'warn' : null, text: label })]),

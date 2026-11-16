@@ -70,6 +70,11 @@ async function onEvent(gc, ev, now = Date.now()) {
     });
     return;
   }
+  // 1.4: a phone went down to view during the session (GateControl's event phase mode)
+  if (ev.phase === 'mode') {
+    if (ev.mode === 'view') await store.run(gc, "UPDATE sessions SET mode = 'view' WHERE host_session_id = ? AND status = 'active'", [ev.sessionId]);
+    return;
+  }
   if (ev.phase === 'end' || ev.phase === 'abort') {
     const ended = Date.parse(ev.endedAt) || now;
     const row = await store.one(gc, 'SELECT id, started_at FROM sessions WHERE host_session_id = ?', [ev.sessionId]);
