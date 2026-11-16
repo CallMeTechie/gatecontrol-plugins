@@ -1,4 +1,4 @@
-<!-- version: 1.7.1 -->
+<!-- version: 1.7.2 -->
 # Fernzugriff – Handbuch
 
 ## Was das Plugin kann {#was-das-plugin-kann}
@@ -66,6 +66,8 @@ Wer bisher ein RDP- oder VNC-Ziel sehen konnte, bekommt das Recht „Remote Desk
 „Gerät hinzufügen“ hat drei Schritte:
 
 1. **Ziel:** Du wählst aus einer Liste. „Im VPN“ stehen die VPN-Geräte mit ihrem Namen im VPN, „Hinter Gateway …“ die Geräte, die der Netzwerk-Wächter des Gateways im Heimnetz sieht (Name, Adresse, Hersteller und die offenen Ports SSH, RDP, VNC). Geräte ohne diese Ports stehen eine Zeile tiefer unter „anzeigen“. „Freigegebene Dienste“ sind L4-Routen, die nach SSH, RDP oder VNC aussehen, und „Anderes Ziel eingeben …“ nimmt einen Namen oder eine Adresse außerhalb deines Netzes. Suche und die Filter SSH, RDP, VNC helfen bei langen Listen. Grau steht, was schon ein Gerät ist oder sich selbst anmeldet (Windows-PCs mit der App, Linux-Rechner mit dem Agenten).
+
+   **Gateways in einem Pool:** Gateways eines Failover-Pools sehen dasselbe Heimnetz. Sie stehen deshalb in *einem* Abschnitt „Heimnetz · Pool …“ mit dem Zustand „Online (2 von 2)“ bzw. „1 von 2 online“, und jedes Gerät steht nur einmal darin – dieselbe Adresse im selben Subnetz ist ein Gerät; die Ports aller Gateways werden zusammengeführt. Ein Gerät daraus läuft über den Pool: fällt ein Gateway aus, übernimmt das andere. Prüfen und Wecken gehen über ein Gateway des Pools, das gerade online ist. Gateways ohne Pool haben weiter ihren eigenen Abschnitt „Hinter Gateway …“.
 2. **Verbindung:** Protokoll und Port stehen schon da. GateControl prüft beim Öffnen die Ports 22, 3389, 5900 und 23 dieses einen Geräts – über das Gateway oder vom Server aus – und zeigt den Weg als eine Zeile: **im VPN**, **über Gateway „…“** oder **übers Internet**. Was früher „Zugriff“ hieß, liegt unter „Erweitert“.
 3. **Anmeldung:** Benutzername und Passwort, bei SSH als Vorgabe ein Schlüssel von GateControl (den öffentlichen Teil kopierst du einmal in `~/.ssh/authorized_keys`). „Auch im Browser verbinden“ ist bei neuen Geräten an.
 
@@ -255,6 +257,11 @@ Das Recht wird bei jedem Verbinden neu geprüft.
 **„Zu viele falsche Codes“:** Warte 15 Minuten oder lass dir am PC einen neuen Code zeigen.
 
 **Im Browser fragt Windows nach der Anmeldung nicht:** Verlangt der PC die Anmeldung auf Netzwerkebene (NLA), braucht die Sitzung im Browser Benutzername und Passwort, die die Sitzungsseite noch nicht abfragt. Verbinde dich dann aus der GateControl-App.
+
+## Neu in 1.7.2 {#neu-1-7-2}
+
+- **Gateways im Pool einmal:** Zwei Gateways desselben Failover-Pools zeigen in „Gerät hinzufügen“ einen gemeinsamen Abschnitt „Heimnetz · Pool …“ mit „Online (2 von 2)“ bzw. „1 von 2 online“, jedes Gerät nur einmal. Neue Geräte daraus laufen über den Pool; Prüfen und Wecken über ein Gateway, das online ist. Bei freier Eingabe einer Adresse im Heimnetz des Pools fragt der Assistent nicht mehr, welches Gateway.
+- **Kein heller Streifen mehr beim Scrollen:** Der Assistent bleibt so hoch wie der sichtbare Platz und scrollt in sich; Kopf mit den Schritten und die Knöpfe bleiben stehen.
 
 ## Neu in 1.7.1 {#neu-1-7-1}
 

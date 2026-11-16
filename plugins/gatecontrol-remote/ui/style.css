@@ -125,6 +125,17 @@ body{padding:2px 2px 24px}
 .rmx-steps span.done b{background:color-mix(in srgb,var(--accent) 75%,#000);color:#fff}
 .rmx-body{padding:14px 18px 16px;display:flex;flex-direction:column;gap:12px;min-width:0}
 .rmx-foot{display:flex;gap:8px;justify-content:flex-end;align-items:center;flex-wrap:wrap;padding:12px 18px 16px;border-top:1px solid var(--line);background:var(--surface-2)}
+/* 1.7.2: the wizard keeps to the height the frame gets without the page scrolling (GC.viewport; at least 420 px, as
+   that value is only the frame's own height while the page is shorter than the window) and scrolls inside, the wheel
+   stays in the dialog. A taller dialog grew the frame, the page around it scrolled, and the frame slid under
+   GateControl's sticky, see-through header — undimmed there, as the page's dim leaves the frame's area out: a light
+   band over the dialog's head and the header. */
+.modal-overlay.rmx-ov{overscroll-behavior:contain}
+.modal.rmx-modal{max-height:max(420px,calc(var(--gc-viewport-height,100vh) - 64px))}
+.rmx-modal>.rmx-head,.rmx-modal>.rmx-steps,.rmx-modal>.rmx-foot{flex:0 0 auto}
+.rmx-modal>.rmx-body{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain}
+.rmx-modal>.rmx-body>*{flex-shrink:0}
+.rmx-modal>.rmx-steps{padding-bottom:10px;border-bottom:1px solid var(--line)}
 .rmx-sp{flex:1 1 auto}
 .btn.rmx-ghost{background:transparent;border-color:transparent;color:var(--muted)}
 .rmx-small{font-size:13px;color:var(--muted);margin:0}

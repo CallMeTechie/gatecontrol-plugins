@@ -2,7 +2,9 @@
    Step 1 lists what the server knows (admin/candidates: VPN devices, the devices behind each home gateway, L4 routes,
    „Anderes Ziel eingeben …“), step 2 checks the ports of the one target picked (admin/candidates/scan) and shows the
    way as one line, step 3 asks for the login. The way is derived as in server/way.js; nothing of the list is stored.
-   window.RMW.open({ device? }) — with a device only steps 1 and 2 („Ziel ändern“ of the editor) → the new target. */
+   window.RMW.open({ device? }) — with a device only steps 1 and 2 („Ziel ändern“ of the editor) → the new target.
+   1.7.2: the home networks come as `homes` (server/homes.js): the gateways of one failover pool are one section, each
+   device once; the target goes through the pool, scan and wake through an online gateway of it. */
 (function () {
   'use strict';
   var P = window.RM;
@@ -106,11 +108,32 @@
   }
 
   // ─── the list of step 1 ───
+  /** The home network (server/homes.js) a gateway belongs to. */
+  function homeOf(c, peerId) {
+    return ((c && c.homes) || []).filter(function (h) { return (h.members || []).some(function (m) { return m.peerId === peerId; }); })[0] || null;
+  }
+  /** The state of a home network: one gateway as before, a pool „Online (2 von 2)“ / „1 von 2 online“. */
+  function homeState(h) {
+    if (!h.online) return tag(offlineText(h.offlineSince), 'warn');
+    if (!h.pool || h.total < 2) return tag(T('state.online'), 'ok');
+    if (h.onlineCount === h.total) return tag(T('wz.pool_online_all', { n: h.onlineCount, total: h.total }), 'ok');
+    return tag(T('wz.pool_online_some', { n: h.onlineCount, total: h.total }), 'warn');
+  }
+  /** The gateway of a home network to ask (scan, wake): one online that sees the device, else one online. */
+  function viaOf(h, dev, wake) {
+    var via = (dev && dev.via) || [];
+    var hit = via.filter(function (v) { return v.online && (!wake || v.wake); })[0];
+    if (!hit && wake) hit = via.filter(function (v) { return v.wake; })[0];
+    if (hit) return { peerId: hit.peerId, ref: hit.ref };
+    return h && h.online ? { peerId: h.peerId, ref: dev ? dev.ref : null } : null;
+  }
+
   function model(c) {
     var known = c.known || [];
-    var gwById = {};
-    (c.gateways || []).forEach(function (g) { gwById[g.peerId] = g; });
-    var devOf = function (gwId, ref) { var g = gwById[gwId]; return g ? (g.devices || []).filter(function (d) { return d.ref === ref; })[0] || null : null; };
+    var devOf = function (gwId, ref) {
+      var h = homeOf(c, gwId);
+      return h ? (h.devices || []).filter(function (d) { return d.ref === ref || (d.refs || []).indexOf(ref) >= 0; })[0] || null : null;
+    };
     var groups = [];
     var vpn = { id: 'vpn', title: T('wz.grp_vpn'), rows: [], more: [] };
     (c.peers || []).forEach(function (p) {
@@ -120,7 +143,7 @@
       var dev = known.filter(function (k) { return k.kind !== 'host' && k.host === p.address && k.accessMode !== 'gateway'; })[0] || null;
       var twin = p.twin ? devOf(p.twin.gatewayPeerId, p.twin.ref) : null;
       var map = twin ? detected(twin.ports) : {};
-      var twinGw = p.twin ? gwById[p.twin.gatewayPeerId] : null;
+      var twinGw = p.twin ? homeOf(c, p.twin.gatewayPeerId) : null;
       vpn.rows.push({
         key: 'p' + p.peerId, kind: 'peer', ico: 'vpn', glyph: glyphOf(twin && twin.vendor, map, p.app), name: p.name, address: p.address,
         sub: self ? [T(self === 'windows' ? 'wz.self_windows' : 'wz.self_linux')] : [mono(p.address), p.dnsName, twinGw ? T('wz.also_lan', { name: twinGw.name }) : null],
@@ -129,13 +152,14 @@
       });
     });
     if (vpn.rows.length) groups.push(vpn);
-    (c.gateways || []).forEach(function (g) {
-      var grp = { id: 'g' + g.peerId, title: T('wz.grp_gateway', { name: g.name }), gw: g, rows: [], more: [],
-        state: g.online ? tag(T('state.online'), 'ok') : tag(offlineText(g.offlineSince), 'warn') };
+    (c.homes || []).forEach(function (g) {
+      var ids = (g.members || []).map(function (m) { return m.peerId; });
+      var pooled = !!(g.pool && g.total > 1);
+      var grp = { id: 'h' + g.id, title: pooled ? T('wz.grp_pool', { name: g.name }) : T('wz.grp_gateway', { name: g.name }), gw: g, rows: [], more: [], state: homeState(g) };
       (g.devices || []).forEach(function (d) {
         var map = detected(d.ports);
         var any = Object.keys(map).length > 0;
-        var dev = known.filter(function (k) { return k.kind !== 'host' && k.host === d.address && k.accessMode === 'gateway' && (k.gatewayPeerId === g.peerId || (g.pool && k.gatewayPoolId === g.pool.poolId)); })[0] || null;
+        var dev = known.filter(function (k) { return k.kind !== 'host' && k.host === d.address && k.accessMode === 'gateway' && (ids.indexOf(k.gatewayPeerId) >= 0 || (g.pool && k.gatewayPoolId === g.pool.poolId)); })[0] || null;
         var sub = [mono(d.address), d.vendor];
         if (d.twin) sub.push(T('wz.also_vpn'));
         if (!g.online) sub.push(T('wz.state_of', { when: P.when(d.lastSeen) }));
@@ -190,7 +214,7 @@
       el('div', { class: 'rmx-head' }, [title, close]), stepsBox, body,
       el('div', { class: 'rmx-foot' }, [back, el('span', { class: 'rmx-sp' }), cancel, next]),
     ]);
-    var ov = el('div', { class: 'modal-overlay', role: 'dialog', 'aria-modal': 'true', 'aria-label': T('dev.add') }, [modal]);
+    var ov = el('div', { class: 'modal-overlay rmx-ov', role: 'dialog', 'aria-modal': 'true', 'aria-label': T('dev.add') }, [modal]);
     function finish(v) { ov.remove(); resolveFn(v); }
     close.addEventListener('click', function () { finish(S.saved ? { saved: S.saved } : null); });
     cancel.addEventListener('click', function () { finish(S.saved ? { saved: S.saved } : null); });
@@ -207,14 +231,18 @@
       if (s.kind === 'lan') return { kind: 'lan', host: s.dev.address, gw: s.gw, dev: s.dev };
       if (s.kind === 'route') {
         var t = s.route.target;
-        if (t.kind === 'gateway') return { kind: 'route', host: t.host, gwPeerId: t.peerId || null, poolId: t.poolId || null, route: s.route };
+        if (t.kind === 'gateway') {
+          // 1.7.2: a route to a pool is checked through an online gateway of it
+          var ph = t.poolId ? (S.cand && S.cand.homes || []).filter(function (h) { return h.pool && h.pool.poolId === t.poolId; })[0] : null;
+          return { kind: 'route', host: t.host, gwPeerId: t.peerId || (ph && ph.online ? ph.peerId : null), poolId: t.poolId || null, route: s.route };
+        }
         return { kind: 'route', host: t.host, route: s.route, direct: true };
       }
       if (s.kind === 'ext') {
         var w = S.extWay;
         if (!w || !S.extHost) return { kind: 'ext', host: S.extHost, way: null };
         if (w.way.kind === 'gateway' && w.way.gateway) {
-          var g = (S.cand && S.cand.gateways || []).filter(function (x) { return x.peerId === w.way.gateway.peerId; })[0] || w.way.gateway;
+          var g = homeOf(S.cand, w.way.gateway.peerId) || (S.cand && S.cand.gateways || []).filter(function (x) { return x.peerId === w.way.gateway.peerId; })[0] || w.way.gateway;
           return { kind: 'lan', host: S.extHost, gw: g, dev: null, free: true };
         }
         if (w.way.kind === 'vpn' && w.way.peer) return { kind: 'peer', host: w.way.peer.address, peer: w.way.peer, free: true };
@@ -233,10 +261,16 @@
       if (e.kind === 'lan') {
         var g = e.gw;
         var pool = g.pool || null;
-        return { title: T('wz.way_gateway', { name: g.name }), text: pool ? T('wz.way_gateway_pool', { pool: pool.name }) : T('wz.way_gateway_text'),
-          adv: T('wz.adv_gateway', { name: g.name }) + (pool ? ' · ' + T('wz.adv_pool', { name: pool.name }) : ''), listen: T('wz.listen_auto'), apps: T('wz.apps_server'),
+        // 1.7.2: a pool of several gateways — the target goes through the pool (failover), checked through one online
+        var many = !!(pool && g.members && g.members.length > 1);
+        var poolName = pool ? (pool.name || g.name) : null;
+        var via = g.online === false ? null : (g.members ? viaOf(g, e.dev, false) : { peerId: g.peerId });
+        return { title: many ? T('wz.way_pool', { name: poolName }) : T('wz.way_gateway', { name: g.name }), text: pool ? T('wz.way_gateway_pool', { pool: poolName }) : T('wz.way_gateway_text'),
+          adv: many ? T('wz.adv_pool', { name: poolName }) + ' · ' + g.members.map(function (m) { return m.name; }).join(', ')
+            : T('wz.adv_gateway', { name: g.name }) + (pool ? ' · ' + T('wz.adv_pool', { name: poolName }) : ''), listen: T('wz.listen_auto'), apps: T('wz.apps_server'),
           access: pool ? { access_mode: 'gateway', gateway_pool_id: pool.poolId } : { access_mode: 'gateway', gateway_peer_id: g.peerId },
-          scan: g.online ? { host: e.host, gatewayPeerId: g.peerId } : null, offline: !g.online, gw: g, sub: T('wz.sub_gateway', { name: g.name }) };
+          scan: via ? { host: e.host, gatewayPeerId: via.peerId } : null, offline: g.online === false, gw: g, pool: many ? poolName : null,
+          sub: many ? T('wz.sub_pool', { name: poolName }) : T('wz.sub_gateway', { name: g.name }) };
       }
       if (e.kind === 'route') {
         var r = e.route;
@@ -311,6 +345,7 @@
         else runScan();
       }
       render();
+      body.scrollTop = 0; // 1.7.2: the body scrolls inside the dialog — each step from its top
     }
     function onNext() {
       if (S.step === 1) { if (S.sel) go(2); return; }
@@ -580,10 +615,12 @@
     function twinChoice(s) {
       var vpnAddr = s.kind === 'peer' ? s.peer.address : s.twin.peer.address;
       var lanAddr = s.kind === 'lan' ? s.dev.address : s.twin.dev.address;
-      var gwName = s.kind === 'lan' ? s.gw.name : (s.twin.gw ? s.twin.gw.name : '');
+      var home = s.kind === 'lan' ? s.gw : s.twin.gw;
+      var gwName = home ? home.name : '';
+      var lanText = home && home.pool && home.members && home.members.length > 1 ? T('wz.twin_lan_pool', { name: gwName }) : T('wz.twin_lan_text', { name: gwName });
       var box = el('div', { class: 'rmx-radio', role: 'radiogroup', 'aria-label': T('wz.which_way') });
       [['vpn', [T('wz.twin_vpn') + ' · ', mono(vpnAddr), ' ', tag(T('wz.recommended'), 'ok')], T('wz.twin_vpn_text')],
-        ['lan', [T('wz.twin_lan') + ' · ', mono(lanAddr)], T('wz.twin_lan_text', { name: gwName })]].forEach(function (x) {
+        ['lan', [T('wz.twin_lan') + ' · ', mono(lanAddr)], lanText]].forEach(function (x) {
         box.appendChild(el('button', { type: 'button', class: 'rmx-ropt', role: 'radio', 'aria-checked': S.twinVia === x[0] ? 'true' : 'false', 'aria-pressed': S.twinVia === x[0] ? 'true' : 'false', on: { click: function () {
           S.twinVia = x[0]; S.scanKey = null; runScan(); render();
         } } }, [el('span', { class: 'dot' }), el('div', null, [el('b', null, x[1]), el('span', { text: x[2] })])]));
@@ -599,7 +636,7 @@
       choices.forEach(function (g) {
         box.appendChild(el('button', { type: 'button', class: 'rmx-ropt', role: 'radio', 'aria-checked': cur === g.peerId ? 'true' : 'false', 'aria-pressed': cur === g.peerId ? 'true' : 'false', on: { click: function () {
           S.gwPick = g.peerId; S.extWay = null; resolveExt();
-        } } }, [el('span', { class: 'dot' }), el('div', null, [el('b', { text: T('wz.way_gateway', { name: g.name }) }), el('span', { text: g.online ? T('state.online') : T('state.offline') })])]));
+        } } }, [el('span', { class: 'dot' }), el('div', null, [el('b', { text: g.pool && g.pool.name ? T('wz.way_pool', { name: g.pool.name }) : T('wz.way_gateway', { name: g.name }) }), el('span', { text: g.online ? T('state.online') : T('state.offline') })])]));
       });
       body.appendChild(el('span', { class: 'rmx-flabel', text: T('wz.which_gateway') }));
       body.appendChild(box);
@@ -632,7 +669,7 @@
       var e = eff();
       var via = w && w.scan && w.scan.gatewayPeerId ? T('wz.via_gateway') : T('wz.via_direct');
       if (w && w.offline) {
-        body.appendChild(note('warn', T('wz.gwoff_head', { name: w.gw.name, since: offlineText(w.gw.offlineSince) }), T('wz.gwoff_text', { proto: T('proto.' + S.proto), port: S.port }),
+        body.appendChild(note('warn', T(w.pool ? 'wz.pooloff_head' : 'wz.gwoff_head', { name: w.pool || w.gw.name, since: offlineText(w.gw.offlineSince) }), T('wz.gwoff_text', { proto: T('proto.' + S.proto), port: S.port }),
           [sbtn(T('wz.anyway'), function () { go(3); }, true)]));
         return;
       }
@@ -680,8 +717,10 @@
       var dev = e && e.kind === 'lan' ? e.dev : null;
       if (dev && dev.wake) acts.push(sbtn(T('wz.wake'), function (ev) {
         var b = ev.currentTarget;
+        // 1.7.2: through a gateway of the pool that knows the MAC, an online one first
+        var wv = (e.gw.members ? viaOf(e.gw, dev, true) : null) || { peerId: e.gw.peerId, ref: dev.ref };
         b.disabled = true;
-        P.api('POST', 'admin/candidates/wake', { ref: dev.ref, host: dev.address, gatewayPeerId: e.gw.peerId }).then(function () { P.toast(T('dev.woken')); }).catch(P.warn).then(function () { b.disabled = false; });
+        P.api('POST', 'admin/candidates/wake', { ref: wv.ref, host: dev.address, gatewayPeerId: wv.peerId }).then(function () { P.toast(T('dev.woken')); }).catch(P.warn).then(function () { b.disabled = false; });
       }));
       acts.push(sbtn(T('wz.recheck'), recheck));
       acts.push(sbtn(T('wz.anyway'), function () { go(3); }, true));
@@ -798,12 +837,12 @@
     document.body.appendChild(ov);
     render();
     P.api('GET', 'admin/candidates').then(function (c) {
-      if (!c || !c.available) { S.candErr = T('wz.cand_unavailable'); S.cand = { gateways: [], peers: [], routes: [], known: [] }; }
+      if (!c || !c.available) { S.candErr = T('wz.cand_unavailable'); S.cand = { gateways: [], homes: [], peers: [], routes: [], known: [] }; }
       else S.cand = c;
       S.groups = model(S.cand);
-    }).catch(function (e) { S.candErr = P.errText(e); S.cand = { gateways: [], peers: [], routes: [], known: [] }; S.groups = model(S.cand); }).then(render);
+    }).catch(function (e) { S.candErr = P.errText(e); S.cand = { gateways: [], homes: [], peers: [], routes: [], known: [] }; S.groups = model(S.cand); }).then(render);
     return done;
   }
 
-  window.RMW = { open: open, model: model, protoOfPort: protoOfPort, ico: ico };
+  window.RMW = { open: open, model: model, homeOf: homeOf, viaOf: viaOf, protoOfPort: protoOfPort, ico: ico };
 })();

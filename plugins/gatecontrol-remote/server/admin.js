@@ -14,6 +14,7 @@ const hosts = require('./hosts');
 const support = require('./support');
 const log = require('./log');
 const recordings = require('./recordings');
+const homes = require('./homes');
 const way = require('./way');
 const { fail, fromHost, posInt, clip } = require('./util');
 
@@ -34,7 +35,8 @@ async function candidateList(gc, user, cfg) {
     id: d.id, name: d.name, protocol: d.protocol, kind: d.kind, platform: d.host ? d.host.platform : null,
     host: d.config.host || null, accessMode: d.config.access_mode, gatewayPeerId: d.config.gateway_peer_id || null, gatewayPoolId: d.config.gateway_pool_id || null,
   }));
-  return { available: true, vpn: c.vpn || null, peers: c.peers || [], gateways: c.gateways || [], routes: c.routes || [], known, checkMinutes: cfg ? cfg.checkMinutes : null };
+  // 1.7.2: `homes` — the gateways of one failover pool as one home network, its devices once (server/homes.js)
+  return { available: true, vpn: c.vpn || null, peers: c.peers || [], gateways: c.gateways || [], homes: homes.of(c), routes: c.routes || [], known, checkMinutes: cfg ? cfg.checkMinutes : null };
 }
 
 /** 1.7: a few ports of one target at once (gc.remote.scan): directly from the server or through its gateway. */

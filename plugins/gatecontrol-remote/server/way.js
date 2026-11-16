@@ -6,7 +6,8 @@
 //   1. the address of a VPN device (a peer)          → vpn       access_mode internal, no listener
 //   2. in the LAN subnets of a home gateway          → gateway   access_mode gateway, the pool of the gateway when
 //                                                                 it is in one, the port on the server automatic
-//                                                                 (several gateways with this net: `choices`)
+//                                                                 (several gateways with this net: `choices`; the
+//                                                                 gateways of one pool are one choice, 1.7.2)
 //   3. else: a private address (the server's LAN)    → server    access_mode internal
 //            a public address or a name               → internet  access_mode both: the browser goes through the
 //                                                                 server, the apps connect directly (no relay)
@@ -74,8 +75,17 @@ function derive(host, cand, pick) {
   if (peer) return { kind: 'vpn', peer: { peerId: peer.peerId, name: peer.name, address: peer.address, dnsName: peer.dnsName || null, app: peer.app || null }, gateway: null, choices: [], twin: peer.twin || null };
   const hits = ip4(h) != null ? gws.filter((g) => (g.subnets || []).some((s) => inCidr(h, s))) : [];
   if (hits.length) {
-    const chosen = hits.find((g) => g.peerId === Number(pick)) || hits[0];
-    return { kind: 'gateway', peer: null, gateway: gatewayView(chosen), choices: hits.length > 1 ? hits.map(gatewayView) : [], twin: null };
+    // 1.7.2: the gateways of one failover pool are one choice (the target goes through the pool) — an online one of it
+    const seen = new Map();
+    for (const g of hits) {
+      const k = g.pool && g.pool.poolId != null ? 'pool-' + g.pool.poolId : 'gw-' + g.peerId;
+      const had = seen.get(k);
+      if (!had || (had.online === false && g.online !== false)) seen.set(k, g);
+    }
+    const one = [...seen.values()];
+    const asked = hits.find((g) => g.peerId === Number(pick)) || null;
+    const chosen = asked ? (asked.pool ? one.find((g) => g.pool && g.pool.poolId === asked.pool.poolId) : asked) : one[0];
+    return { kind: 'gateway', peer: null, gateway: gatewayView(chosen), choices: one.length > 1 ? one.map(gatewayView) : [], twin: null };
   }
   if (ip4(h) != null || h.includes(':')) return { kind: isPrivate(h) ? 'server' : 'internet', peer: null, gateway: null, choices: [], twin: null };
   // a name: one of the VPN zone that is no peer stays inside, any other one goes out through the server

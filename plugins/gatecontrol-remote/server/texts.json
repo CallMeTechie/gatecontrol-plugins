@@ -687,7 +687,14 @@
     "ed.lan_hint_text": "Unter „Nur VPN“ versucht der Server die Adresse direkt. Ohne Route in dieses Heimnetz geht das ins Leere.",
     "ed.lan_use": "Über das Gateway verbinden",
     "ed.rec_summary": "Aufzeichnung {{v}}",
-    "ed.way_text": "Hier liegt, was früher „Zugriff“ hieß. Man braucht es nur für Sonderfälle, etwa einen festen Port auf dem Server oder einen anderen öffentlichen Namen für die Apps."
+    "ed.way_text": "Hier liegt, was früher „Zugriff“ hieß. Man braucht es nur für Sonderfälle, etwa einen festen Port auf dem Server oder einen anderen öffentlichen Namen für die Apps.",
+    "wz.grp_pool": "Heimnetz · Pool „{{name}}“",
+    "wz.pool_online_all": "Online ({{n}} von {{total}})",
+    "wz.pool_online_some": "{{n}} von {{total}} online",
+    "wz.way_pool": "Verbindung über Pool „{{name}}“",
+    "wz.sub_pool": "über Pool „{{name}}“",
+    "wz.pooloff_head": "Pool „{{name}}“: alle Gateways {{since}}",
+    "wz.twin_lan_pool": "Über Pool „{{name}}“ – fällt ein Gateway aus, übernimmt das andere. Funktioniert auch, wenn der VPN-Client auf dem Gerät aus ist."
   },
   "en": {
     "access.all": "Everybody with the right",
@@ -1377,6 +1384,13 @@
     "ed.lan_hint_text": "Under “VPN only” the server tries the address directly. Without a route into this home network that goes nowhere.",
     "ed.lan_use": "Connect through the gateway",
     "ed.rec_summary": "recording {{v}}",
-    "ed.way_text": "This is what used to be “Access”. It is only needed for special cases, such as a fixed port on the server or another public name for the apps."
+    "ed.way_text": "This is what used to be “Access”. It is only needed for special cases, such as a fixed port on the server or another public name for the apps.",
+    "wz.grp_pool": "Home network · pool “{{name}}”",
+    "wz.pool_online_all": "Online ({{n}} of {{total}})",
+    "wz.pool_online_some": "{{n}} of {{total}} online",
+    "wz.way_pool": "Connection through pool “{{name}}”",
+    "wz.sub_pool": "through pool “{{name}}”",
+    "wz.pooloff_head": "Pool “{{name}}”: all gateways {{since}}",
+    "wz.twin_lan_pool": "Through pool “{{name}}” – if one gateway fails, the other one takes over. Works even when the VPN client on the device is off."
   }
 }
