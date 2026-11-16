@@ -1,5 +1,9 @@
-<!-- version: 1.28.0 -->
+<!-- version: 1.29.0 -->
 # Familie
+
+## Neu in 1.29.0
+
+- **Telegram bei „Andere Messenger“:** Bietet dein Server die Telegram-Brücke an (Plugin Messenger ab 1.24.0), steht je Kind eine Zeile **Telegram** mit eigenem Schalter, zunächst aus. Darunter der Schalter **„Telegram-Kanäle“** – erst, wenn Telegram frei ist, und zunächst aus: Aus heißt, Telegram-Kanäle erscheinen beim Kind nicht.
 
 ## Neu in 1.28.0
 

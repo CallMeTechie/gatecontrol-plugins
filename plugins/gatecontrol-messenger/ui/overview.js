@@ -267,15 +267,29 @@
       sub.push(T(n.linked === 1 ? 'admin.br_linked_one' : 'admin.br_linked', { n: n.linked || 0 }));
       // 1.17.0: how many of them got the bridge's phone warning (no names)
       if (n.phoneOffline) sub.push(T(n.phoneOffline === 1 ? 'admin.br_phone_one' : 'admin.br_phone', { n: n.phoneOffline }));
+      // 1.24.0: Telegram starts only with the administrator's application id
+      var noApp = n.id === 'telegram' && b.telegramApp && !b.telegramApp.set;
+      if (noApp) sub.unshift(T('admin.br_tg_missing_sub'));
       // 1.23.0: what this bridge still waits for on the server
-      if (n.enabled && n.needs) sub.push(T('admin.br_needs_' + n.needs));
+      if (n.enabled && n.needs && n.needs !== 'app') sub.push(T('admin.br_needs_' + n.needs));
       list.appendChild(el('li', null, [
         M.netLogo(n.id, null, 18, 'ms-br-mark'),
         el('span', { class: 'ms-gc-path' }, [el('span', { text: T('admin.br_net_' + n.id) }), el('small', { text: sub.join(' · ') })]),
+        noApp ? el('span', { class: 'ms-pill is-limit', text: T('admin.br_needs_app') }) : null,
         el('span', { class: 'ms-pill' + st.cls, text: st.text }),
+        noApp ? el('button', { type: 'button', class: 'btn btn-sm btn-primary', text: T('admin.br_tg_setup'), on: { click: function () { tgForm(true); } } }) : null,
         M.switchBtn(n.enabled, T('admin.br_net_' + n.id), function (v) { var nets = {}; nets[n.id] = v; setBr({ networks: nets }); }, !b.enabled),
       ]));
+      // 1.24.0: the application id is there — when and by whom, never its content
+      if (n.id === 'telegram' && b.telegramApp && b.telegramApp.set) {
+        list.appendChild(el('li', { id: 'ms-br-tg-app' }, [
+          el('span', { class: 'ms-gc-path' }, [el('span', { text: T('admin.br_tg_app') }), el('small', { text: T('admin.br_tg_saved', { date: b.telegramApp.setAt ? new Date(b.telegramApp.setAt).toLocaleDateString(M.LOCALE, { day: '2-digit', month: '2-digit', year: 'numeric' }) : '?', name: b.telegramApp.setBy || '?' }) })]),
+          el('button', { type: 'button', class: 'btn btn-sm', text: T('admin.br_tg_renew'), on: { click: function () { tgForm(true); } } }),
+          el('button', { type: 'button', class: 'btn btn-sm', text: T('admin.br_tg_remove'), on: { click: tgRemove } }),
+        ]));
+      }
     });
+    if (!b.telegramApp) tgForm(false);
     // 1.23.0 (gc.bridges version 10): one switch for every bridge that converts animated stickers — off: a still picture
     if (b.stickers && typeof b.stickers.animated === 'boolean') {
       list.appendChild(el('li', { id: 'ms-br-stickers' }, [
@@ -306,6 +320,48 @@
     $('#ms-br-nc').hidden = !(nc && nc.available);
     if (nc && nc.available && document.activeElement !== $('#ms-br-nc-in')) $('#ms-br-nc-in').value = String(nc.perHour);
   }
+  // ── 1.24.0: „Telegram einrichten“ — the administrator's Telegram application id, passed straight to GateControl ──
+  /** Show (or hide) the form. The values are only in the two fields until „Speichern und starten“, never kept here. */
+  function tgForm(show) {
+    var box = M.clear($('#ms-br-tg'));
+    box.hidden = !show;
+    if (!show) return;
+    var id = el('input', { type: 'text', class: 'form-input', id: 'ms-br-tg-id', inputmode: 'numeric', autocomplete: 'off', spellcheck: 'false', maxlength: '10', placeholder: '12345678' });
+    var hash = el('input', { type: 'password', class: 'form-input', id: 'ms-br-tg-hash', autocomplete: 'off', spellcheck: 'false', maxlength: '32' });
+    var idHint = el('small', { text: T('admin.br_tg_id_hint') });
+    var hashHint = el('small', { text: T('admin.br_tg_hash_hint') });
+    var save = el('button', { type: 'button', class: 'btn btn-primary', text: T('admin.br_tg_save') });
+    var close = function () { id.value = ''; hash.value = ''; tgForm(false); };
+    save.addEventListener('click', function () {
+      var v = id.value.trim();
+      var h = hash.value.trim();
+      var okId = /^[1-9][0-9]{4,9}$/.test(v);
+      var okHash = /^[0-9A-Fa-f]{32}$/.test(h);
+      idHint.classList.toggle('is-bad', !okId);
+      hashHint.classList.toggle('is-bad', !okHash);
+      if (!okId) { id.focus(); return; }
+      if (!okHash) { hash.focus(); return; }
+      if (brBusy) return;
+      brBusy = true;
+      save.disabled = true;
+      // the fields are emptied at once: the values live only in this one request
+      id.value = ''; hash.value = '';
+      M.api('PUT', 'admin/bridges', { telegramApp: { apiId: v, apiHash: h } }).then(function (r) { brBusy = false; tgForm(false); renderBr(r.bridges); M.toast(T('common.saved')); })
+        .catch(function (e) { brBusy = false; save.disabled = false; M.warn(e); });
+    });
+    box.appendChild(el('h4', { text: T('admin.br_tg_title') }));
+    box.appendChild(el('p', { text: T('admin.br_tg_lead') }));
+    box.appendChild(el('ol', null, ['admin.br_tg_step1', 'admin.br_tg_step2', 'admin.br_tg_step3'].map(function (k) { return el('li', { text: T(k) }); })));
+    box.appendChild(el('label', { class: 'ms-br-tg-f', for: 'ms-br-tg-id' }, [el('span', { text: 'api_id' }), id, idHint]));
+    box.appendChild(el('label', { class: 'ms-br-tg-f', for: 'ms-br-tg-hash' }, [el('span', { text: 'api_hash' }), hash, hashHint]));
+    box.appendChild(el('p', { class: 'ms-gc-note', text: T('admin.br_tg_note') }));
+    box.appendChild(el('div', { class: 'ms-br-tg-bar' }, [el('button', { type: 'button', class: 'btn', text: T('common.cancel'), on: { click: close } }), save]));
+    setTimeout(function () { id.focus(); }, 30);
+  }
+  function tgRemove() {
+    M.confirm(T('admin.br_tg_remove_confirm'), T('admin.br_tg_remove'), true).then(function (ok) { if (ok) setBr({ telegramApp: null }); });
+  }
+
   // ── 1.17.0: where the files lie, the nightly snapshot, older messages, the clean-up at the homeserver ──
   function fmtDate(iso) { return new Date(iso).toLocaleString(M.LOCALE, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }); }
   function renderBr17(b) {

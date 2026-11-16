@@ -4,7 +4,9 @@
    first; the answer says when the link could not be ended). Hidden without the Messenger's bridges (no Messenger, an
    older one, no bridge switched on), for children and without children.
    1.25.0: under each service a second switch „Neue Chats per Nummer“ (Messenger ≥ 1.16.0: messengers.newChat) — may
-   the child start new chats by phone number? Off by default, only while the service itself is allowed. */
+   the child start new chats by phone number? Off by default, only while the service itself is allowed.
+   1.29.0: Telegram, and under it the switch „Telegram-Kanäle“ (messengers.channels) — channels and the like of Telegram
+   appear for the child only with it. Off by default, only while Telegram itself is allowed. */
 (function () {
   'use strict';
   var A = window.FA, T = A.T, $ = A.$, el = A.el, CTX = A.CTX;
@@ -57,6 +59,21 @@
     }).catch(function (e) { busy = false; A.setSwitch(sw, !on); A.warn(e); });
   }
 
+  /** 1.29.0: „Telegram-Kanäle“ (only next to the permission itself). */
+  function changeChannels(c, n, on, sw) {
+    if (busy) return;
+    busy = true;
+    A.setSwitch(sw, on);
+    var ch = {};
+    ch[n] = on;
+    A.api('PUT', 'messengers/' + encodeURIComponent(c.userId), { channels: ch }).then(function (x) {
+      busy = false;
+      if (x.child) data.children = data.children.map(function (k) { return k.userId === x.child.userId ? x.child : k; });
+      render();
+      A.toast(T('common.saved'));
+    }).catch(function (e) { busy = false; A.setSwitch(sw, !on); A.warn(e); });
+  }
+
   function row(c) {
     var lines = [];
     data.networks.forEach(function (n) {
@@ -68,6 +85,14 @@
         isLinked ? el('span', { class: 'fa-pill fa-net-pill' + (on ? '' : ' is-warn'), text: T('linked.pill_linked') }) : null,
         A.switchBtn(on, T('linked.switch', { name: c.name, service: netName(n) }), function (v, b) { change(c, n, v, b); }),
       ]));
+      // 1.29.0: „Telegram-Kanäle“ — channels of that service for the child (off by default)
+      if ((data.channels || []).indexOf(n) >= 0) {
+        var cOn = on && !!(c.channels && c.channels[n]);
+        lines.push(el('div', { class: 'fa-lk-net fa-lk-sub' + (on ? '' : ' is-off') }, [
+          el('span', { class: 'fa-lk-tx' }, [el('b', { text: T('linked.channels_title_' + n) }), el('span', { class: 'fa-sub', text: T(cOn ? 'linked.channels_on' : 'linked.channels_off') })]),
+          A.switchBtn(cOn, T('linked.channels_switch_' + n, { name: c.name }), function (v, b) { changeChannels(c, n, v, b); }, !on),
+        ]));
+      }
       if (!data.newChat) return;
       var nOn = on && !!(c.newChat && c.newChat[n]);
       var p = { name: c.name, service: netName(n) };
@@ -86,6 +111,8 @@
   function render() {
     var list = A.clear($('#fa-lk-list'));
     data.children.forEach(function (c) { list.appendChild(row(c)); });
+    // 1.29.0: what „Telegram-Kanäle“ means, once under the list
+    if ((data.channels || []).indexOf('telegram') >= 0) list.appendChild(el('p', { class: 'fa-sub', text: T('linked.channels_hint_telegram') }));
   }
   function load() {
     if (busy) return Promise.resolve();

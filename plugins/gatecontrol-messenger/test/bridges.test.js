@@ -190,7 +190,7 @@ test('QR code; logged out by WhatsApp; unlinking; a cancelled and an expired log
     assert.equal(r.json.code, 'bridge_unsupported');
     // ids are checked before anything reaches GateControl
     assert.equal((await marc('POST', 'bridges/whatsapp/login/a%2F..%2Fb/step', {})).json.code, 'invalid');
-    assert.equal((await marc('POST', 'bridges/telegram/login', { flow: 'qr' })).status, 404);
+    assert.equal((await marc('POST', 'bridges/icq/login', { flow: 'qr' })).status, 404);
   });
 });
 

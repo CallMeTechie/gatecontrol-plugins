@@ -65,6 +65,17 @@
 //                                 completed link or DELETE bridges/:network/handoff
 //     admin                       + animatedStickers (one switch for every bridge that converts animated stickers)
 //
+//   1.24.0 (GateControl with gc.bridges version 11): Telegram — the network 'telegram'.
+//     GET bridges                 per network + needs ('app': Telegram is not set up — an administrator has to enter the
+//                                 application id; 'script' / 'compose': the host is too old), a step after a wrong code or
+//                                 password carries retry: true
+//     admin                       + telegramApp { set, setAt, setBy } (never the value); PUT admin/bridges { telegramApp:
+//                                 { apiId, apiHash } | null } — passed straight to GateControl, which keeps it encrypted;
+//                                 nothing of it is stored or logged here (the plugin's log says „hinterlegt“ / „entfernt“)
+//     children                    + channels { telegram: boolean } per child — „Telegram-Kanäle“ (default off; only next
+//                                 to the permission itself): without it a child's Telegram channels are not shown
+//     login                       number, code and password of a Telegram login pass through (login.step) — never kept
+//
 // Kept here (migration 006): the consent, the parents' grants and WHICH account is linked on which network (the
 // bridge's login id and state — for the count on the admin card and the state without asking the bridge). Never the
 // phone number, never a session key: those stay in the bridge.
@@ -78,7 +89,9 @@ const familie = require('./familie');
 const { fail, posInt, iso, bridgeName } = require('./util');
 const { encode } = require('./vendor/uqr');
 
-const NETWORKS = ['whatsapp', 'signal'];
+const NETWORKS = ['whatsapp', 'signal', 'telegram'];
+// 1.24.0: the networks with channels a child sees only with the parents' second switch („Telegram-Kanäle“)
+const CHANNEL_GRANT_NETS = ['telegram'];
 // every flow a GateControl client can show; which of them a network offers says GateControl (status().networks[].flows)
 const FLOWS = ['phone', 'qr'];
 // 1.23.0: „am PC fortsetzen“ — how long the other screen may pick the step up
@@ -173,6 +186,27 @@ async function adminSet(gc, body, now) {
   if (!p) throw fail('invalid');
   const patch = {};
   if (p.enabled !== undefined) { if (typeof p.enabled !== 'boolean') throw fail('invalid'); patch.enabled = p.enabled; }
+  // 1.24.0 (gc.bridges version 11): the Telegram application id — on its way to GateControl only, never kept or logged here
+  let tgApp = null;
+  if (p.telegramApp !== undefined) {
+    if (!(Number(b.version) >= 11)) throw fail('feature_off');
+    if (p.telegramApp !== null) {
+      const t = p.telegramApp;
+      if (!t || typeof t !== 'object' || Array.isArray(t) || Object.keys(t).some((k) => k !== 'apiId' && k !== 'apiHash')) throw fail('invalid');
+      const id = typeof t.apiId === 'number' ? String(t.apiId) : (typeof t.apiId === 'string' ? t.apiId.trim() : '');
+      const hash = typeof t.apiHash === 'string' ? t.apiHash.trim() : '';
+      if (!/^[1-9][0-9]{4,9}$/.test(id) || !/^[0-9A-Fa-f]{32}$/.test(hash)) throw fail('invalid', { reason: 'telegram_app' });
+      tgApp = { apiId: Number(id), apiHash: hash.toLowerCase() };
+    }
+    if (Object.keys(p).length !== 1) throw fail('invalid');
+    try { await b.configure({ telegramApp: tgApp }); } catch (e) {
+      // the code of the refusal only — never the value
+      await log.add(gc, 'bridge_refused', `configure telegramApp: ${String((e && e.code) || 'error').slice(0, 40)}${e && e.reason ? ' ' + String(e.reason).slice(0, 40) : ''}`, now);
+      throw mapped(e);
+    }
+    await log.add(gc, 'bridge_telegram_app', tgApp ? 'Telegram-Anwendung hinterlegt' : 'Telegram-Anwendung entfernt', now);
+    return adminView(gc, now);
+  }
   // 1.23.0 (gc.bridges version 10): animated stickers converted, or a still picture
   if (p.animatedStickers !== undefined) {
     if (typeof p.animatedStickers !== 'boolean') throw fail('invalid');
@@ -234,6 +268,21 @@ async function newChatGrantsOf(gc, userId) {
   const rows = await store.all(gc, 'SELECT network FROM bridge_grants WHERE child_id = ? AND new_chat = 1', [userId]);
   return new Set(rows.map((r) => r.network));
 }
+/** 1.24.0: the networks whose channels a child may see („Telegram-Kanäle“). */
+async function channelGrantsOf(gc, userId) {
+  const rows = await store.all(gc, 'SELECT network FROM bridge_grants WHERE child_id = ? AND channels = 1', [userId]);
+  return new Set(rows.map((r) => r.network));
+}
+/**
+ * 1.24.0: may this person see the channels of this network? Everybody else yes; a child of Familie only with the parents'
+ * second switch, and only on the networks that have one (Telegram).
+ */
+async function channelsAllowed(gc, userId, net, now, fam) {
+  if (!CHANNEL_GRANT_NETS.includes(net)) return true;
+  const f = fam || await family(gc, now);
+  if (!f.children.has(userId)) return true;
+  return (await channelGrantsOf(gc, userId)).has(net);
+}
 
 /**
  * May this person link on this network? → { allowed, lock: null | 'child', child, newChat }
@@ -266,9 +315,12 @@ async function childrenOf(who) {
     const g = await grantsOf(who.gc, id);
     const l = await linkedOf(who.gc, id);
     const nc = await newChatGrantsOf(who.gc, id);
+    const ch = await channelGrantsOf(who.gc, id);
     out.push({ userId: id, networks: Object.fromEntries(nets.map((n) => [n, g.has(n)])), linked: Object.fromEntries(nets.map((n) => [n, l.has(n)])),
       // 1.16.0: new chats by number (off until a parent allows it; always off without the permission itself)
-      newChat: Object.fromEntries(nets.map((n) => [n, g.has(n) && nc.has(n)])) });
+      newChat: Object.fromEntries(nets.map((n) => [n, g.has(n) && nc.has(n)])),
+      // 1.24.0: „Telegram-Kanäle“ (only the networks that have the switch, only next to the permission itself)
+      ...(nets.some((n) => CHANNEL_GRANT_NETS.includes(n)) ? { channels: Object.fromEntries(nets.filter((n) => CHANNEL_GRANT_NETS.includes(n)).map((n) => [n, g.has(n) && ch.has(n)])) } : {}) });
   }
   return out;
 }
@@ -281,19 +333,26 @@ async function childGrant(who, childId, body) {
   const f = await family(who.gc, who.now);
   if (!f.parents.has(who.parentId)) throw fail('forbidden');
   if (!f.children.has(childId) || !who.users.has(childId)) throw fail('not_found');
+  // 1.24.0: only the services this server offers (WhatsApp always, as before)
+  const offeredNets = await offered(who.gc);
+  const known = NETWORKS.filter((n) => n === 'whatsapp' || offeredNets.includes(n));
   const flags = (o) => {
     if (o === undefined) return {};
     if (!o || typeof o !== 'object' || Array.isArray(o)) throw fail('invalid');
-    for (const [k, v] of Object.entries(o)) if (!NETWORKS.includes(k) || typeof v !== 'boolean') throw fail('invalid');
+    for (const [k, v] of Object.entries(o)) if (!known.includes(k) || typeof v !== 'boolean') throw fail('invalid');
     return o;
   };
   const b = body && typeof body === 'object' && !Array.isArray(body) ? body : {};
   const nets = flags(b.networks);
   // 1.16.0: newChat — new chats by number, only next to the permission itself
   const newChat = flags(b.newChat);
-  if (!Object.keys(nets).length && !Object.keys(newChat).length) throw fail('invalid');
+  // 1.24.0: channels — „Telegram-Kanäle“, only on the networks that have the switch, only next to the permission itself
+  const channels = flags(b.channels);
+  if (Object.keys(channels).some((k) => !CHANNEL_GRANT_NETS.includes(k))) throw fail('invalid');
+  if (!Object.keys(nets).length && !Object.keys(newChat).length && !Object.keys(channels).length) throw fail('invalid');
   const had = await grantsOf(who.gc, childId);
   for (const [k, v] of Object.entries(newChat)) if (v && !(nets[k] === true || (nets[k] === undefined && had.has(k)))) throw fail('invalid');
+  for (const [k, v] of Object.entries(channels)) if (v && !(nets[k] === true || (nets[k] === undefined && had.has(k)))) throw fail('invalid');
   await store.tx(who.gc, async () => {
     for (const [k, v] of Object.entries(nets)) {
       if (v) await store.run(who.gc, 'INSERT INTO bridge_grants (child_id, network, granted_by, at) VALUES (?, ?, ?, ?) ON CONFLICT(child_id, network) DO NOTHING', [childId, k, who.parentId, who.now]);
@@ -303,7 +362,15 @@ async function childGrant(who, childId, body) {
       if (nets[k] === false) continue;
       await store.run(who.gc, 'UPDATE bridge_grants SET new_chat = ? WHERE child_id = ? AND network = ?', [v ? 1 : 0, childId, k]);
     }
+    for (const [k, v] of Object.entries(channels)) {
+      if (nets[k] === false) continue;
+      await store.run(who.gc, 'UPDATE bridge_grants SET channels = ? WHERE child_id = ? AND network = ?', [v ? 1 : 0, childId, k]);
+    }
   });
+  // 1.24.0: the child's channels of that network are looked at again by the apps (they appear or go at the next sync)
+  for (const k of Object.keys(channels)) {
+    await store.tx(who.gc, () => store.run(who.gc, 'UPDATE conversations SET updated_at = ? WHERE bridge_owner = ? AND bridge_net = ? AND bridge_channel = 1', [who.now, childId, k]));
+  }
   const unlinked = {};
   for (const [k, v] of Object.entries(nets)) {
     if (v) continue;
@@ -341,8 +408,9 @@ const childSet = (ctx, childId, body) => childGrant(whoOf(ctx), childId, body);
 
 /**
  * The services for the Familie plugin (its page „Mitglieder“ carries the parents' switches) — `user` is the parent.
- *   bridge_children  {} → { available, networks: ['whatsapp'], newChat, children: [{ userId, networks, linked, newChat }] }
- *   bridge_child_set { childId, networks?: { whatsapp: boolean }, newChat?: { whatsapp: boolean } } → { child, unlinked }
+ *   bridge_children  {} → { available, networks: ['whatsapp'], newChat, channels, children: [{ userId, networks, linked, newChat, channels }] }
+ *   bridge_child_set { childId, networks?: { whatsapp: boolean }, newChat?: { whatsapp: boolean }, channels?: { telegram: boolean } } → { child, unlinked }
+ * channels (1.24.0): the networks with the switch „Telegram-Kanäle“ this server offers (['telegram'] or []).
  * newChat (1.16.0): true when this GateControl can start chats by number — only then has the Familie page the second
  * switch per child.
  */
@@ -355,7 +423,8 @@ async function service(ctx, name, caller, user, payload) {
     const nets = await offered(ctx.gc);
     // nothing to switch while no bridge is offered: the Familie page shows nothing then
     if (!nets.length) return { available: false, networks: [], children: [] };
-    return { available: true, networks: nets, newChat: !!require('./bridgemedia').newChatApi(ctx.gc), children: await childrenOf(who) };
+    const chNets = nets.filter((n) => CHANNEL_GRANT_NETS.includes(n));
+    return { available: true, networks: nets, newChat: !!require('./bridgemedia').newChatApi(ctx.gc), ...(chNets.length ? { channels: chNets } : {}), children: await childrenOf(who) };
   }
   const childId = posInt(payload.childId);
   if (!childId) throw fail('invalid');
@@ -430,6 +499,8 @@ async function mine(ctx) {
       // 1.23.0: the ways in this network offers, what of the history it brings, the consent „Erkennen“ of this network,
       // an open „am PC fortsetzen“
       flows: flowsOf(n),
+      // 1.24.0: what the network still waits for ('app': Telegram not set up by an administrator)
+      ...(['app', 'script', 'compose'].includes(n.needs) ? { needs: n.needs } : {}),
       history: historyOfNet(n),
       recognition: await recognitionNet(ctx, n.id),
       handoff: handoffOf(ctx, n.id),
@@ -674,7 +745,7 @@ async function stepOut(ctx, net, r) {
     processId: r.processId,
     step: {
       id: s.id, type: s.type,
-      ...(s.type === 'user_input' ? { fields: (s.fields || []).map((f) => ({ id: f.id, type: f.type, optional: f.optional === true })) } : {}),
+      ...(s.type === 'user_input' ? { fields: (s.fields || []).map((f) => ({ id: f.id, type: f.type, optional: f.optional === true })), ...(s.retry === true ? { retry: true } : {}) } : {}),
       ...(s.type === 'display_and_wait' ? { display: {
         type: s.display && s.display.type, data: s.display && s.display.data,
         ...(s.display && s.display.type === 'qr' ? { matrix: qrMatrix(s.display.data) } : {}),
@@ -1065,6 +1136,6 @@ async function historyFeature(ctx) {
 }
 
 module.exports = {
-  route, service, offered, adminView, adminSet, mine, allowed, refresh, api, numberOf, newChatFeature, newChatOf, historyFeature, phoneCheck, phoneOf, forgetRawLoginIds, NETWORKS, FLOWS, LOOKUP_TIMEOUT_MS,
+  route, service, offered, adminView, adminSet, mine, allowed, channelsAllowed, refresh, api, numberOf, newChatFeature, newChatOf, historyFeature, phoneCheck, phoneOf, forgetRawLoginIds, NETWORKS, FLOWS, LOOKUP_TIMEOUT_MS,
   _resetLookups: () => { lookups.clear(); recent.clear(); handoffs.clear(); phoneCheckedAt = 0; }, HANDOFF_MS,
 };

@@ -35,7 +35,9 @@ const PLUGIN = 'gatecontrol-messenger';
 const KEEP_MS = 5 * 60000;
 // 1.28.0: Signal next to WhatsApp (Messenger ≥ 1.23.0 on a GateControl with Signal) — a column only for a service the
 // Messenger offers (bridge_children.networks)
-const NETWORKS = ['whatsapp', 'signal'];
+// 1.29.0: Telegram (Messenger ≥ 1.24.0) with its second switch „Telegram-Kanäle“ (channels — default off, only next to
+// the permission itself; bridge_children.channels names the services that have it)
+const NETWORKS = ['whatsapp', 'signal', 'telegram'];
 const cache = new Map(); // parent id → { at, value }
 
 async function offered(gc, service) {
@@ -50,12 +52,13 @@ function clean(x) {
   if (!x || x.ok === false || x.available !== true || !Array.isArray(x.networks) || !Array.isArray(x.children)) return NONE;
   const networks = x.networks.filter((n) => NETWORKS.includes(n));
   if (!networks.length) return NONE;
-  return { available: true, networks, newChat: x.newChat === true, children: x.children.filter((c) => c && Number.isSafeInteger(c.userId)).map((c) => childOf(c, networks)) };
+  const channels = Array.isArray(x.channels) ? x.channels.filter((n) => networks.includes(n)) : [];
+  return { available: true, networks, newChat: x.newChat === true, ...(channels.length ? { channels } : {}), children: x.children.filter((c) => c && Number.isSafeInteger(c.userId)).map((c) => childOf(c, networks, channels)) };
 }
 
-function childOf(c, networks) {
-  const flags = (o) => Object.fromEntries(networks.map((n) => [n, !!(o && o[n] === true)]));
-  return { userId: c.userId, networks: flags(c.networks), linked: flags(c.linked), newChat: flags(c.newChat) };
+function childOf(c, networks, channels = []) {
+  const flags = (o, list = networks) => Object.fromEntries(list.map((n) => [n, !!(o && o[n] === true)]));
+  return { userId: c.userId, networks: flags(c.networks), linked: flags(c.linked), newChat: flags(c.newChat), ...(channels.length ? { channels: flags(c.channels, channels) } : {}) };
 }
 
 async function ask(gc, parentId, now) {
@@ -74,7 +77,7 @@ async function ask(gc, parentId, now) {
 function face(fam, c) {
   const m = fam.byId.get(c.userId);
   if (!m || m.role !== 'child') return null;
-  return { userId: m.userId, name: m.name, ...members.faceOf(m), networks: c.networks, linked: c.linked, newChat: c.newChat };
+  return { userId: m.userId, name: m.name, ...members.faceOf(m), networks: c.networks, linked: c.linked, newChat: c.newChat, ...(c.channels ? { channels: c.channels } : {}) };
 }
 
 /** GET messengers */
@@ -83,7 +86,7 @@ async function view(gc, r) {
   if (!manage) return { messengers: { available: false, manage, networks: [], newChat: false, children: [] } };
   const v = await ask(gc, r.me.userId, r.now);
   const children = v.children.map((c) => face(r.fam, c)).filter(Boolean);
-  return { messengers: { available: v.available && children.length > 0, manage, networks: v.networks, newChat: v.newChat === true, children } };
+  return { messengers: { available: v.available && children.length > 0, manage, networks: v.networks, newChat: v.newChat === true, ...(v.channels && v.channels.length ? { channels: v.channels } : {}), children } };
 }
 
 /** PUT messengers/<childId> */
@@ -102,11 +105,17 @@ async function set(gc, r, childId, body) {
   const nets = flags(b.networks);
   // 1.25.0: new chats by number — only with a Messenger that says it knows them
   const newChat = flags(b.newChat);
-  if (!nets && !newChat) throw fail('invalid');
+  // 1.29.0: „Telegram-Kanäle“ — only with a Messenger that names the switch
+  const channels = flags(b.channels);
+  if (!nets && !newChat && !channels) throw fail('invalid');
   if (!(await offered(gc, 'bridge_child_set'))) throw fail('unavailable');
   if (newChat && !(await ask(gc, r.me.userId, r.now)).newChat) throw fail('unavailable');
+  if (channels) {
+    const have = (await ask(gc, r.me.userId, r.now)).channels || [];
+    if (Object.keys(channels).some((k) => !have.includes(k))) throw fail('unavailable');
+  }
   cache.delete(r.me.userId);
-  const payload = { childId: id, ...(nets ? { networks: nets } : {}), ...(newChat ? { newChat } : {}) };
+  const payload = { childId: id, ...(nets ? { networks: nets } : {}), ...(newChat ? { newChat } : {}), ...(channels ? { channels } : {}) };
   let x;
   try { x = await gc.services.call({ plugin: PLUGIN, service: 'bridge_child_set', userId: r.me.userId, payload }); }
   catch (e) { gc.log.warn('messenger bridges not changed', (e && e.code) || 'error'); throw fail('unavailable'); }
@@ -116,7 +125,8 @@ async function set(gc, r, childId, body) {
   }
   const networks = Object.keys(nets || {});
   // the services the Messenger named for this child (an older Messenger: WhatsApp only)
-  const child = face(r.fam, childOf(x.child, NETWORKS.filter((n) => n === 'whatsapp' || (x.child && x.child.networks && Object.prototype.hasOwnProperty.call(x.child.networks, n)))));
+  const has = (o, n) => !!(o && Object.prototype.hasOwnProperty.call(o, n));
+  const child = face(r.fam, childOf(x.child, NETWORKS.filter((n) => n === 'whatsapp' || has(x.child && x.child.networks, n)), NETWORKS.filter((n) => has(x.child && x.child.channels, n))));
   const unlinked = {};
   for (const n of networks) if (x.unlinked && typeof x.unlinked[n] === 'boolean') unlinked[n] = x.unlinked[n];
   return { child, unlinked };

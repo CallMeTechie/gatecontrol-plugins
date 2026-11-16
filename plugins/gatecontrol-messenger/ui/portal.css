@@ -359,6 +359,9 @@ button.ms-loc:hover .ms-locmap{filter:brightness(1.05)}
 .ms-net svg{display:block}
 .ms-net-whatsapp{background:#1f8f5a;color:#fff}
 .ms-net-signal{background:#3a76f0;color:#fff}
+.ms-net-telegram{background:#27a7e7;color:#fff}
+.ms-br-mark-telegram{color:#27a7e7}
+.ms-bot-hint{display:flex;align-items:center;gap:6px;margin-top:6px;font-size:12px;color:var(--ms-muted,#6b7280)}
 .ms-br-mark-signal{color:#3a76f0}
 .ms-brp-steps-plain{margin-top:0}
 .ms-brp-ok{display:flex;align-items:flex-start;gap:8px;margin:0;font-size:13px}

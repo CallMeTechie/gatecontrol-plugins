@@ -33,6 +33,13 @@
 // timer counts from reading on); the bridge's notice about a change becomes the system line „disappearing“; a view-once
 // picture (message.viewOnce) the placeholder 'view_once' — „Einmal-Ansicht. Öffne sie in Signal.“, never the file.
 //
+// 1.24.0 (GateControl with gc.bridges version 11): Telegram. chat.bot → the conversation's bridge.bot („Bot“), chat.members
+// → bridge.members (a group of LARGE_GROUP and more is created muted); a Telegram channel is a channel like WhatsApp's; a
+// child sees Telegram's channels only with the parents' „Telegram-Kanäle“ (bridges.channelsAllowed — events of such a
+// channel are dropped, the list leaves it out); message.tooLarge (the file did not even reach GateControl) → a file
+// placeholder that failed with the reason too_large („Zu groß, öffne es in Telegram“); message.buttons → bridge.buttons
+// (the hint „Diese Nachricht hat Knöpfe. Öffne sie in Telegram.“).
+//
 // Clients that do not know bridged chats never see one: every route answers 404 for a bridged conversation unless
 // the request says ?bridged=1 (or `bridged: true` in its body — the buttons of a push; README "App-API", since 1.14.0).
 
@@ -48,8 +55,10 @@ const bridgechannels = require('./bridgechannels');
 const scan = require('./scan');
 const { fail, iso, bridgeName } = require('./util');
 
-const NETWORKS = ['whatsapp', 'signal'];
-const LABEL = { whatsapp: 'WhatsApp', signal: 'Signal' };
+const NETWORKS = ['whatsapp', 'signal', 'telegram'];
+const LABEL = { whatsapp: 'WhatsApp', signal: 'Signal', telegram: 'Telegram' };
+// 1.24.0: a Telegram group of this many members and more is created muted (its bell turns pushes on)
+const LARGE_GROUP = 200;
 // 1.23.0: the longest timer a bridged chat carries (a year)
 const TIMER_MAX_S = 366 * 86400;
 const REF_RE = /^r[A-Za-z0-9_-]{20}$/;
@@ -152,6 +161,9 @@ async function convInfo(ctx, conv) {
     // one — 'off'), a chat the person may not write into (a channel, a group where only admins write)
     channel: !!conv.bridge_channel, readOnly: !!(conv.bridge_read_only || conv.bridge_channel),
     ...(conv.bridge_channel ? { reactions: await bridgechannels.reactState(ctx, conv.bridge_net) } : {}),
+    // 1.24.0: a chat with a Telegram bot; the member count of a group as the service reports it
+    ...(conv.bridge_bot ? { bot: true } : {}),
+    ...(Number.isSafeInteger(conv.bridge_members) && conv.bridge_members > 0 && conv.kind === 'group' ? { members: conv.bridge_members } : {}),
     supports: media ? SUPPORTS.concat(bridgemedia.SUPPORTS) : SUPPORTS,
     ...(media ? { mediaTypes: { image: bridgemedia.OUT_TYPES.image, video: bridgemedia.OUT_TYPES.video, voice: bridgemedia.OUT_TYPES.voice, file: null } } : {}),
   };
@@ -219,6 +231,8 @@ async function decorate(ctx, rows, out) {
       placeholder: ph,
       // 1.20.0: written by the channel (a post of a channel)
       channel: channels.has(r.conv_id) && r.sender_id == null && r.ext_sender == null,
+      // 1.24.0: a bot's message had buttons the bridge could not carry
+      ...(meta.bridge && meta.bridge.buttons === true ? { buttons: true } : {}),
     };
     // 1.20.0: the format of the text and the link preview (bridgechannels.viewFields)
     if (!r.deleted_at) Object.assign(o, await bridgechannels.viewFields(ctx, r, meta));
@@ -259,15 +273,26 @@ async function ensureConv(c, ev) {
   // 1.20.0 (gc.bridges version 7): a channel, a chat the person may not write into — only when the event knows it
   const channel = typeof chat.channel === 'boolean' ? (chat.channel ? 1 : 0) : null;
   const readOnly = typeof chat.readOnly === 'boolean' ? (chat.readOnly ? 1 : 0) : null;
+  // 1.24.0 (gc.bridges version 11): a chat with a bot, the member count — only when the event knows them
+  const bot = chat.bot === true ? 1 : (chat.bot === false ? 0 : null);
+  const members = Number.isSafeInteger(chat.members) && chat.members > 0 && chat.members <= 10000000 ? chat.members : null;
+  const large = kind === 'group' && members != null && members >= LARGE_GROUP;
   let conv = await convOf(c.gc, ev.userId, ev.network, chat.id);
   if (!conv) {
-    const r = await store.run(c.gc, 'INSERT INTO conversations (kind, title_enc, created_by, created_at, updated_at, bridge_net, bridge_ref, bridge_owner, bridge_channel, bridge_read_only) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)',
-      [kind, name ? seal.seal(name) : null, c.now, c.now, ev.network, chat.id, ev.userId, channel || 0, readOnly || 0]);
+    const r = await store.run(c.gc, 'INSERT INTO conversations (kind, title_enc, created_by, created_at, updated_at, bridge_net, bridge_ref, bridge_owner, bridge_channel, bridge_read_only, bridge_bot, bridge_members) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [kind, name ? seal.seal(name) : null, c.now, c.now, ev.network, chat.id, ev.userId, channel || 0, readOnly || 0, bot || 0, members]);
     conv = await store.one(c.gc, 'SELECT * FROM conversations WHERE id = ?', [r.lastInsertRowid]);
-    // a channel is muted from the start (its bell turns pushes on)
-    await store.run(c.gc, "INSERT INTO members (conv_id, user_id, role, joined_at, joined_msg_id, last_read_id, last_delivered_id, updated_at, notify) VALUES (?, ?, 'member', ?, 0, 0, 0, ?, ?)", [conv.id, ev.userId, c.now, c.now, channel ? 'none' : 'all']);
+    // a channel is muted from the start (its bell turns pushes on); 1.24.0: a large group too
+    await store.run(c.gc, "INSERT INTO members (conv_id, user_id, role, joined_at, joined_msg_id, last_read_id, last_delivered_id, updated_at, notify) VALUES (?, ?, 'member', ?, 0, 0, 0, ?, ?)", [conv.id, ev.userId, c.now, c.now, channel || large ? 'none' : 'all']);
     await bridgemedia.chatAvatar(c, conv, chat.avatar);
     return conv;
+  }
+  if ((bot != null && bot !== conv.bridge_bot) || (members != null && members !== conv.bridge_members)) {
+    // a group that turns out large before anything was said in it: muted as if it were new
+    if (large && !conv.last_msg_id && !(conv.bridge_members >= LARGE_GROUP)) await store.run(c.gc, "UPDATE members SET notify = 'none', updated_at = ? WHERE conv_id = ? AND user_id = ?", [c.now, conv.id, ev.userId]);
+    await store.run(c.gc, 'UPDATE conversations SET bridge_bot = ?, bridge_members = ?, updated_at = ? WHERE id = ?', [bot != null ? bot : conv.bridge_bot, members != null ? members : conv.bridge_members, c.now, conv.id]);
+    conv = await store.one(c.gc, 'SELECT * FROM conversations WHERE id = ?', [conv.id]);
+    if (conv.last_msg_id) live.queue(c.box, [ev.userId], 'conversation.update', { conversationId: conv.id, reason: 'bridge' });
   }
   if ((channel != null && channel !== conv.bridge_channel) || (readOnly != null && readOnly !== conv.bridge_read_only)) {
     // a chat known before 1.20.0 turns out to be a channel: it goes muted to the page „Kanäle“ (once)
@@ -333,11 +358,25 @@ async function unpark(c, conv, eventId) {
   }
 }
 
+/** 1.24.0: is this event of a Telegram channel a child may not see (without the parents' „Telegram-Kanäle“)? */
+async function channelHidden(c, ev) {
+  if (ev.network !== 'telegram') return false;
+  const chat = ev.chat && typeof ev.chat === 'object' ? ev.chat : {};
+  let channel = chat.channel === true;
+  if (typeof chat.channel !== 'boolean' && REF_RE.test(String(chat.id || ''))) {
+    const conv = await convOf(c.gc, ev.userId, ev.network, chat.id);
+    channel = !!(conv && conv.bridge_channel);
+  }
+  return channel && !(await require('./bridges').channelsAllowed(c.gc, ev.userId, ev.network, c.now));
+}
+
 /** One neutral event → the person's chats. Runs inside a transaction; events and pushes go to c.box. */
 async function apply(c, ev, { parked = false } = {}) {
   if (!ev || typeof ev !== 'object' || !NETWORKS.includes(ev.network) || !c.users.has(ev.userId)) return;
   // a child whose parents did not (or no longer) allow the service gets nothing from it
   if (!(await require('./bridges').allowed(c.gc, ev.userId, ev.network, c.now)).allowed) { c.dropped = (c.dropped || 0) + 1; return; }
+  // 1.24.0: a Telegram channel of a child without „Telegram-Kanäle“ — nothing of it (the chat's kind is in the event or known)
+  if (await channelHidden(c, ev)) { c.dropped = (c.dropped || 0) + 1; return; }
   const at = Number.isFinite(Number(ev.at)) && Number(ev.at) > 0 ? Math.min(Number(ev.at), c.now) : c.now;
   const users = [ev.userId];
   // 1.17.0: older messages (bridgehistory.js) — no push, read already, one live event per chat
@@ -384,6 +423,8 @@ async function apply(c, ev, { parked = false } = {}) {
       text = null;
     } else if (sender.system && !byChannel) { kind = 'system'; meta.system = { event: 'bridge_notice', network: ev.network }; }
     else if (ev.viewOnce === true) { meta.bridge = { placeholder: 'view_once', name: null }; text = null; }
+    // 1.24.0: a file too large to reach GateControl at all — a file placeholder that failed („Zu groß, öffne es in …“)
+    else if (ev.tooLarge === true) { meta.bridge = { placeholder: 'file', name: null, reason: 'too_large' }; text = null; }
     else if (ev.kind === 'media') {
       // 1.15.0: the file's reference and details too — fetched afterwards into the media of this plugin (bridgemedia.js)
       meta.bridge = bridgemedia.placeholderOf(ev.media && typeof ev.media === 'object' ? ev.media : {}, PLACEHOLDERS);
@@ -395,6 +436,8 @@ async function apply(c, ev, { parked = false } = {}) {
     }
     const preview = kind === 'text' ? bridgechannels.cleanPreview(ev.preview) : null;
     if (preview) meta.preview = preview;
+    // 1.24.0: a bot's message had buttons (the bridge cannot carry them)
+    if (ev.buttons === true && kind !== 'system') meta.bridge = { ...(meta.bridge || {}), buttons: true };
     let replyTo = null;
     if (EVENT_RE.test(String(ev.replyTo || ''))) { const q = await msgByEvent(c.gc, conv.id, ev.replyTo); replyTo = q && !q.deleted_at ? q.id : null; }
     const cx = { ...c, now: at };
@@ -918,6 +961,6 @@ async function hasChats(gc, userId) {
 
 module.exports = {
   api, isBridged, via, convInfo, marks, marksFor, decorate, apply, applyEphemeral, pump, sweep, push, gate, writable, checkBody, sendOut, resend, editOut, deleteOut, reactOut, readOut, typingOut,
-  refreshLinks, stateFor, hasChats, openChat, mapped, fixNames, titleFor, titleLabel, NETWORKS, LABEL, SUPPORTS, PLACEHOLDERS,
+  refreshLinks, stateFor, hasChats, openChat, mapped, fixNames, titleFor, titleLabel, NETWORKS, LABEL, SUPPORTS, PLACEHOLDERS, LARGE_GROUP,
   _reset: () => { linkChecked.clear(); pumping = Promise.resolve(); namesFixed = false; },
 };
