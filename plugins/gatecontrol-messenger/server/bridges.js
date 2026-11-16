@@ -53,6 +53,18 @@
 //                                 (gc.bridges.health, no person needed) — a push „Handy seit N Tagen nicht gesehen“,
 //                                 once per time it happens
 //
+//   1.23.0 (GateControl with gc.bridges version 10): Signal — the network 'signal' next to WhatsApp.
+//     GET bridges                 per network + flows (Signal: ['qr'] only), history { maxDays, phoneConfirms } (Signal:
+//                                 at most 30 days, once at the link, the phone asks), recognition { available, asked,
+//                                 allowed } (one consent per network), handoff (an open „am PC fortsetzen“); and handoff
+//                                 at the top (the open one of this person)
+//     PUT bridges/recognition     { allowed, network? } (network: whatsapp when missing) → { recognition, recognitions }
+//     POST bridges/:network/handoff   { target: 'portal' | 'windows' } → { handoff: { network, target, expiresAt, portalPath } }
+//                                 — the phone cannot scan its own screen: the same step on a second screen. Kept in memory
+//                                 for HANDOFF_MS, a live event bridge.handoff to the person's other devices; gone at a
+//                                 completed link or DELETE bridges/:network/handoff
+//     admin                       + animatedStickers (one switch for every bridge that converts animated stickers)
+//
 // Kept here (migration 006): the consent, the parents' grants and WHICH account is linked on which network (the
 // bridge's login id and state — for the count on the admin card and the state without asking the bridge). Never the
 // phone number, never a session key: those stay in the bridge.
@@ -61,12 +73,20 @@ const store = require('./store');
 const log = require('./log');
 const seal = require('./seal');
 const config = require('./config');
+const live = require('./live');
 const familie = require('./familie');
 const { fail, posInt, iso, bridgeName } = require('./util');
 const { encode } = require('./vendor/uqr');
 
-const NETWORKS = ['whatsapp'];
+const NETWORKS = ['whatsapp', 'signal'];
+// every flow a GateControl client can show; which of them a network offers says GateControl (status().networks[].flows)
 const FLOWS = ['phone', 'qr'];
+// 1.23.0: „am PC fortsetzen“ — how long the other screen may pick the step up
+const HANDOFF_MS = 10 * 60000;
+const HANDOFF_TARGETS = ['portal', 'windows'];
+// the portal's section of this plugin; the page there opens the step itself (GET bridges → handoff)
+const PORTAL_PATH = '/portal#plg-gatecontrol-messenger';
+const handoffs = new Map(); // userId → { network, target, at }
 const ID_RE = /^[A-Za-z0-9._:=+-]{1,128}$/;
 const STATES = ['connected', 'connecting', 'logged_out', 'error', 'unknown'];
 
@@ -153,6 +173,12 @@ async function adminSet(gc, body, now) {
   if (!p) throw fail('invalid');
   const patch = {};
   if (p.enabled !== undefined) { if (typeof p.enabled !== 'boolean') throw fail('invalid'); patch.enabled = p.enabled; }
+  // 1.23.0 (gc.bridges version 10): animated stickers converted, or a still picture
+  if (p.animatedStickers !== undefined) {
+    if (typeof p.animatedStickers !== 'boolean') throw fail('invalid');
+    if (!(Number(b.version) >= 10)) throw fail('feature_off');
+    patch.animatedStickers = p.animatedStickers;
+  }
   if (p.networks !== undefined) {
     if (!p.networks || typeof p.networks !== 'object' || Array.isArray(p.networks)) throw fail('invalid');
     patch.networks = {};
@@ -231,15 +257,18 @@ async function linkedOf(gc, userId) {
 async function childrenOf(who) {
   const f = await family(who.gc, who.now);
   if (!f.parents.has(who.parentId)) throw fail('forbidden');
+  // 1.23.0: one column per service this server offers (WhatsApp, Signal) — a service that is off has none
+  const offeredNets = await offered(who.gc);
+  const nets = NETWORKS.filter((n) => offeredNets.includes(n) || n === 'whatsapp');
   const out = [];
   for (const id of [...f.children].sort((a, b) => a - b)) {
     if (!who.users.has(id)) continue;
     const g = await grantsOf(who.gc, id);
     const l = await linkedOf(who.gc, id);
     const nc = await newChatGrantsOf(who.gc, id);
-    out.push({ userId: id, networks: Object.fromEntries(NETWORKS.map((n) => [n, g.has(n)])), linked: Object.fromEntries(NETWORKS.map((n) => [n, l.has(n)])),
+    out.push({ userId: id, networks: Object.fromEntries(nets.map((n) => [n, g.has(n)])), linked: Object.fromEntries(nets.map((n) => [n, l.has(n)])),
       // 1.16.0: new chats by number (off until a parent allows it; always off without the permission itself)
-      newChat: Object.fromEntries(NETWORKS.map((n) => [n, g.has(n) && nc.has(n)])) });
+      newChat: Object.fromEntries(nets.map((n) => [n, g.has(n) && nc.has(n)])) });
   }
   return out;
 }
@@ -398,13 +427,74 @@ async function mine(ctx) {
       phone: phoneOf(logins, await store.all(ctx.gc, 'SELECT phone_offline_since FROM bridge_links WHERE user_id = ? AND network = ? AND phone_offline_since IS NOT NULL', [ctx.viewer, n.id]), ctx.now),
       // the name is the person's own account at the service (WhatsApp: their number) — theirs to see, nobody else's
       logins: logins.map((l) => ({ id: l.id, name: typeof l.name === 'string' ? l.name.slice(0, 80) : '', state: STATES.includes(l.state) ? l.state : 'unknown', since: l.since || null })),
+      // 1.23.0: the ways in this network offers, what of the history it brings, the consent „Erkennen“ of this network,
+      // an open „am PC fortsetzen“
+      flows: flowsOf(n),
+      history: historyOfNet(n),
+      recognition: await recognitionNet(ctx, n.id),
+      handoff: handoffOf(ctx, n.id),
     });
   }
   // where the bridges run (today always the server) — the page says so
-  return { available: true, location: s.location === 'server' ? 'server' : 'gateway', networks: out, history: await historyMine(ctx), recognition: await recognitionMine(ctx) };
+  return { available: true, location: s.location === 'server' ? 'server' : 'gateway', networks: out, history: await historyMine(ctx), recognition: await recognitionMine(ctx), handoff: handoffOf(ctx, null) };
+}
+
+/** 1.23.0: the ways in a network offers (GateControl's word; an older GateControl: every one this page knows). */
+function flowsOf(n) {
+  return n && Array.isArray(n.flows) ? n.flows.filter((f) => FLOWS.includes(f)) : [...FLOWS];
+}
+/** 1.23.0: what of the history a network brings: { maxDays (null: as chosen), phoneConfirms } */
+function historyOfNet(n) {
+  const h = n && n.history && typeof n.history === 'object' ? n.history : {};
+  return { maxDays: Number.isSafeInteger(h.maxDays) && h.maxDays > 0 ? h.maxDays : null, phoneConfirms: h.phoneConfirms === true };
+}
+
+// ─── 1.23.0: „Im Portal fortsetzen“ / „Im Windows-Client fortsetzen“ ─────────────────
+
+/** The open handoff of the viewer (on one network, or any) → { network, target, expiresAt } | null */
+function handoffOf(ctx, net) {
+  const h = handoffs.get(ctx.viewer);
+  if (!h || ctx.now - h.at >= HANDOFF_MS) { if (h) handoffs.delete(ctx.viewer); return null; }
+  if (net && h.network !== net) return null;
+  return { network: h.network, target: h.target, expiresAt: iso(h.at + HANDOFF_MS) };
+}
+
+/** POST bridges/:network/handoff { target } — the step goes to a second screen (only a network that links by QR code). */
+async function handoffStart(ctx, net, body) {
+  const target = body && typeof body === 'object' ? body.target : null;
+  if (!HANDOFF_TARGETS.includes(target)) throw fail('invalid');
+  await gate(ctx, net);
+  const n = ((await hostStatus(ctx.gc)).networks || []).find((x) => x && x.id === net && x.enabled);
+  if (!n || !flowsOf(n).includes('qr')) throw fail('invalid');
+  if (handoffs.size > 2000) handoffs.clear();
+  handoffs.set(ctx.viewer, { network: net, target, at: ctx.now });
+  const h = handoffOf(ctx, net);
+  // the person's other devices (the Windows client, an open portal) open the step themselves
+  if (ctx.box) live.queue(ctx.box, [ctx.viewer], 'bridge.handoff', h);
+  return { handoff: { ...h, portalPath: PORTAL_PATH } };
+}
+
+/** DELETE bridges/:network/handoff — the person changed her mind (or the link is done). */
+function handoffEnd(ctx, net) {
+  const h = handoffs.get(ctx.viewer);
+  if (h && h.network === net) {
+    handoffs.delete(ctx.viewer);
+    if (ctx.box) live.queue(ctx.box, [ctx.viewer], 'bridge.handoff', { network: net, target: null, expiresAt: null });
+  }
+  return { handoff: null };
 }
 
 // ─── 1.21.0: „Dürfen andere auf diesem Server dich an deinem WhatsApp erkennen?“ ─────────────────
+
+/** 1.23.0: the consent of one network (gc.bridges version 10 knows one per network; 9 only WhatsApp's) → { available, asked, allowed } | null */
+async function recognitionNet(ctx, net) {
+  const b = recognitionApi(ctx.gc);
+  if (!b || (net !== 'whatsapp' && !(Number(b.version) >= 10))) return null;
+  try {
+    const r = await b.recognition.get(ctx.viewer, net);
+    return { available: true, asked: r.asked === true, allowed: r.allowed === true };
+  } catch { return null; }
+}
 
 /** gc.bridges with recognition (version ≥ 9), else null. */
 function recognitionApi(gc) {
@@ -425,14 +515,19 @@ async function recognitionMine(ctx) {
   } catch { return null; }
 }
 
-/** PUT bridges/recognition { allowed } → { recognition } */
+/** PUT bridges/recognition { allowed, network? } → { recognition, recognitions } (1.23.0: one consent per network) */
 async function recognitionSet(ctx, body) {
   const b = recognitionApi(ctx.gc);
   if (!b) throw fail('feature_off');
   const allowed = body && typeof body === 'object' ? body.allowed : undefined;
   if (typeof allowed !== 'boolean') throw fail('invalid');
-  try { await b.recognition.set(ctx.viewer, allowed, 'whatsapp'); } catch (e) { throw mapped(e); }
-  return { recognition: await recognitionMine(ctx) };
+  const net = body.network == null ? 'whatsapp' : body.network;
+  if (!NETWORKS.includes(net)) throw fail('invalid');
+  if (net !== 'whatsapp' && !(Number(b.version) >= 10)) throw fail('feature_off');
+  try { await b.recognition.set(ctx.viewer, allowed, net); } catch (e) { throw mapped(e); }
+  const recognitions = {};
+  for (const n of NETWORKS) recognitions[n] = await recognitionNet(ctx, n);
+  return { recognition: await recognitionMine(ctx), recognitions };
 }
 
 // ─── 1.17.0: older messages, the phone ─────────────────
@@ -571,6 +666,8 @@ async function stepOut(ctx, net, r) {
   const s = (r && r.step) || {};
   if (s.type === 'complete') {
     try { await remember(ctx.gc, ctx.viewer, net, await api(ctx.gc).logins(ctx.viewer, net), ctx.now); } catch { /* GET bridges catches up */ }
+    // 1.23.0: linked — the other screen's step is done
+    handoffEnd(ctx, net);
     return { processId: r.processId, step: { id: s.id, type: 'complete', loginId: s.loginId || null } };
   }
   return {
@@ -590,6 +687,9 @@ async function loginStart(ctx, net, body) {
   const flow = body && body.flow;
   if (!FLOWS.includes(flow)) throw fail('invalid');
   const b = await gate(ctx, net);
+  // 1.23.0: only a way in this network offers (Signal: the QR code)
+  const n = ((await hostStatus(ctx.gc)).networks || []).find((x) => x && x.id === net);
+  if (n && !flowsOf(n).includes(flow)) throw fail('invalid');
   try { return await stepOut(ctx, net, await b.login.start(ctx.viewer, net, flow)); } catch (e) { throw mapped(e); }
 }
 
@@ -927,6 +1027,9 @@ async function route(ctx, req, seg) {
   if (seg.length < 3) throw fail('not_found');
   const net = network(seg[1]);
   if (seg.length === 3 && seg[2] === 'consent' && m === 'POST') return consent(ctx, net, req.body);
+  // 1.23.0: the step on a second screen
+  if (seg.length === 3 && seg[2] === 'handoff' && m === 'POST') return handoffStart(ctx, net, req.body);
+  if (seg.length === 3 && seg[2] === 'handoff' && m === 'DELETE') return handoffEnd(ctx, net);
   if (seg.length === 3 && seg[2] === 'login' && m === 'POST') return { login: await loginStart(ctx, net, req.body) };
   if (seg.length === 5 && seg[2] === 'login' && m === 'POST') return { login: await loginStep(ctx, net, seg[3], seg[4], req.body) };
   if (seg.length === 4 && seg[2] === 'login' && m === 'DELETE') return loginCancel(ctx, net, seg[3]);
@@ -963,5 +1066,5 @@ async function historyFeature(ctx) {
 
 module.exports = {
   route, service, offered, adminView, adminSet, mine, allowed, refresh, api, numberOf, newChatFeature, newChatOf, historyFeature, phoneCheck, phoneOf, forgetRawLoginIds, NETWORKS, FLOWS, LOOKUP_TIMEOUT_MS,
-  _resetLookups: () => { lookups.clear(); recent.clear(); phoneCheckedAt = 0; },
+  _resetLookups: () => { lookups.clear(); recent.clear(); handoffs.clear(); phoneCheckedAt = 0; }, HANDOFF_MS,
 };

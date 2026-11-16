@@ -1,4 +1,4 @@
-<!-- version: 1.21.0 -->
+<!-- version: 1.23.0 -->
 # Messenger
 
 ## Was das Plugin kann
@@ -65,11 +65,24 @@ Der Browser erlaubt den Standort im Portal nicht. Setz den Punkt auf der Karte v
 **Ich finde den Familien-Chat nicht.**
 Den führt das Plugin Familie (Seite „Funktionen“ › Messenger-Gruppe).
 
+**Der ältere Signal-Verlauf fehlt.**
+Signal liefert ihn nur einmal beim Verknüpfen, und nur wenn du auf dem Handy „Übertragen“ wählst. GateControl nimmt höchstens 30 Tage. Wer später umstellt, bekommt bei Signal nichts mehr.
+
 **Der ältere WhatsApp-Verlauf fehlt.**
 Er kommt nur beim Verknüpfen und erscheint nachts. Steht „Älteren Verlauf laden“ auf „Aus“, oder hat der Administrator ihn abgeschaltet, kommt keiner. WhatsApp schickt nicht für jeden Chat alles mit.
 
 **Alte Nachrichten sind weg.**
 Der Administrator hat eine Aufbewahrung eingestellt, oder der Chat ist selbstlöschend.
+
+## Neu in 1.23.0
+
+- **Signal im Messenger.** Unter „Verknüpfte Dienste“ verknüpfst du dein eigenes Signal – wie Signal Desktop, als verknüpftes Gerät. Signal-Chats stehen mit blauem Logo in derselben Liste wie GateControl und WhatsApp, mit Chip „Signal“, Gruppen inklusive.
+- **Nur per QR-Code.** Signal verknüpft nur per Code auf einem zweiten Bildschirm. In der App tippst du „Im Portal fortsetzen“ oder „Im Windows-Client fortsetzen“ – der Schritt öffnet sich dort, angemeldet als du, und du scannst ihn mit Signal auf dem Handy. Der Code erneuert sich von selbst.
+- **Älterer Verlauf:** Signal fragt nach dem Scannen auf dem Handy, ob es den Verlauf überträgt. GateControl übernimmt davon höchstens die letzten 30 Tage, nachts und in Häppchen. Später geht das bei Signal nicht mehr.
+- **Sicherheitsnummern** prüfst du nur in der Signal-App: Die Brücke nimmt neue Schlüssel von selbst an, oben im Signal-Chat steht ein Hinweis dazu.
+- **Verschwindende Nachrichten** aus Signal gelten auch hier („Nachrichten verschwinden nach 1 Woche“); ändern geht nur in Signal. Eine **Einmal-Ansicht** öffnest du in Signal. Sticker kommen als Bild.
+- **Erkennen je Dienst:** Nach dem Verknüpfen fragt der Messenger einmal: „Dürfen andere auf diesem Server dich an deinem Signal erkennen?“ – unabhängig von WhatsApp, änderbar in „Mein Profil“ unter „Erkennung“.
+- **Für Administratoren:** In der Karte „Brücken“ eine Zeile für Signal und der Schalter „Animierte Sticker umwandeln“ (Standard aus: Standbild). Kennt die `docker-compose.yml` des Servers Signal noch nicht, sagt die Karte das – tausche sie einmal gegen die neue aus.
 
 ## Neu in 1.21.0
 

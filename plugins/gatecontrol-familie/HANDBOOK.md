@@ -1,5 +1,9 @@
-<!-- version: 1.26.0 -->
+<!-- version: 1.28.0 -->
 # Family
+
+## New in 1.28.0
+
+- **Signal under “Other messengers”:** when your server offers the Signal bridge (Messenger plugin 1.23.0 or later), the card **“Other messengers”** shows a row **Signal** next to WhatsApp for each child – with its own switch, off at first. Taking it back ends the child's link at Signal. The services' age limits still apply; parents check them themselves.
 
 ## New in 1.26.0
 

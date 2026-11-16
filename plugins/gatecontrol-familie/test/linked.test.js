@@ -101,7 +101,7 @@ test('parents see every child with the switch per service; nobody else sees or c
 
     // only children of the family, only known services, only booleans
     for (const [id, body, code] of [[MARC.id, { networks: { whatsapp: true } }, 'not_found'], [9999, { networks: { whatsapp: true } }, 'not_found'], ['x', { networks: { whatsapp: true } }, 'not_found'],
-      [LENA.id, {}, 'invalid'], [LENA.id, { networks: {} }, 'invalid'], [LENA.id, { networks: { signal: true } }, 'invalid'], [LENA.id, { networks: { whatsapp: 1 } }, 'invalid']]) {
+      [LENA.id, {}, 'invalid'], [LENA.id, { networks: {} }, 'invalid'], [LENA.id, { networks: { telegram: true } }, 'invalid'], [LENA.id, { networks: { whatsapp: 1 } }, 'invalid']]) {
       assert.equal((await as(ANNA)('PUT', `/messengers/${id}`, body)).json.code, code, JSON.stringify([id, body]));
     }
     assert.equal(s.st.calls.filter((c) => c.name === 'bridge_child_set').length, 0);
@@ -182,7 +182,7 @@ test('1.25.0 — „Neue Chats per Nummer“: a second switch per child, off by 
     const r = await as(ANNA)('PUT', `/messengers/${LENA.id}`, { newChat: { whatsapp: true } });
     assert.deepEqual([r.status, r.json.code], [409, 'unavailable']);
     assert.equal(s.st.calls.filter((c) => c.name === 'bridge_child_set').length, 0);
-    for (const body of [{ newChat: {} }, { newChat: { whatsapp: 'ja' } }, { newChat: { signal: true } }, { newChat: [] }]) {
+    for (const body of [{ newChat: {} }, { newChat: { whatsapp: 'ja' } }, { newChat: { telegram: true } }, { newChat: [] }]) {
       assert.equal((await as(ANNA)('PUT', `/messengers/${LENA.id}`, body)).json.code, 'invalid', JSON.stringify(body));
     }
   });
@@ -224,7 +224,7 @@ test('the card: part of the portal, hidden by default, texts in both languages, 
   assert.ok(html.includes("A.api('GET', 'messengers')"), 'portal-linked.js is delivered with the portal');
   const src = require('node:fs').readFileSync(path.join(__dirname, '..', 'ui', 'portal-linked.js'), 'utf8');
   const used = new Set([...src.matchAll(/T\('(linked\.[a-z_]+)'/g)].map((m) => m[1]).filter((k) => !k.endsWith('_')));
-  for (const k of ['linked.title', 'linked.sub', 'linked.hint', 'linked.net_whatsapp', 'linked.confirm', 'linked.confirm_linked']) used.add(k);
+  for (const k of ['linked.title', 'linked.sub', 'linked.hint', 'linked.net_whatsapp', 'linked.net_signal', 'linked.confirm', 'linked.confirm_linked']) used.add(k);
   for (const k of used) for (const lang of ['de', 'en']) assert.ok(texts[lang][k], `${lang} ${k}`);
   const keys = (l) => Object.keys(texts[l]).filter((k) => k.startsWith('linked.')).sort();
   assert.deepEqual(keys('de'), keys('en'));
@@ -232,4 +232,29 @@ test('the card: part of the portal, hidden by default, texts in both languages, 
   assert.doesNotMatch(src, /innerHTML|insertAdjacentHTML/);
   const manifest = require('../plugin.json');
   for (const s of ['bridge_children', 'bridge_child_set']) assert.ok(manifest.permissions.services.includes(`gatecontrol-messenger:${s}`));
+});
+
+test('1.28.0 — Signal: a second service next to WhatsApp, each with its own switch; a parent allows Signal alone', async () => {
+  linked._reset();
+  const st = { grants: new Set(), calls: [] };
+  const child = (id) => ({ userId: id, networks: { whatsapp: st.grants.has(`${id}:whatsapp`), signal: st.grants.has(`${id}:signal`) }, linked: { whatsapp: false, signal: false } });
+  const entry = {
+    plugin: 'gatecontrol-messenger', provides: ['bridge_children', 'bridge_child_set'],
+    service: (c) => {
+      st.calls.push({ name: c.name, payload: c.payload });
+      if (![ANNA.id, MARC.id].includes(c.user && c.user.id)) return { ok: false, code: 'forbidden' };
+      if (c.name === 'bridge_children') return { ok: true, available: true, networks: ['whatsapp', 'signal'], children: [LENA.id, TIM.id].map(child) };
+      for (const [n, v] of Object.entries(c.payload.networks || {})) { if (v) st.grants.add(`${c.payload.childId}:${n}`); else st.grants.delete(`${c.payload.childId}:${n}`); }
+      return { ok: true, child: child(c.payload.childId), unlinked: {} };
+    },
+  };
+  await withFamily(WITH({ entry }), async (host, { as }) => {
+    const m = (await as(ANNA)('GET', '/messengers')).json.messengers;
+    assert.deepEqual(m.networks, ['whatsapp', 'signal']);
+    assert.deepEqual(m.children.find((c) => c.userId === LENA.id).networks, { whatsapp: false, signal: false });
+    const r = await as(ANNA)('PUT', `/messengers/${LENA.id}`, { networks: { signal: true } });
+    assert.equal(r.status, 200, JSON.stringify(r.json));
+    assert.deepEqual(r.json.child.networks, { whatsapp: false, signal: true });
+    assert.deepEqual(st.calls.filter((x) => x.name === 'bridge_child_set').map((x) => x.payload.networks), [{ signal: true }]);
+  });
 });

@@ -80,6 +80,11 @@
 // Version 9 (chats v2, persons; createHost(dir, { bridges: { …, version: 9 } })): recognition.get(userId) → { asked,
 //   allowed, linked } (a request of that person), recognition.set(userId, allowed) (a changing one; whatsapp only) —
 //   host.bridges.recognition(userId) → { asked, allowed }
+// Version 10 (Signal, stage 7a; createHost(dir, { bridges: { …, version: 10, networks: { whatsapp, signal } } })): the
+//   network 'signal' (QR code only — login.start refuses 'phone'; the code sgnl://linkdevice?…, a login named by its
+//   number), status().networks[] with flows, history { maxDays, phoneConfirms }, needs, scriptNeeded;
+//   status().stickers { animated } and configure({ animatedStickers }); recognition.get / set per network (whatsapp,
+//   signal, telegram) — host.bridges.recognition(userId, network); host.bridges.setNeeds(network, 'compose' | 'script' | null)
 // events.pull / events.ack need no person; chats() a request of that person; send / react / redact / read / typing a
 // changing request of that person, their own chat (else ERR_INVALID 'unknown chat'), a bridge that runs.
 //
@@ -99,19 +104,28 @@ const FLOWS = [
   { id: 'phone', name: 'Pairing code', description: 'Enter a pairing code in the app' },
 ];
 
+const NET_FACTS = {
+  whatsapp: { flows: ['phone', 'qr'], history: { maxDays: null, phoneConfirms: false }, scriptNeeded: 8 },
+  signal: { flows: ['qr'], history: { maxDays: 30, phoneConfirms: true }, scriptNeeded: 10 },
+};
+
 function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) {
   const o = opts.bridges === true ? {} : (opts.bridges && typeof opts.bridges === 'object' ? opts.bridges : null);
+  const v10 = !!(o && o.version === 10);
+  // version 10: Signal next to WhatsApp
+  const NETS = v10 ? ['whatsapp', 'signal'] : NETWORKS;
   const host = !!o;
   if (host && perms.bridges != null && typeof perms.bridges !== 'boolean') throw hostError('ERR_INVALID', 'plugin.json: permissions.bridges: invalid');
   const on = host && perms.bridges === true;
   const st = {
     preview: !(o && o.preview === false),
     enabled: !!(o && o.enabled),
-    networks: { whatsapp: !!(o && o.networks && o.networks.whatsapp) },
+    networks: { whatsapp: !!(o && o.networks && o.networks.whatsapp), ...(v10 ? { signal: !!(o && o.networks && o.networks.signal) } : {}) },
+    stickers: false, needs: {},
     host: { state: o && o.running ? 'running' : null, error: null, running: !!(o && o.running), memMb: o && o.running ? 88 : null, outdated: false, probe: null },
     logins: new Map(), processes: new Map(), log: [], seq: 0, oddStep: null, elsewhere: new Map(),
   };
-  const version = o && [1, 3, 4, 5, 6, 7, 8, 9].includes(o.version) ? o.version : 2;
+  const version = o && [1, 3, 4, 5, 6, 7, 8, 9, 10].includes(o.version) ? o.version : 2;
   Object.assign(st, { inbox: [], inboxSeq: 0, chats: new Map(), sent: [], failSend: null, wake: null });
   Object.assign(st, { files: new Map(), fetches: [], numbers: new Map(), lookups: new Map(), dms: new Map(), failFetch: null });
   Object.assign(st, { contacts: [], contactRefs: new Map(), contactDms: new Map() });
@@ -128,15 +142,18 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
     return {
       available: true, reason: null, enabled: st.enabled, location: 'server',
       locations: [{ id: 'server', kind: 'server', cores: 4, memMb: 7953, freeMb: 5017 }],
-      networks: NETWORKS.map((id) => {
+      networks: NETS.map((id) => {
         let state = 'off';
         if (st.enabled && st.networks[id]) state = up ? 'running' : (st.host.state === 'failed' ? 'failed' : 'starting');
+        if (st.enabled && st.networks[id] && st.needs[id] === 'compose') state = 'failed';
         return {
           id, enabled: st.networks[id], state, version: up ? (st.host.outdated ? '0.2609.0' : '0.2610.0') : null, memMb: up ? st.host.memMb : null, limitMb: up ? 512 : null,
           ...(version >= 2 ? { outdated: up && st.host.outdated === true, wantVersion: '0.2610.0' } : {}),
           ...(version >= 5 ? { clientOutdated: [...st.logins.values()].some((l) => l.some((x) => x.clientOutdated)) } : {}),
+          ...(v10 ? { flows: [...NET_FACTS[id].flows], history: { ...NET_FACTS[id].history }, needs: st.needs[id] || null, scriptNeeded: NET_FACTS[id].scriptNeeded } : {}),
         };
       }),
+      ...(v10 ? { stickers: { animated: st.stickers } } : {}),
       host: {
         state: st.enabled ? st.host.state : 'stopped', error: st.enabled ? st.host.error : null, checkedAt: st.host.state ? new Date().toISOString() : null,
         cron: 'ok', script: { host: version >= 5 ? 8 : (version >= 3 ? 7 : (version >= 2 ? 6 : 5)), needed: version >= 5 ? 8 : (version >= 3 ? 7 : (version >= 2 ? 6 : 5)) },
@@ -170,7 +187,7 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
   }
 
   function bridge(network) {
-    if (!NETWORKS.includes(network)) throw hostError('ERR_INVALID', 'unknown network');
+    if (!NETS.includes(network)) throw hostError('ERR_INVALID', 'unknown network');
     if (!st.preview) throw err('ERR_BRIDGES_UNAVAILABLE', 'the bridges are not offered on this server', 'preview_off');
     if (!st.enabled || !st.networks[network]) throw err('ERR_BRIDGES_UNAVAILABLE', 'this bridge is switched off', 'off');
     if (!st.host.running || st.host.bridgeDown) throw err('ERR_BRIDGE_UNREACHABLE', 'connect ENOENT', 'not_running');
@@ -186,11 +203,11 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
     // like GateControl: a reference (HMAC per person), never the bridge's id — which is the person's number at WhatsApp
     const loginId = 'l' + Buffer.from(`login-${++st.seq}-${p.userId}`).toString('base64url').padEnd(22, 'A').slice(0, 22);
     const list = st.logins.get(p.userId) || [];
-    list.push({ id: loginId, name: p.phone || '+490000000', state: 'connected', since: new Date().toISOString(), error: null });
+    list.push({ id: loginId, name: p.phone || '+490000000', state: 'connected', since: new Date().toISOString(), error: null, ...(v10 ? { network: p.network } : {}) });
     st.logins.set(p.userId, list);
     st.processes.delete(p.id);
     st.log.push({ op: 'linked', userId: p.userId, network: p.network, loginId });
-    return { processId: p.id, step: { id: 'fi.mau.whatsapp.login.complete', type: 'complete', instructions: 'Successfully logged in', loginId } };
+    return { processId: p.id, step: { id: `fi.mau.${p.network}.login.complete`, type: 'complete', instructions: p.network === 'signal' ? 'Signal is linked.' : 'Successfully logged in', loginId } };
   }
 
   const api = {
@@ -201,25 +218,28 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
       if (!st.preview) throw err('ERR_BRIDGES_UNAVAILABLE', 'the bridges are not offered on this server', 'preview_off');
       const p = patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : null;
       if (!p) throw hostError('ERR_INVALID', 'patch: an object');
-      const keys = version >= 5 ? ['enabled', 'networks', 'history', 'backupNow', 'backupTime'] : ['enabled', 'networks'];
+      const keys = version >= 5 ? ['enabled', 'networks', 'history', 'backupNow', 'backupTime', ...(v10 ? ['animatedStickers'] : [])] : ['enabled', 'networks'];
       for (const k of Object.keys(p)) if (!keys.includes(k)) throw hostError('ERR_INVALID', 'unknown key');
+      if (p.animatedStickers !== undefined) { if (typeof p.animatedStickers !== 'boolean') throw hostError('ERR_INVALID', 'animatedStickers: a boolean'); st.stickers = p.animatedStickers; }
       if (p.history !== undefined) { if (typeof p.history !== 'boolean') throw hostError('ERR_INVALID', 'history: a boolean'); st.history = p.history; }
       if (p.backupTime !== undefined) { if (!/^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(String(p.backupTime))) throw hostError('ERR_INVALID', 'backupTime: HH:MM'); st.backupTime = p.backupTime; }
       if (p.backupNow !== undefined) { if (p.backupNow !== true) throw hostError('ERR_INVALID', 'backupNow: true'); st.backup.requested = true; }
       if (p.enabled !== undefined && typeof p.enabled !== 'boolean') throw hostError('ERR_INVALID', 'enabled: a boolean');
       if (p.networks !== undefined) {
         if (!p.networks || typeof p.networks !== 'object' || Array.isArray(p.networks)) throw hostError('ERR_INVALID', 'networks: an object');
-        for (const [n, v] of Object.entries(p.networks)) if (!NETWORKS.includes(n) || typeof v !== 'boolean') throw hostError('ERR_INVALID', 'networks: unknown network or not a boolean');
+        for (const [n, v] of Object.entries(p.networks)) if (!NETS.includes(n) || typeof v !== 'boolean') throw hostError('ERR_INVALID', 'networks: unknown network or not a boolean');
         Object.assign(st.networks, p.networks);
       }
       if (p.enabled !== undefined) st.enabled = p.enabled;
       st.log.push({ op: 'configure', by: who.id, enabled: st.enabled, networks: { ...st.networks }, ...(version >= 5 ? { history: st.history, backupNow: p.backupNow === true } : {}) });
       return status();
     },
-    'bridges.login.flows': async ({ userId, network }) => { need(); person(userId, false); bridge(network); return FLOWS.map((f) => ({ ...f })); },
+    'bridges.login.flows': async ({ userId, network }) => { need(); person(userId, false); bridge(network); return FLOWS.filter((f) => !v10 || NET_FACTS[network].flows.includes(f.id)).map((f) => ({ ...f })); },
     'bridges.login.start': async ({ userId, network, flowId }) => {
       need(); person(userId, true); bridge(network);
       if (!FLOWS.some((f) => f.id === id(flowId))) throw refuse('not_found');
+      // version 10: only a flow the network offers (Signal: the QR code)
+      if (v10 && !NET_FACTS[network].flows.includes(flowId)) throw hostError('ERR_INVALID', 'this login flow is not offered for this network');
       if (st.oddStep) { st.oddStep = null; throw refuse('unsupported_step'); }
       const p = { id: `proc-${++st.seq}`, userId, network, flow: flowId, phone: null, settled: null };
       st.processes.set(p.id, p);
@@ -227,6 +247,7 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
         return { processId: p.id, step: { id: 'fi.mau.whatsapp.login.phone', type: 'user_input', instructions: 'Enter your phone number',
           fields: [{ id: 'phone_number', type: 'phone_number', name: 'Phone number', description: 'Include the country code with a +', optional: false }] } };
       }
+      if (network === 'signal') return { processId: p.id, step: { id: 'fi.mau.signal.login.qr', type: 'display_and_wait', instructions: '', display: { type: 'qr', data: 'sgnl://linkdevice?uuid=fakeCode&pub_key=fakeKey' } } };
       return { processId: p.id, step: { id: 'fi.mau.whatsapp.login.qr', type: 'display_and_wait', instructions: 'Scan the QR code', display: { type: 'qr', data: '2@fake-qr-payload,one,two,three' } } };
     },
     'bridges.login.step': async ({ userId, network, processId, stepId, kind, input }) => {
@@ -253,7 +274,7 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
     },
     'bridges.logins': async ({ userId, network }) => {
       need(); person(userId, false); bridge(network);
-      return (st.logins.get(userId) || []).map((l) => ({ network, ...l }));
+      return (st.logins.get(userId) || []).filter((l) => !l.network || l.network === network).map((l) => ({ network, ...l }));
     },
     'bridges.logout': async ({ userId, network, loginId }) => {
       need(); person(userId, true); bridge(network);
@@ -314,7 +335,7 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
     },
     'bridges.chats': async ({ userId, network }) => {
       need(); person(userId, false);
-      if (!NETWORKS.includes(network)) throw hostError('ERR_INVALID', 'unknown network');
+      if (!NETS.includes(network)) throw hostError('ERR_INVALID', 'unknown network');
       return [...st.chats.entries()].filter(([, c]) => c.userId === userId && c.network === network).map(([id, c]) => ({ id, kind: c.kind, open: !c.closed, ...(version >= 7 ? { channel: !!c.channel, readOnly: !!c.readOnly } : {}) }));
     },
     'bridges.send': async ({ userId, network, chatId, message }) => {
@@ -524,21 +545,25 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
     },
   });
   // ── version 9: the consent to be recognised by the own WhatsApp ──
-  const recOf = (userId) => st.recognition.get(userId) || { asked: false, allowed: false };
+  // version 10: one consent per network (whatsapp's under the person's id as before)
+  const recKey = (userId, network) => (network == null || network === 'whatsapp' ? userId : `${userId}|${network}`);
+  const recOf = (userId, network) => st.recognition.get(recKey(userId, network)) || { asked: false, allowed: false };
+  const recNets = () => (v10 ? ['whatsapp', 'signal', 'telegram'] : ['whatsapp']);
+  const linkedOn = (userId, network) => (st.logins.get(userId) || []).some((l) => !l.network || l.network === (network || 'whatsapp'));
   if (version >= 9) Object.assign(api, {
     'bridges.recognition.get': async ({ userId, network }) => {
       need(); person(userId, false);
-      if (network != null && network !== 'whatsapp') throw hostError('ERR_INVALID', 'recognition: whatsapp only');
-      const r = recOf(userId);
-      return { asked: r.asked, allowed: r.allowed, linked: (st.logins.get(userId) || []).length > 0 };
+      if (network != null && !recNets().includes(network)) throw hostError('ERR_INVALID', 'recognition: whatsapp only');
+      const r = recOf(userId, network);
+      return { asked: r.asked, allowed: r.allowed, linked: linkedOn(userId, network) };
     },
     'bridges.recognition.set': async ({ userId, allowed, network }) => {
       need(); person(userId, true);
-      if (network != null && network !== 'whatsapp') throw hostError('ERR_INVALID', 'recognition: whatsapp only');
+      if (network != null && !recNets().includes(network)) throw hostError('ERR_INVALID', 'recognition: whatsapp only');
       if (typeof allowed !== 'boolean') throw hostError('ERR_INVALID', 'allowed: true or false');
-      st.recognition.set(userId, { asked: true, allowed });
-      st.log.push({ op: 'recognition', userId, allowed });
-      return { asked: true, allowed, linked: (st.logins.get(userId) || []).length > 0 };
+      st.recognition.set(recKey(userId, network), { asked: true, allowed });
+      st.log.push({ op: 'recognition', userId, allowed, ...(v10 ? { network: network || 'whatsapp' } : {}) });
+      return { asked: true, allowed, linked: linkedOn(userId, network) };
     },
   });
 
@@ -644,7 +669,8 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
     // ── version 8 / 9 ──
     get accounts() { return st.accounts; },
     set accounts(v) { st.accounts = v; },
-    recognition(userId) { return recOf(userId); },
+    recognition(userId, network) { return recOf(userId, network); },
+    setNeeds(network, needs) { st.needs[network] = needs || null; },
     async deliver(events, { wake = true } = {}) {
       for (const e of events) st.inbox.push({ network: 'whatsapp', at: Date.now(), ...JSON.parse(JSON.stringify(e)), seq: ++st.inboxSeq });
       if (wake && st.wake) await st.wake({ pending: st.inbox.length, ephemeral: [] });

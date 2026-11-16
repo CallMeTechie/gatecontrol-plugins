@@ -28,6 +28,11 @@
 // 1.20.0 (GateControl with gc.bridges version 7): channels, groups where only admins write, format and link previews —
 // bridgechannels.js says how.
 //
+// 1.23.0 (GateControl with gc.bridges version 10): Signal. A chat's disappearing messages (chat.timer) become the
+// conversation's disappearingS — shown, not changeable here, and nothing runs out here (the bridge deletes them; the
+// timer counts from reading on); the bridge's notice about a change becomes the system line „disappearing“; a view-once
+// picture (message.viewOnce) the placeholder 'view_once' — „Einmal-Ansicht. Öffne sie in Signal.“, never the file.
+//
 // Clients that do not know bridged chats never see one: every route answers 404 for a bridged conversation unless
 // the request says ?bridged=1 (or `bridged: true` in its body — the buttons of a push; README "App-API", since 1.14.0).
 
@@ -43,8 +48,10 @@ const bridgechannels = require('./bridgechannels');
 const scan = require('./scan');
 const { fail, iso, bridgeName } = require('./util');
 
-const NETWORKS = ['whatsapp'];
-const LABEL = { whatsapp: 'WhatsApp' };
+const NETWORKS = ['whatsapp', 'signal'];
+const LABEL = { whatsapp: 'WhatsApp', signal: 'Signal' };
+// 1.23.0: the longest timer a bridged chat carries (a year)
+const TIMER_MAX_S = 366 * 86400;
 const REF_RE = /^r[A-Za-z0-9_-]{20}$/;
 const CONTACT_RE = /^c[A-Za-z0-9_-]{21}$/;
 const EVENT_RE = /^\$[A-Za-z0-9._=/+-]{1,128}(:[a-z0-9.-]{1,64})?$/;
@@ -54,7 +61,7 @@ const TEXT_MAX = 4000;
 const PENDING_MS = 86400000;
 const LINK_CHECK_MS = 5 * 60000;
 const SUPPORTS = ['text', 'reply', 'reaction', 'edit', 'delete', 'read', 'typing'];
-const PLACEHOLDERS = ['image', 'video', 'audio', 'voice', 'file', 'sticker', 'location', 'unsupported'];
+const PLACEHOLDERS = ['image', 'video', 'audio', 'voice', 'file', 'sticker', 'location', 'unsupported', 'view_once'];
 
 const via = (net) => `bridge:${net}`;
 const isBridged = (conv) => !!(conv && conv.bridge_net);
@@ -269,6 +276,16 @@ async function ensureConv(c, ev) {
     conv = await store.one(c.gc, 'SELECT * FROM conversations WHERE id = ?', [conv.id]);
     if (conv.last_msg_id) live.queue(c.box, [ev.userId], 'conversation.update', { conversationId: conv.id, reason: 'bridge' });
   }
+  // 1.23.0: the chat's disappearing messages (only when the event knows them: chat.timer object or null)
+  if (chat.timer !== undefined) {
+    const t = chat.timer && typeof chat.timer === 'object' ? Number(chat.timer.seconds) : 0;
+    const secs = Number.isSafeInteger(t) && t > 0 ? Math.min(t, TIMER_MAX_S) : 0;
+    if (secs !== (conv.disappearing_s || 0)) {
+      await store.run(c.gc, 'UPDATE conversations SET disappearing_s = ?, updated_at = ? WHERE id = ?', [secs, c.now, conv.id]);
+      conv = await store.one(c.gc, 'SELECT * FROM conversations WHERE id = ?', [conv.id]);
+      if (conv.last_msg_id) live.queue(c.box, [ev.userId], 'conversation.update', { conversationId: conv.id, reason: 'bridge' });
+    }
+  }
   // 1.15.0: the chat's picture (a reference; fetched afterwards, bridgemedia.js)
   await bridgemedia.chatAvatar(c, conv, chat.avatar);
   const old = seal.open(conv.title_enc);
@@ -358,7 +375,15 @@ async function apply(c, ev, { parked = false } = {}) {
     let text = raw.trim() || null;
     const meta = {};
     let kind = 'text';
-    if (sender.system && !byChannel) { kind = 'system'; meta.system = { event: 'bridge_notice', network: ev.network }; }
+    // 1.23.0: the bridge's word that the chat's timer changed → the messenger's own line („Nachrichten verschwinden nach …“)
+    const timer = ev.kind === 'notice' && ev.action && typeof ev.action === 'object' && ev.action.type === 'timer' ? ev.action : null;
+    if (timer) {
+      const t = Number(timer.seconds);
+      kind = 'system';
+      meta.system = { event: 'disappearing', by: null, seconds: Number.isSafeInteger(t) && t > 0 ? Math.min(t, TIMER_MAX_S) : 0, network: ev.network };
+      text = null;
+    } else if (sender.system && !byChannel) { kind = 'system'; meta.system = { event: 'bridge_notice', network: ev.network }; }
+    else if (ev.viewOnce === true) { meta.bridge = { placeholder: 'view_once', name: null }; text = null; }
     else if (ev.kind === 'media') {
       // 1.15.0: the file's reference and details too — fetched afterwards into the media of this plugin (bridgemedia.js)
       meta.bridge = bridgemedia.placeholderOf(ev.media && typeof ev.media === 'object' ? ev.media : {}, PLACEHOLDERS);

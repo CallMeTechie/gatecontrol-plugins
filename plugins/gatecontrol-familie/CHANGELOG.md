@@ -3,6 +3,15 @@
 Die Familie in der GateControl-App (eigener Tab), im Portal (eigener Tab „Familie“) und auf
 drei Admin-Seiten. Alles bleibt auf dem eigenen Server.
 
+## 1.28.0
+
+Signal in der Karte „Andere Messenger“ (Plugin Messenger ab 1.23.0 auf einem GateControl-Server mit der Signal-Brücke).
+
+- `server/linked.js`: `NETWORKS` kennt `signal`; eine Zeile je Dienst, den der Messenger anbietet (`bridge_children.networks`) —
+  ohne Signal-Brücke bleibt die Karte wie bisher. Freischalten und Zurücknehmen je Dienst; „Neue Chats per Nummer“ auch für
+  Signal. Text `linked.net_signal`.
+- Test: Signal neben WhatsApp, ein Elternteil schaltet Signal allein frei.
+
 ## 1.26.0
 
 Nutzerprofil – der Geburtstag der Eltern kommt aus dem Profil (GateControl ≥ 1.280.0, `permissions.profile: ["birthday"]`).

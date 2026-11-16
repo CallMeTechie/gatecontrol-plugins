@@ -163,7 +163,11 @@
   function lastId(list) { return list && list.length ? list[list.length - 1].id : 0; }
   function disLabel(s) {
     if (!s) return T('dis.off');
-    return T('dis.' + s) !== 'dis.' + s ? T('dis.' + s) : T('dis.seconds', { n: s });
+    if (T('dis.' + s) !== 'dis.' + s) return T('dis.' + s);
+    // 1.23.0: a bridged chat's timer may be any length (Signal: 30 s, 5 min, 1 h, 8 h, 4 weeks …)
+    var units = [[604800, 'dis.weeks'], [86400, 'dis.days'], [3600, 'dis.hours'], [60, 'dis.minutes']];
+    for (var i = 0; i < units.length; i++) if (s % units[i][0] === 0) return T(units[i][1], { n: s / units[i][0] });
+    return T('dis.seconds', { n: s });
   }
   function systemText(m, c) {
     var s = m.system || {};
@@ -177,7 +181,10 @@
       case 'member_left': return T('sys.left', { name: nameOf(c, s.userId) });
       case 'title': return T('sys.title', { name: who, title: s.title || '' });
       case 'avatar': return T('sys.avatar', { name: who });
-      case 'disappearing': return s.seconds ? T('sys.dis_on', { name: who, time: disLabel(s.seconds) }) : T('sys.dis_off', { name: who });
+      // 1.23.0: changed in the other messenger (a bridged chat's timer)
+      case 'disappearing':
+        if (s.network) return s.seconds ? T('sys.dis_on_net', { network: c && c.bridge ? c.bridge.label : s.network, time: disLabel(s.seconds) }) : T('sys.dis_off_net', { network: c && c.bridge ? c.bridge.label : s.network });
+        return s.seconds ? T('sys.dis_on', { name: who, time: disLabel(s.seconds) }) : T('sys.dis_off', { name: who });
       case 'released': return T('sys.released');
       default: return (R && R.systemText(s, c)) || m.text || '';
     }
@@ -521,6 +528,10 @@
         c.muted ? el('button', { type: 'button', class: 'ms-linkbtn', text: T('ch.turn_on'), on: { click: function () { patchConv(c, { notify: 'all', mutedUntil: null }); } } }) : null]));
       return;
     }
+    // 1.23.0: Signal — the bridge takes a contact's new safety number by itself; once per Signal chat, at the top
+    if (c.bridge.network === 'signal') bar.appendChild(el('div', { class: 'ms-bridge-strip ms-sg-safety' }, [M.icon('lock', 13), el('span', { text: T('bc.signal_safety') })]));
+    // 1.23.0: a bridged chat's disappearing messages (changed only in the other messenger)
+    if (c.disappearingS > 0) bar.appendChild(el('div', { class: 'ms-bridge-strip' }, [M.icon('timer', 13), el('span', { text: T('bc.timer', { time: disLabel(c.disappearingS), network: c.bridge.label }) })]));
     if (c.bridge.closed) bar.appendChild(el('div', { class: 'ms-bridge-state', role: 'status' }, [M.icon('info', 15), el('span', { text: T('bc.closed', n) })]));
     else if (st === 'unreachable') bar.appendChild(el('div', { class: 'ms-bridge-state is-warn', role: 'status' }, [M.icon('info', 15), el('span', { text: T('bc.state_unreachable', n) })]));
     else if (st === 'logged_out') bar.appendChild(el('div', { class: 'ms-bridge-state is-warn', role: 'status' }, [M.icon('info', 15), el('span', { text: T('bc.state_logged_out', n) }), relink(T('br.relink'))]));
@@ -770,8 +781,9 @@
       var net = { network: c.bridge ? c.bridge.label : (m.way ? P.labelOf(m.way) : '') };
       // 1.17.0: a file of the older history — fetched when the person asks for it
       var tail = ph.state === 'loading' ? T('bc.ph_loading') : (ph.state === 'on_request' ? T('bc.ph_on_request') : (ph.state === 'failed' && ph.reason && CTX.texts['bc.ph_failed.' + ph.reason] ? T('bc.ph_failed.' + ph.reason, net) : T('bc.ph_later', net)));
-      var phText = ph.kind === 'unsupported' ? T('bc.ph.unsupported', net) : T('bc.ph.' + ph.kind) + (ph.name ? ' · ' + ph.name : '') + (ph.kind === 'location' && ph.geo ? '' : ' – ' + tail);
-      b.appendChild(el('div', { class: 'ms-ph' + (ph.state === 'loading' ? ' is-loading' : '') }, [M.icon(ph.kind === 'unsupported' ? 'info' : (ph.kind === 'location' ? 'pin' : (ph.kind === 'image' || ph.kind === 'sticker' ? 'image' : 'file')), 15),
+      // 1.23.0: a view-once picture stays in the other messenger
+      var phText = ph.kind === 'unsupported' ? T('bc.ph.unsupported', net) : (ph.kind === 'view_once' ? T('bc.ph.view_once', net) : T('bc.ph.' + ph.kind) + (ph.name ? ' · ' + ph.name : '') + (ph.kind === 'location' && ph.geo ? '' : ' – ' + tail));
+      b.appendChild(el('div', { class: 'ms-ph' + (ph.state === 'loading' ? ' is-loading' : '') }, [M.icon(ph.kind === 'unsupported' ? 'info' : (ph.kind === 'view_once' ? 'eye' : (ph.kind === 'location' ? 'pin' : (ph.kind === 'image' || ph.kind === 'sticker' ? 'image' : 'file'))), 15),
         el('span', { text: phText })]));
       if (ph.state === 'on_request') {
         b.appendChild(el('button', { type: 'button', class: 'ms-linkbtn', text: T('bc.ph_fetch'), on: { click: function (e) { e.stopPropagation(); fetchOld(m, e.currentTarget); } } }));
@@ -2249,6 +2261,10 @@
       case 'lists.update':
         loadLists();
         break;
+      // 1.23.0: a phone sent its linking step to this screen („Im Portal fortsetzen“)
+      case 'bridge.handoff':
+        if (d && d.target === 'portal' && window.MSBridges && window.MSBridges.openStep) window.MSBridges.openStep();
+        break;
       default:
     }
   }
@@ -2331,6 +2347,13 @@
       return refreshAll();
     }).then(function () {
       loadSuggestions();
+      // 1.23.0: a linking step a phone sent here while this page was closed
+      if (feature('linked_services') && window.MSBridges && window.MSBridges.openStep) {
+        M.api('GET', 'bridges').then(function (r) {
+          var ho = r.bridges && r.bridges.handoff;
+          if (ho && ho.target === 'portal') window.MSBridges.openStep();
+        }).catch(function () {});
+      }
       setInterval(function () { refreshAll().catch(function () {}); }, 30000);
       setInterval(loadSuggestions, 15 * 60000);
     }).catch(function (e) {

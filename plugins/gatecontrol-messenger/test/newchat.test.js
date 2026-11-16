@@ -132,7 +132,7 @@ test('children: a second switch of the parents, off by default — the line is g
     assert.deepEqual(r.children[0].newChat, { whatsapp: false });
     // not without the permission itself
     assert.deepEqual(await svc('bridge_child_set', { id: ANNA.id }, { childId: LENA.id, newChat: { whatsapp: true } }), { ok: false, code: 'invalid' });
-    for (const bad of [{ childId: LENA.id, newChat: { whatsapp: 'yes' } }, { childId: LENA.id, newChat: [] }, { childId: LENA.id, newChat: { signal: true } }]) {
+    for (const bad of [{ childId: LENA.id, newChat: { whatsapp: 'yes' } }, { childId: LENA.id, newChat: [] }, { childId: LENA.id, newChat: { telegram: true } }]) {
       assert.deepEqual(await svc('bridge_child_set', { id: ANNA.id }, bad), { ok: false, code: 'invalid' }, JSON.stringify(bad));
     }
     r = await svc('bridge_child_set', { id: ANNA.id }, { childId: LENA.id, networks: { whatsapp: true } });

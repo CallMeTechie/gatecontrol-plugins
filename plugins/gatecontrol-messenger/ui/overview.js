@@ -191,6 +191,11 @@
     // 1.14.0: the main switch alone starts no bridge — say so instead of "starting …"
     if (!(b.networks || []).some(function (n) { return n.enabled; })) return T('admin.br_need_network');
     if (h.error === 'compose_missing') return T('admin.br_err_compose');
+    // 1.23.0 (update.sh marker 10): the docker-compose.yml on the server has no service for a bridge switched on (Signal)
+    var noCompose = (b.networks || []).filter(function (n) { return n.enabled && n.needs === 'compose'; })[0];
+    if (noCompose) return T('admin.br_err_compose_net', { name: T('admin.br_net_' + noCompose.id) });
+    var noScript = (b.networks || []).filter(function (n) { return n.enabled && n.needs === 'script'; })[0];
+    if (noScript) return T('admin.br_err_script', { have: h.script && h.script.host != null ? h.script.host : '?', need: noScript.scriptNeeded || '?' });
     if (h.error === 'config_missing') return T('admin.br_err_config');
     if (h.error === 'start_failed') return T('admin.br_err_start');
     if (h.script && h.script.host != null && h.script.host < h.script.needed) return T('admin.br_err_script', { have: h.script.host, need: h.script.needed });
@@ -262,6 +267,8 @@
       sub.push(T(n.linked === 1 ? 'admin.br_linked_one' : 'admin.br_linked', { n: n.linked || 0 }));
       // 1.17.0: how many of them got the bridge's phone warning (no names)
       if (n.phoneOffline) sub.push(T(n.phoneOffline === 1 ? 'admin.br_phone_one' : 'admin.br_phone', { n: n.phoneOffline }));
+      // 1.23.0: what this bridge still waits for on the server
+      if (n.enabled && n.needs) sub.push(T('admin.br_needs_' + n.needs));
       list.appendChild(el('li', null, [
         M.netLogo(n.id, null, 18, 'ms-br-mark'),
         el('span', { class: 'ms-gc-path' }, [el('span', { text: T('admin.br_net_' + n.id) }), el('small', { text: sub.join(' · ') })]),
@@ -269,6 +276,13 @@
         M.switchBtn(n.enabled, T('admin.br_net_' + n.id), function (v) { var nets = {}; nets[n.id] = v; setBr({ networks: nets }); }, !b.enabled),
       ]));
     });
+    // 1.23.0 (gc.bridges version 10): one switch for every bridge that converts animated stickers — off: a still picture
+    if (b.stickers && typeof b.stickers.animated === 'boolean') {
+      list.appendChild(el('li', { id: 'ms-br-stickers' }, [
+        el('span', { class: 'ms-gc-path' }, [el('span', { text: T('admin.br_stickers') }), el('small', { text: T(b.stickers.animated ? 'admin.br_stickers_on' : 'admin.br_stickers_off') })]),
+        M.switchBtn(b.stickers.animated, T('admin.br_stickers'), function (v) { setBr({ animatedStickers: v }); }, !b.enabled),
+      ]));
+    }
     var hs = b.host && b.host.homeserver;
     if (b.enabled && hs && hs.running && hs.memMb != null) {
       list.appendChild(el('li', null, [el('span', { class: 'ms-gc-path' }, [el('span', { text: T('admin.br_hs') }),
