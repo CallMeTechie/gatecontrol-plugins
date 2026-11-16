@@ -15,7 +15,7 @@ Alles bleibt auf deinem Server. Texte, Standorte, Dateinamen und Gruppentitel we
 
 ## Voraussetzungen
 
-- GateControl **1.291.0** oder neuer (Signal-Brücke; Gruppenchats für GateControl-Gruppen ab 1.200.0, Virenscan ab der Version nach 1.222.0).
+- GateControl **1.293.0** oder neuer (Telegram-Brücke; Signal-Brücke ab 1.291.0; Gruppenchats für GateControl-Gruppen ab 1.200.0, Virenscan ab der Version nach 1.222.0).
 - Eine Lizenz für das Plugin.
 - Für „In Drive speichern“: das Plugin Drive. Für den Familien-Chat: das Plugin Familie.
 

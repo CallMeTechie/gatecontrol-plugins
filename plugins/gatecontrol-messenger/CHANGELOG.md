@@ -5,7 +5,7 @@ Windows-Client und im Portal (eigener Tab „Chats“). Alles bleibt auf dem eig
 
 ## 1.24.0
 **Telegram** („Brücken Stufe 7b“) — die dritte Brücke, für GateControl mit `gc.bridges` Version 11. **Braucht GateControl
-≥ 1.291.0** (`plugin.json` `gatecontrol`; die genaue Nummer setzt die Server-Veröffentlichung von Stufe 7b).
+≥ 1.293.0** (`plugin.json` `gatecontrol`; `gatecontrol.ref` = v1.293.0).
 - **Netz `telegram`** überall, wo ein Netz steht. `GET bridges` je Netz neu `needs` (`app`: Telegram noch nicht
   eingerichtet), ein Schritt nach falschem Code oder Passwort trägt `retry: true`; Telegram bietet `qr` und `phone`.
 - **Verwaltung — „Telegram einrichten“:** In der Karte „Brücken“ zeigt Telegram „Anwendungskennung fehlt“ mit
