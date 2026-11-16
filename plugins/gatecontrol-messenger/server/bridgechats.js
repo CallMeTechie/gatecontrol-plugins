@@ -44,6 +44,14 @@
 // no chat — bridgestatus.js says how its messages become status updates in the status row (never listed, never pushed,
 // gone after 24 h; "seen" to WhatsApp only on the person's own switch, never from here).
 //
+// 1.26.0 (GateControl with gc.bridges version 13): old media from the phone. A WhatsApp file of the history whose copy at
+// WhatsApp ran out arrives as message.oldMedia { kind, name, request } instead of the bridge's English notice → a
+// placeholder of its kind with meta.bridge.old = request: 'off' („Ältere Sprachnachricht – öffne sie in WhatsApp“),
+// 'daily' („… – wird später vom Handy geladen“), 'now' („… – wird geladen“), 'failed' (the phone could not send it).
+// When the phone sent it, the bridge's edit carries `media`: the placeholder takes the file's reference and fetches it
+// like any other (bridgemedia.js, with the virus scan); an edit with oldMedia { request: 'failed' } marks it failed.
+// Never the bridge's text on such a placeholder.
+//
 // Clients that do not know bridged chats never see one: every route answers 404 for a bridged conversation unless
 // the request says ?bridged=1 (or `bridged: true` in its body — the buttons of a push; README "App-API", since 1.14.0).
 
@@ -76,6 +84,15 @@ const PENDING_MS = 86400000;
 const LINK_CHECK_MS = 5 * 60000;
 const SUPPORTS = ['text', 'reply', 'reaction', 'edit', 'delete', 'read', 'typing'];
 const PLACEHOLDERS = ['image', 'video', 'audio', 'voice', 'file', 'sticker', 'location', 'unsupported', 'view_once'];
+// 1.26.0: the kinds of an old file and what became of the request to the phone (bridgemedia.OLD_STATES)
+const OLD_KINDS = ['image', 'video', 'audio', 'voice', 'file', 'sticker'];
+
+/** 1.26.0: message.oldMedia → meta.bridge of a placeholder (kind, a file's name, `old`: off | daily | now | failed). */
+function oldPlaceholder(o) {
+  const kind = OLD_KINDS.includes(o.kind) ? o.kind : 'file';
+  const name = typeof o.name === 'string' ? o.name.replace(/[\0-\x1f\x7f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200) || null : null;
+  return { placeholder: kind, name, old: bridgemedia.OLD_STATES.includes(o.request) ? o.request : 'off' };
+}
 
 const via = (net) => `bridge:${net}`;
 const isBridged = (conv) => !!(conv && conv.bridge_net);
@@ -452,6 +469,8 @@ async function apply(c, ev, { parked = false } = {}) {
     else if (ev.viewOnce === true) { meta.bridge = { placeholder: 'view_once', name: null }; text = null; }
     // 1.24.0: a file too large to reach GateControl at all — a file placeholder that failed („Zu groß, öffne es in …“)
     else if (ev.tooLarge === true) { meta.bridge = { placeholder: 'file', name: null, reason: 'too_large' }; text = null; }
+    // 1.26.0: an old WhatsApp file (its copy at WhatsApp ran out) — the caption stays the text
+    else if (ev.oldMedia && typeof ev.oldMedia === 'object' && !Array.isArray(ev.oldMedia)) meta.bridge = oldPlaceholder(ev.oldMedia);
     else if (ev.kind === 'media') {
       // 1.15.0: the file's reference and details too — fetched afterwards into the media of this plugin (bridgemedia.js)
       meta.bridge = bridgemedia.placeholderOf(ev.media && typeof ev.media === 'object' ? ev.media : {}, PLACEHOLDERS);
@@ -547,6 +566,9 @@ async function apply(c, ev, { parked = false } = {}) {
     const chan = sender.channel === true && !!conv.bridge_channel && m.sender_id == null && m.ext_sender == null;
     const theirs = !sender.self && !chan && m.ext_sender != null && m.ext_sender === await ensureContact(c, ev, sender);
     if (m.deleted_at || m.kind !== 'text' || !(mine || theirs || chan)) return;
+    // 1.26.0: the placeholder of an old file — the file the phone sent, or its word that it could not; never a text
+    const old = (messages.metaOf(m) || {}).bridge;
+    if (old && old.old) { await oldMediaEdit(c, conv, m, old, ev, users); return; }
     const raw = body(ev.text).slice(0, TEXT_MAX);
     const text = raw.trim();
     // 1.20.0: the new text with its format (and a new preview, when the bridge sends one)
@@ -606,6 +628,30 @@ async function apply(c, ev, { parked = false } = {}) {
     // 1.25.0: the contact deleted a status — gone from the status row at once
     if (bridgestatus.isStatus(conv)) bridgestatus.changed(c.box, ev.userId, conv.id, m.id, 'remove');
   }
+}
+
+/** 1.26.0: an edit of an old file's placeholder (inside the filing transaction). */
+async function oldMediaEdit(c, conv, m, old, ev, users) {
+  const messages = require('./messages');
+  if (ev.media && typeof ev.media === 'object' && !Array.isArray(ev.media)) {
+    const bm = bridgemedia.placeholderOf(ev.media, PLACEHOLDERS);
+    if (!bm.ref || !bridgemedia.api(c.gc)) return;
+    // the bridge turns a sticker into a picture for the edit — the placeholder keeps saying "Sticker"
+    if (old.placeholder === 'sticker' && bm.placeholder === 'image') bm.placeholder = 'sticker';
+    if (!bm.name && old.name) bm.name = old.name;
+    const meta = messages.metaOf(m) || {};
+    meta.bridge = bm;
+    // fetched now like a new file (bridgemedia.js); the wait counts from here, not from the old message's time
+    await store.run(c.gc, "UPDATE messages SET meta_enc = ?, ext_media = 'wait', ext_asked_at = ?, updated_at = ? WHERE id = ?", [seal.sealJson(meta), c.now, c.now, m.id]);
+    c.mediaWork = true;
+  } else if (ev.oldMedia && typeof ev.oldMedia === 'object' && ev.oldMedia.request === 'failed') {
+    if (old.old === 'failed') return;
+    const meta = messages.metaOf(m) || {};
+    meta.bridge = { ...old, old: 'failed' };
+    await store.run(c.gc, 'UPDATE messages SET meta_enc = ?, updated_at = ? WHERE id = ?', [seal.sealJson(meta), c.now, m.id]);
+  } else return;
+  await store.run(c.gc, 'UPDATE conversations SET updated_at = ? WHERE id = ?', [c.now, conv.id]);
+  live.queue(c.box, users, 'message.update', { conversationId: conv.id, messageId: m.id, editedAt: iso(c.now), media: true });
 }
 
 async function reactionChanged(c, conv, msgId, users) {

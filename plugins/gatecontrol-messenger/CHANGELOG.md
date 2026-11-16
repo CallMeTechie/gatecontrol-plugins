@@ -3,6 +3,27 @@
 Chats zwischen den GateControl-Konten – in der GateControl-App (eigener Tab „Chats“), im
 Windows-Client und im Portal (eigener Tab „Chats“). Alles bleibt auf dem eigenen Server.
 
+## 1.26.0
+**Alte Medien vom Handy nachladen** — für GateControl mit `gc.bridges` Version 13. **Braucht GateControl ≥ 1.295.0.**
+- **Platzhalter statt englischer Brücken-Notiz:** Eine WhatsApp-Datei aus dem Verlauf, deren Kopie bei WhatsApp
+  abgelaufen ist, kommt als `message.oldMedia { kind, name, request }` und wird ein Platzhalter ihrer Art
+  (`meta.bridge.old`: `off` | `daily` | `now` | `failed`; Bildunterschrift bleibt der Text). Portal: „Ältere
+  Sprachnachricht – öffne sie in WhatsApp“, „… – wird später vom Handy geladen“, „… – wird geladen“, „… – kam vom Handy
+  nicht; öffne sie in WhatsApp“ (DE/EN, Texte `bc.old.*`, `bc.old_it.*`, `bc.old_*`).
+- **Datei kommt später:** Die Bearbeitung der Brücke mit `media` ersetzt den Platzhalter — die Datei wird sofort geholt
+  (`ext_media = 'wait'`, Wartezeit ab jetzt über `ext_asked_at`), mit Virenprüfung, dann `message.update { media: true }`.
+  `edit.oldMedia { request: 'failed' }` markiert ihn als gescheitert. Nie der Text der Brücke auf einem Platzhalter; nur
+  der Absender der Nachricht (bzw. die Person selbst) ändert ihn.
+- **Ältere Apps:** `bridge.placeholder` trägt zusätzlich `old` und einen bekannten Zustand: `off` → `failed`/`gone`,
+  `daily`/`now` → `loading`, `failed` → `failed`/`unavailable` (`retry: false`).
+- **Admin, Karte „Brücken“:** Schalter „Alte Medien vom Handy nachladen“ mit Auswahl „Einmal am Tag (empfohlen)“ /
+  „Sofort“, Hinweis: Handy muss online sein, kostet Datenvolumen und Akku, ungefähre Uhrzeit (`dailyAt`, etwa 8 h nach
+  der nächtlichen Sicherung der Brücken). `PUT admin/bridges { mediaRequests: 'off' | 'daily' | 'now' }`
+  (`feature_off` vor Version 13). „Nachts“ ist mit der gepinnten Brücke nicht einstellbar (sie kennt keine Zeitzone je
+  Anmeldung); eine Sicherung am Abend verlegt die Anfragen in die Nacht.
+- Mock-Host: `gc.bridges` Version 13 (`status().mediaRequests`, `configure({ mediaRequests })`). Tests in
+  `test/oldmedia.test.js`.
+
 ## 1.25.2
 **Fix: WhatsApp-Status mit dem Namen „.“ und ohne Profilbild.** Die Brücke schickt einen Status als Nachricht des
 LID-Ghosts des Kontakts (mautrix-whatsapp `pickLID`) mit dessen öffentlichem Namen (`displayname_template`
@@ -23,8 +44,7 @@ und das wurde erst beim ersten Öffnen der Status-Reihe angefordert.
 - **Geprüft (Befund „sechs Status, sechsmal dasselbe Bild“ in Android 1.126.0):** Der Feed liefert je Status seine
   eigene `mediaId`/`url`, auch für Bilder, die kurz hintereinander abgelegt werden (neuer Test). Die Ursache lag in der
   App (Bild-Laden behielt beim Wechsel der `mediaId` das erste Bild), behoben in der Android-App
-  (GateControl-Android-Client #247). Portal und Windows
-  laden je Status neu.
+  (GateControl-Android-Client #247). Portal und Windows laden je Status neu.
 - Keine Server-Änderung; weiterhin GateControl ≥ 1.294.0. Testhilfe `mock-bridges`: `contacts[].contactId`. Tests in
   `test/bridgestatus.test.js` (LID-Ghost „.“ ohne Chat, mit Adressbuch, mit Chat und Bild über `contacts()`, Kontaktbild).
 

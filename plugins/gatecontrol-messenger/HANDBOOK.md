@@ -1,4 +1,4 @@
-<!-- version: 1.25.2 -->
+<!-- version: 1.26.0 -->
 # Messenger
 
 ## What the plugin does
@@ -73,6 +73,12 @@ It only comes when linking and appears at night. When “Load older history” i
 
 **Old messages are gone.**
 The administrator set a retention, or the chat is a disappearing chat.
+
+## New in 1.26.0
+
+- **Older WhatsApp pictures, videos and voice messages** of the history that WhatsApp no longer keeps no longer show an English note but “Older voice message – open it in WhatsApp” (or picture, video, file, sticker).
+- **Fetch from the phone:** the administrator can turn on **“Fetch old media from the phone”** on the card “Bridges” – “Once a day (recommended)” or “Right away”. The chat then says “… – will be loaded from the phone later” or “… – loading”, and once the phone sends the file it replaces the placeholder. The phone has to be online; it costs data volume and battery. “Once a day” means about 8 hours after the bridges' nightly backup (the card names the time); to have it at night, move the backup to the evening. When the phone no longer has the file, it says “… – the phone could not send it; open it in WhatsApp”.
+- WhatsApp only. Needs GateControl 1.295.0 or newer.
 
 ## New in 1.25.2
 

@@ -96,6 +96,10 @@
 //   makes the room of the contacts' status updates (kind 'group', readOnly); send / react / redact there answer
 //   ERR_BRIDGE / status_room, read there sends nothing without { status: true } ({ ok: true, skipped: 'status' }) —
 //   host.bridges.sent shows the reads that went out, with status: true; chats() names status.
+// Version 13 (old media from the phone; createHost(dir, { bridges: { …, version: 13 } })): status().mediaRequests
+//   { mode, options, dailyAt, timeZone } and configure({ mediaRequests: 'off' | 'daily' | 'now' }) —
+//   host.bridges.mediaRequests is the mode. Events with message.oldMedia / edit.media / edit.oldMedia are delivered as
+//   the test writes them (host.bridges.deliver).
 // events.pull / events.ack need no person; chats() a request of that person; send / react / redact / read / typing a
 // changing request of that person, their own chat (else ERR_INVALID 'unknown chat'), a bridge that runs.
 //
@@ -127,6 +131,8 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
   const v10 = !!(o && o.version >= 10);
   // version 11: Telegram as well
   const v11 = !!(o && o.version >= 11);
+  // version 13: old media from the phone
+  const v13 = !!(o && o.version >= 13);
   // version 10: Signal next to WhatsApp
   const NETS = v11 ? ['whatsapp', 'signal', 'telegram'] : (v10 ? ['whatsapp', 'signal'] : NETWORKS);
   const host = !!o;
@@ -136,11 +142,11 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
     preview: !(o && o.preview === false),
     enabled: !!(o && o.enabled),
     networks: { whatsapp: !!(o && o.networks && o.networks.whatsapp), ...(v10 ? { signal: !!(o && o.networks && o.networks.signal) } : {}), ...(v11 ? { telegram: !!(o && o.networks && o.networks.telegram) } : {}) },
-    stickers: false, needs: {}, tgApp: o && o.telegramApp ? { setAt: '2026-11-16T09:00:00.000Z', setBy: 'Max Berger' } : null, tgApps: [], tgPassword: null,
+    stickers: false, mediaRequests: 'off', needs: {}, tgApp: o && o.telegramApp ? { setAt: '2026-11-16T09:00:00.000Z', setBy: 'Max Berger' } : null, tgApps: [], tgPassword: null,
     host: { state: o && o.running ? 'running' : null, error: null, running: !!(o && o.running), memMb: o && o.running ? 88 : null, outdated: false, probe: null },
     logins: new Map(), processes: new Map(), log: [], seq: 0, oddStep: null, elsewhere: new Map(),
   };
-  const version = o && [1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].includes(o.version) ? o.version : 2;
+  const version = o && [1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13].includes(o.version) ? o.version : 2;
   Object.assign(st, { inbox: [], inboxSeq: 0, chats: new Map(), sent: [], failSend: null, wake: null });
   Object.assign(st, { files: new Map(), fetches: [], numbers: new Map(), lookups: new Map(), dms: new Map(), failFetch: null });
   Object.assign(st, { contacts: [], contactRefs: new Map(), contactDms: new Map() });
@@ -172,6 +178,7 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
         };
       }),
       ...(v10 ? { stickers: { animated: st.stickers } } : {}),
+      ...(v13 ? { mediaRequests: { mode: st.mediaRequests, options: ['off', 'daily', 'now'], dailyAt: '11:10', timeZone: 'Europe/Berlin' } } : {}),
       ...(v11 ? { telegramApp: { set: !!st.tgApp, setAt: st.tgApp ? st.tgApp.setAt : null, setBy: st.tgApp ? st.tgApp.setBy : null } } : {}),
       host: {
         state: st.enabled ? st.host.state : 'stopped', error: st.enabled ? st.host.error : null, checkedAt: st.host.state ? new Date().toISOString() : null,
@@ -238,7 +245,7 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
       if (!st.preview) throw err('ERR_BRIDGES_UNAVAILABLE', 'the bridges are not offered on this server', 'preview_off');
       const p = patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : null;
       if (!p) throw hostError('ERR_INVALID', 'patch: an object');
-      const keys = version >= 5 ? ['enabled', 'networks', 'history', 'backupNow', 'backupTime', ...(v10 ? ['animatedStickers'] : []), ...(v11 ? ['telegramApp'] : [])] : ['enabled', 'networks'];
+      const keys = version >= 5 ? ['enabled', 'networks', 'history', 'backupNow', 'backupTime', ...(v10 ? ['animatedStickers'] : []), ...(v11 ? ['telegramApp'] : []), ...(v13 ? ['mediaRequests'] : [])] : ['enabled', 'networks'];
       for (const k of Object.keys(p)) if (!keys.includes(k)) throw hostError('ERR_INVALID', 'unknown key');
       // version 11: the Telegram application id — kept as "set" only (the value goes into tgApps for the test, nowhere else)
       if (p.telegramApp !== undefined) {
@@ -248,6 +255,7 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
         st.tgApp = t ? { setAt: new Date().toISOString(), setBy: who.display_name || who.username || null } : null;
       }
       if (p.animatedStickers !== undefined) { if (typeof p.animatedStickers !== 'boolean') throw hostError('ERR_INVALID', 'animatedStickers: a boolean'); st.stickers = p.animatedStickers; }
+      if (p.mediaRequests !== undefined) { if (!['off', 'daily', 'now'].includes(p.mediaRequests)) throw hostError('ERR_INVALID', 'mediaRequests: off | daily | now'); st.mediaRequests = p.mediaRequests; }
       if (p.history !== undefined) { if (typeof p.history !== 'boolean') throw hostError('ERR_INVALID', 'history: a boolean'); st.history = p.history; }
       if (p.backupTime !== undefined) { if (!/^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(String(p.backupTime))) throw hostError('ERR_INVALID', 'backupTime: HH:MM'); st.backupTime = p.backupTime; }
       if (p.backupNow !== undefined) { if (p.backupNow !== true) throw hostError('ERR_INVALID', 'backupNow: true'); st.backup.requested = true; }
@@ -726,6 +734,8 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
     // version 11: the two-step verification of the Telegram test account, what configure got as the application id
     set tgPassword(v) { st.tgPassword = v || null; },
     get tgApps() { return st.tgApps; },
+    // ── version 13 ──
+    get mediaRequests() { return st.mediaRequests; },
     async deliver(events, { wake = true } = {}) {
       for (const e of events) st.inbox.push({ network: 'whatsapp', at: Date.now(), ...JSON.parse(JSON.stringify(e)), seq: ++st.inboxSeq });
       if (wake && st.wake) await st.wake({ pending: st.inbox.length, ephemeral: [] });

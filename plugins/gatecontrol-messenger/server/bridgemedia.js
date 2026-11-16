@@ -25,6 +25,11 @@
 // Speicherorte, the same storage targets Drive uses (a folder, a NAS over SMB / WebDAV, S3), and moves it there with
 // one click. The area is sealed: other people's files are never readable files on a NAS. A file of the history waits
 // until the person asks for it (ext_media 'ask', placeholder state 'on_request', POST messages/:id/fetch).
+//
+// 1.26.0: an old WhatsApp file (its copy at WhatsApp ran out, bridgechats.js) — meta.bridge.old: 'off' | 'daily' | 'now' |
+// 'failed', no reference until the phone sent it. Its view carries `old` and, for clients that do not know the field,
+// a state they show sensibly: off → failed / gone („nicht mehr da; in WhatsApp ansehen“), daily and now → loading,
+// failed → failed / unavailable. Once the phone sent it, it is a placeholder with a reference like any other.
 
 const store = require('./store');
 const seal = require('./seal');
@@ -45,6 +50,8 @@ const FILE_TRIES = 5;
 const TRANSIENT = ['ERR_BRIDGE_UNREACHABLE', 'ERR_BRIDGES_UNAVAILABLE', 'ERR_BUSY', 'ERR_RATE_LIMIT'];
 // a placeholder that failed with one of these keeps its reference: „Erneut versuchen“ (POST messages/:id/fetch)
 const RETRY_REASONS = ['unavailable'];
+// 1.26.0: what became of the request to the phone for an old file
+const OLD_STATES = ['off', 'daily', 'now', 'failed'];
 const WARN_MS = 3600000;
 const warned = new Map(); // code|reason → last warning (one line per hour and kind of failure)
 const RUN_FILES = 20;
@@ -151,6 +158,13 @@ const retriable = (bm, row) => !row.ext_media && RETRY_REASONS.includes(bm.reaso
 function placeholderView(bm, row) {
   const v = { kind: bm.placeholder, name: typeof bm.name === 'string' ? bm.name : null, state: null, reason: null };
   if (bm.geo) v.geo = bm.geo;
+  // 1.26.0: an old file the phone has (not) been asked for — `old`, and a state older clients know
+  if (OLD_STATES.includes(bm.old) && !bm.ref) {
+    v.old = bm.old;
+    if (bm.old === 'daily' || bm.old === 'now') v.state = 'loading';
+    else { v.state = 'failed'; v.reason = bm.old === 'off' ? 'gone' : 'unavailable'; v.retry = false; }
+    return v;
+  }
   if (row.ext_media === 'wait') v.state = 'loading';
   // 1.17.0: a file of the history — fetched when the person asks for it
   else if (row.ext_media === 'ask') v.state = 'on_request';
@@ -482,7 +496,7 @@ function outMedia(row, file) {
 }
 
 module.exports = {
-  api, newChatApi, placeholderOf, placeholderView, kick, runOnce, chatAvatar, contactAvatar, wantContacts, pictureOf, ask, ensureArea, areaInfo, AREA,
+  api, newChatApi, placeholderOf, placeholderView, OLD_STATES, kick, runOnce, chatAvatar, contactAvatar, wantContacts, pictureOf, ask, ensureArea, areaInfo, AREA,
   outKind, outRefusal, outMedia, OUT_TYPES, SUPPORTS, REF_RE, REASONS, FILE_KINDS, FILE_TRIES, RETRY_REASONS,
   _reset: () => { tries.clear(); warned.clear(); pictureWait.clear(); picturesRepaired = false; running = null; more = false; areaReady = false; areaFailedAt = 0; },
 };

@@ -297,6 +297,25 @@
         M.switchBtn(b.stickers.animated, T('admin.br_stickers'), function (v) { setBr({ animatedStickers: v }); }, !b.enabled),
       ]));
     }
+    // 1.26.0 (gc.bridges version 13): old media from the phone (WhatsApp) — a switch, and while on: once a day or at once
+    var mr = b.mediaRequests;
+    if (mr && typeof mr.mode === 'string') {
+      var mrOn = mr.mode !== 'off';
+      var mrSel = null;
+      if (mrOn) {
+        mrSel = el('select', { class: 'form-select ms-br-media-sel', 'aria-label': T('admin.br_media_when'), on: { change: function (e) { setBr({ mediaRequests: e.currentTarget.value }); } } },
+          ['daily', 'now'].map(function (v) { return el('option', { value: v, text: T('admin.br_media_' + v) }); }));
+        mrSel.value = mr.mode;
+        mrSel.disabled = !b.enabled;
+      }
+      var mrHint = !mrOn ? [T('admin.br_media_off')]
+        : [mr.mode === 'daily' ? (mr.dailyAt ? T('admin.br_media_daily_at', { time: mr.dailyAt }) : T('admin.br_media_daily_sub')) : T('admin.br_media_now_sub'), T('admin.br_media_cost')];
+      list.appendChild(el('li', { id: 'ms-br-media' }, [
+        el('span', { class: 'ms-gc-path' }, [el('span', { text: T('admin.br_media') }), el('small', { text: mrHint.join(' ') })]),
+        mrSel,
+        M.switchBtn(mrOn, T('admin.br_media'), function (v) { setBr({ mediaRequests: v ? 'daily' : 'off' }); }, !b.enabled),
+      ]));
+    }
     var hs = b.host && b.host.homeserver;
     if (b.enabled && hs && hs.running && hs.memMb != null) {
       list.appendChild(el('li', null, [el('span', { class: 'ms-gc-path' }, [el('span', { text: T('admin.br_hs') }),

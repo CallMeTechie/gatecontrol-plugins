@@ -76,6 +76,13 @@
 //                                 to the permission itself): without it a child's Telegram channels are not shown
 //     login                       number, code and password of a Telegram login pass through (login.step) — never kept
 //
+//   1.26.0 (GateControl with gc.bridges version 13): old media from the phone (WhatsApp only).
+//     admin                       + mediaRequests { mode: 'off' | 'daily' | 'now', options, dailyAt, timeZone } (GateControl's);
+//                                 PUT admin/bridges { mediaRequests } — whether the bridge asks the person's phone for a
+//                                 file of the history whose copy at WhatsApp ran out: once a day (about 8 hours after
+//                                 the nightly snapshot, dailyAt) or at once. The phone has to be online; it costs data
+//                                 volume and battery. A change restarts the WhatsApp bridge.
+//
 // Kept here (migration 006): the consent, the parents' grants and WHICH account is linked on which network (the
 // bridge's login id and state — for the count on the admin card and the state without asking the bridge). Never the
 // phone number, never a session key: those stay in the bridge.
@@ -102,6 +109,8 @@ const PORTAL_PATH = '/portal#plg-gatecontrol-messenger';
 const handoffs = new Map(); // userId → { network, target, at }
 const ID_RE = /^[A-Za-z0-9._:=+-]{1,128}$/;
 const STATES = ['connected', 'connecting', 'logged_out', 'error', 'unknown'];
+// 1.26.0: old media from the phone (GateControl's configure({ mediaRequests }))
+const MEDIA_REQUESTS = ['off', 'daily', 'now'];
 
 /** gc.bridges when this GateControl has it (a newer server with the preview, the permission granted). */
 function api(gc) {
@@ -212,6 +221,12 @@ async function adminSet(gc, body, now) {
     if (typeof p.animatedStickers !== 'boolean') throw fail('invalid');
     if (!(Number(b.version) >= 10)) throw fail('feature_off');
     patch.animatedStickers = p.animatedStickers;
+  }
+  // 1.26.0 (gc.bridges version 13): old media from the phone — off, once a day or at once
+  if (p.mediaRequests !== undefined) {
+    if (!MEDIA_REQUESTS.includes(p.mediaRequests)) throw fail('invalid');
+    if (!(Number(b.version) >= 13)) throw fail('feature_off');
+    patch.mediaRequests = p.mediaRequests;
   }
   if (p.networks !== undefined) {
     if (!p.networks || typeof p.networks !== 'object' || Array.isArray(p.networks)) throw fail('invalid');
