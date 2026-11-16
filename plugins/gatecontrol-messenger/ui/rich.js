@@ -338,11 +338,13 @@
     var label = T('st.bridged_label', { name: it.contact.name || '?', network: NET_LABEL[it.network] || it.network });
     var who = { id: 'ext-' + it.contact.id, name: it.contact.name, avatarUrl: it.contact.avatarUrl || null };
     return el('button', { type: 'button', class: 'ms-ring has-stories' + (it.unseen ? ' is-unseen' : ''), title: label, 'aria-label': label, on: { click: function () { bridgedViewer(it); } } }, [
-      el('span', { class: 'ms-ring-av' }, [M.avatar(who, 50), M.netLogo(it.network, null, 11, 'ms-net ms-ring-net')]),
+      el('span', { class: 'ms-ring-av' }, [M.avatar(who, 50), netMark(it.network, 11, 'ms-ring-net')]),
       el('span', { class: 'ms-ring-name', text: it.contact.name || '?' }),
     ]);
   }
   var NET_LABEL = { whatsapp: 'WhatsApp', signal: 'Signal', telegram: 'Telegram' };
+  /** The service's logo (MS.netLogo, its colour class) with one more class: on the ring, or in a line. */
+  function netMark(network, size, extra) { var m = M.netLogo(network, null, size); m.classList.add(extra); return m; }
   function newestOf(stories) { return stories && stories.length ? stories[stories.length - 1].createdAt : ''; }
   function strip(feed) {
     var box = el('div', { class: 'ms-strip', role: 'list', 'aria-label': T('st.strip') });
@@ -509,7 +511,7 @@
         stage.appendChild(s.kind === 'video' ? el('video', { src: s.url, controls: true, autoplay: true, playsinline: true }) : el('img', { src: s.url, alt: s.text || '' }));
         if (s.text) stage.appendChild(el('div', { class: 'ms-story-cap', text: s.text }));
       } else stage.appendChild(el('div', { class: 'ms-story-text', text: s.kind === 'unsupported' ? T('st.bridged_unsupported', { network: net }) : T('msg.media_unavailable') }));
-      M.clear(info).appendChild(el('span', { class: 'ms-story-via' }, [M.netLogo(item.network, null, 10, 'ms-net ms-net-inl'), el('span', { text: T('st.bridged_via', { network: net }) + ' · ' + M.when(s.createdAt) })]));
+      M.clear(info).appendChild(el('span', { class: 'ms-story-via' }, [netMark(item.network, 10, 'ms-net-inl'), el('span', { text: T('st.bridged_via', { network: net }) + ' · ' + M.when(s.createdAt) })]));
       if (!s.seen) { s.seen = true; H.api('POST', 'status/bridged/' + s.id + '/seen', {}).then(function () { H.refreshFeed(true); }).catch(function () {}); }
       M.clear(foot);
       M.clear(note);
@@ -527,7 +529,7 @@
         send({ text: t }, 'st.bridged_replied');
       });
       foot.appendChild(input);
-      note.appendChild(M.netLogo(item.network, null, 9, 'ms-net ms-net-inl'));
+      note.appendChild(netMark(item.network, 9, 'ms-net-inl'));
       note.appendChild(el('span', { text: T('st.bridged_reply_hint', { network: net }) }));
     }
     var prev = el('button', { type: 'button', class: 'ms-story-nav is-prev', 'aria-label': T('st.prev'), on: { click: function () { if (i > 0) { i--; show(); } } } }, [M.icon('back', 20)]);
