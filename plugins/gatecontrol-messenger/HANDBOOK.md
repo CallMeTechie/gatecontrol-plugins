@@ -1,4 +1,4 @@
-<!-- version: 1.25.0 -->
+<!-- version: 1.25.1 -->
 # Messenger
 
 ## What the plugin does
@@ -73,6 +73,10 @@ It only comes when linking and appears at night. When “Load older history” i
 
 **Old messages are gone.**
 The administrator set a retention, or the chat is a disappearing chat.
+
+## New in 1.25.1
+
+- **WhatsApp status updates also arrive after updating in the "wrong" order.** When GateControl was updated before the Messenger, the chat "WhatsApp Status Broadcast" stayed in the chat list (with a group icon) and the status row showed no WhatsApp status – until a contact posted a new one. The Messenger now catches up the next time the chat list or the status row is opened: the chat leaves the list and its status updates appear in the status row. Nothing is lost; status updates older than 24 hours are deleted as usual.
 
 ## New in 1.25.0
 

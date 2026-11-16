@@ -3,6 +3,20 @@
 Chats zwischen den GateControl-Konten – in der GateControl-App (eigener Tab „Chats“), im
 Windows-Client und im Portal (eigener Tab „Chats“). Alles bleibt auf dem eigenen Server.
 
+## 1.25.1
+**Fix: Status-Raum nachholen, wenn GateControl vor dem Messenger aktualisiert wurde.** GateControl 1.294.0 schickt nach
+Migration 156 (`events.refreshRooms`) genau ein `chat`-Ereignis mit `status: true` je Status-Raum. Lief da noch Messenger
+1.24.x, wurde `status` übergangen (nur `kind` → Gruppe), danach kam kein weiteres Ereignis mehr, bis ein Kontakt einen
+neuen Status postete: „WhatsApp Status Broadcast“ blieb in der Liste, die Status-Reihe ohne WhatsApp-Status.
+- **Nachholen** (`bridgechats.catchUpStatus`): in einer Anfrage der Person (`gc.bridges.chats` gibt es nur dann) —
+  `GET conversations?bridged=1` (über `refreshLinks`) und `GET status/feed` — höchstens einmal je Stunde und Person, nur
+  mit `gc.bridges` Version 12, WhatsApp-Verknüpfung und WhatsApp-Unterhaltungen mit `bridge_status = 0`. Die Chats der
+  Brücke mit `status: true` werden wie beim Ereignis umgestellt (gemeinsame Funktion `toStatusRoom`: stumm, gelesen,
+  `expires_at`, `conversation.update`, `story.bridged`). Erledigt, sobald die Brücke die Chats der Person genannt hat →
+  `settings` `bridge_status_catchup:<id>`, danach nie wieder (eine leere Liste oder ein Fehler: in einer Stunde erneut).
+  Protokoll `bridge_status_caught_up` (Info).
+- Keine Server-Änderung; weiterhin GateControl ≥ 1.294.0. Tests in `test/bridgestatus.test.js`.
+
 ## 1.25.0
 **WhatsApp-Status in der Status-Reihe** — für GateControl mit `gc.bridges` Version 12 (`chat.status`). **Braucht
 GateControl ≥ 1.294.0** (`plugin.json` `gatecontrol`; `gatecontrol.ref` = v1.294.0). Mit älterem GateControl bleibt alles wie bisher.

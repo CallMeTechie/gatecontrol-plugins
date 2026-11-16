@@ -115,6 +115,8 @@ async function feed(ctx) {
   if (!api(ctx.gc) || ctx.viewer == null) return [];
   const bridges = require('./bridges');
   const bridgechats = require('./bridgechats');
+  // 1.25.1: the status room an older version kept as a chat (bridgechats.catchUpStatus — hourly until done)
+  await bridgechats.catchUpStatus(ctx);
   const bridgemedia = require('./bridgemedia');
   const persons = require('./persons');
   const convs = await store.all(ctx.gc, 'SELECT * FROM conversations WHERE bridge_owner = ? AND bridge_status = 1 AND bridge_closed = 0', [ctx.viewer]);
