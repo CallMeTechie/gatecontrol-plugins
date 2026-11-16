@@ -26,7 +26,7 @@ Passwörter und SSH-Schlüssel speichert nicht das Plugin, sondern der verschlü
 
 ## Voraussetzungen {#voraussetzungen}
 
-- Für den neuen Dialog „Gerät hinzufügen“: GateControl mit der Fernzugriff-Schnittstelle **Version 7**. Mit einem älteren GateControl bleibt das bisherige Formular mit Reitern.
+- Für den neuen Dialog „Gerät hinzufügen“: GateControl mit der Fernzugriff-Schnittstelle **Version 7** (GateControl **1.292.0** oder neuer). Mit einem älteren GateControl bleibt das bisherige Formular mit Reitern.
 - Für Linux-Geräte: GateControl **1.289.0** oder neuer und auf dem Rechner der Agent **gatecontrol-agent** (siehe [Linux-Geräte](#linux)).
 - Für „Bildschirm teilen“ am Windows-PC: GateControl **1.287.0** oder neuer und die GateControl-App für Windows (Pro) mit „Bildschirm teilen“. Maus und Tastatur so, wie sie sind (auch Tastenkombinationen, mehrere Bildschirme), bringt GateControl mit der Fernzugriff-Schnittstelle **Version 6** (GateControl 1.288.0 oder neuer); mit Version 5 geht Steuern mit Klicken, Ziehen, Scrollen und Text.
 - Zum Steuern eines Handys: GateControl mit der Fernzugriff-Schnittstelle **Version 5** (GateControl 1.287.0 oder neuer) und die GateControl-App für Android **aus GitHub** mit eingeschalteter Bedienungshilfe „GateControl-Fernsteuerung“. Mit einem älteren GateControl oder der App aus Google Play geht nur Ansehen.

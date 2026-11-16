@@ -2,7 +2,7 @@
 
 ## 1.7.0
 
-„Gerät hinzufügen“ neu (Entwurf „Gerät hinzufügen“, freigegeben mit allen 8 Empfehlungen; Vertrag `contract-geraet-v7`). Braucht GateControl mit `gc.remote` Version 7 (`candidates`, `scan`, `listenPort: 'auto'`, `wake` mit `watch`; gatecontrol#509). `gatecontrol.ref` und die Mindestversion bleiben Platzhalter – nach dem Server-Release mit `tools/bump-gatecontrol.sh` anheben. Ohne Version 7 bleibt das bisherige Formular mit Reitern.
+„Gerät hinzufügen“ neu (Entwurf „Gerät hinzufügen“, freigegeben mit allen 8 Empfehlungen; Vertrag `contract-geraet-v7`). Braucht GateControl mit `gc.remote` Version 7 (`candidates`, `scan`, `listenPort: 'auto'`, `wake` mit `watch`; gatecontrol#509). Mindestversion **GateControl 1.292.0** (`gatecontrol.ref` = v1.292.0). Ohne Version 7 bleibt das bisherige Formular mit Reitern.
 
 - **Assistent in drei Schritten** (`ui/wizard.js`): Ziel aus der Liste von `GET admin/candidates` (Im VPN, Hinter Gateway „…“ mit Online-Zustand, Freigegebene Dienste, Außerhalb), Suche und Filter SSH/RDP/VNC, Geräte ohne Fernzugriffs-Ports eine Zeile tiefer; Verbindung mit gezielter Prüfung von 22, 3389, 5900, 23 (`POST admin/candidates/scan`), Weg als eine Zeile, „Zugriff“ unter „Erweitert“; Anmeldung mit Tresor-Hinweis und SSH-Schlüssel von GateControl als Vorgabe.
 - **Zustände:** nicht erreichbar (Wecken über den Wächter `POST admin/candidates/wake`, ohne dass das Plugin die MAC sieht), Port zu, Gateway offline, doppelt bekannt (VPN empfohlen, Auswahl nur hier), meldet sich selbst an („Zum Gerät“), extern mit/ohne Port (Hinweisliste).
