@@ -1,4 +1,4 @@
-<!-- version: 1.1.0 -->
+<!-- version: 1.2.0 -->
 # Remote access – Handbook
 
 ## What the plugin does {#was-das-plugin-kann}
@@ -10,13 +10,16 @@ Remote access is GateControl's former "Remote desktops" as a plugin of its own. 
 
 On top: wake-on-LAN, maintenance windows, a reminder to renew credentials, rights per person and group, and the history of every session.
 
+Since 1.2.0 **SSH runs in GateControl's own terminal** – in the browser and natively in the apps, with **tmux** (the session keeps running on the device when the connection drops) and a checked host key. Sessions can be **recorded** on request and played back in the browser (see [SSH in the terminal](#terminal) and [Recording](#aufzeichnung)).
+
 Since 1.1.0 **Windows PCs register themselves**: when somebody switches on "Allow Remote Desktop" in the GateControl app for Windows, the PC shows up at once under Remote access › Devices. One connects with the code shown on the PC and only after the confirmation at the PC (see [Windows PCs from the app](#windows-pcs)).
 
 Passwords and SSH keys are not stored by the plugin but in GateControl's encrypted vault. The plugin only knows a reference to them.
 
 ## Requirements {#voraussetzungen}
 
-- GateControl **1.284.0** or newer (remote access interface version 2: registration of the Windows PCs, firewall per session, silent signals to the PC).
+- GateControl **1.284.0** or newer (remote access interface version 2: registration of the Windows PCs, firewall per session, silent signals to the PC). The terminal and recording need the GateControl after 1.284.0 (interface version 3) – before it, SSH keeps running over Guacamole.
+- For recordings: the drive `remote-recordings` of the `docker-compose.yml` of the new version (GateControl and guacd). Without it nothing is recorded.
 - For Windows PCs from the app: the GateControl app for Windows (Pro) with "Allow Remote Desktop" and Windows **Pro, Enterprise or Education**. Windows Home cannot offer Remote Desktop.
 - A **licence of its own** for Remote access: month, year or a lifetime licence of the plugin. Remote access is **not** part of the GateControl plan or a server lifetime licence.
 - For devices in the home network: a home gateway that reaches the device.
@@ -56,6 +59,8 @@ A device has these tabs:
 | Display, Resources, Performance, Session | as in Remote desktops (RDP only, Display also VNC) |
 | Wake & maintenance | wake-on-LAN with the MAC address, maintenance windows, the reminder to renew credentials |
 | Browser | whether people may connect in the browser, clipboard, sound |
+| Terminal (SSH only) | GateControl's terminal or Guacamole, tmux, host key, generate an SSH key |
+| Recording | off, optional or always |
 
 **Access:**
 
@@ -79,11 +84,30 @@ When somebody switches on **"Allow Remote Desktop"** in the GateControl app for 
 - **Switch off:** the PC stays in the list as "Signed off", the history stays. Open sessions end, the code is void.
 - **Guessing:** after 5 wrong codes in 10 minutes a person waits 15 minutes. The whole server allows 30 attempts per hour. After 10 wrong codes on one PC its code is void.
 
+### SSH in the terminal {#terminal}
+
+An SSH device connects either with **GateControl's terminal** or with **Guacamole** as before. New SSH devices get the terminal; existing and taken-over ones stay on Guacamole until you switch them.
+
+- **Switching:** open the device, tab **Terminal**, and click **"Try in the terminal"**. When the connection works, the device shows "Terminal tested". Then **"Switch to the terminal"** in the list – or **"Switch all SSH devices"** at the top. You go back in the Terminal tab under "Connect with".
+- **tmux:** with "Resume the session with tmux" the session keeps running on the device when the connection drops or you move from the phone to the PC. The name is "gc-" and the short name of the device or one of your own (letters, digits, `_` and `-`). In the portal you choose "Resume" with the name of the session or "Start a new session" before connecting. Without tmux on the device there is a normal shell and a hint.
+- **Host key:** on the first connection the terminal shows the fingerprint of the device. Compare it (`ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`) and confirm. From then on GateControl only connects with exactly this key. If it changes, the connection is blocked. If the change was planned (a reinstalled device), reset the key in the Terminal tab with **"Reset host key"**.
+- **SSH key instead of a password:** **"Generate SSH key"** makes a key in GateControl. Add the public part on the device to `~/.ssh/authorized_keys`. The private key stays in the vault.
+
+### Recording {#aufzeichnung}
+
+Sessions are recorded only when you allow it – per device in the tab **Recording** and per person or group under **Permissions** (column "Recording"). The stricter of the two holds.
+
+- **Off** (default): no recording.
+- **Optional:** the person ticks "Record this session" before connecting.
+- **Always:** every session is recorded, also those of family members. Before the start the hint "This session is recorded" always appears, a red dot during the session. The person sees it in their profile as well.
+
+The SSH terminal records what the terminal shows, no keystrokes; RDP and VNC the picture of the session. Recordings are stored encrypted by GateControl. Under **Sessions › Recordings** you play and delete them. Only administrators and the owner of the device may watch; every viewing is in the protocol (filter "Sharing"). How long they are kept is set under **Settings** (default 30 days).
+
 ## Using it {#benutzen}
 
 **In the portal:** the tab **Remote access** shows your devices with their state. "Connect" opens the session in a new tab. If "Open session" appears instead, tap it. "Wake up" sends a wake-on-LAN packet. A Windows PC with "Code only" shows "Enter code" there. With the right "Redeem support codes" there is "Enter code" at the top as well, for PCs that are not in your list.
 
-**In the apps:** RDP devices are listed in the GateControl apps under Remote Desktop as before.
+**In the apps:** RDP devices are listed in the GateControl apps under Remote Desktop as before. SSH devices with the terminal open in a terminal of the app itself, once the app can do it.
 
 **As an administrator:** under **Remote access › Devices** you can connect to every device – to a Windows PC from the app only "without a code", otherwise with the code like everybody. **Sessions** shows the history, ends open browser sessions and downloads everything as CSV. The filter **"Sharing"** shows redeemed and wrong codes, requests, changes of "without a code" and the opening and closing of the firewall.
 
@@ -118,7 +142,11 @@ The right is checked again on every connect.
 
 **The apps show other devices than the portal:** the apps show RDP devices only. Until GateControl has the new interface, their list still comes from "Remote desktops".
 
-**Recording:** recording sessions comes with a later version.
+**"The host key of the device has changed":** GateControl does not connect because the device shows another key than the first time. If you reinstalled the device, reset the key in the Terminal tab. Otherwise: do not connect and check who answers there.
+
+**Recording does not start:** GateControl needs the drive for recordings of the new `docker-compose.yml`. Without it a device with "always record" does not open. RDP and VNC recordings come once guacd has the drive too (after the next update).
+
+**tmux is missing:** install tmux on the device (`sudo apt install tmux`). Until then the session runs without tmux.
 
 **The PC does not show up:** the person needs the right "Share own devices". Windows Home has no Remote Desktop – the app says so.
 
@@ -127,6 +155,14 @@ The right is checked again on every connect.
 **"Too many wrong codes":** wait 15 minutes or let the PC show a new code.
 
 **In the browser Windows does not ask for the sign-in:** when the PC requires network level authentication (NLA), the session in the browser needs a user name and password that the session page does not ask for yet. Connect from the GateControl app then.
+
+## New in 1.2.0 {#neu-1-2-0}
+
+- **SSH in GateControl's own terminal**, in the browser and in the apps – with tmux ("Resume" / "New session") and a checked host key.
+- Old SSH devices stay on Guacamole; **switch** them one by one or all at once, "Try in the terminal" first.
+- **Generate SSH keys** in GateControl, view and reset the host key.
+- **Recording** per device and per person or group: off, optional or always – "always" only with the hint before the start.
+- **Recordings** under Sessions: play and delete, retention under Settings; owners of a PC see them in their profile.
 
 ## New in 1.1.0 {#neu-1-1-0}
 

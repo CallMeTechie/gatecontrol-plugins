@@ -4,11 +4,11 @@
     "de": "Fernzugriff",
     "en": "Remote access"
   },
-  "version": "1.1.0",
+  "version": "1.2.0",
   "publisher": "CallMeTechie",
   "description": {
-    "de": "Die Remote Desktops von GateControl als eigenes Plugin: Geräte mit RDP, VNC, SSH und Telnet – im VPN, über einen Port-Forward oder ein Home-Gateway –, Verbinden im Browser, Wake-on-LAN, Wartungsfenster, Rechte je Person und Gruppe, Verlauf. Windows-PCs melden sich mit „Remote Desktop erlauben“ in der GateControl-App selbst an: verbunden wird mit dem Code vom PC und erst nach der Bestätigung dort, die Firewall öffnet sich nur je Sitzung. Übernimmt Ziele, Rechte und Verlauf aus „Remote Desktops“. Zugangsdaten bleiben im Tresor von GateControl.",
-    "en": "GateControl's remote desktops as a plugin of their own: devices with RDP, VNC, SSH and Telnet – in the VPN, through a port forward or a home gateway –, connecting in the browser, wake-on-LAN, maintenance windows, rights per person and group, history. Windows PCs register themselves with “Allow Remote Desktop” in the GateControl app: one connects with the code from the PC and only after the confirmation there, the firewall opens per session only. Takes over targets, rights and history from “Remote desktops”. Credentials stay in GateControl's vault."
+    "de": "Die Remote Desktops von GateControl als eigenes Plugin: Geräte mit RDP, VNC, SSH und Telnet – im VPN, über einen Port-Forward oder ein Home-Gateway –, Wake-on-LAN, Wartungsfenster, Rechte je Person und Gruppe, Verlauf. Windows-PCs melden sich aus der GateControl-App an, verbunden wird mit Code und Bestätigung am PC. SSH im eigenen Terminal von GateControl (Browser und Apps) mit tmux und geprüftem Host-Schlüssel, Aufzeichnung auf Wunsch („immer“ nur mit Hinweis). Übernimmt Ziele, Rechte und Verlauf aus „Remote Desktops“. Zugangsdaten bleiben im Tresor von GateControl.",
+    "en": "GateControl's remote desktops as a plugin of their own: devices with RDP, VNC, SSH and Telnet – in the VPN, through a port forward or a home gateway –, wake-on-LAN, maintenance windows, rights per person and group, history. Windows PCs register from the GateControl app; one connects with a code and the confirmation at the PC. SSH in GateControl's own terminal (browser and apps) with tmux and a checked host key, recording on request (“always” only with a hint). Takes over targets, rights and history from “Remote desktops”. Credentials stay in GateControl's vault."
   },
   "gatecontrol": ">=1.284.0",
   "entry": "server/index.js",

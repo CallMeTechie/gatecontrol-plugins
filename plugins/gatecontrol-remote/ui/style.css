@@ -99,3 +99,9 @@ body{padding:2px 2px 24px}
 /* 1.1: "Code eingeben" (portal), the PCs of the app */
 .rm-code-form{display:grid;gap:6px;margin-top:10px}
 .rm-code-input{font-size:22px;letter-spacing:.12em;font-variant-numeric:tabular-nums;text-align:center;min-height:44px}
+/* 1.2: the terminal of an SSH device in the editor, the connect dialog of the portal, the recordings */
+.rm-sshinfo{display:flex;flex-direction:column;gap:8px}
+.rm-pubkey{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;word-break:break-all}
+.rm-tmux-list{display:flex;flex-direction:column;gap:8px;margin:8px 0}
+.rm-tmux-list .btn{justify-content:flex-start;text-align:left}
+.rm-rec-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--crit,#dc2626);margin-right:6px;vertical-align:middle}

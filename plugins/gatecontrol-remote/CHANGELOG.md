@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.2.0
+
+Stufe 3 „SSH mit tmux und Aufzeichnung“. Volle Funktion mit dem GateControl nach 1.284.0 (`gc.remote` Version 3: Terminal im Kern, `tmux.list`, `hostKeys`, `vault.generate`, Aufzeichnungen); mit 1.284.0 läuft SSH weiter über Guacamole, ohne Aufzeichnung.
+
+- **SSH im Terminal von GateControl:** Feld `ssh_engine` (`term` | `guac`) je SSH-Gerät; neue Geräte bekommen das Terminal (xterm.js im Browser, nativ in den Apps), vorhandene und übernommene bleiben bei Guacamole (Migration `003_terminal.sql`). Umstellen wählbar je Gerät, „Alle SSH-Geräte umstellen“, vorher „Im Terminal testen“ (Admin-Verbinden mit `engine: 'term'`, ein erfolgreicher Start merkt sich das Gerät: `term_tested_at`). Protokoll `remote_ssh_engine_changed`.
+- **tmux:** `tmux_enabled` (Standard an) und `tmux_name` (Standard `gc-<Kurzname>`, Namen nur `A-Z a-z 0-9 _ -`, bis 32 Zeichen, vom Plugin und von GateControl geprüft). Portal: „Fortsetzen: <Sitzung>“ (Liste über `gc.remote.tmux.list`) oder „Neue Sitzung starten“. App-API `GET devices/<id>/tmux`.
+- **Host-Schlüssel und Schlüssel:** die erste Verbindung im Terminal fragt nach dem Fingerabdruck, danach prüft GateControl jede Verbindung; eine Abweichung sperrt (`host_key_mismatch`, Protokoll `remote_host_key_changed`). Im Editor (Reiter Terminal): gespeicherter Host-Schlüssel, „Host-Schlüssel zurücksetzen“ (`remote_host_key_reset`), „SSH-Schlüssel erzeugen“ – ein ed25519-Schlüssel aus GateControl, das Plugin zeigt nur den öffentlichen Teil zum Eintragen.
+- **Native Terminals der Apps:** `POST devices/<id>/connect { via: 'app', tmux?, record? }` → `{ session: { ref, expiresAt, engine: 'term', recording, tmux } }`; die App holt mit `ref` ein Token bei GateControl (`POST /api/v1/client/remote/term-token`) und öffnet den WebSocket `gc-term.v1`. Ein Gerät mit Guacamole öffnet keine App (`invalid`), der Browser-Schalter gilt nur für den Browser.
+- **Aufzeichnung:** `recording` je Gerät (`off` | `optional` | `always`, Reiter Aufzeichnung) und je Person oder Gruppe (Spalte unter Berechtigungen); es gilt das Strengere. „Wählbar“: die Person hakt „Diese Sitzung aufzeichnen“ an; „immer“: Hinweis im Portal, auf der Sitzungsseite von GateControl und im Profil der Person, eine App muss mit `record: true` bestätigen (`recording_required`). Ohne Laufwerk bei GateControl startet eine Pflicht-Aufzeichnung nicht (`recording_unavailable`).
+- **Aufzeichnungen:** Liste unter Sitzungen (Gerät, Person, Zeit, Dauer, Größe), „Abspielen“ (Abspielseite von GateControl über `GC.openSession`, nur für die Person, die abspielt) und „Löschen“; Besitzer eines PCs sehen die Aufzeichnungen ihrer PCs im Profil. Aufbewahrung `recordingDays` (Standard 30, Einstellungen). App-API `GET recordings`, `POST recordings/<id>/play`. Protokoll `remote_recording_viewed`, `remote_recording_deleted`.
+- Neue Fehler: `host_key_mismatch`, `host_key_unpinned`, `tmux_unavailable`, `credential_required`, `auth_failed`, `recording_required`, `recording_unavailable`, `recording_busy`.
+
 ## 1.1.0
 
 Stufe 2 „Windows-Schalter“. GateControl ≥ 1.284.0 (`gc.remote` Version 2: `req.user.device.vpnIp`, `hubAddress`, `peerAddress`, `from`, Signal-Topics, Fassade `wake`/`statusAdmin`/`statusAll`).

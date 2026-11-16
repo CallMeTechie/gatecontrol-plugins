@@ -12,8 +12,9 @@ const DEFAULTS = Object.freeze({
   maxPerDevice: 0,      // open browser sessions per device (0 = only GateControl's limit)
   historyDays: 365,     // the history is kept 30 … 3650 days
   checkMinutes: 5,      // how often the devices are checked (1 … 60 minutes)
+  recordingDays: 30,    // 1.2: recordings are kept 1 … 3650 days (GateControl's own limit GC_REMOTE_REC_DAYS holds as well)
 });
-const RANGES = Object.freeze({ maxPerUser: [0, 20], maxPerDevice: [0, 20], historyDays: [30, 3650], checkMinutes: [1, 60] });
+const RANGES = Object.freeze({ maxPerUser: [0, 20], maxPerDevice: [0, 20], historyDays: [30, 3650], checkMinutes: [1, 60], recordingDays: [1, 3650] });
 
 function normalise(v) {
   const c = { ...DEFAULTS };

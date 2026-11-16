@@ -1,4 +1,5 @@
-/* Admin page "Berechtigungen": the four rights per group and person, and the matrix of people and groups × devices. */
+/* Admin page "Berechtigungen": the four rights per group and person, and the matrix of people and groups × devices.
+   1.2: the recording per group and person (aus / wählbar / immer — the stricter of person and device holds). */
 (function () {
   'use strict';
   var P = window.RM;
@@ -30,6 +31,23 @@
     return s;
   }
 
+  /** 1.2: the recording of a group or person: not set here / off / optional / always */
+  function recChoice(kind, who, value, label) {
+    var s = el('select', { class: 'form-select', 'aria-label': label }, [
+      el('option', { value: '', text: kind === 'user' ? T('rights.inherit') : T('rights.unset') }),
+      el('option', { value: 'off', text: T('rec.off') }), el('option', { value: 'optional', text: T('rec.optional') }), el('option', { value: 'always', text: T('rec.always') })]);
+    s.value = value || '';
+    s.addEventListener('change', function () {
+      var go = s.value === 'always' ? P.confirmDialog(T('rights.rec_always_q', { name: who.name }), T('rec.always')) : Promise.resolve(true);
+      go.then(function (ok) {
+        if (!ok) { s.value = value || ''; return null; }
+        s.disabled = true;
+        return P.api('PUT', 'admin/rights/' + kind + '/' + who.id, { recording: s.value || null }).then(function () { P.toast(T('common.saved')); return load(); });
+      }).catch(function (e) { P.warn(e); load(); });
+    });
+    return s;
+  }
+
   function personCell(u) {
     var name = el('button', { type: 'button', class: 'btn btn-sm', text: u.name, title: T('rights.view_person'), on: { click: function () { personView(u); } } });
     return el('td', null, [avatar(u), name, u.role === 'admin' ? el('span', { class: 'rm-sub', text: ' (' + T('rights.admin') + ')' }) : null]);
@@ -37,19 +55,21 @@
 
   function drawRights() {
     var tbl = P.clear($('#rm-rights'));
-    tbl.appendChild(el('thead', null, [el('tr', null, [el('th', { scope: 'col', text: T('rights.col_who') })].concat(KEYS.map(function (k) { return el('th', { scope: 'col', text: T('right.' + k) }); })))]));
+    tbl.appendChild(el('thead', null, [el('tr', null, [el('th', { scope: 'col', text: T('rights.col_who') })].concat(KEYS.map(function (k) { return el('th', { scope: 'col', text: T('right.' + k) }); }))
+      .concat([el('th', { scope: 'col', text: T('rights.col_rec') })]))]));
     var body = el('tbody');
     S.groups.forEach(function (g) {
       body.appendChild(el('tr', { class: 'rm-group-row', 'data-group': String(g.id) }, [el('td', { text: T('rights.group', { name: g.path || g.name }) })].concat(KEYS.map(function (k) {
         return el('td', null, [choice('group', g, k, g.set[k], g.name + ' – ' + T('right.' + k))]);
-      }))));
+      })).concat([el('td', null, [recChoice('group', g, g.set.recording, g.name + ' – ' + T('rights.col_rec'))])])));
     });
     S.people.forEach(function (u) {
       body.appendChild(el('tr', { 'data-user': String(u.id) }, [personCell(u)].concat(KEYS.map(function (k) {
         if (u.role === 'admin') return el('td', { class: 'rm-sub', text: T('rights.always') });
         var eff = el('span', { class: 'rm-sub', text: ' → ' + (u.effective[k] ? T('common.yes') : T('common.no')) + (u.set[k] == null ? ' (' + T('rights.src.' + u.source[k]) + ')' : '') });
         return el('td', null, [choice('user', u, k, u.set[k], u.name + ' – ' + T('right.' + k)), eff]);
-      }))));
+      })).concat([u.role === 'admin' ? el('td', { class: 'rm-sub', text: T('rights.rec_device') }) : el('td', null, [recChoice('user', u, u.set.recording, u.name + ' – ' + T('rights.col_rec')),
+        el('span', { class: 'rm-sub', text: ' → ' + (u.effective.recording ? T('rec.' + u.effective.recording) : T('rights.rec_device')) })])])));
     });
     tbl.appendChild(body);
   }
