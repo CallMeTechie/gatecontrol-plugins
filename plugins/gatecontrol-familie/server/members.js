@@ -27,6 +27,10 @@
 // Birthday (1.26.0, GateControl ≥ 1.280.0): a parent's birthday comes from the
 // user profile (server/profile.js) — load(gc, today, { viewer }) reads it as
 // that viewer may see it; the admin page no longer edits it. Children as before.
+//
+// Picture (1.27.0, GateControl with „Wer sieht dein Bild?“ in the profile): GateControl hides a picture at the source —
+// load(gc, today, { viewer }) hands the viewer to gc.users, so a member sees what that person shows the family; without a
+// viewer (background runs, the wall tablet) only pictures shown to everybody. An older GateControl ignores the viewer.
 
 const store = require('./store');
 const tz = require('./tz');
@@ -86,10 +90,12 @@ function faceOf(m) {
   return { avatarUrl: m.avatarUrl, color: m.color, colorHex: m.colorHex, initials: m.initials };
 }
 
-async function usersById(gc) {
+async function usersById(gc, viewer = null) {
   const m = new Map();
   try {
-    for (const u of await gc.users.list()) if (Number.isSafeInteger(u.id)) m.set(u.id, { id: u.id, name: String(u.name || ''), role: u.role, ...face(u) });
+    // 1.27.0: the pictures as `viewer` may see them (GateControl's „Wer sieht dein Bild?“)
+    const list = Number.isSafeInteger(viewer) && viewer > 0 ? await gc.users.list({ viewer }) : await gc.users.list();
+    for (const u of list) if (Number.isSafeInteger(u.id)) m.set(u.id, { id: u.id, name: String(u.name || ''), role: u.role, ...face(u) });
   } catch { /* users unavailable */ }
   return m;
 }
@@ -122,7 +128,7 @@ function rowToMember(r, u, today) {
  * `viewer` (1.26.0): whose request it is — the parents' birthdays from the profile as that person may see them.
  */
 async function load(gc, today, { viewer = null } = {}) {
-  const users = await usersById(gc);
+  const users = await usersById(gc, viewer);
   const rows = await store.all(gc, 'SELECT * FROM members ORDER BY CASE role WHEN \'parent\' THEN 0 WHEN \'child\' THEN 1 ELSE 2 END, created_at, user_id');
   const all = rows.filter((r) => users.has(r.user_id)).map((r) => rowToMember(r, users.get(r.user_id), today));
   const list = all.filter((m) => m.role !== 'wall');

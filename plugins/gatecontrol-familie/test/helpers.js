@@ -59,6 +59,7 @@ const kioskViewer = (u, loggedIn = true) => ({ ...u, portal: true, loggedIn, kio
  * o.homeNetwork: the home network of gc.homeNetwork (GateControl ≥ 1.230.0, 1.17.0) —
  * o.homeInternet: GateControl's „Internet zu Hause“ of gc.homeNetwork.internet (GateControl ≥ 1.231.0, 1.18.0) —
  * o.profile: the user profile of gc.profile (GateControl ≥ 1.280.0, 1.26.0) —
+ * o.avatarVisibility: „Wer sieht dein Bild?“ of gc.users (GateControl's profile, 1.27.0) —
  * see tools/testing/mock-host.js);
  * family: true adds the family through the admin API.
  * fn(host, ctx) with ctx = { clock, call(user, method, path, body, query), admin(method, path, body, query) }
@@ -66,7 +67,9 @@ const kioskViewer = (u, loggedIn = true) => ({ ...u, portal: true, loggedIn, kio
 async function withFamily(opts, fn) {
   const o = opts || {};
   const clock = startClock(o.at || T0);
-  const host = await createHost(DIR, { users: o.users || USERS, settings: { timezone: BERLIN, ...(o.settings || {}) }, notifyFail: o.notifyFail, kiosk: o.kiosk, actions: o.actions, services: o.services, gatecontrol: o.gatecontrol, groups: o.groups, homeNetwork: o.homeNetwork, homeInternet: o.homeInternet, profile: o.profile });
+  const host = await createHost(DIR, { users: o.users || USERS, settings: { timezone: BERLIN, ...(o.settings || {}) }, notifyFail: o.notifyFail, kiosk: o.kiosk, actions: o.actions, services: o.services, gatecontrol: o.gatecontrol, groups: o.groups, homeNetwork: o.homeNetwork, homeInternet: o.homeInternet, profile: o.profile,
+    // 1.27.0: „Wer sieht dein Bild?“ (GateControl's profile; tools/testing/mock-avatars.js)
+    ...(o.avatarVisibility ? { avatarVisibility: o.avatarVisibility } : {}) });
   await host.start();
   const call = (user, method, p, body, query) => host.request({ method, path: p, body: body === undefined ? null : body, query: query || {}, user, lang: o.lang || 'de' });
   const admin = (method, p, body, query) => call(ADMIN, method, '/admin/' + p.replace(/^\//, ''), body, query);

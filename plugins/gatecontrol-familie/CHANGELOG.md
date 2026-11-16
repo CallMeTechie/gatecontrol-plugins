@@ -3,6 +3,12 @@
 Die Familie in der GateControl-App (eigener Tab), im Portal (eigener Tab „Familie“) und auf
 drei Admin-Seiten. Alles bleibt auf dem eigenen Server.
 
+## 1.27.0
+
+„Wer sieht dein Bild?“ aus dem Profil von GateControl: `members.load(gc, today, { viewer })` gibt den Betrachter an
+`gc.users.list({ viewer })` weiter — ein Mitglied sieht ein Bild so, wie die Person es der Familie zeigt; ohne
+Betrachter (Hintergrund, Wand-Tablet) nur Bilder für alle. Ältere GateControl ignorieren den Betrachter.
+
 ## 1.26.0
 
 Nutzerprofil – der Geburtstag der Eltern kommt aus dem Profil (GateControl ≥ 1.280.0, `permissions.profile: ["birthday"]`).

@@ -437,6 +437,9 @@
 //
 // GateControl 1.280.0 (opt-in: opts.gatecontrol: '1.280.0' or opts.profile) — gc.profile, the user profile (the fields of
 // permissions.profile, only what the viewer may see) and the hooks profileChanged / myData: see tools/testing/mock-profile.js.
+//
+// GateControl 1.289.0 (opt-in: opts.gatecontrol: '1.289.0' or opts.avatarVisibility) — „Wer sieht dein Bild?“: gc.users with
+// a viewer / unmasked and avatarVisibility, gc.users.setAvatarVisibility / adoptAvatarVisibility: see tools/testing/mock-avatars.js.
 
 const fs = require('node:fs');
 const os = require('node:os');
@@ -450,6 +453,7 @@ const mockVpnDns = require('./mock-vpn-dns');
 const mockCameras = require('./mock-cameras');
 const mockBridges = require('./mock-bridges');
 const mockProfile = require('./mock-profile');
+const mockAvatars = require('./mock-avatars');
 
 // GateControl's favourite colour palette (services/avatars.js PALETTE, GateControl ≥ 1.168.0)
 const PALETTE = Object.freeze([
@@ -1331,13 +1335,16 @@ async function createHost(pluginDir, opts = {}) {
       if (value == null || value === '') { delete settings[key]; secrets.delete(key); } else { settings[key] = value; secrets.add(key); }
       return null;
     },
-    'users.list': async () => {
+    'users.list': async (a) => {
       if (!perms.users) throw hostError('ERR_USERS_DENIED', 'this plugin has no users permission');
+      // GateControl ≥ 1.289.0: „Wer sieht dein Bild?“ (tools/testing/mock-avatars.js)
+      if (av.on) { const r = av.readerOf(a); return users.map((u) => av.view(u, r)); }
       return users;
     },
-    'users.get': async ({ id }) => {
+    'users.get': async (a) => {
       if (!perms.users) throw hostError('ERR_USERS_DENIED', 'this plugin has no users permission');
-      return users.find((u) => u.id === Number(id)) || null;
+      const u = users.find((x) => x.id === Number(a && a.id)) || null;
+      return av.on && u ? av.view(u, av.readerOf(a)) : u;
     },
     notify: async ({ message, opts: o, notification: n }) => {
       if (!perms.notify) throw hostError('ERR_NOTIFY_DENIED', 'this plugin has no notify permission');
@@ -3298,6 +3305,9 @@ async function createHost(pluginDir, opts = {}) {
   // ─── the user profile (GateControl ≥ 1.280.0, src/services/profile.js; tools/testing/mock-profile.js) ───
   const pf = mockProfile.install({ opts, perms, atLeast, enabledUser, hostError, personCtx, wire });
   Object.assign(api, pf.api);
+  // ─── „Wer sieht dein Bild?“ (GateControl ≥ 1.289.0, src/services/avatars.js; tools/testing/mock-avatars.js) ───
+  const av = mockAvatars.install({ opts, perms, atLeast, hostError, personCtx });
+  if (av.on) Object.assign(api, av.api);
   // ─── Messenger-Brücken (GateControl preview, src/services/bridges; tools/testing/mock-bridges.js) ───
   const br = mockBridges.install({ opts, perms, enabledUser, hostError, personCtx,
     // gc.bridges version 4: a file of a bridged chat into the plugin's media, a file of the plugin to be sent
@@ -3491,7 +3501,7 @@ async function createHost(pluginDir, opts = {}) {
       set: (key, value) => call('settings.set', { key, value }),
       setSecret: (key, value) => call('settings.setSecret', { key, value: value == null ? null : String(value) }),
     }),
-    users: Object.freeze({ list: () => call('users.list', {}), get: (id) => call('users.get', { id }) }),
+    users: av.on ? av.gcPart(call) : Object.freeze({ list: () => call('users.list', {}), get: (id) => call('users.get', { id }) }),
     // like the child bootstrap: GateControl ≥ 1.154.0 passes an object on; older ones String() it
     notify: Object.assign((message, o) => (opts.notifyApi !== 'legacy' && message && typeof message === 'object' && !Array.isArray(message)
       ? call('notify', { notification: message })
@@ -4332,6 +4342,8 @@ async function createHost(pluginDir, opts = {}) {
     bridges: br.control,
     /** GateControl ≥ 1.280.0 (opts.profile): { set, changed, myData, calls } — see tools/testing/mock-profile.js */
     profile: pf.control,
+    /** GateControl ≥ 1.289.0 (opts.avatarVisibility): „Wer sieht dein Bild?“ { level, set, calls } — see tools/testing/mock-avatars.js */
+    avatarVisibility: av.control,
     vpnDnsSet: (x) => vd.hostSet(x || {}),
     vpnDnsEvent: (ev) => vd.hostEvent(ev),
     vpnDnsExpire: (now) => vd.hostExpire(now),

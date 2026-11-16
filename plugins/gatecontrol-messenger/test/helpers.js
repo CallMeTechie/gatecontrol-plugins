@@ -74,7 +74,9 @@ async function withHost(opts, fn) {
     // 1.11.0: GateControl's virus scan (the mock host's opts.scan — true or a scanner function)
     ...(o.scan ? { scan: o.scan } : {}),
     // 1.12.0: GateControl's messenger bridges (a preview; the mock host's opts.bridges — tools/testing/mock-bridges.js)
-    ...(o.bridges ? { bridges: o.bridges } : {}) });
+    ...(o.bridges ? { bridges: o.bridges } : {}),
+    // 1.22.0: „Wer sieht dein Bild?“ in GateControl's profile (the mock host's opts.avatarVisibility — tools/testing/mock-avatars.js)
+    ...(o.avatarVisibility ? { avatarVisibility: o.avatarVisibility } : {}) });
   await host.start();
   const call = (user, method, p, body, query) => host.request({ method, path: p, body: body === undefined ? null : body, query: query || {}, user, lang: o.lang || 'de' });
   const as = (u, viewer = app) => (method, p, body, query) => call(viewer(u), method, p, body, query);

@@ -1,4 +1,4 @@
-<!-- version: 1.21.0 -->
+<!-- version: 1.22.0 -->
 # Messenger
 
 ## Was das Plugin kann
@@ -70,6 +70,15 @@ Er kommt nur beim Verknüpfen und erscheint nachts. Steht „Älteren Verlauf la
 
 **Alte Nachrichten sind weg.**
 Der Administrator hat eine Aufbewahrung eingestellt, oder der Chat ist selbstlöschend.
+
+## Neu in 1.22.0
+
+- **„Wer sieht dein Bild?“ gilt jetzt in ganz GateControl.** Die Einstellung steht nicht mehr im Messenger, sondern in deinem Profil („Mein Profil“ im Portal, Profil in der App): Alle auf diesem Server, **Kontakte**, Familie oder Nur ich. Sie gilt in Chats, in Familie, in Drive und überall sonst.
+- **Kontakte** heißt: deine Familie und alle, mit denen du einen Einzelchat oder eine Gruppe hast. Wer dein Bild nicht sehen darf, sieht deine Initialen in deiner Farbe – in der Liste, im Chatkopf, als Absender in Gruppen und in der Push-Nachricht.
+- **Einmal übernommen:** Beim ersten Start mit dem neuen GateControl übernimmt der Messenger deine bisherige Wahl („Familie“ bleibt Familie, „Niemand“ wird „Nur ich“) – nur, wenn du im Profil noch nichts gewählt hast.
+- In den Privatsphäre-Einstellungen der App führt „Profilbild“ jetzt zur Profilseite. Ältere Apps, die die Einstellung noch im Messenger ändern, ändern sie im Profil.
+- WhatsApp, Signal und Telegram bekommen dein GateControl-Bild nie.
+- Auf einem älteren GateControl bleibt alles wie bisher im Messenger.
 
 ## Neu in 1.21.0
 
