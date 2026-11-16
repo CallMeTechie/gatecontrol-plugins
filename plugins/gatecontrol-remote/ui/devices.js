@@ -385,6 +385,8 @@
     if (h) {
       badges.appendChild(el('span', { class: 'rm-badge', text: T('dev.app_host') }));
       if (h.platform === 'android') badges.appendChild(el('span', { class: 'rm-badge', text: T('dev.phone') }));
+      // 1.6: a Linux device of the agent
+      if (h.platform === 'linux') badges.appendChild(el('span', { class: 'rm-badge', text: T('dev.linux') }));
       // 1.5: "Bildschirm teilen" of a PC
       if (h.platform === 'windows' && h.registered && h.screenView) badges.appendChild(el('span', { class: 'rm-badge', text: T('dev.pc_screen') }));
       if (h.registered && h.rdpEnabled === false && d.protocol === 'rdp' && h.rdpOffered !== false) badges.appendChild(el('span', { class: 'rm-badge', 'data-tone': 'warn', text: T('dev.rdp_off') }));
@@ -406,6 +408,11 @@
     if (h) {
       sub.push(T('dev.owner', { name: h.ownerName || '#' + h.owner }));
       if (h.osUser) sub.push(T('dev.os_user', { name: h.osUser }));
+      if (h.platform === 'linux') {
+        if (h.ssh && h.ssh.offered) sub.push(T('dev.linux_ssh', { name: h.ssh.user || '?' }) + (h.ssh.tmux ? ' · tmux ' + (h.ssh.tmuxVersion || '') : ' · ' + T('dev.linux_no_tmux')));
+        if (h.desktop) sub.push(T('dev.linux_desktop', { kind: h.desktop.kind || '?', protocol: String(h.desktop.protocol || '').toUpperCase(), port: h.desktop.port }) + (h.desktop.ready ? '' : ' · ' + T('dev.linux_desktop_off')));
+        if (h.hostKey) sub.push(T('dev.linux_hostkey', { alg: h.hostKey.alg || '' }));
+      }
     }
     if (d.status && d.status.lastCheck) sub.push(T('dev.checked', { ago: P.ago(d.status.lastCheck) }) + (d.status.responseTime != null ? ' · ' + d.status.responseTime + ' ms' : ''));
     if (!d.access.open) sub.push(T('dev.restricted', { n: d.access.users.length + d.access.groups.length + d.access.tokens.length }));

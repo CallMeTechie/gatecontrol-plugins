@@ -167,8 +167,28 @@ function hostOf(r, now = Date.now()) {
     screenControl: r.screen_control === 1,
     // 1.5: a PC — "Bildschirm teilen" on (a phone always shares its screen), "Remote Desktop erlauben" on (NULL: apps before 1.5)
     screenView: r.platform === 'android' ? true : r.screen_view === 1,
-    rdpOffered: r.platform === 'android' ? false : r.rdp_offered !== 0,
+    rdpOffered: r.platform === 'android' || r.platform === 'linux' ? false : r.rdp_offered !== 0,
+    // 1.6: a Linux device (the agent): SSH with GateControl's key, tmux, the host key, the desktop server it found
+    ...(r.platform === 'linux' ? {
+      sshOffered: r.ssh_offered === 1, sshUser: r.ssh_user || null, tmux: r.tmux_version != null, tmuxVersion: r.tmux_version || null,
+      hostKey: r.host_key_sha256 ? { alg: r.host_key_alg || null, sha256: r.host_key_sha256 } : null,
+      desktop: r.desktop_protocol ? { kind: r.desktop_kind || null, protocol: r.desktop_protocol, port: r.desktop_port || null, ready: r.desktop_ready === 1 } : null,
+      osId: r.os_id || null,
+    } : {}),
   };
+}
+
+/** 1.6: a Linux device of the agent. */
+function isLinux(d) {
+  return !!(d && d.host && d.host.platform === 'linux');
+}
+
+/** 1.6: does this Linux device share SSH / a desktop now? */
+function sshOffered(d) {
+  return isLinux(d) && d.host.registered && d.host.sshOffered === true;
+}
+function desktopOffered(d) {
+  return isLinux(d) && d.host.registered && !!d.host.desktop;
 }
 
 /** A phone that shares its screen (1.3, GateControl's relay) — not a PC with Remote Desktop. */
@@ -192,7 +212,7 @@ function screenOffered(d) {
 
 /** 1.5: does this PC offer Remote Desktop ("Remote Desktop erlauben" on, an edition that can)? */
 function rdpOffered(d) {
-  return !!(d && d.host && !isPhone(d) && d.protocol === 'rdp' && d.host.rdpOffered !== false && d.host.rdpAvailable !== false);
+  return !!(d && d.host && !isPhone(d) && !isLinux(d) && d.protocol === 'rdp' && d.host.rdpOffered !== false && d.host.rdpAvailable !== false);
 }
 
 /**
@@ -212,6 +232,7 @@ function connectMode(d) {
 
 /** Can a session reach the PC at all (switch on, Remote Desktop on in Windows or 1.5 the screen shared, the app reports)? */
 function hostReady(d) {
+  if (isLinux(d)) return !!(d.host.registered && d.host.online && (sshOffered(d) || (desktopOffered(d) && d.host.desktop.ready)));
   return !!(d && d.host && d.host.registered && (d.host.rdpEnabled !== false || screenOffered(d)) && d.host.online);
 }
 
@@ -331,7 +352,9 @@ function hostView(d) {
     connect: connectMode(d), registered: h.registered, online: h.online, lastSeen: iso(h.lastSeen), osUser: h.osUser, appVersion: h.appVersion,
     ...(h.platform === 'android' ? { screenControl: h.screenControl } : {}),
     // 1.5: the two switches of a PC
-    ...(h.platform === 'windows' ? { screenView: h.screenView, screenControl: h.screenControl, rdpOffered: h.rdpOffered } : {}) };
+    ...(h.platform === 'windows' ? { screenView: h.screenView, screenControl: h.screenControl, rdpOffered: h.rdpOffered } : {}),
+    // 1.6: a Linux device
+    ...(h.platform === 'linux' ? { ssh: { offered: h.sshOffered, user: h.sshUser, tmux: h.tmux, tmuxVersion: h.tmuxVersion }, hostKey: h.hostKey, desktop: h.desktop, osId: h.osId } : {}) };
 }
 
 /** The next id of a device made in the plugin (≥ 100000, never one of GateControl's rdp_routes). */
@@ -425,8 +448,9 @@ async function save(gc, id, b, now = Date.now()) {
   const before = id ? await need(gc, id) : null;
   const next = applyPatch(before && before.kind === 'host' ? { ...before, config: { ...before.config } } : before, b);
   if (before && before.kind === 'host') {
-    // a PC: where it is reached comes from its app (host/register), never from the page; a phone stays a screen (1.3)
-    next.protocol = before.protocol === 'screen' ? 'screen' : 'rdp';
+    // a PC: where it is reached comes from its app (host/register), never from the page; a phone stays a screen (1.3);
+    // 1.6: a Linux device keeps what its agent offers
+    next.protocol = before.protocol === 'screen' || isLinux(before) ? before.protocol : 'rdp';
     for (const k of ['host', 'port', 'access_mode', 'external_hostname', 'external_port', 'gateway_peer_id', 'gateway_pool_id', 'gateway_listen_port', 'wol_enabled', 'wol_mac_address']) next.config[k] = before.config[k];
   }
   if (!before) { next.id = await nextId(gc); next.createdAt = now; }
@@ -481,7 +505,7 @@ async function setStatus(gc, id, s, now = Date.now()) {
 
 module.exports = {
   PROTOCOLS, DEFAULT_PORT, ACCESS_MODES, FIELDS, KEPT, BOOLS, DEFAULTS, FIRST_OWN_ID, HOST_OFFLINE_MS, TMUX_RE, RECORDING, engineOf, tmuxOf,
-  hostOf, hostView, connectMode, hostReady, isPhone, phoneCanControl, screenOffered, rdpOffered, screenCanControl, PHONE_OFFLINE_MS,
+  hostOf, hostView, connectMode, hostReady, isPhone, isLinux, sshOffered, desktopOffered, phoneCanControl, screenOffered, rdpOffered, screenCanControl, PHONE_OFFLINE_MS,
   get, need, all, accessLists, emptyAccess, targetOf, listenerKey, vaultInfo, credentialView, adminView, rotationDue,
   applyPatch, checkField, save, remove, rotated, setStatus, setAccess, write, fromRow, nextId,
 };
