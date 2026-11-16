@@ -77,10 +77,10 @@ test('texts: every key used by the pages exists in de and en; both languages hav
   for (const k of dyn) for (const l of ['de', 'en']) assert.ok(texts[l][k], `${l}: ${k}`);
 });
 
-test('plugin.json: licence, GateControl 1.293.0, permissions, pages, app and portal tab "Chats"', () => {
+test('plugin.json: licence, GateControl 1.294.0, permissions, pages, app and portal tab "Chats"', () => {
   assert.equal(manifest.id, 'gatecontrol-messenger');
   assert.equal(manifest.version, '1.25.0');
-  assert.equal(manifest.gatecontrol, '>=1.293.0', '1.24.0: gc.bridges version 11 (Telegram) — the 7b release of GateControl');
+  assert.equal(manifest.gatecontrol, '>=1.294.0', '1.25.0: gc.bridges version 12 (WhatsApp status) — the release of GateControl with chat.status');
   assert.equal(manifest.media.handOverMaxBytes, 2147483648, '1.8.0: GateDrop hands over files up to 2 GB; own uploads stay at 25 MB');
   assert.equal(manifest.permissions.notifySink, true);
   assert.deepEqual(manifest.license, { required: true });

@@ -15,7 +15,7 @@ Everything stays on your server. Texts, locations, file names and group titles a
 
 ## Requirements
 
-- GateControl **1.293.0** or later (Telegram bridge; Signal bridge from 1.291.0; group chats for GateControl groups from 1.200.0, virus scan from the version after 1.222.0).
+- GateControl **1.294.0** or later (WhatsApp status in the status row; Telegram bridge from 1.293.0; Signal bridge from 1.291.0; group chats for GateControl groups from 1.200.0, virus scan from the version after 1.222.0).
 - A licence for the plugin.
 - For “Save to Drive”: the Drive plugin. For the family chat: the Family plugin.
 

@@ -5,8 +5,7 @@ Windows-Client und im Portal (eigener Tab „Chats“). Alles bleibt auf dem eig
 
 ## 1.25.0
 **WhatsApp-Status in der Status-Reihe** — für GateControl mit `gc.bridges` Version 12 (`chat.status`). **Braucht
-GateControl ≥ (Platzhalter: die Server-Veröffentlichung mit Version 12)**; `plugin.json` `gatecontrol` und
-`gatecontrol.ref` setzt die Veröffentlichung. Mit älterem GateControl bleibt alles wie bisher.
+GateControl ≥ 1.294.0** (`plugin.json` `gatecontrol`; `gatecontrol.ref` = v1.294.0). Mit älterem GateControl bleibt alles wie bisher.
 - **Status-Raum ist kein Chat** (Migration 015, `conversations.bridge_status`, `server/bridgestatus.js`): nicht in der
   Liste, nicht zu öffnen (`not_found`), nicht in Suche, Zähler und Filtern, stumm, keine Push, kein `message.new`; nie
   eine automatische Lesebestätigung dorthin (`readOut`). Ein vorhandener Chat „WhatsApp Status Broadcast“ wird beim
