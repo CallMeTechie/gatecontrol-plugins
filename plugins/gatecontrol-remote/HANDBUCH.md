@@ -22,7 +22,7 @@ Passwörter und SSH-Schlüssel speichert nicht das Plugin, sondern der verschlü
 
 ## Voraussetzungen {#voraussetzungen}
 
-- Zum Steuern eines Handys: GateControl mit der Fernzugriff-Schnittstelle **Version 5** (die Version nach 1.286.0) und die GateControl-App für Android **aus GitHub** mit eingeschalteter Bedienungshilfe „GateControl-Fernsteuerung“. Mit einem älteren GateControl oder der App aus Google Play geht nur Ansehen.
+- Zum Steuern eines Handys: GateControl mit der Fernzugriff-Schnittstelle **Version 5** (GateControl 1.287.0 oder neuer) und die GateControl-App für Android **aus GitHub** mit eingeschalteter Bedienungshilfe „GateControl-Fernsteuerung“. Mit einem älteren GateControl oder der App aus Google Play geht nur Ansehen.
 - Für die Bildschirm-Freigabe vom Handy: GateControl **1.286.0** oder neuer (Fernzugriff-Schnittstelle Version 4, Relais für den Bildstrom) und die GateControl-App für Android mit „Bildschirm freigeben“. Ein älteres GateControl lehnt die Anmeldung des Handys ab.
 - GateControl **1.285.0** oder neuer (Fernzugriff-Schnittstelle Version 3: Terminal im Kern, tmux, Host-Schlüssel, Aufzeichnung; dazu Version 2: Anmeldung der Windows-PCs, Firewall je Sitzung, stille Signale an den PC).
 - Für Aufzeichnungen: das Laufwerk `remote-recordings` aus der `docker-compose.yml` der neuen Version (GateControl und guacd). Ohne es wird nicht aufgezeichnet.

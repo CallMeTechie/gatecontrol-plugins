@@ -22,7 +22,7 @@ Passwords and SSH keys are not stored by the plugin but in GateControl's encrypt
 
 ## Requirements {#voraussetzungen}
 
-- To control a phone: GateControl with remote access interface **version 5** (the version after 1.286.0) and the GateControl app for Android **from GitHub** with the accessibility service "GateControl remote control" switched on. With an older GateControl or the app from Google Play only viewing works.
+- To control a phone: GateControl with remote access interface **version 5** (GateControl 1.287.0 or newer) and the GateControl app for Android **from GitHub** with the accessibility service "GateControl remote control" switched on. With an older GateControl or the app from Google Play only viewing works.
 - For screen sharing from a phone: GateControl **1.286.0** or newer (remote access interface version 4, the relay of the picture) and the GateControl app for Android with "Share screen". An older GateControl refuses the phone's registration.
 - GateControl **1.285.0** or newer (remote access interface version 3: terminal in the core, tmux, host keys, recording; plus version 2: registration of the Windows PCs, firewall per session, silent signals to the PC).
 - For recordings: the drive `remote-recordings` of the `docker-compose.yml` of the new version (GateControl and guacd). Without it nothing is recorded.
