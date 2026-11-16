@@ -339,8 +339,9 @@
   function row(d) {
     var acts = el('div', { class: 'rm-actions' });
     var h = d.host;
-    // a PC asks for its code (the administrator, too); "Verbinden" only "ohne Code"
-    if (d.config.browser_enabled && d.enabled && (!h || (h.connect === 'open' && h.registered && h.online && h.rdpEnabled !== false))) {
+    // a PC asks for its code (the administrator, too); "Verbinden" only "ohne Code"; a phone (1.3) always asks its person:
+    // the administrator connects from the portal tab like everybody else
+    if (d.config.browser_enabled && d.enabled && (!h || (h.platform !== 'android' && h.connect === 'open' && h.registered && h.online && h.rdpEnabled !== false))) {
       var cb = el('button', { class: 'btn btn-sm btn-primary', type: 'button', text: T('dev.connect') });
       cb.addEventListener('click', function () {
         busy(cb, P.api('POST', 'admin/devices/' + d.id + '/connect', {}).then(function (r) { return P.openSession(r.session.ref, acts); }));
@@ -382,6 +383,7 @@
     var badges = el('div', { class: 'rm-badges' }, [P.protoBadge(d.protocol), h && !h.registered ? el('span', { class: 'rm-badge', text: T('dev.unregistered') }) : P.stateBadge(d)]);
     if (h) {
       badges.appendChild(el('span', { class: 'rm-badge', text: T('dev.app_host') }));
+      if (h.platform === 'android') badges.appendChild(el('span', { class: 'rm-badge', text: T('dev.phone') }));
       if (h.registered && h.rdpEnabled === false) badges.appendChild(el('span', { class: 'rm-badge', 'data-tone': 'warn', text: T('dev.rdp_off') }));
       badges.appendChild(el('span', { class: 'rm-badge', text: T(h.connect === 'open' ? 'dev.share_open' : 'dev.share_code') }));
       if (!h.allowOpen) badges.appendChild(el('span', { class: 'rm-badge', 'data-tone': 'warn', text: T('dev.open_locked') }));
@@ -396,7 +398,7 @@
       if (d.config.ssh_engine === 'guac' && d.config.term_tested_at) badges.appendChild(el('span', { class: 'rm-badge', text: T('dev.term_tested') }));
     }
     if (d.config.recording === 'optional' || d.config.recording === 'always') badges.appendChild(el('span', { class: 'rm-badge', 'data-tone': d.config.recording === 'always' ? 'warn' : null, text: T('dev.rec_' + d.config.recording) }));
-    var sub = [address(d)];
+    var sub = [h && h.platform === 'android' ? T('dev.phone_addr') : address(d)];
     if (h) {
       sub.push(T('dev.owner', { name: h.ownerName || '#' + h.owner }));
       if (h.osUser) sub.push(T('dev.os_user', { name: h.osUser }));

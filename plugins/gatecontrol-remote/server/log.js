@@ -12,7 +12,9 @@ const { iso, posInt } = require('./util');
 const TYPES = ['remote_code_redeemed', 'remote_code_failed', 'remote_share_changed', 'remote_request_allowed', 'remote_request_denied',
   'remote_request_expired', 'remote_firewall_open', 'remote_firewall_close', 'remote_host_registered', 'remote_host_removed',
   // 1.2: recordings and SSH host keys
-  'remote_recording_viewed', 'remote_recording_deleted', 'remote_host_key_changed', 'remote_host_key_reset', 'remote_ssh_engine_changed'];
+  'remote_recording_viewed', 'remote_recording_deleted', 'remote_host_key_changed', 'remote_host_key_reset', 'remote_ssh_engine_changed',
+  // 1.3: the screen of a phone
+  'remote_screen_started', 'remote_screen_ended'];
 
 /** One entry: write(gc, 'remote_code_redeemed', { device, userId, details }) — best-effort, never throws. */
 async function write(gc, type, { device = null, userId = null, details = null } = {}, now = Date.now()) {

@@ -105,6 +105,7 @@ module.exports = {
     });
     if (!(gc.remote.version >= 2)) gc.log.info('gc.remote version 1: Windows PCs of the app need a newer GateControl');
     if (!(gc.remote.version >= 3)) gc.log.info('gc.remote version ' + gc.remote.version + ': the SSH terminal and recordings need a newer GateControl');
+    if (!(gc.remote.version >= 4)) gc.log.info('gc.remote version ' + gc.remote.version + ': the screen of phones needs a newer GateControl');
     gc.log.info('remote started', gc.plugin.version);
   },
 

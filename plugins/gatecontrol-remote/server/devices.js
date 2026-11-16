@@ -34,6 +34,7 @@ const RECORDING = ['off', 'optional', 'always'];
 const FIRST_OWN_ID = 100000;
 // a host without a heartbeat for three minutes (three missed host/state) is offline
 const HOST_OFFLINE_MS = 180000;
+const PHONE_OFFLINE_MS = 20 * 60000; // 1.3: a phone with the switch on — its app reports at least every 15 minutes
 
 // field → rule. 'bool', 'text:<max>', 'lines:<max>', 'port', 'int:<min>:<max>', 'id', [enum], 'tags', 'mac', 'host'
 const FIELDS = Object.freeze({
@@ -154,13 +155,20 @@ function checkWhole(d) {
 function hostOf(r, now = Date.now()) {
   if (r.kind !== 'host') return null;
   const registered = bool(r.registered);
-  const online = registered && Number.isFinite(r.last_seen) && now - r.last_seen < HOST_OFFLINE_MS;
+  // a phone (1.3) reports less often than a PC: Android lets an app in the background wake up rarely
+  const offlineMs = r.platform === 'android' ? PHONE_OFFLINE_MS : HOST_OFFLINE_MS;
+  const online = registered && Number.isFinite(r.last_seen) && now - r.last_seen < offlineMs;
   return {
     owner: r.owner_user_id || null, tokenDeviceId: r.token_device_id || null, platform: r.platform || 'windows', edition: r.edition || null,
     rdpAvailable: r.rdp_available == null ? null : bool(r.rdp_available), rdpEnabled: r.rdp_enabled == null ? null : bool(r.rdp_enabled),
     shareMode: r.share_mode === 'open' ? 'open' : 'code', allowOpen: r.allow_open == null ? true : bool(r.allow_open), registered, online,
     lastSeen: r.last_seen || null, osUser: r.os_user || null, appVersion: r.app_version || null,
   };
+}
+
+/** A phone that shares its screen (1.3, GateControl's relay) — not a PC with Remote Desktop. */
+function isPhone(d) {
+  return !!(d && d.host && d.host.platform === 'android');
 }
 
 /** How a person connects to a PC now: 'open' (no code, no question) only when the owner switched it on and the admin allows it. */
@@ -181,7 +189,7 @@ function fromRow(r) {
   for (const k of BOOLS) if (k in config) config[k] = bool(config[k]);
   if (!Array.isArray(config.tags)) config.tags = [];
   return {
-    id: r.id, name: r.name, protocol: PROTOCOLS.includes(r.protocol) ? r.protocol : 'rdp', enabled: bool(r.enabled), source: r.source,
+    id: r.id, name: r.name, protocol: PROTOCOLS.includes(r.protocol) || (host && r.protocol === 'screen') ? r.protocol : 'rdp', enabled: bool(r.enabled), source: r.source,
     config, credential: r.credential || null, sftpCredential: r.sftp_credential || null, credentialUnreadable: bool(r.credential_unreadable),
     listener: r.listener || null, listenerError: r.listener_error || null, kind: host ? 'host' : 'target', host,
     // a PC: online is what its app reports (3389 is closed between sessions, a check would always fail)
@@ -286,7 +294,7 @@ function adminView(d, access, vault, now = Date.now()) {
 /** The state of a PC for the pages (never the app's token). */
 function hostView(d) {
   const h = d.host;
-  return { owner: h.owner, edition: h.edition, rdpAvailable: h.rdpAvailable, rdpEnabled: h.rdpEnabled, shareMode: h.shareMode, allowOpen: h.allowOpen,
+  return { owner: h.owner, platform: h.platform, edition: h.edition, rdpAvailable: h.rdpAvailable, rdpEnabled: h.rdpEnabled, shareMode: h.shareMode, allowOpen: h.allowOpen,
     connect: connectMode(d), registered: h.registered, online: h.online, lastSeen: iso(h.lastSeen), osUser: h.osUser, appVersion: h.appVersion };
 }
 
@@ -381,8 +389,8 @@ async function save(gc, id, b, now = Date.now()) {
   const before = id ? await need(gc, id) : null;
   const next = applyPatch(before && before.kind === 'host' ? { ...before, config: { ...before.config } } : before, b);
   if (before && before.kind === 'host') {
-    // a PC: where it is reached comes from its app (host/register), never from the page
-    next.protocol = 'rdp';
+    // a PC: where it is reached comes from its app (host/register), never from the page; a phone stays a screen (1.3)
+    next.protocol = before.protocol === 'screen' ? 'screen' : 'rdp';
     for (const k of ['host', 'port', 'access_mode', 'external_hostname', 'external_port', 'gateway_peer_id', 'gateway_pool_id', 'gateway_listen_port', 'wol_enabled', 'wol_mac_address']) next.config[k] = before.config[k];
   }
   if (!before) { next.id = await nextId(gc); next.createdAt = now; }
@@ -437,7 +445,7 @@ async function setStatus(gc, id, s, now = Date.now()) {
 
 module.exports = {
   PROTOCOLS, DEFAULT_PORT, ACCESS_MODES, FIELDS, KEPT, BOOLS, DEFAULTS, FIRST_OWN_ID, HOST_OFFLINE_MS, TMUX_RE, RECORDING, engineOf, tmuxOf,
-  hostOf, hostView, connectMode, hostReady,
+  hostOf, hostView, connectMode, hostReady, isPhone, PHONE_OFFLINE_MS,
   get, need, all, accessLists, emptyAccess, targetOf, listenerKey, vaultInfo, credentialView, adminView, rotationDue,
   applyPatch, checkField, save, remove, rotated, setStatus, setAccess, write, fromRow, nextId,
 };

@@ -1,7 +1,9 @@
 /* Portal tab "Fernzugriff" (phone first, targets ≥ 44 px): the devices I may reach, their state, "Verbinden", "Aufwecken",
    and (1.1) "Code eingeben" for a Windows PC: the code from the PC → wait for the confirmation there → the session.
    1.2: SSH in GateControl's terminal — "Fortsetzen <tmux session>" / "Neue Sitzung"; the recording of a session
-   ("optional": the person asks for it, "always": the hint here and on GateControl's page before the start). */
+   ("optional": the person asks for it, "always": the hint here and on GateControl's page before the start).
+   1.3: the screen of an Android phone — only watching; "Code eingeben" (or "Verbinden" ohne Code) → the person at the
+   phone confirms, Android asks again → GateControl's viewer page. */
 (function () {
   'use strict';
   var P = window.RM;
@@ -10,10 +12,15 @@
 
   function busy(b, p) { b.disabled = true; return p.catch(P.warn).then(function () { b.disabled = false; }); }
 
-  /** "Code eingeben": code and kind → the request → "Warte auf Bestätigung am Gerät …" → the session (dev: a PC of the list, or none). */
-  function codeDialog(dev) {
+  /**
+   * "Code eingeben": code and kind → the request → "Warte auf Bestätigung am Gerät …" → the session (dev: a PC or phone of
+   * the list, or none). pending (1.3): a request that exists already ("Verbinden" of a phone ohne Code) — straight to waiting.
+   */
+  function codeDialog(dev, pending) {
+    var phone = !!(dev && dev.platform === 'android');
     var input = el('input', { class: 'form-input rm-code-input', type: 'text', id: 'rm-code-in', inputmode: 'numeric', autocomplete: 'one-time-code', maxlength: '11', placeholder: '000-000-000' });
-    var mode = el('select', { class: 'form-select', id: 'rm-code-mode' }, [
+    // a phone: only watching (control comes later)
+    var mode = el('select', { class: 'form-select', id: 'rm-code-mode' }, phone ? [el('option', { value: 'view', text: T('portal.mode_view') })] : [
       el('option', { value: 'control', text: T('portal.mode_control') }), el('option', { value: 'view', text: T('portal.mode_view') })]);
     var status = el('p', { class: 'rm-hint', role: 'status', 'aria-live': 'polite' });
     var host = el('div', { class: 'rm-actions' });
@@ -23,6 +30,7 @@
       el('label', { class: 'form-label', for: 'rm-code-in', text: T('portal.code_label') }), input,
       el('p', { class: 'rm-hint', text: T('portal.code_hint') }),
       el('label', { class: 'form-label', for: 'rm-code-mode', text: T('portal.mode') }), mode,
+      phone ? el('p', { class: 'rm-hint', text: T('portal.phone_hint') }) : null,
     ]);
     var body = el('div', { class: 'modal-body' }, [el('h3', { class: 'rm-card-title', text: dev ? T('portal.code_title_dev', { name: dev.name }) : T('portal.code_title') }), form, status, host]);
     var ov = el('div', { class: 'modal-overlay', role: 'dialog', 'aria-modal': 'true' }, [el('div', { class: 'modal' }, [body, el('div', { class: 'modal-foot' }, [cancel, ask])])]);
@@ -41,7 +49,10 @@
             return P.openSession(c.session.ref, host).then(function (ok) { if (ok) done(); });
           });
         }
-        status.textContent = T(st === 'denied' ? 'portal.denied' : 'portal.expired');
+        var screen = r.request.kind === 'screen';
+        if (st === 'ended') status.textContent = T('portal.ended');
+        else if (st === 'denied') status.textContent = T(screen ? 'portal.denied_device' : 'portal.denied');
+        else status.textContent = T(screen ? 'portal.expired_device' : 'portal.expired');
         ask.disabled = false;
         form.hidden = false;
         return null;
@@ -61,6 +72,14 @@
     });
     input.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') ask.click(); });
     document.body.appendChild(ov);
+    if (pending) {
+      ask.disabled = true;
+      form.hidden = true;
+      status.textContent = T('portal.waiting');
+      poll(pending);
+      cancel.focus();
+      return;
+    }
     input.focus();
   }
 
@@ -134,7 +153,11 @@
       c.addEventListener('click', function () {
         // a terminal with tmux, or a recording to ask for / to announce: the dialog first
         if (d.tmux || d.recording === 'optional' || d.recording === 'always') { connectDialog(d); return; }
-        busy(c, P.api('POST', 'devices/' + d.id + '/connect', {}).then(function (r) { return P.openSession(r.session.ref, acts); }));
+        busy(c, P.api('POST', 'devices/' + d.id + '/connect', {}).then(function (r) {
+          // a phone ohne Code: it still asks its person — wait for the answer like after a code
+          if (r.request) { codeDialog(d, r.request.id); return null; }
+          return P.openSession(r.session.ref, acts);
+        }));
       });
       acts.appendChild(c);
     }
@@ -150,6 +173,7 @@
     else if (!d.browser) note = d.protocol === 'rdp' ? T('portal.app_only') : T('portal.no_browser');
     var sub = [];
     if (d.recording === 'always') sub.push(T('portal.rec_badge'));
+    if (pc && d.platform === 'android') sub.push(T('dev.phone') + ' · ' + T('portal.mode_view'));
     if (pc && d.owner && d.owner.name) sub.push(T('portal.owner', { name: d.owner.name }));
     if (pc && d.connect) sub.push(T(d.connect.mode === 'open' ? 'portal.no_code' : 'portal.with_code'));
     if (!pc && d.lastCheck) sub.push(T('dev.checked', { ago: P.ago(d.lastCheck) }));

@@ -237,7 +237,7 @@
     "profile.hint": "Ändern kann das ein Administrator unter Fernzugriff › Berechtigungen.",
     "profile.history": "Verlauf meiner Freigaben",
     "profile.host_line": "{{name}} · {{mode}}",
-    "profile.hosts": "Meine PCs",
+    "profile.hosts": "Meine Geräte",
     "profile.later": "kommt mit einer späteren Version",
     "profile.no_history": "Noch nichts.",
     "profile.rights": "Das darfst du (vom Admin festgelegt)",
@@ -438,7 +438,17 @@
     "log.remote_recording_deleted": "Aufzeichnung gelöscht",
     "log.remote_host_key_changed": "Host-Schlüssel geändert – Verbindung gesperrt",
     "log.remote_host_key_reset": "Host-Schlüssel zurückgesetzt",
-    "log.remote_ssh_engine_changed": "SSH-Verbindung umgestellt"
+    "log.remote_ssh_engine_changed": "SSH-Verbindung umgestellt",
+    "error.screen_unavailable": "Bildschirm-Freigaben brauchen ein neueres GateControl (das Relais für Handys fehlt).",
+    "proto.screen": "Bildschirm",
+    "dev.phone": "Android-Handy",
+    "dev.phone_addr": "Bildschirm über den Server · nur ansehen",
+    "portal.phone_hint": "Nur ansehen. Am Handy bestätigt die Person, danach fragt Android noch einmal.",
+    "portal.ended": "Die Freigabe wurde am Gerät beendet.",
+    "portal.expired_device": "Keine Antwort vom Gerät. Die Anfrage ist abgelaufen.",
+    "portal.denied_device": "Die Person am Gerät hat abgelehnt.",
+    "log.remote_screen_started": "Bildschirm wird angesehen",
+    "log.remote_screen_ended": "Bildschirmfreigabe beendet"
   },
   "en": {
     "access.all": "Everybody with the right",
@@ -678,7 +688,7 @@
     "profile.hint": "An administrator changes this under Remote access › Permissions.",
     "profile.history": "History of my sharing",
     "profile.host_line": "{{name}} · {{mode}}",
-    "profile.hosts": "My PCs",
+    "profile.hosts": "My devices",
     "profile.later": "comes with a later version",
     "profile.no_history": "Nothing yet.",
     "profile.rights": "What you may do (set by an administrator)",
@@ -879,6 +889,16 @@
     "log.remote_recording_deleted": "Recording deleted",
     "log.remote_host_key_changed": "Host key changed – connection blocked",
     "log.remote_host_key_reset": "Host key reset",
-    "log.remote_ssh_engine_changed": "SSH connection switched"
+    "log.remote_ssh_engine_changed": "SSH connection switched",
+    "error.screen_unavailable": "Screen sharing needs a newer GateControl (the relay for phones is missing).",
+    "proto.screen": "Screen",
+    "dev.phone": "Android phone",
+    "dev.phone_addr": "Screen through the server · view only",
+    "portal.phone_hint": "View only. The person confirms on the phone, then Android asks once more.",
+    "portal.ended": "Sharing was ended on the device.",
+    "portal.expired_device": "No answer from the device. The request has run out.",
+    "portal.denied_device": "The person at the device declined.",
+    "log.remote_screen_started": "Screen being viewed",
+    "log.remote_screen_ended": "Screen sharing ended"
   }
 }

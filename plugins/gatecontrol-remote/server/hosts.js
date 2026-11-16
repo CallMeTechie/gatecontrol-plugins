@@ -16,6 +16,13 @@
 //   GET    host/access / PUT host/access { users, groups }   who may see the PC (people and groups only)
 //   POST   host/requests/<id> { decision, mode? }   the answer to a helper's request (server/support.js)
 //   GET    host/firewall / POST host/firewall        the firewall per session (server/support.js)
+//
+// 1.3 (stage 5): a phone (GateControl app for Android, "Bildschirm freigeben") registers the same way with
+// { platform: 'android', name, appVersion, screen: { view, control }, shareMode? } — a device of the kind `host`, platform
+// android, protocol `screen`, no VPN address needed (the phone reaches GateControl's relay itself). Codes, requests and
+// "ohne Code" work as for a PC, but the phone always asks its person (and Android asks again); an allowed request gives
+// the phone the sending side of a ticket of gc.remote.screen (server/support.js). POST host/screen/<id>/end: the phone
+// ended a request before the picture ran (Android's question declined, stopped, failed).
 
 const store = require('./store');
 const devices = require('./devices');
@@ -63,17 +70,18 @@ function stateOf(d) {
 }
 
 function hostAnswer(d) {
-  return { deviceId: d.id, shareMode: d.host.shareMode, allowOpen: d.host.allowOpen, state: stateOf(d) };
+  return { deviceId: d.id, platform: d.host.platform, shareMode: d.host.shareMode, allowOpen: d.host.allowOpen, state: stateOf(d) };
 }
 
 function bodyOf(req) { return req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {}; }
 
-/** host/register — create or update the PC of this app installation. */
+/** host/register — create or update the PC (or, 1.3, the phone) of this app installation. */
 async function register(gc, req, now = Date.now()) {
   const user = req.user;
   const dev = appDevice(req);
   const b = bodyOf(req);
   if (!(await rights.of(gc, user)).share) throw fail('no_share_right');
+  if (b.platform === 'android') return registerPhone(gc, req, now);
   const edition = typeof b.edition === 'string' ? b.edition.toLowerCase() : '';
   if (!EDITIONS.includes(edition)) throw fail('invalid', { field: 'edition' });
   // Windows Home cannot offer Remote Desktop: no device, the app shows "Bildschirm teilen"
@@ -86,6 +94,7 @@ async function register(gc, req, now = Date.now()) {
   if (shareMode === undefined) throw fail('invalid', { field: 'shareMode' });
   const fields = [rdp.available === false ? 0 : 1, rdp.enabled === true ? 1 : 0, clip(b.osUser, 100) || null, clip(b.appVersion, 40) || null];
   let d = await byToken(gc, dev.id);
+  if (devices.isPhone(d)) throw fail('invalid', { field: 'platform' });
   const first = !d || !d.host.registered;
   await store.tx(gc, async () => {
     if (!d) {
@@ -120,6 +129,52 @@ async function register(gc, req, now = Date.now()) {
   return { host: hostAnswer(d), codeRequired: devices.connectMode(d) !== 'open' };
 }
 
+/**
+ * host/register of a phone (1.3): "Bildschirm freigeben" is on. Needs GateControl's relay (gc.remote.screen,
+ * version 4); nothing of the network of the phone is stored.
+ */
+async function registerPhone(gc, req, now = Date.now()) {
+  const user = req.user;
+  const dev = appDevice(req);
+  const b = bodyOf(req);
+  if (!gc.remote || typeof gc.remote.screen !== 'function') throw fail('screen_unavailable');
+  const name = clip(b.name, 100) || 'Android';
+  const shareMode = b.shareMode === 'open' ? 'open' : (b.shareMode === 'code' || b.shareMode == null ? null : undefined);
+  if (shareMode === undefined) throw fail('invalid', { field: 'shareMode' });
+  const appVersion = clip(b.appVersion, 40) || null;
+  let d = await byToken(gc, dev.id);
+  if (d && d.host.platform !== 'android') throw fail('invalid', { field: 'platform' });
+  const first = !d || !d.host.registered;
+  await store.tx(gc, async () => {
+    if (!d) {
+      const id = await devices.nextId(gc);
+      const config = { ...devices.DEFAULTS, host: '', port: 0, access_mode: 'internal', browser_enabled: true, health_check_enabled: false, credential_mode: 'none' };
+      await store.run(gc, `INSERT INTO devices (id, name, protocol, enabled, source, config, kind, owner_user_id, token_device_id, platform, edition,
+        rdp_available, rdp_enabled, os_user, app_version, share_mode, allow_open, registered, last_seen, created_at, updated_at)
+        VALUES (?, ?, 'screen', 1, 'app', ?, 'host', ?, ?, 'android', NULL, NULL, NULL, NULL, ?, ?, 1, 1, ?, ?, ?)`,
+      [id, name, JSON.stringify(config), user.id, dev.id, appVersion, shareMode || 'code', now, now, now]);
+      // a new phone: only its owner (and the administrators) see it until the owner shares it
+      await store.run(gc, "INSERT INTO device_access (device_id, kind, principal_id) VALUES (?, 'user', ?)", [id, user.id]);
+      return;
+    }
+    if (d.host.owner !== user.id) {
+      await store.run(gc, 'DELETE FROM device_access WHERE device_id = ?', [d.id]);
+      await store.run(gc, "INSERT INTO device_access (device_id, kind, principal_id) VALUES (?, 'user', ?)", [d.id, user.id]);
+      await store.run(gc, 'DELETE FROM codes WHERE device_id = ?', [d.id]);
+    }
+    await store.run(gc, `UPDATE devices SET name = ?, owner_user_id = ?, app_version = ?, share_mode = COALESCE(?, share_mode), registered = 1, last_seen = ?,
+      updated_at = ? WHERE id = ?`, [d.host.owner === user.id ? d.name : name, user.id, appVersion, shareMode, now, now, d.id]);
+  });
+  d = await byToken(gc, dev.id);
+  if (d.host.shareMode === 'open' && !d.host.allowOpen) {
+    await store.run(gc, "UPDATE devices SET share_mode = 'code' WHERE id = ?", [d.id]);
+    d = await byToken(gc, dev.id);
+  }
+  if (first) await log.write(gc, 'remote_host_registered', { device: d, userId: user.id, details: { platform: 'android' } }, now);
+  await changed(gc, [d.id]);
+  return { host: hostAnswer(d), codeRequired: devices.connectMode(d) !== 'open' };
+}
+
 /** host/state — the heartbeat → { shareMode, allowOpen, pending } */
 async function heartbeat(gc, req, support, now = Date.now()) {
   const dev = appDevice(req);
@@ -131,8 +186,8 @@ async function heartbeat(gc, req, support, now = Date.now()) {
   const wasOnline = d.host.online;
   await store.run(gc, `UPDATE devices SET rdp_enabled = COALESCE(?, rdp_enabled), os_user = ${osUser === undefined ? 'os_user' : '?'}, last_seen = ?,
     config = ? WHERE id = ?`, [rdpOn, ...(osUser === undefined ? [] : [osUser]), now,
-    JSON.stringify(dev.vpnIp ? { ...d.config, host: dev.vpnIp } : d.config), d.id]);
-  if (!wasOnline || (rdpOn != null && (rdpOn === 1) !== (d.host.rdpEnabled === true)) || (dev.vpnIp && dev.vpnIp !== d.config.host)) await changed(gc, [d.id]);
+    JSON.stringify(dev.vpnIp && !devices.isPhone(d) ? { ...d.config, host: dev.vpnIp } : d.config), d.id]);
+  if (!wasOnline || (rdpOn != null && (rdpOn === 1) !== (d.host.rdpEnabled === true)) || (dev.vpnIp && !devices.isPhone(d) && dev.vpnIp !== d.config.host)) await changed(gc, [d.id]);
   return { shareMode: d.host.shareMode, allowOpen: d.host.allowOpen, pending: await support.pendingFor(gc, d, now) };
 }
 
