@@ -264,6 +264,8 @@ async function fetchFile(gc, b, row, box, maxBytes, now) {
     await store.run(gc, 'UPDATE messages SET kind = ?, media_id = ?, meta_enc = ?, ext_media = NULL, updated_at = ? WHERE id = ?', [kind, r.mediaId, seal.sealJson(m2), now, cur.id]);
     await store.run(gc, 'UPDATE conversations SET updated_at = ? WHERE id = ?', [now, cur.conv_id]);
     live.queue(box, [row.bridge_owner], 'message.update', { conversationId: cur.conv_id, messageId: cur.id, editedAt: iso(now), media: true, ...(sc ? { scan: sc } : {}) });
+    // 1.25.0: a WhatsApp status with its picture or video is ready for the status row now
+    if (row.bridge_status) require('./bridgestatus').changed(box, row.bridge_owner, cur.conv_id, cur.id, 'new');
   });
   return true;
 }
@@ -331,7 +333,7 @@ async function runOnce(gc) {
   let maxBytes = null;
   try { const u = await gc.media.usage(); maxBytes = u && Number.isSafeInteger(u.maxBytes) ? u.maxBytes : null; } catch { maxBytes = null; }
   let files = 0;
-  const rows = await store.all(gc, `SELECT m.*, c.bridge_owner, c.bridge_net FROM messages m JOIN conversations c ON c.id = m.conv_id
+  const rows = await store.all(gc, `SELECT m.*, c.bridge_owner, c.bridge_net, c.bridge_status FROM messages m JOIN conversations c ON c.id = m.conv_id
     WHERE m.ext_media = 'wait' AND c.bridge_net IS NOT NULL ORDER BY m.id LIMIT ?`, [RUN_FILES]);
   for (const row of rows) {
     let r = null;

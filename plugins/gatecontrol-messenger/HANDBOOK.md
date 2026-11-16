@@ -1,4 +1,4 @@
-<!-- version: 1.24.0 -->
+<!-- version: 1.25.0 -->
 # Messenger
 
 ## What the plugin does
@@ -15,7 +15,7 @@ Everything stays on your server. Texts, locations, file names and group titles a
 
 ## Requirements
 
-- GateControl **1.293.0** or later (Telegram bridge; Signal bridge from 1.291.0; group chats for GateControl groups from 1.200.0, virus scan from the version after 1.222.0).
+- GateControl **1.294.0** or later (WhatsApp status in the status row; Telegram bridge from 1.293.0; Signal bridge from 1.291.0; group chats for GateControl groups from 1.200.0, virus scan from the version after 1.222.0).
 - A licence for the plugin.
 - For “Save to Drive”: the Drive plugin. For the family chat: the Family plugin.
 
@@ -73,6 +73,15 @@ It only comes when linking and appears at night. When “Load older history” i
 
 **Old messages are gone.**
 The administrator set a retention, or the chat is a disappearing chat.
+
+## New in 1.25.0
+
+- **WhatsApp status in the status row.** The status updates of your WhatsApp contacts appear at the top of the chats in the status row, mixed with the GateControl people: unseen first, then the newest. The WhatsApp logo at the picture marks them. The chat “WhatsApp Status Broadcast” leaves the list, the search and the unread count.
+- **Viewing:** pictures, videos and text; a text status in the app colour (WhatsApp does not pass on colour and font). There is no list of viewers.
+- **Replies and reactions:** both go as a normal message to your WhatsApp chat with that person, a reaction as “❤️ on your status”. The bridge cannot react to a status directly; the line under the reply field says so.
+- **“Seen”:** a status is marked as seen here (grey ring). WhatsApp learns it only when you turn on **“Tell WhatsApp when I view a status”** under “Status” in the settings (off by default). It works only with read receipts on and only for status updates you really viewed.
+- **24 hours:** as in WhatsApp. Then the status and its file are deleted. When the contact deletes a status, it goes at once. WhatsApp status updates cause no notification.
+- **Where:** in the portal, the Android app and the Windows client in their new versions. Needs GateControl with `gc.bridges` version 12. With an older GateControl nothing changes.
 
 ## New in 1.24.0
 

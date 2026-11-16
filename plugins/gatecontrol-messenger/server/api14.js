@@ -52,6 +52,13 @@ async function route14(ctx, req, seg) {
       if (seg.length === 4 && d === 'viewers' && m === 'GET') return json(200, await status.viewers(ctx, c));
       if (seg.length === 4 && d === 'react' && m === 'POST') return json(200, await tx(() => status.react(ctx, c, req.body)));
     }
+    // 1.25.0: the WhatsApp status updates of the contacts (bridgestatus.js) — watched / answered; each call in its own
+    // transactions (the bridge is asked in between)
+    if (b === 'bridged' && seg.length === 4 && m === 'POST') {
+      const bs = require('./bridgestatus');
+      if (d === 'seen') return json(200, await bs.seen(ctx, c));
+      if (d === 'reply') return json(200, await bs.reply(ctx, c, req.body));
+    }
   }
 
   // ── blocks, lists, reminders ──

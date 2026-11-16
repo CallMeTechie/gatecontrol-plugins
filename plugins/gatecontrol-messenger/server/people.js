@@ -16,7 +16,8 @@ const STATUS_AUDIENCE = ['all', 'family', 'custom'];
 const PLACE_AUDIENCE = ['nobody', 'family', 'all'];
 const REMINDER_MIN = [0, 15, 60, 120, 1440];
 const EXT_DEFAULTS = Object.freeze({
-  privacy: Object.freeze({ lastSeen: 'all', avatar: 'all', statusDefault: 'all', placeInStatus: 'family', groupAdd: 'all', defaultDisappearingS: 0 }),
+  // 1.25.0: bridgedStatusSeen — tell WhatsApp when the person watches a contact's status (only with readReceipts; off)
+  privacy: Object.freeze({ lastSeen: 'all', avatar: 'all', statusDefault: 'all', placeInStatus: 'family', groupAdd: 'all', defaultDisappearingS: 0, bridgedStatusSeen: false }),
   notify: Object.freeze({ groupsMentionsOnly: false, reactions: true, statusDigest: false, eventReminderMin: 60 }),
   chats: Object.freeze({ keepArchived: true }),
 });
@@ -38,6 +39,7 @@ function extOf(r) {
       placeInStatus: pick('privacy', 'placeInStatus', (v) => PLACE_AUDIENCE.includes(v)),
       groupAdd: pick('privacy', 'groupAdd', (v) => AUDIENCE.includes(v)),
       defaultDisappearingS: pick('privacy', 'defaultDisappearingS', (v) => DISAPPEARING.includes(v)),
+      bridgedStatusSeen: pick('privacy', 'bridgedStatusSeen', isB),
     },
     notify: {
       groupsMentionsOnly: pick('notify', 'groupsMentionsOnly', isB),
@@ -149,6 +151,7 @@ async function updatePrefs(gc, userId, body, now = Date.now()) {
   section('privacy', {
     lastSeen: (v) => AUDIENCE.includes(v), avatar: (v) => AUDIENCE.includes(v), statusDefault: (v) => STATUS_AUDIENCE.includes(v),
     placeInStatus: (v) => PLACE_AUDIENCE.includes(v), groupAdd: (v) => AUDIENCE.includes(v), defaultDisappearingS: (v) => DISAPPEARING.includes(v),
+    bridgedStatusSeen: isB,
   });
   section('notify', { groupsMentionsOnly: isB, reactions: isB, statusDigest: isB, eventReminderMin: (v) => REMINDER_MIN.includes(v) });
   section('chats', { keepArchived: isB });

@@ -333,11 +333,34 @@
     if (item.status && !own) b.appendChild(el('span', { class: 'ms-ring-st', text: statusLine(item.status) }));
     return b;
   }
+  /** 1.25.0: a WhatsApp contact with status updates (feed.bridged) — the ring with the service's logo at the picture. */
+  function bridgedRing(it) {
+    var label = T('st.bridged_label', { name: it.contact.name || '?', network: NET_LABEL[it.network] || it.network });
+    var who = { id: 'ext-' + it.contact.id, name: it.contact.name, avatarUrl: it.contact.avatarUrl || null };
+    return el('button', { type: 'button', class: 'ms-ring has-stories' + (it.unseen ? ' is-unseen' : ''), title: label, 'aria-label': label, on: { click: function () { bridgedViewer(it); } } }, [
+      el('span', { class: 'ms-ring-av' }, [M.avatar(who, 50), netMark(it.network, 11, 'ms-ring-net')]),
+      el('span', { class: 'ms-ring-name', text: it.contact.name || '?' }),
+    ]);
+  }
+  var NET_LABEL = { whatsapp: 'WhatsApp', signal: 'Signal', telegram: 'Telegram' };
+  /** The service's logo (MS.netLogo, its colour class) with one more class: on the ring, or in a line. */
+  function netMark(network, size, extra) { var m = M.netLogo(network, null, size); m.classList.add(extra); return m; }
+  function newestOf(stories) { return stories && stories.length ? stories[stories.length - 1].createdAt : ''; }
   function strip(feed) {
     var box = el('div', { class: 'ms-strip', role: 'list', 'aria-label': T('st.strip') });
     var me = feed.me;
     box.appendChild(ringAvatar(me, T('st.mine'), function () { if (me.stories.length) viewer(me, true); else ownMenu(me); }, true));
-    feed.items.forEach(function (it) {
+    // 1.25.0: the people of this server and the WhatsApp contacts mixed — unseen first, then the newest
+    var all = feed.items.map(function (it, k) { return { k: k, unseen: !!it.unseen, at: newestOf(it.stories), it: it, bridged: false }; });
+    (feed.bridged || []).forEach(function (it, k) { all.push({ k: 1000 + k, unseen: !!it.unseen, at: newestOf(it.stories), it: it, bridged: true }); });
+    all.sort(function (a, b) {
+      if (a.unseen !== b.unseen) return a.unseen ? -1 : 1;
+      if (a.at !== b.at) return a.at < b.at ? 1 : -1;
+      return a.k - b.k;
+    });
+    all.forEach(function (x) {
+      var it = x.it;
+      if (x.bridged) { box.appendChild(bridgedRing(it)); return; }
       box.appendChild(ringAvatar(it, (it.user.name || '?') + (it.status ? ': ' + statusLine(it.status) : ''), function () { if (it.stories.length) viewer(it, false); else statusView(it); }));
     });
     return box;
@@ -463,6 +486,60 @@
     } });
     show();
   }
+  /**
+   * 1.25.0: the viewer of a WhatsApp contact's status updates — no viewers, no own menu. Watched → POST
+   * status/bridged/:id/seen (WhatsApp learns it only on the person's own switch); the reactions and the answer go as a
+   * message into the WhatsApp chat with the contact (the bridge cannot react to a status), said under the field.
+   */
+  function bridgedViewer(item) {
+    var i = 0;
+    var first = item.stories.findIndex(function (s) { return !s.seen; });
+    if (first > 0) i = first;
+    var net = NET_LABEL[item.network] || item.network;
+    var stage = el('div', { class: 'ms-story-stage' });
+    var bars = el('div', { class: 'ms-story-bars' }, item.stories.map(function () { return el('i'); }));
+    var info = el('div', { class: 'ms-story-info' });
+    var foot = el('div', { class: 'ms-story-foot' });
+    var note = el('small', { class: 'ms-story-note' });
+    function show() {
+      var s = item.stories[i];
+      Array.prototype.forEach.call(bars.children, function (b, k) { b.className = k < i ? 'is-done' : (k === i ? 'is-on' : ''); });
+      M.clear(stage);
+      // WhatsApp brings no colour or font of a text status: the app's colour
+      if (s.kind === 'text') stage.appendChild(el('div', { class: 'ms-story-text ms-story-wa', text: s.text || '' }));
+      else if ((s.kind === 'image' || s.kind === 'video') && s.url) {
+        stage.appendChild(s.kind === 'video' ? el('video', { src: s.url, controls: true, autoplay: true, playsinline: true }) : el('img', { src: s.url, alt: s.text || '' }));
+        if (s.text) stage.appendChild(el('div', { class: 'ms-story-cap', text: s.text }));
+      } else stage.appendChild(el('div', { class: 'ms-story-text', text: s.kind === 'unsupported' ? T('st.bridged_unsupported', { network: net }) : T('msg.media_unavailable') }));
+      M.clear(info).appendChild(el('span', { class: 'ms-story-via' }, [netMark(item.network, 10, 'ms-net-inl'), el('span', { text: T('st.bridged_via', { network: net }) + ' · ' + M.when(s.createdAt) })]));
+      if (!s.seen) { s.seen = true; H.api('POST', 'status/bridged/' + s.id + '/seen', {}).then(function () { H.refreshFeed(true); }).catch(function () {}); }
+      M.clear(foot);
+      M.clear(note);
+      if (!item.canReply) { note.textContent = T('st.bridged_no_chat', { network: net }); return; }
+      var send = function (body, done) {
+        return H.api('POST', 'status/bridged/' + s.id + '/reply', Object.assign({ clientId: M.uuid() }, body)).then(function () { M.toast(T(done, { network: net })); }).catch(M.warn);
+      };
+      // the same reactions as for a story here — sent as a message „❤️ auf deinen Status“
+      ['❤️', '😂', '👍', '🔥'].forEach(function (e) { foot.appendChild(el('button', { type: 'button', class: 'ms-ib', 'aria-label': e, text: e, on: { click: function () { send({ emoji: e }, 'st.bridged_reacted'); } } })); });
+      var input = el('input', { class: 'form-input', maxlength: '4000', placeholder: T('st.bridged_reply_ph', { network: net }), 'aria-label': T('st.bridged_reply_ph', { network: net }) });
+      input.addEventListener('keydown', function (ev) {
+        if (ev.key !== 'Enter' || !input.value.trim()) return;
+        var t = input.value.trim();
+        input.value = '';
+        send({ text: t }, 'st.bridged_replied');
+      });
+      foot.appendChild(input);
+      note.appendChild(netMark(item.network, 9, 'ms-net-inl'));
+      note.appendChild(el('span', { text: T('st.bridged_reply_hint', { network: net }) }));
+    }
+    var prev = el('button', { type: 'button', class: 'ms-story-nav is-prev', 'aria-label': T('st.prev'), on: { click: function () { if (i > 0) { i--; show(); } } } }, [M.icon('back', 20)]);
+    var next = el('button', { type: 'button', class: 'ms-story-nav is-next', 'aria-label': T('st.next'), on: { click: function () { if (i < item.stories.length - 1) { i++; show(); } else closeTop(); } } }, [M.icon('back', 20)]);
+    var box = el('div', { class: 'ms-story' }, [bars, info, el('div', { class: 'ms-story-wrap' }, [prev, stage, next]), foot, note]);
+    M.dialog(item.contact.name || '?', box, [], { wide: true, onOpen: function () {
+      document.addEventListener('keydown', function k(e) { if (!box.isConnected) { document.removeEventListener('keydown', k); return; } if (e.target && e.target.tagName === 'INPUT') return; if (e.key === 'ArrowRight') next.click(); if (e.key === 'ArrowLeft') prev.click(); });
+    } });
+    show();
+  }
   function viewers(s) {
     H.api('GET', 'status/stories/' + s.id + '/viewers').then(function (r) {
       var list = el('div', { class: 'ms-people' });
@@ -514,10 +591,16 @@
         sel(T('set.place'), T('set.place_hint'), [['nobody', T('set.aud_nobody')], ['family', T('set.aud_family')], ['all', T('set.aud_all')]], p.privacy.placeInStatus, function (v) { save({ privacy: { placeInStatus: v } }); });
         sel(T('set.group_add'), null, aud, p.privacy.groupAdd, function (v) { save({ privacy: { groupAdd: v } }); });
         sel(T('set.default_dis'), null, (r.limits.disappearingS || [0, 86400, 604800, 2592000]).map(function (s) { return [s, s ? T('dis.' + s) : T('dis.off')]; }), p.privacy.defaultDisappearingS, function (v) { save({ privacy: { defaultDisappearingS: Number(v) } }); });
+        // 1.25.0: tell WhatsApp when the person watches a contact's status (off; only with read receipts)
+        if (f.bridge_status) {
+          sec(T('set.status'));
+          sw(T('set.bridged_seen'), T('set.bridged_seen_hint'), !!p.privacy.bridgedStatusSeen, function (v, rev) { save({ privacy: { bridgedStatusSeen: v } }, rev); });
+          body.appendChild(el('p', { class: 'ms-note ms-note-blue' }, [M.icon('info', 14), T('set.bridged_seen_needs')]));
+        }
         sec(T('set.notify'));
         sw(T('set.mentions_only'), T('set.mentions_only_hint'), p.notify.groupsMentionsOnly, function (v, rev) { save({ notify: { groupsMentionsOnly: v } }, rev); });
         sw(T('set.reactions'), null, p.notify.reactions, function (v, rev) { save({ notify: { reactions: v } }, rev); });
-        if (f.stories) sw(T('set.digest'), T('set.digest_hint'), p.notify.statusDigest, function (v, rev) { save({ notify: { statusDigest: v } }, rev); });
+        if (f.stories) sw(T('set.digest'), f.bridge_status ? T('set.digest_hint_bridged') : T('set.digest_hint'), p.notify.statusDigest, function (v, rev) { save({ notify: { statusDigest: v } }, rev); });
         sel(T('set.event_reminder'), null, [[0, T('ev.rem_0')], [15, T('ev.rem_15')], [60, T('ev.rem_60')], [120, T('ev.rem_120')], [1440, T('ev.rem_1440')]], p.notify.eventReminderMin, function (v) { save({ notify: { eventReminderMin: Number(v) } }); });
       }
       if (f.msg_tools) {

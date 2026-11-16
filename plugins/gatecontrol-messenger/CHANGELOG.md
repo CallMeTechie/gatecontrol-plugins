@@ -3,6 +3,31 @@
 Chats zwischen den GateControl-Konten – in der GateControl-App (eigener Tab „Chats“), im
 Windows-Client und im Portal (eigener Tab „Chats“). Alles bleibt auf dem eigenen Server.
 
+## 1.25.0
+**WhatsApp-Status in der Status-Reihe** — für GateControl mit `gc.bridges` Version 12 (`chat.status`). **Braucht
+GateControl ≥ 1.294.0** (`plugin.json` `gatecontrol`; `gatecontrol.ref` = v1.294.0). Mit älterem GateControl bleibt alles wie bisher.
+- **Status-Raum ist kein Chat** (Migration 015, `conversations.bridge_status`, `server/bridgestatus.js`): nicht in der
+  Liste, nicht zu öffnen (`not_found`), nicht in Suche, Zähler und Filtern, stumm, keine Push, kein `message.new`; nie
+  eine automatische Lesebestätigung dorthin (`readOut`). Ein vorhandener Chat „WhatsApp Status Broadcast“ wird beim
+  ersten `chat.status` umgestellt, nichts geht verloren.
+- **24 Stunden:** jeder Status bekommt `expires_at` = Zeitpunkt + 24 h und geht danach samt Datei (wie
+  selbstlöschende Nachrichten); ein Status, der beim Ankommen schon abgelaufen ist, wird nicht abgelegt; Löschen des
+  Kontakts (Redaction) entfernt ihn sofort.
+- **`GET status/feed` → `bridged`** (zusätzlich zu `items`, ältere Clients übergehen es): je Kontakt `{ network, contact:
+  { id, name, avatarMediaId, avatarUrl }, chatId, canReply, stories: [{ id, kind: text | image | video | unsupported,
+  text, mediaId, thumbMediaId, video, url, thumbUrl, createdAt, expiresAt, seen }], unseen }`, ungesehen zuerst.
+  Live-Ereignis `story.bridged { network, storyId, action: new | seen | remove }`.
+- **`POST status/bridged/:id/seen`**: hier immer gesehen (`messages.ext_seen`); an WhatsApp nur mit
+  `prefs.privacy.bridgedStatusSeen` (neu, Standard aus) und Lesebestätigungen, nur bis zum Ende der lückenlos
+  angesehenen Folge (die Brücke markiert alles bis zur gemeldeten Nachricht, für alle Absender),
+  `conversations.bridge_status_reported`.
+- **`POST status/bridged/:id/reply { text } | { emoji }`**: eine normale Nachricht in den WhatsApp-Einzelchat mit dem
+  Kontakt (gefunden über den Kontakt, sonst über `contacts()` der Brücke, sonst `not_found` / `no_chat`), ein Emoji als
+  „❤️ auf deinen Status“ (mautrix-whatsapp lehnt Reaktionen auf Status ab: `ErrBroadcastReactionUnsupported`).
+- **Portal:** Ringe mit WhatsApp-Logo gemischt in der Status-Reihe, Viewer ohne Zuschauer mit Reaktionsleiste und
+  Antwortfeld „Antwort über WhatsApp“ samt Hinweis, Einstellung „WhatsApp mitteilen, wenn ich einen Status ansehe“.
+- `GET me` → `features.bridge_status`. Tests `test/bridgestatus.test.js`; `tools/testing/mock-bridges.js` kennt Version 12.
+
 ## 1.24.0
 **Telegram** („Brücken Stufe 7b“) — die dritte Brücke, für GateControl mit `gc.bridges` Version 11. **Braucht GateControl
 ≥ 1.293.0** (`plugin.json` `gatecontrol`; `gatecontrol.ref` = v1.293.0).

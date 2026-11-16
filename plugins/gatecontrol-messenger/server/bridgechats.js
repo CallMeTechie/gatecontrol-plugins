@@ -40,6 +40,10 @@
 // placeholder that failed with the reason too_large („Zu groß, öffne es in Telegram“); message.buttons → bridge.buttons
 // (the hint „Diese Nachricht hat Knöpfe. Öffne sie in Telegram.“).
 //
+// 1.25.0 (GateControl with gc.bridges version 12): the room of the contacts' WhatsApp status updates (chat.status) is
+// no chat — bridgestatus.js says how its messages become status updates in the status row (never listed, never pushed,
+// gone after 24 h; "seen" to WhatsApp only on the person's own switch, never from here).
+//
 // Clients that do not know bridged chats never see one: every route answers 404 for a bridged conversation unless
 // the request says ?bridged=1 (or `bridged: true` in its body — the buttons of a push; README "App-API", since 1.14.0).
 
@@ -52,6 +56,7 @@ const people = require('./people');
 const texts = require('./texts.json');
 const bridgemedia = require('./bridgemedia');
 const bridgechannels = require('./bridgechannels');
+const bridgestatus = require('./bridgestatus');
 const scan = require('./scan');
 const { fail, iso, bridgeName } = require('./util');
 
@@ -277,15 +282,27 @@ async function ensureConv(c, ev) {
   const bot = chat.bot === true ? 1 : (chat.bot === false ? 0 : null);
   const members = Number.isSafeInteger(chat.members) && chat.members > 0 && chat.members <= 10000000 ? chat.members : null;
   const large = kind === 'group' && members != null && members >= LARGE_GROUP;
+  // 1.25.0 (gc.bridges version 12): the room of the WhatsApp status updates — only when the event says so
+  const status = chat.status === true ? 1 : null;
   let conv = await convOf(c.gc, ev.userId, ev.network, chat.id);
   if (!conv) {
-    const r = await store.run(c.gc, 'INSERT INTO conversations (kind, title_enc, created_by, created_at, updated_at, bridge_net, bridge_ref, bridge_owner, bridge_channel, bridge_read_only, bridge_bot, bridge_members) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [kind, name ? seal.seal(name) : null, c.now, c.now, ev.network, chat.id, ev.userId, channel || 0, readOnly || 0, bot || 0, members]);
+    const r = await store.run(c.gc, 'INSERT INTO conversations (kind, title_enc, created_by, created_at, updated_at, bridge_net, bridge_ref, bridge_owner, bridge_channel, bridge_read_only, bridge_bot, bridge_members, bridge_status) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [kind, name ? seal.seal(name) : null, c.now, c.now, ev.network, chat.id, ev.userId, channel || 0, readOnly || 0, bot || 0, members, status || 0]);
     conv = await store.one(c.gc, 'SELECT * FROM conversations WHERE id = ?', [r.lastInsertRowid]);
-    // a channel is muted from the start (its bell turns pushes on); 1.24.0: a large group too
-    await store.run(c.gc, "INSERT INTO members (conv_id, user_id, role, joined_at, joined_msg_id, last_read_id, last_delivered_id, updated_at, notify) VALUES (?, ?, 'member', ?, 0, 0, 0, ?, ?)", [conv.id, ev.userId, c.now, c.now, channel || large ? 'none' : 'all']);
+    // a channel is muted from the start (its bell turns pushes on); 1.24.0: a large group too; 1.25.0: the status room
+    await store.run(c.gc, "INSERT INTO members (conv_id, user_id, role, joined_at, joined_msg_id, last_read_id, last_delivered_id, updated_at, notify) VALUES (?, ?, 'member', ?, 0, 0, 0, ?, ?)", [conv.id, ev.userId, c.now, c.now, channel || large || status ? 'none' : 'all']);
     await bridgemedia.chatAvatar(c, conv, chat.avatar);
     return conv;
+  }
+  if (status && !conv.bridge_status) {
+    // 1.25.0: a chat „WhatsApp Status Broadcast“ known from before turns out to be the status room: it leaves the list
+    // (muted, read, its messages run out 24 h after they were posted — older ones go at once)
+    await store.run(c.gc, "UPDATE members SET notify = 'none', last_read_id = MAX(last_read_id, ?), updated_at = ? WHERE conv_id = ? AND user_id = ?", [conv.last_msg_id || 0, c.now, conv.id, ev.userId]);
+    await store.run(c.gc, 'UPDATE messages SET expires_at = MIN(COALESCE(expires_at, created_at + ?), created_at + ?) WHERE conv_id = ?', [bridgestatus.TTL_MS, bridgestatus.TTL_MS, conv.id]);
+    await store.run(c.gc, 'UPDATE conversations SET bridge_status = 1, updated_at = ? WHERE id = ?', [c.now, conv.id]);
+    conv = await store.one(c.gc, 'SELECT * FROM conversations WHERE id = ?', [conv.id]);
+    live.queue(c.box, [ev.userId], 'conversation.update', { conversationId: conv.id, reason: 'bridge' });
+    bridgestatus.changed(c.box, ev.userId, conv.id, null, 'new');
   }
   if ((bot != null && bot !== conv.bridge_bot) || (members != null && members !== conv.bridge_members)) {
     // a group that turns out large before anything was said in it: muted as if it were new
@@ -406,6 +423,8 @@ async function apply(c, ev, { parked = false } = {}) {
 
   if (ev.type === 'message') {
     if (!EVENT_RE.test(String(ev.id || '')) || (await msgByEvent(c.gc, conv.id, ev.id))) return;
+    // 1.25.0: a status that ran out already is not filed (nothing would show it)
+    if (bridgestatus.isStatus(conv) && (bridgestatus.tooOld(at, c.now) || sender.self || sender.system)) return;
     const contactId = sender.self || sender.system ? null : await ensureContact(c, ev, sender);
     if (!sender.self && !sender.system && contactId == null) return;
     // 1.20.0: a channel's post (sender.channel) — written by the channel, only in a channel
@@ -449,6 +468,12 @@ async function apply(c, ev, { parked = false } = {}) {
     const extPreview = preview && preview.image && bridgemedia.api(c.gc) ? 'wait' : null;
     await store.run(c.gc, 'UPDATE messages SET ext_sender = ?, ext_event = ?, ext_state = ?, ext_media = ?, ext_preview = ? WHERE id = ?', [contactId, ev.id, sender.self ? 'sent' : null, extMedia, extPreview, id]);
     if (extMedia === 'wait' || extPreview) c.mediaWork = true;
+    // 1.25.0: a status update — no chat message (bridgestatus.filed: 24 h, read, no push, story.bridged)
+    if (bridgestatus.isStatus(conv)) {
+      await bridgestatus.filed(c, conv, ev, id, at);
+      await unpark(c, conv, ev.id);
+      return;
+    }
     if (sender.self || hist) await store.run(c.gc, 'UPDATE members SET last_read_id = MAX(last_read_id, ?), last_delivered_id = MAX(last_delivered_id, ?), updated_at = ? WHERE conv_id = ? AND user_id = ?', [id, id, c.now, conv.id, ev.userId]);
     if (hist) {
       // changed now (the apps fetch messages?changedSince= and conversations?since= by it), shown at its own time; a
@@ -500,6 +525,9 @@ async function apply(c, ev, { parked = false } = {}) {
     live.queue(c.box, users, 'message.update', { conversationId: conv.id, messageId: m.id, editedAt: iso(c.now), status: STATUS_OUT[state] });
     return;
   }
+
+  // 1.25.0: a status is neither changed nor reacted to; the bridge's word on a message there does not exist
+  if (bridgestatus.isStatus(conv) && ev.type !== 'redact') return;
 
   if (ev.type === 'edit') {
     if (!EVENT_RE.test(String(ev.target || ''))) return;
@@ -567,6 +595,8 @@ async function apply(c, ev, { parked = false } = {}) {
     if (!m) { if (!parked) await park(c, conv, ev.target, ev); return; }
     if (m.deleted_at) return;
     await tombstone(c, conv, m.id, users);
+    // 1.25.0: the contact deleted a status — gone from the status row at once
+    if (bridgestatus.isStatus(conv)) bridgestatus.changed(c.box, ev.userId, conv.id, m.id, 'remove');
   }
 }
 
@@ -592,7 +622,8 @@ async function applyEphemeral(c, ev) {
   const chat = ev.chat && typeof ev.chat === 'object' ? ev.chat : {};
   if (!REF_RE.test(String(chat.id || ''))) return;
   const conv = await convOf(c.gc, ev.userId, ev.network, chat.id);
-  if (!conv || !conv.last_msg_id) return;
+  // 1.25.0: nobody types or reads in the status room (and nothing of it is a chat)
+  if (!conv || !conv.last_msg_id || bridgestatus.isStatus(conv)) return;
   const prefs = (await people.prefsOf(c.gc, [ev.userId])).get(ev.userId) || {};
   if (ev.type === 'typing') {
     if (prefs.typing === false) return;
@@ -873,7 +904,8 @@ async function reactOut(ctx, conv, row, emoji) {
 /** After POST conversations/:id/read: tell the other side (only for people who share read receipts). Best effort. */
 async function readOut(ctx, conv, upTo) {
   const b = api(ctx.gc);
-  if (!b || conv.bridge_closed) return;
+  // 1.25.0: never from the room of the status updates — "seen" there only on the person's own switch (bridgestatus.seen)
+  if (!b || conv.bridge_closed || bridgestatus.isStatus(conv)) return;
   const prefs = (await people.prefsOf(ctx.gc, [ctx.viewer])).get(ctx.viewer) || {};
   if (prefs.readReceipts === false) return;
   const m = await store.one(ctx.gc, 'SELECT ext_event FROM messages WHERE conv_id = ? AND id <= ? AND ext_sender IS NOT NULL AND ext_event IS NOT NULL ORDER BY id DESC LIMIT 1', [conv.id, upTo]);
@@ -956,7 +988,7 @@ function titleLabel(ctx, net, group = false) {
 
 /** Has this person a bridged chat with a message? (GET me: features.bridge_chats) */
 async function hasChats(gc, userId) {
-  return !!(await store.one(gc, 'SELECT 1 AS x FROM conversations WHERE bridge_owner = ? AND bridge_net IS NOT NULL AND last_msg_id IS NOT NULL LIMIT 1', [userId]));
+  return !!(await store.one(gc, 'SELECT 1 AS x FROM conversations WHERE bridge_owner = ? AND bridge_net IS NOT NULL AND bridge_status = 0 AND last_msg_id IS NOT NULL LIMIT 1', [userId]));
 }
 
 module.exports = {

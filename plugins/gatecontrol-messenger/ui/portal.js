@@ -2274,6 +2274,8 @@
         if (ev.type === 'event.update') refreshConv(cid);
         break;
       case 'status.update': case 'story.new': case 'story.remove':
+      // 1.25.0: a WhatsApp status came, went or was watched
+      case 'story.bridged':
         refreshFeed(true);
         break;
       case 'lists.update':

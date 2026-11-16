@@ -59,6 +59,9 @@ async function me(ctx) {
   // 1.20.0: channels, read-only groups, format, link previews, reactions in channels (GateControl with gc.bridges version 7)
   let channels = false;
   try { channels = bridgeChats && !!require('./bridgechannels').api(ctx.gc); } catch { channels = false; }
+  // 1.25.0: WhatsApp status updates in the status row (GateControl with gc.bridges version 12)
+  let bridgeStatus = false;
+  try { bridgeStatus = await require('./bridgestatus').feature(ctx); } catch { bridgeStatus = false; }
   return {
     user: u ? { id: u.id, name: u.name, avatarUrl: u.avatarUrl || null, initials: u.initials || null, colorHex: u.colorHex || null } : { id: ctx.viewer, name: null, avatarUrl: null, initials: null, colorHex: null },
     prefs,
@@ -99,6 +102,10 @@ async function me(ctx) {
       // conversations, `person`, `folded`; persons/… routes; suggestions from GateControl's gc.bridges version 8;
       // README "App-API", since 1.21.0)
       ...(bridgeChats ? { chat_people: true } : {}),
+      // 1.25.0 (GateControl with gc.bridges version 12), once the person linked WhatsApp: bridge_status — GET status/feed
+      // carries `bridged` (the contacts' WhatsApp status updates), POST status/bridged/:id/seen and …/reply,
+      // prefs.privacy.bridgedStatusSeen (README "App-API", since 1.25.0)
+      ...(bridgeStatus ? { bridge_status: true } : {}),
     },
     // 1.4.0: what the Familie plugin offers here (gc.services.available) — "Zur Liste", "In Kalender", places;
     // 1.10.0: drive — Drive takes files (save_file): "In Drive speichern" (POST messages/:id/to-drive)

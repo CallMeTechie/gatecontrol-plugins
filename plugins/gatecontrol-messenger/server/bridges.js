@@ -1136,6 +1136,6 @@ async function historyFeature(ctx) {
 }
 
 module.exports = {
-  route, service, offered, adminView, adminSet, mine, allowed, channelsAllowed, refresh, api, numberOf, newChatFeature, newChatOf, historyFeature, phoneCheck, phoneOf, forgetRawLoginIds, NETWORKS, FLOWS, LOOKUP_TIMEOUT_MS,
+  route, service, offered, adminView, adminSet, mine, allowed, channelsAllowed, refresh, api, numberOf, chatByRef, newChatFeature, newChatOf, historyFeature, phoneCheck, phoneOf, forgetRawLoginIds, NETWORKS, FLOWS, LOOKUP_TIMEOUT_MS,
   _resetLookups: () => { lookups.clear(); recent.clear(); handoffs.clear(); phoneCheckedAt = 0; }, HANDOFF_MS,
 };

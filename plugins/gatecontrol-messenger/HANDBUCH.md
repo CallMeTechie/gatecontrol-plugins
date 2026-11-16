@@ -1,4 +1,4 @@
-<!-- version: 1.24.0 -->
+<!-- version: 1.25.0 -->
 # Messenger
 
 ## Was das Plugin kann
@@ -15,7 +15,7 @@ Alles bleibt auf deinem Server. Texte, Standorte, Dateinamen und Gruppentitel we
 
 ## Voraussetzungen
 
-- GateControl **1.293.0** oder neuer (Telegram-Brücke; Signal-Brücke ab 1.291.0; Gruppenchats für GateControl-Gruppen ab 1.200.0, Virenscan ab der Version nach 1.222.0).
+- GateControl **1.294.0** oder neuer (WhatsApp-Status in der Status-Reihe; Telegram-Brücke ab 1.293.0; Signal-Brücke ab 1.291.0; Gruppenchats für GateControl-Gruppen ab 1.200.0, Virenscan ab der Version nach 1.222.0).
 - Eine Lizenz für das Plugin.
 - Für „In Drive speichern“: das Plugin Drive. Für den Familien-Chat: das Plugin Familie.
 
@@ -73,6 +73,15 @@ Er kommt nur beim Verknüpfen und erscheint nachts. Steht „Älteren Verlauf la
 
 **Alte Nachrichten sind weg.**
 Der Administrator hat eine Aufbewahrung eingestellt, oder der Chat ist selbstlöschend.
+
+## Neu in 1.25.0
+
+- **WhatsApp-Status in der Status-Reihe.** Die Status deiner WhatsApp-Kontakte stehen oben in der Status-Reihe der Chats, gemischt mit den GateControl-Personen: ungesehen zuerst, dann die neuesten. Du erkennst sie am WhatsApp-Logo am Bild. Der Chat „WhatsApp Status Broadcast“ verschwindet aus der Liste, aus der Suche und aus dem Ungelesen-Zähler.
+- **Ansehen:** Bild, Video und Text, ein Text-Status in der App-Farbe (WhatsApp liefert Farbe und Schrift nicht mit). Es gibt keine Zuschauerliste.
+- **Antworten und reagieren:** Antwort und Reaktion gehen als normale Nachricht in deinen WhatsApp-Chat mit dieser Person, eine Reaktion als „❤️ auf deinen Status“. Direkt auf einen Status reagieren kann die Brücke nicht. Das steht auch unter dem Antwortfeld.
+- **„Gesehen“:** Der Status wird hier als gesehen markiert (grauer Ring). WhatsApp erfährt es nur, wenn du in den Einstellungen unter „Status“ den Schalter **„WhatsApp mitteilen, wenn ich einen Status ansehe“** einschaltest (Standard aus). Das wirkt nur mit eingeschalteten Lesebestätigungen und nur für Status, die du wirklich angesehen hast.
+- **24 Stunden:** Wie bei WhatsApp. Danach werden Status und Datei gelöscht. Löscht der Kontakt seinen Status, verschwindet er sofort. WhatsApp-Status lösen keine Mitteilung aus.
+- **Wo:** im Portal, in der Android-App und im Windows-Client mit ihren neuen Versionen. Braucht GateControl mit `gc.bridges` Version 12. Mit einem älteren GateControl bleibt alles wie bisher.
 
 ## Neu in 1.24.0
 

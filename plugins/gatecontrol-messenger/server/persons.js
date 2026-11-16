@@ -863,7 +863,7 @@ async function pushName(gc, userId, convId, users) {
 }
 
 module.exports = {
-  GC_WAY, LABEL, on, matchApi, wayOf, labelOf, wayMap, personOf, waysOf, leadOf, fold, entryOf, personFor, syncFrom, merge, patch, archive, split, page, read, search,
+  GC_WAY, LABEL, on, matchApi, chatOfContact, wayOf, labelOf, wayMap, personOf, waysOf, leadOf, fold, entryOf, personFor, syncFrom, merge, patch, archive, split, page, read, search,
   sendWay, suggestions, answer, candidates, tidy, pushName, needPerson, t,
   _reset: (gc) => askedOf(gc).clear(),
 };

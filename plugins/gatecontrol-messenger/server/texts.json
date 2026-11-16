@@ -1105,7 +1105,21 @@
     "person.rec_saved_no_telegram": "Niemand erkennt dich an deinem Telegram.",
     "bc.bot": "Bot",
     "bc.buttons": "Diese Nachricht hat Knöpfe. Öffne sie in {{network}}.",
-    "bc.members": "{{n}} Mitglieder"
+    "bc.members": "{{n}} Mitglieder",
+    "bridgestatus.reaction": "{{emoji}} auf deinen Status",
+    "st.bridged_label": "{{name}} · Status über {{network}}",
+    "st.bridged_via": "über {{network}}",
+    "st.bridged_unsupported": "Dieser Status lässt sich hier nicht zeigen. Öffne ihn in {{network}}.",
+    "st.bridged_no_chat": "Kein {{network}}-Chat mit dieser Person gefunden. Antworten geht gerade nur in {{network}}.",
+    "st.bridged_reply_ph": "Antwort über {{network}}",
+    "st.bridged_reply_hint": "Geht als Nachricht in euren {{network}}-Chat, auch eine Reaktion",
+    "st.bridged_reacted": "Reaktion als Nachricht über {{network}} gesendet",
+    "st.bridged_replied": "Antwort über {{network}} gesendet",
+    "set.status": "Status",
+    "set.bridged_seen": "WhatsApp mitteilen, wenn ich einen Status ansehe",
+    "set.bridged_seen_hint": "Wenn an, erscheinst du beim Kontakt in WhatsApp unter „Gesehen von“. Wenn aus, wird der Status nur hier als gesehen markiert (grauer Ring).",
+    "set.bridged_seen_needs": "Funktioniert nur, wenn „Lesebestätigungen“ eingeschaltet ist.",
+    "set.digest_hint_bridged": "Abends, wenn es neue Storys gibt. Nur GateControl-Personen, WhatsApp-Status lösen keine Mitteilung aus."
   },
   "en": {
     "common.back": "Back",
@@ -2213,6 +2227,20 @@
     "person.rec_saved_no_telegram": "Nobody recognises you by your Telegram.",
     "bc.bot": "Bot",
     "bc.buttons": "This message has buttons. Open it in {{network}}.",
-    "bc.members": "{{n}} members"
+    "bc.members": "{{n}} members",
+    "bridgestatus.reaction": "{{emoji}} on your status",
+    "st.bridged_label": "{{name}} · status via {{network}}",
+    "st.bridged_via": "via {{network}}",
+    "st.bridged_unsupported": "This status cannot be shown here. Open it in {{network}}.",
+    "st.bridged_no_chat": "No {{network}} chat with this person found. For now you can only reply in {{network}}.",
+    "st.bridged_reply_ph": "Reply via {{network}}",
+    "st.bridged_reply_hint": "Goes as a message to your {{network}} chat, a reaction too",
+    "st.bridged_reacted": "Reaction sent as a message via {{network}}",
+    "st.bridged_replied": "Reply sent via {{network}}",
+    "set.status": "Status",
+    "set.bridged_seen": "Tell WhatsApp when I view a status",
+    "set.bridged_seen_hint": "When on, the contact sees you under “Viewed by” in WhatsApp. When off, the status is only marked as seen here (grey ring).",
+    "set.bridged_seen_needs": "Works only while “Read receipts” is on.",
+    "set.digest_hint_bridged": "In the evening when there are new stories. GateControl people only, WhatsApp status updates cause no notification."
   }
 }

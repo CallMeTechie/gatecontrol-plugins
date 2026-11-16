@@ -377,7 +377,10 @@ async function feed(ctx) {
     const ub = b.status ? b.status.updatedAt : '';
     return ua < ub ? 1 : ua > ub ? -1 : a.user.id - b.user.id;
   });
-  return { items, me, serverTime: iso(ctx.now) };
+  // 1.25.0: the WhatsApp status updates of the viewer's contacts (bridgestatus.js) — beside `items`, which older clients
+  // read alone (their entries need an account)
+  const bridged = await require('./bridgestatus').feed(ctx);
+  return { items, me, ...(bridged.length || require('./bridgestatus').api(ctx.gc) ? { bridged } : {}), serverTime: iso(ctx.now) };
 }
 
 /** The statuses the viewer may see of these people (conversation members): Map id → status view. */
