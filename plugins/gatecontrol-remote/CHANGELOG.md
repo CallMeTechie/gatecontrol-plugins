@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.7.0
+
+„Gerät hinzufügen“ neu (Entwurf „Gerät hinzufügen“, freigegeben mit allen 8 Empfehlungen; Vertrag `contract-geraet-v7`). Braucht GateControl mit `gc.remote` Version 7 (`candidates`, `scan`, `listenPort: 'auto'`, `wake` mit `watch`; gatecontrol#509). `gatecontrol.ref` und die Mindestversion bleiben Platzhalter – nach dem Server-Release mit `tools/bump-gatecontrol.sh` anheben. Ohne Version 7 bleibt das bisherige Formular mit Reitern.
+
+- **Assistent in drei Schritten** (`ui/wizard.js`): Ziel aus der Liste von `GET admin/candidates` (Im VPN, Hinter Gateway „…“ mit Online-Zustand, Freigegebene Dienste, Außerhalb), Suche und Filter SSH/RDP/VNC, Geräte ohne Fernzugriffs-Ports eine Zeile tiefer; Verbindung mit gezielter Prüfung von 22, 3389, 5900, 23 (`POST admin/candidates/scan`), Weg als eine Zeile, „Zugriff“ unter „Erweitert“; Anmeldung mit Tresor-Hinweis und SSH-Schlüssel von GateControl als Vorgabe.
+- **Zustände:** nicht erreichbar (Wecken über den Wächter `POST admin/candidates/wake`, ohne dass das Plugin die MAC sieht), Port zu, Gateway offline, doppelt bekannt (VPN empfohlen, Auswahl nur hier), meldet sich selbst an („Zum Gerät“), extern mit/ohne Port (Hinweisliste).
+- **Weg-Regel** `server/way.js` (`POST admin/way`): VPN-Adresse → intern; Heimnetz eines Gateways → Gateway bzw. dessen Pool, Port auf dem Server automatisch (`listenPort: 'auto'`); sonst Netz des Servers bzw. Internet wie „Beide“ (Browser über den Server, Apps direkt). Die Daten behalten `access_mode`, die Fassade für die Apps bleibt gleich.
+- **Bearbeiten auf einer Seite** mit Klappen und Zusammenfassung, „Ziel ändern“ (Schritt 1 und 2), `way` in `GET admin/devices/<id>`, Hinweis „Über das Gateway verbinden“ für alte Geräte mit Heimnetz-Adresse unter „Nur VPN“. Geräte, die sich selbst anmelden, behalten das Formular mit Reitern.
+- **Neue Geräte:** „Im Browser verbinden“ an (alte behalten ihren Wert), zuerst nur für Admins (`access: 'admins'`), nach dem Speichern „Auch per VNC anlegen?“ mit allem vorausgefüllt.
+- Fehlertext `gateway_offline`; Texte DE/EN, Handbuch „Gerät hinzufügen“ und „Neu in 1.7.0“.
+- Mock-Host: `gc.remote` Version 7 (`opts.remote.v7`: `candidates`, `scan`, `listenPort: 'auto'`, `wake` mit `watch`). Tests `test/wizard.test.js`.
+
 ## 1.6.0
 
 Stufe 4 „Linux-Agent“ (Agent `gatecontrol-agent`, Repository `gatecontrol-linux-agent`; Vertrag Stufe 4). Braucht `gc.remote` ≥ 3 (`vault.generate`, `hostKeys`, Terminal); Mindestversion **GateControl 1.289.0** (`gatecontrol.ref` = v1.289.0) – mit dem Kern-Teil für Linux (gatecontrol#506: Netz in der Antwort von `POST /api/v1/client/enroll`, `X-Client-Platform: linux` im Push, Anleitung in „Gerät hinzufügen“).

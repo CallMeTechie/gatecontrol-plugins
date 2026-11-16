@@ -16,7 +16,8 @@ const PAGES = ['devices', 'rights', 'sessions', 'settings'];
 const FILES = {
   css: read('style.css'),
   common: read('common.js'),
-  devices: { html: read('devices.html'), js: read('devices.js') },
+  // 1.7: the wizard „Gerät hinzufügen“ (ui/wizard.js) comes before the page
+  devices: { html: read('devices.html'), js: read('wizard.js') + '\n' + read('devices.js') },
   rights: { html: read('rights.html'), js: read('rights.js') },
   sessions: { html: read('sessions.html'), js: read('sessions.js') },
   settings: { html: read('settings.html'), js: read('settings.js') },

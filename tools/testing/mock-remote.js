@@ -68,6 +68,16 @@
 //   host.remoteScreenMode(ref, reason)      the phone went down to view (the relay): event phase mode, mode view, reason
 // GateControl with gc.remote version 6 (stage 7, a Windows PC as sender with mouse and keyboard; opt-in opts.gatecontrol
 // ≥ '1.288.0' or opts.remote.v6): only the version number — the relay's frames are GateControl's, not the plugin's
+// GateControl with gc.remote version 7 (the new „Gerät hinzufügen“; opt-in opts.remote.v7 — the release is pinned by the
+// coordinator): gc.remote.version 7,
+//   candidates({ user }) → opts.remote.candidates ({ vpn, peers, gateways, routes }; a device of a gateway may carry `mac`
+//     for wake by watch — it never leaves the mock) without the MACs — only for an enabled administrator (opts.users role
+//     admin) whose request is in flight (ERR_REMOTE_NOT_ALLOWED, ERR_INVALID without user)
+//   scan(target, ports) → { via, address, results } from opts.remote.scan(target, ports) (default: every port closed);
+//     1…8 ports (ERR_INVALID), a listener target ERR_INVALID, a gateway of opts.remote.gateways with online: false →
+//     ERR_REMOTE_GATEWAY_OFFLINE
+//   listener({ …, listenPort: 'auto' }) → the first free port from 40000 (the same key and target keep theirs), auto: true
+//   wake(target with watch: 'nw-<id>', { user }) → the MAC of that device of opts.remote.candidates (administrator in a request)
 // The session page and the old app API for tests:
 //   host.remoteOpen(ref)                    the person opens the page: a tunnel opens → { sessionId }, event phase start
 //   host.remoteClose(sessionId, reason)     the tunnel ends (normal → end, heartbeat … → abort)
@@ -113,7 +123,8 @@ function install({ opts, perms, atLeast, enabledUser, hostError, license, person
   const next = !!(o && (o.gateways || o.pools || o.connectHost)) || atLeast(283);
   const v2 = !!(o && o.v2) || atLeast(284);
   const v3 = !!(o && o.v3) || atLeast(285);
-  const v6 = !!(o && o.v6) || atLeast(288);
+  const v7 = !!(o && o.v7);
+  const v6 = v7 || !!(o && o.v6) || atLeast(288);
   const v5 = v6 || !!(o && o.v5) || atLeast(287);
   const v4 = v5 || !!(o && o.v4) || atLeast(286);
   const state = { tickets: new Map(), live: new Map(), rows: [], vault: new Map(), listeners: new Map(), wakes: new Map(), calls: [], handlers: [], seq: 0, routeSeq: 500,
@@ -169,6 +180,19 @@ function install({ opts, perms, atLeast, enabledUser, hostError, license, person
     }
     if (t.gatewayPeerId) return { host: null, port: t.port, gatewayPeerId: t.gatewayPeerId };
     return { host: resolve(t.host), port: t.port };
+  }
+  /** gc.remote version 7: an enabled administrator whose request is in flight (candidates, wake by watch). */
+  function adminInRequest(user) {
+    const uid = Number(user);
+    if (!Number.isSafeInteger(uid) || uid <= 0) throw hostError('ERR_INVALID', 'user: a user id');
+    if (!personCtx || !personCtx.has(uid)) throw hostError('ERR_REMOTE_NOT_ALLOWED', 'only in a request of this administrator');
+    const u = (Array.isArray(opts.users) ? opts.users : []).find((x) => x.id === uid);
+    if (!u || u.role !== 'admin' || u.enabled === false) throw hostError('ERR_REMOTE_NOT_ALLOWED', 'only for an administrator');
+    return uid;
+  }
+  function watchDevice(ref) {
+    for (const g of ((o && o.candidates && o.candidates.gateways) || [])) for (const d of (g.devices || [])) if (d.ref === ref) return { g, d };
+    return null;
   }
   function cleanOptions(x) {
     const out = {};
@@ -311,6 +335,16 @@ function install({ opts, perms, atLeast, enabledUser, hostError, license, person
     'remote.wake': async (a) => {
       need();
       const t = normalise(a.target);
+      if (!t.mac && v7 && a.target && a.target.watch != null) {
+        const m = typeof a.target.watch === 'string' ? /^nw-([1-9][0-9]*)$/.exec(a.target.watch) : null;
+        if (!m) throw hostError('ERR_INVALID', 'target.watch: nw-<id>');
+        adminInRequest(a.user);
+        const hit = watchDevice(a.target.watch);
+        if (!hit) throw hostError('ERR_NOT_FOUND', 'no such device of the network watch');
+        if (!hit.d.mac || hit.d.wake === false) throw hostError('ERR_REMOTE_NOT_ALLOWED', 'this device cannot be woken');
+        t.mac = hit.d.mac;
+        t.gatewayPeerId = hit.g.peerId;
+      }
       if (!t.mac) throw hostError('ERR_INVALID', 'target.mac required');
       const k = t.mac.toLowerCase();
       const now = Date.now();
@@ -330,8 +364,18 @@ function install({ opts, perms, atLeast, enabledUser, hostError, license, person
       if (!((Number.isSafeInteger(peerId) && peerId > 0) || (Number.isSafeInteger(poolId) && poolId > 0))) throw hostError('ERR_INVALID', 'gateway: { peerId } or { poolId }');
       if (typeof x.host !== 'string' || !x.host.trim()) throw hostError('ERR_INVALID', 'host required');
       const port = portOf(x.port, 'port');
-      const listenPort = x.listenPort == null ? port : portOf(x.listenPort, 'listenPort');
+      const auto = v7 && x.listenPort === 'auto';
+      let listenPort = auto ? null : (x.listenPort == null ? port : portOf(x.listenPort, 'listenPort'));
       if (peerId && cfg.gateways.length && !cfg.gateways.some((gw) => gw.peerId === peerId)) throw hostError('ERR_NOT_FOUND', 'gateway not found');
+      if (auto) {
+        const mine = state.listeners.get(x.key);
+        if (mine && mine.lanHost === x.host.trim() && mine.lanPort === port && (peerId ? mine.peerId === peerId : mine.poolId === poolId)) listenPort = mine.listenPort;
+        const old = cfg.l4.find((r) => r.host === x.host.trim() && r.port === port && (peerId ? r.peerId === peerId : r.poolId === poolId));
+        if (!listenPort && old) listenPort = old.listenPort || old.port;
+        const used = new Set([...[...state.listeners.entries()].filter(([k]) => k !== x.key).map(([, l]) => l.listenPort), ...cfg.l4.map((r) => r.listenPort || r.port)]);
+        for (let p = 40000; !listenPort && p <= 40999; p++) if (!used.has(p)) listenPort = p;
+        if (!listenPort) throw hostError('ERR_REMOTE_PORT_IN_USE', 'no free port left in the range');
+      }
       const same = (r) => r.host === x.host.trim() && r.port === port && r.listenPort === listenPort && (peerId ? r.peerId === peerId : r.poolId === poolId);
       const shared = cfg.l4.find((r) => same({ peerId: r.peerId || null, poolId: r.poolId || null, host: r.host, port: r.port, listenPort: r.listenPort || r.port }));
       for (const [k, l] of state.listeners) if (k !== x.key && l.listenPort === listenPort) throw hostError('ERR_REMOTE_PORT_IN_USE', 'this port is in use');
@@ -340,7 +384,7 @@ function install({ opts, perms, atLeast, enabledUser, hostError, license, person
       state.listeners.set(x.key, l);
       state.calls.push({ op: 'listener', key: x.key, shared: !!shared });
       const { peerId: _p, poolId: _q, ...view } = l;
-      return view;
+      return auto ? { ...view, auto: true } : view;
     },
     'remote.listener.remove': async (a) => {
       need();
@@ -452,6 +496,39 @@ function install({ opts, perms, atLeast, enabledUser, hostError, license, person
       state.calls.push({ op: 'peerAddress', userId: uid, deviceId: did });
       return (raw && raw.vpnIp) || null;
     },
+    ...(v7 ? {
+      'remote.candidates': async (a) => {
+        need();
+        adminInRequest(a.user);
+        state.calls.push({ op: 'candidates', user: Number(a.user) });
+        const c = (o && o.candidates) || {};
+        const strip = (d) => { const { mac: _m, ...v } = d; return { ...v, wake: d.wake != null ? !!d.wake : !!d.mac }; };
+        return {
+          vpn: { subnet: '10.8.0.0/24', hub: HUB, zone: 'vpn.example.test', ...(c.vpn || {}) },
+          peers: (c.peers || []).map((p) => ({ dnsName: null, app: null, twin: null, ...p })),
+          gateways: (c.gateways || []).map((g) => ({ offlineSince: null, pool: null, subnets: [], watch: { enabled: true, portscan: true, scannedAt: null }, ...g, devices: (g.devices || []).map(strip) })),
+          routes: (c.routes || []).map((r) => ({ ...r })),
+        };
+      },
+      'remote.scan': async (a) => {
+        need();
+        const x = a.target && typeof a.target === 'object' ? a.target : null;
+        if (!x || x.listener != null) throw hostError('ERR_INVALID', 'scan: a target with host');
+        const ports = Array.isArray(a.ports) ? a.ports : [];
+        if (!ports.length || ports.length > 8 || ports.some((p) => !Number.isInteger(p) || p < 1 || p > 65535)) throw hostError('ERR_INVALID', 'ports: 1…8 ports');
+        const t = normalise({ ...x, port: ports[0] });
+        if (t.gatewayPeerId) {
+          const gw = cfg.gateways.find((g) => g.peerId === t.gatewayPeerId);
+          if (cfg.gateways.length && !gw) throw hostError('ERR_NOT_FOUND', 'gateway not found');
+          if (gw && gw.online === false) throw hostError('ERR_REMOTE_GATEWAY_OFFLINE', 'the gateway is offline');
+        }
+        const address = t.gatewayPeerId ? null : resolve(t.host);
+        state.calls.push({ op: 'scan', target: t, ports: ports.slice() });
+        const got = o && typeof o.scan === 'function' ? (await o.scan(t, ports)) || {} : {};
+        const results = ports.map((port) => ({ port, open: false, responseTime: null, service: null, ...((got.results || []).find((r) => r.port === port) || {}) }));
+        return { via: t.gatewayPeerId ? 'gateway' : 'direct', address, results };
+      },
+    } : {}),
     'remote.gateways': async () => { need(); return { gateways: cfg.gateways.map((g) => ({ peerId: g.peerId, name: g.name, online: g.online !== false })), pools: cfg.pools.map((p) => ({ poolId: p.poolId, name: p.name })) }; },
   };
 
@@ -474,7 +551,7 @@ function install({ opts, perms, atLeast, enabledUser, hostError, license, person
     listener.remove = (key) => call('remote.listener.remove', { key });
     const ob = (x) => (x && typeof x === 'object' ? x : {});
     return Object.freeze({
-      version: v6 ? 6 : (v5 ? 5 : (v4 ? 4 : (v3 ? 3 : (v2 ? 2 : 1)))),
+      version: v7 ? 7 : v6 ? 6 : (v5 ? 5 : (v4 ? 4 : (v3 ? 3 : (v2 ? 2 : 1)))),
       ...(v4 ? { screen: (x) => call('remote.screen', ob(x)) } : {}),
       session: (x) => call('remote.session', ob(x)),
       end: (x) => call('remote.end', ob(x)),
@@ -491,7 +568,8 @@ function install({ opts, perms, atLeast, enabledUser, hostError, license, person
         hostKeys: Object.freeze({ pin: (x) => call('remote.hostKeys.pin', ob(x)), list: () => call('remote.hostKeys.list', {}), remove: (targetId) => call('remote.hostKeys.remove', { targetId }) }),
       } : {}),
       probe: (target) => call('remote.probe', { target: ob(target) }),
-      wake: (target) => call('remote.wake', { target: ob(target) }),
+      wake: (target, x) => call('remote.wake', { target: ob(target), ...(v7 && x && x.user != null ? { user: x.user } : {}) }),
+      ...(v7 ? { candidates: (x) => call('remote.candidates', ob(x)), scan: (target, ports) => call('remote.scan', { target: ob(target), ports: Array.isArray(ports) ? ports : [] }) } : {}),
       listener: Object.freeze(listener),
       listeners: () => call('remote.listeners', {}),
       recordings: Object.freeze({

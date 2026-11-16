@@ -1,4 +1,4 @@
-<!-- version: 1.6.0 -->
+<!-- version: 1.7.0 -->
 # Remote access – Handbook
 
 ## What the plugin does {#was-das-plugin-kann}
@@ -9,6 +9,8 @@ Remote access is GateControl's former "Remote desktops" as a plugin of its own. 
 - **in the GateControl apps** (Android, Windows) with RDP as before. The apps do not notice the move.
 
 On top: wake-on-LAN, maintenance windows, a reminder to renew credentials, rights per person and group, and the history of every session.
+
+Since 1.7.0 **“Add device” starts with the target**: GateControl lists the devices in the VPN, the devices behind each gateway and the shared services, checks the ports and picks the way itself (see [Add a device](#hinzufuegen)).
 
 Since 1.5.0 a **Windows PC can share its screen** too – with “Share screen” in the GateControl app for Windows, also on **Windows Home**. The helper sees the screen in the browser and may control it with mouse and keyboard after the confirmation at the PC (see [Share a Windows screen](#windows-teilen)).
 
@@ -29,6 +31,7 @@ Passwords and SSH keys are not stored by the plugin but in GateControl's encrypt
 - GateControl **1.285.0** or newer (remote access interface version 3: terminal in the core, tmux, host keys, recording; plus version 2: registration of the Windows PCs, firewall per session, silent signals to the PC).
 - For recordings: the drive `remote-recordings` of the `docker-compose.yml` of the new version (GateControl and guacd). Without it nothing is recorded.
 - For Windows PCs from the app: the GateControl app for Windows (Pro) with "Allow Remote Desktop" and Windows **Pro, Enterprise or Education**. Windows Home cannot offer Remote Desktop – it has “Share screen”.
+- For the new “Add device” dialog: GateControl with the remote access interface **version 7**. With an older GateControl the previous form with tabs stays.
 - For Linux devices: GateControl **1.289.0** or newer and the agent **gatecontrol-agent** on the computer (see [Linux devices](#linux)).
 - For “Share screen” on a Windows PC: GateControl **1.287.0** or newer and the GateControl app for Windows (Pro) with “Share screen”. Mouse and keyboard as they are (shortcuts, several displays) come with GateControl's remote access interface **version 6** (GateControl 1.288.0 or newer); with version 5 control means clicking, dragging, scrolling and text.
 - A **licence of its own** for Remote access: month, year or a lifetime licence of the plugin. Remote access is **not** part of the GateControl plan or a server lifetime licence.
@@ -58,9 +61,35 @@ Whoever could see an RDP or VNC target gets the right "Use remote desktops". Who
 
 > **Note:** If a device says "Enter credentials again", GateControl could no longer read them, e.g. after a restore on another server. Open the device, enter username and password again and save.
 
+### Add a device {#hinzufuegen}
+
+“Add device” has three steps:
+
+1. **Target:** you pick from a list. “In the VPN” shows the VPN devices with their name in the VPN, “Behind gateway …” the devices the gateway’s network watch sees in the home network (name, address, vendor and the open ports SSH, RDP, VNC). Devices without these ports are one line down under “show”. “Shared services” are L4 routes that look like SSH, RDP or VNC, and “Enter another target …” takes a name or an address outside your network. Search and the filters SSH, RDP, VNC help with long lists. Greyed out is what already is a device or registers itself (Windows PCs with the app, Linux computers with the agent).
+2. **Connection:** protocol and port are filled in. On opening, GateControl checks the ports 22, 3389, 5900 and 23 of this one device – through the gateway or from the server – and shows the way as one line: **in the VPN**, **through gateway “…”** or **over the internet**. What used to be “Access” is under “Advanced”.
+3. **Login:** user name and password, for SSH by default a key made by GateControl (you copy its public part once into `~/.ssh/authorized_keys`). “Connect in the browser too” is on for new devices.
+
+Afterwards you see what was set up with defaults. At first only administrators see the device – “Share with people” changes that. If the device has a second protocol open, GateControl offers “Add with VNC too?” (or SSH, RDP) with everything filled in; a device has one protocol.
+
+**When it does not go smoothly:**
+
+| State | What GateControl shows |
+|---|---|
+| Not reachable | No port answers. If the watch knows the MAC, you can wake the device. “Add anyway” works, e.g. for a PC that only runs when needed. |
+| Port closed | The chosen protocol does not answer, others do – with “Use VNC”, “Enter another port” or “Add anyway”. |
+| Gateway offline | Protocol and port come from the last scan. Adding works now, checking once the gateway is back. If the gateway is in a pool, GateControl takes the pool. |
+| Known twice | A device with a VPN client that is also in the home network. GateControl suggests the VPN and only asks in this case. |
+| Registers itself | Windows PCs with the app and Linux computers with the agent keep address, port and firewall up to date themselves – “Go to the device” opens the existing device. |
+| Outside, port open | The server reaches the target. It is stored like “Both”: the browser goes through the server, the apps connect directly. |
+| Outside, no port | What is missing: easiest the GateControl app on the PC, else a gateway in that network or port forwarding at the router. |
+
+**The way:** a VPN address goes directly. An address in the home network of a gateway goes through the gateway – GateControl picks the port on the server itself (40000–40999, only reachable in the VPN). Everything else goes from the server.
+
+**Edit** shows everything on one page: target and login on top, below sections (“Who may use it”, “Wake & maintenance”, “Display, resources, performance”, “Browser & recording”, for SSH “Terminal & key”, “Advanced · way”, “Notes & tags”) with a summary in their head. “Change target” opens steps 1 and 2. Taken-over devices keep their data, the port on the server too. If the address of a device under “VPN only” lies in the home network of a gateway, GateControl suggests “Connect through the gateway” – before, such a device went nowhere.
+
 ### Devices {#geraete}
 
-A device has these tabs:
+With a GateControl without remote access interface version 7 (and for devices that register themselves) a device has these tabs:
 
 | Tab | What you set |
 |---|---|
@@ -223,6 +252,15 @@ The right is checked again on every connect.
 **"Too many wrong codes":** wait 15 minutes or let the PC show a new code.
 
 **In the browser Windows does not ask for the sign-in:** when the PC requires network level authentication (NLA), the session in the browser needs a user name and password that the session page does not ask for yet. Connect from the GateControl app then.
+
+## New in 1.7.0 {#neu-1-7-0}
+
+- **“Add device” anew in three steps:** pick the target from the list (VPN, behind each gateway, shared services, another target), protocol and port are filled in, the way is shown as one line. A targeted check of 22, 3389, 5900 and 23 of the one device, no new broad scan.
+- **Port on the server automatic** through a gateway; the field is only under “Advanced”.
+- **“Connect in the browser” is on for new devices**; old devices keep their value. New devices are seen by administrators only at first.
+- **Edit on one page** with sections instead of ten tabs, “Change target”, a hint for old devices with a home-network address under “VPN only”.
+- **“Add with VNC too?”** after saving when the device has another protocol open.
+- The apps notice nothing: the data keep “Access” as before. With an older GateControl the previous form stays.
 
 ## New in 1.6.0 {#neu-1-6-0}
 
