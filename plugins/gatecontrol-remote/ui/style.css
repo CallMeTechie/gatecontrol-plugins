@@ -105,3 +105,7 @@ body{padding:2px 2px 24px}
 .rm-tmux-list{display:flex;flex-direction:column;gap:8px;margin:8px 0}
 .rm-tmux-list .btn{justify-content:flex-start;text-align:left}
 .rm-rec-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--crit,#dc2626);margin-right:6px;vertical-align:middle}
+.rm-linux{margin-top:14px;border:1px solid var(--line);border-radius:12px;padding:10px 14px}
+.rm-linux summary{cursor:pointer;font-weight:600;min-height:44px;display:flex;align-items:center}
+.rm-linux .rm-hint{margin-top:8px}
+.rm-cmd{margin:6px 0 0;padding:8px 10px;border-radius:8px;background:var(--surface-2,var(--surface));border:1px solid var(--line);font-size:12px;white-space:pre-wrap;word-break:break-all;overflow-x:auto}

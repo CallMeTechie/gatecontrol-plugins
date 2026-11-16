@@ -7,7 +7,9 @@
    1.4: "Ansehen und steuern" for a phone whose app can be controlled (screen.control); the person at the phone chooses
    for every request — the answer may be "Nur ansehen", which the dialog says before the page opens.
    1.5: the screen of a Windows PC ("Bildschirm teilen", also Windows Home) like a phone — "Ansehen und steuern" / "Nur
-   ansehen", always confirmed at the PC; a PC that also offers Remote Desktop lets the helper choose the kind. */
+   ansehen", always confirmed at the PC; a PC that also offers Remote Desktop lets the helper choose the kind.
+   1.6: a Linux device of the agent — SSH (GateControl's terminal, tmux) and / or its desktop (RDP / VNC); with both the
+   helper chooses the kind; the set-up of an own Linux device for people who may share their devices. */
 (function () {
   'use strict';
   var P = window.RM;
@@ -25,9 +27,18 @@
     // 1.5: a PC that shares its screen; with Remote Desktop besides it the helper chooses the kind
     var pcScreen = !!(dev && dev.platform === 'windows' && dev.screen);
     var both = pcScreen && dev.rdp === true;
+    // 1.6: a Linux device with SSH and a desktop
+    var linux = !!(dev && dev.platform === 'linux');
+    var linuxBoth = linux && dev.ssh && dev.ssh.offered && dev.desktop && dev.desktop.ready;
     var kindSel = both ? el('select', { class: 'form-select', id: 'rm-code-kind' }, [
-      el('option', { value: 'screen', text: T('portal.kind_screen') }), el('option', { value: 'rdp', text: T('portal.kind_rdp') })]) : null;
-    var kindOf = function () { return kindSel ? kindSel.value : (pcScreen ? 'screen' : null); };
+      el('option', { value: 'screen', text: T('portal.kind_screen') }), el('option', { value: 'rdp', text: T('portal.kind_rdp') })])
+      : (linuxBoth ? el('select', { class: 'form-select', id: 'rm-code-kind' }, [
+        el('option', { value: 'ssh', text: T('portal.kind_ssh') }), el('option', { value: 'desktop', text: T('portal.kind_desktop') })]) : null);
+    var kindOf = function () {
+      if (kindSel) return kindSel.value;
+      if (linux) return dev.ssh && dev.ssh.offered ? 'ssh' : 'desktop';
+      return pcScreen ? 'screen' : null;
+    };
     // 1.4: a phone (1.5: a PC's screen) that can only be viewed (Play build, older app or GateControl) offers only that
     var screenViewOnly = (phone || pcScreen) && !(dev.screen && dev.screen.control);
     var input = el('input', { class: 'form-input rm-code-input', type: 'text', id: 'rm-code-in', inputmode: 'numeric', autocomplete: 'one-time-code', maxlength: '11', placeholder: '000-000-000' });
@@ -38,7 +49,8 @@
       var viewOnly = screenKind && screenViewOnly;
       P.clear(mode);
       if (!viewOnly) mode.appendChild(el('option', { value: 'control', text: T('portal.mode_control') }));
-      mode.appendChild(el('option', { value: 'view', text: T('portal.mode_view') }));
+      // GateControl's terminal is always typed in
+      if (kindOf() !== 'ssh') mode.appendChild(el('option', { value: 'view', text: T('portal.mode_view') }));
       hint.textContent = phone ? T(viewOnly ? 'portal.phone_view_only' : 'portal.phone_hint') : (screenKind && pcScreen ? T(viewOnly ? 'portal.pc_view_only' : 'portal.pc_screen_hint') : '');
       hint.hidden = !hint.textContent;
     }
@@ -59,6 +71,14 @@
     var ov = el('div', { class: 'modal-overlay', role: 'dialog', 'aria-modal': 'true' }, [el('div', { class: 'modal' }, [body, el('div', { class: 'modal-foot' }, [cancel, ask])])]);
     var timer = null;
     var closed = false;
+    // 1.6: a Linux device asks its person by default — the command for the device (the helper passes it on)
+    var linuxHint = el('p', { class: 'rm-hint', hidden: true });
+    body.insertBefore(linuxHint, host);
+    function linuxConfirm(id) {
+      if (!linux || !id) return;
+      linuxHint.textContent = T('portal.linux_confirm', { cmd: 'sudo gatecontrol-agent allow ' + id });
+      linuxHint.hidden = false;
+    }
     function done() { closed = true; clearTimeout(timer); ov.remove(); }
     cancel.addEventListener('click', done);
     function poll(id) {
@@ -95,6 +115,7 @@
         // a phone or PC that turned out to be view only (its app, GateControl): the helper knows before the answer
         var why = r.request.modeReason === 'pc_view_only' ? 'portal.pc_view_only' : 'portal.phone_view_only';
         status.textContent = (r.request.modeReason ? T(why) + ' ' : '') + T('portal.waiting');
+        linuxConfirm(r.request.id);
         poll(r.request.id);
       }).catch(function (e) { status.textContent = P.errText(e); ask.disabled = false; });
     });
@@ -106,6 +127,7 @@
       ask.disabled = true;
       form.hidden = true;
       status.textContent = T('portal.waiting');
+      linuxConfirm(pending);
       poll(pending);
       cancel.focus();
       return;
@@ -206,6 +228,12 @@
         v.addEventListener('click', function () { connectWith(v, 'view', screenKind); });
         acts.appendChild(v);
       }
+      // 1.6: the desktop of a Linux device besides SSH
+      if (d.platform === 'linux' && d.ssh && d.ssh.offered && d.desktop && d.desktop.ready) {
+        var dk = el('button', { class: 'btn', type: 'button', text: T('portal.kind_desktop') });
+        dk.addEventListener('click', function () { connectWith(dk, null, 'desktop'); });
+        acts.appendChild(dk);
+      }
       if (screenKind && d.rdp) {
         var rd = el('button', { class: 'btn', type: 'button', text: T('portal.kind_rdp') });
         rd.addEventListener('click', function () { connectWith(rd, null, 'rdp'); });
@@ -226,6 +254,12 @@
     if (d.recording === 'always') sub.push(T('portal.rec_badge'));
     if (pc && d.platform === 'android') sub.push(T('dev.phone') + ' · ' + T(d.screen && d.screen.control ? 'portal.mode_control' : 'portal.mode_view'));
     if (pc && d.platform === 'windows' && d.screen) sub.push(T('dev.pc_screen') + ' · ' + T(d.screen.control ? 'portal.mode_control' : 'portal.mode_view'));
+    if (pc && d.platform === 'linux') {
+      var lx = [T('dev.linux')];
+      if (d.ssh && d.ssh.offered) lx.push('SSH' + (d.ssh.tmux ? ' · tmux' : ''));
+      if (d.desktop) lx.push(T('portal.kind_desktop') + ' ' + String(d.desktop.protocol || '').toUpperCase());
+      sub.push(lx.join(' · '));
+    }
     if (pc && d.owner && d.owner.name) sub.push(T('portal.owner', { name: d.owner.name }));
     if (pc && d.connect) sub.push(T(d.connect.mode === 'open' ? 'portal.no_code' : 'portal.with_code'));
     if (!pc && d.lastCheck) sub.push(T('dev.checked', { ago: P.ago(d.lastCheck) }));
@@ -248,6 +282,28 @@
       .forEach(function (d) { box.appendChild(card(d)); });
     $('#rm-none').hidden = S.devices.length > 0;
     $('#rm-search').hidden = S.devices.length < 8;
+    linuxSetup();
+  }
+
+  /** 1.6: how to set up an own Linux device (people who may share their own devices). */
+  function linuxSetup() {
+    var old = $('#rm-linux');
+    if (old) old.remove();
+    if (!S.rights || !S.rights.share) return;
+    var cmd = function (t) { return el('pre', { class: 'rm-cmd' }, [el('code', { text: t })]); };
+    var box = el('details', { class: 'rm-linux', id: 'rm-linux' }, [
+      el('summary', { text: T('linux.enroll') }),
+      el('p', { class: 'rm-hint', text: T('linux.step1') }),
+      cmd('sudo apt install ./gatecontrol-agent_<version>_<arch>.deb      # Debian, Ubuntu, Raspberry Pi OS\nsudo pacman -U gatecontrol-agent-<version>-1-x86_64.pkg.tar.zst  # CachyOS, Arch'),
+      el('p', { class: 'rm-hint', text: T('linux.step2') }),
+      cmd('sudo gatecontrol-agent enroll https://<server> <code>'),
+      el('p', { class: 'rm-hint', text: T('linux.step3') }),
+      cmd('sudo gatecontrol-agent share ssh --as <konto> --tmux\nsudo gatecontrol-agent share desktop\ngatecontrol-agent code'),
+      el('p', { class: 'rm-hint', text: T('linux.step4') }),
+      cmd('gatecontrol-agent requests\nsudo gatecontrol-agent allow <id>    # oder: deny <id>'),
+    ]);
+    var list = $('#rm-list');
+    list.parentNode.insertBefore(box, list.nextSibling);
   }
 
   function load() {
