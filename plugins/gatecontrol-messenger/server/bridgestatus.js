@@ -13,7 +13,8 @@
 //           (a redaction → tombstone). One older than 24 h when it arrives is not filed at all.
 //   feed    GET status/feed → `bridged`: one entry per contact who has status updates, beside `items` (the accounts —
 //           older clients read only those and never see a WhatsApp status). Sorted with the accounts by the client:
-//           unseen first, then the newest.
+//           unseen first, then the newest. 1.25.2: each contact named and pictured as the person knows them (whoOf) —
+//           the bridge names the sender only by its public WhatsApp name (often „.“).
 //   seen    POST status/bridged/:id/seen marks one status as watched HERE (ext_seen; the ring turns grey) — always.
 //           WhatsApp learns it (the contact sees the person under „Gesehen von“) only when the person turned
 //           privacy.bridgedStatusSeen on (default off) and shares read receipts (readReceipts), and only for a status
@@ -32,13 +33,14 @@ const seal = require('./seal');
 const live = require('./live');
 const people = require('./people');
 const texts = require('./texts.json');
-const { fail, posInt, iso } = require('./util');
+const { fail, posInt, iso, bridgeName } = require('./util');
 
 const TTL_MS = 24 * 3600 * 1000;
 const CONTACTS_MAX = 100;   // contacts in the feed
 const PER_CONTACT_MAX = 30; // status updates per contact
 const NETWORKS = ['whatsapp'];
 const CONTACT_RE = /^c[A-Za-z0-9_-]{21}$/;
+const NAME_MAX = 120;
 
 function t(lang, key, params) {
   const l = lang === 'en' ? 'en' : 'de';
@@ -71,6 +73,20 @@ async function filed(c, conv, ev, msgId, at) {
   await store.run(c.gc, 'UPDATE messages SET expires_at = ? WHERE id = ?', [at + TTL_MS, msgId]);
   await store.run(c.gc, 'UPDATE members SET last_read_id = MAX(last_read_id, ?), last_delivered_id = MAX(last_delivered_id, ?), updated_at = ? WHERE conv_id = ? AND user_id = ?', [msgId, msgId, c.now, conv.id, ev.userId]);
   changed(c.box, ev.userId, conv.id, msgId, 'new');
+  // 1.25.2: the sender's picture is wanted at once (not only when the status row is first opened) — it is there by the
+  // time the person looks; once fetched, story.bridged { action: 'contact' } (bridgemedia.contactPicture)
+  const k = await store.one(c.gc, 'SELECT k.* FROM messages m JOIN bridge_contacts k ON k.id = m.ext_sender WHERE m.id = ?', [msgId]);
+  if (k && k.avatar_ref && k.avatar_got !== k.avatar_ref) {
+    if (!k.avatar_want) await store.run(c.gc, 'UPDATE bridge_contacts SET avatar_want = 1 WHERE id = ?', [k.id]);
+    c.mediaWork = true;
+  }
+}
+
+/** 1.25.2: a contact's picture arrived — their entry in the status row changes when they have a status there now. */
+async function pictureCame(gc, box, k, now) {
+  const r = await store.one(gc, `SELECT id, conv_id FROM messages WHERE conv_id IN (SELECT id FROM conversations WHERE bridge_owner = ? AND bridge_status = 1)
+    AND ext_sender = ? AND deleted_at IS NULL AND created_at > ? AND (expires_at IS NULL OR expires_at > ?) ORDER BY id DESC LIMIT 1`, [k.owner_id, k.id, now - TTL_MS, now]);
+  if (r) changed(box, k.owner_id, r.conv_id, r.id, 'contact');
 }
 
 /** Tell the person's apps that their status row changed (older apps do not know the event). */
@@ -110,6 +126,62 @@ async function storyOf(ctx, r) {
   };
 }
 
+/**
+ * 1.25.2: the bridge's contacts of the person (contacts(), cached there for 10 minutes) — asked once per feed, and only
+ * when a contact needs them. → () => Promise<[{ contactId, chatId, name, avatar }]> ([] when there are none).
+ */
+function lazyContacts(ctx, net) {
+  let p = null;
+  return () => {
+    if (!p) {
+      p = (async () => {
+        const b = require('./contactchat').api(ctx.gc);
+        if (!b) return [];
+        try { const r = await b.contacts(ctx.viewer, net, {}); return r && Array.isArray(r.contacts) ? r.contacts.filter((x) => x && typeof x.contactId === 'string' && x.contactId) : []; } catch { return []; }
+      })();
+    }
+    return p;
+  };
+}
+
+/**
+ * 1.25.2: who a status is from, as the person knows the contact. The bridge names the sender of a status by its
+ * public WhatsApp name (BusinessName / PushName — often „.“ or nothing, never the name of the person's address book):
+ * that is the last choice, not the first.
+ *   chat     the direct chat with the contact: by its messages (persons.chatOfContact), else by the bridge's contacts
+ *            (contacts(): the same contactId — the LID ghost the status came from — and its chat)
+ *   name     the person's own address book (Mail, matched by the number at GateControl: by the direct chat, else by the
+ *            contactId), the direct chat's name, the bridge's contacts, the contact's (ghost's) name — each only when
+ *            it is a name (util.bridgeName: no number, not „.“) — else „WhatsApp-Kontakt“ (the plugin never has the
+ *            number)
+ *   picture  the direct chat's picture, else the contact's own, else the one the bridge's contacts name (if fetched)
+ * → { chatId, name, pic }
+ */
+async function whoOf(ctx, net, k, list) {
+  const persons = require('./persons');
+  const bridgechats = require('./bridgechats');
+  const bridgemedia = require('./bridgemedia');
+  const cc = require('./contactchat');
+  let chatId = await persons.chatOfContact(ctx, net, k.ref, null);
+  let hit = null;
+  const lookUp = async () => { if (!hit) hit = (await list()).find((x) => x.contactId === k.ref) || false; return hit || null; };
+  if (!chatId && (await lookUp()) && typeof hit.chatId === 'string' && hit.chatId) {
+    chatId = await persons.chatOfContact(ctx, net, k.ref, new Map([[k.ref, hit.chatId]]));
+    if (!chatId) {
+      const c = await store.one(ctx.gc, "SELECT id FROM conversations WHERE bridge_owner = ? AND bridge_net = ? AND bridge_ref = ? AND kind = 'direct' AND bridge_closed = 0 AND bridge_status = 0", [ctx.viewer, net, hit.chatId]);
+      chatId = c ? c.id : null;
+    }
+  }
+  const dm = chatId ? await store.one(ctx.gc, 'SELECT * FROM conversations WHERE id = ?', [chatId]) : null;
+  const named = (v) => (typeof v === 'string' ? bridgeName(v, NAME_MAX) : null);
+  let name = (dm && await cc.bookNameOf(ctx, dm)) || await cc.bookNameOfContact(ctx, net, k.ref) || (dm && named(seal.open(dm.title_enc)));
+  if (!name && await lookUp()) name = named(hit.name);
+  if (!name) name = named(seal.open(k.name_enc)) || bridgechats.titleLabel(ctx, net);
+  let pic = (dm && await bridgemedia.pictureOf(ctx.gc, dm.avatar_media_id)) || await bridgemedia.pictureOf(ctx.gc, k.avatar_media_id);
+  if (!pic && await lookUp() && hit.avatar) pic = (await cc.pictureFor({ ...ctx, portal: false }, net, hit.avatar)).avatarMediaId;
+  return { chatId: chatId || null, name, pic: pic || null };
+}
+
 /** GET status/feed → bridged: [{ network, contact: { id, name, avatarMediaId, avatarUrl }, chatId, stories, unseen }] */
 async function feed(ctx) {
   if (!api(ctx.gc) || ctx.viewer == null) return [];
@@ -118,7 +190,8 @@ async function feed(ctx) {
   // 1.25.1: the status room an older version kept as a chat (bridgechats.catchUpStatus — hourly until done)
   await bridgechats.catchUpStatus(ctx);
   const bridgemedia = require('./bridgemedia');
-  const persons = require('./persons');
+  const lists = new Map();
+  const bridgeList = (net) => { if (!lists.has(net)) lists.set(net, lazyContacts(ctx, net)); return lists.get(net); };
   const convs = await store.all(ctx.gc, 'SELECT * FROM conversations WHERE bridge_owner = ? AND bridge_status = 1 AND bridge_closed = 0', [ctx.viewer]);
   const out = [];
   for (const conv of convs) {
@@ -139,12 +212,7 @@ async function feed(ctx) {
       const stories = [];
       for (const r of list.slice(-PER_CONTACT_MAX)) { const s = await storyOf(ctx, r); if (s) stories.push(s); }
       if (!stories.length) continue;
-      const chatId = await persons.chatOfContact(ctx, conv.bridge_net, k.ref, null);
-      // the name as in the chat list: the address book's for the direct chat, else the bridge's, else neutral
-      let name = null;
-      if (chatId) { const dm = await store.one(ctx.gc, 'SELECT * FROM conversations WHERE id = ?', [chatId]); if (dm) name = await bridgechats.titleFor(ctx, dm); }
-      if (!name) { const n = seal.open(k.name_enc); name = typeof n === 'string' && n ? n : bridgechats.titleLabel(ctx, conv.bridge_net); }
-      const pic = await bridgemedia.pictureOf(ctx.gc, k.avatar_media_id);
+      const { chatId, name, pic } = await whoOf(ctx, conv.bridge_net, k, bridgeList(conv.bridge_net));
       out.push({
         network: conv.bridge_net,
         contact: { id: contactId, name, avatarMediaId: pic, avatarUrl: await mediaUrl(ctx, pic) },
@@ -305,4 +373,4 @@ async function reply(ctx, idRaw, body, send = (id, msg) => sendTo(ctx, id, msg))
   return { message, conversationId: chatId, ...(emoji ? { emoji } : {}) };
 }
 
-module.exports = { api, isStatus, feature, filed, changed, tooOld, feed, seen, reply, reportable, statusOf, TTL_MS, CONTACTS_MAX, PER_CONTACT_MAX };
+module.exports = { api, isStatus, feature, filed, changed, pictureCame, tooOld, feed, seen, reply, reportable, statusOf, TTL_MS, CONTACTS_MAX, PER_CONTACT_MAX };

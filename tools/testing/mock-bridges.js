@@ -61,9 +61,10 @@
 //   health({ userIds, network }): no person needed, ≤ 100 people; status() also carries backup and cleanup;
 //   configure() takes history, backupNow, backupTime
 // Version 6 (GateControl with stage 4c — a new chat with a contact; createHost(dir, { bridges: { …, version: 6 } })):
-//   host.bridges.contacts = [{ number, name, avatar?, chatId? }]   the person's contacts at the bridge (all people the
-//                                            same; `avatar` a picture reference like contact.avatar, `chatId` the chat
-//                                            reference of a chat that exists). Like the host: contacts / matchNumbers a
+//   host.bridges.contacts = [{ number, name, avatar?, chatId?, contactId? }]   the person's contacts at the bridge (all
+//                                            people the same; `avatar` a picture reference like contact.avatar, `chatId`
+//                                            the chat reference of a chat that exists, `contactId` the sender.id the
+//                                            events name the contact by — made up from the number when missing). Like the host: contacts / matchNumbers a
 //                                            request of that person, a link (else ERR_BRIDGE refused); createDmByRef a
 //                                            changing request, the person's own reference of the last 30 minutes (else
 //                                            ERR_INVALID expired_ref), nothing counted; logged as { op: 'contacts' |
@@ -547,7 +548,7 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
   const contactOut = (userId, network, c, i) => {
     const ref = 'k' + Buffer.from(`contact-${++st.seq}-${userId}-${i}`).toString('base64url').padEnd(44, 'A');
     st.contactRefs.set(ref, { userId, network, i, at: Date.now() });
-    return { ref, contactId: 'c' + Buffer.from(`c-${i}-${c.number}`).toString('base64url').slice(0, 21).padEnd(21, 'A'), name: c.name || null, avatar: c.avatar || null, chatId: c.chatId || null };
+    return { ref, contactId: c.contactId || 'c' + Buffer.from(`c-${i}-${c.number}`).toString('base64url').slice(0, 21).padEnd(21, 'A'), name: c.name || null, avatar: c.avatar || null, chatId: c.chatId || null };
   };
   const linked = (userId) => { if (!(st.logins.get(userId) || []).some((l) => l.state !== 'logged_out')) throw refuse('refused'); };
   if (version >= 6) Object.assign(api, {

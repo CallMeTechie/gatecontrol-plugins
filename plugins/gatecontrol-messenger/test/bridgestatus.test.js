@@ -24,6 +24,7 @@ const V11 = { ...V12, version: 11 };
 const B = { bridged: '1' };
 const KIM = { id: 'c' + 'k'.repeat(21), name: 'Kim Muster' };
 const JO = { id: 'c' + 'j'.repeat(21), name: 'Jo Test' };
+const JO_DOT = { id: 'c' + 'd'.repeat(21), name: '…' };
 const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(800, 7)]);
 const HOUR = 3600000;
 let n = 0;
@@ -273,5 +274,105 @@ test('1.25.1: no catch-up without gc.bridges version 12', async () => {
     await feedOf(c);
     assert.equal(query(host, 'SELECT COUNT(*) AS n FROM conversations WHERE bridge_status = 1').n, 0);
     assert.equal(query(host, 'SELECT value FROM settings WHERE key = ?', `bridge_status_catchup:${ANNA.id}`), undefined, 'looked at once GateControl has it');
+  });
+});
+
+// ─── 1.25.2: who a status is from ─────────────────────────────────────────────
+//
+// The bridge names the sender of a status by the contact's LID ghost (pickLID) and its public WhatsApp name — often „.“
+// or nothing, never the name of the person's address book; the ghost's picture comes later or not at all. The status
+// row names the contact as the person knows it: address book (Mail), the direct chat, the bridge's contacts — the ghost's
+// name last, never „.“ — and shows the direct chat's picture, else the contact's own.
+
+const NUMBER = '+4915100000000';
+const LID = { id: 'c' + 'l'.repeat(21), name: '.' };
+const KIM_PN = { id: 'c' + 'p'.repeat(21), name: 'Kim Muster' };
+function mail(book) {
+  return {
+    plugin: 'gatecontrol-mail', provides: { contacts_phones: { label: { de: 'Kontakte', en: 'Contacts' }, maxPerHour: 3600 } },
+    service: async ({ user, payload }) => {
+      if (!user || payload.userId !== user.id) return { ok: false, code: 'forbidden' };
+      return { ok: true, items: book[user.id] || [], next: null };
+    },
+  };
+}
+const BOOK = { [ANNA.id]: [{ id: 31, name: 'Kim Muster', phones: [{ key: 'mobile', kind: 'mobile', value: '0151 00000000', e164: NUMBER, landline: false }] }] };
+
+test('1.25.2: a LID ghost named „.“ without a chat — the address book names it (by the contactId), never „.“', async () => {
+  require('../server/contactchat')._reset();
+  await withHost({ bridges: V12, services: [mail(BOOK)] }, async (host, c) => {
+    const { room } = await setup(c, host);
+    host.bridges.contacts = [{ number: NUMBER, name: '.', contactId: LID.id }];
+    await host.bridges.deliver([msg(room, LID, 'Neuer Status')]);
+    const f = await feedOf(c);
+    assert.deepEqual(f.bridged.map((x) => [x.contact.name, x.chatId, x.stories[0].text]), [['Kim Muster', null, 'Neuer Status']]);
+    assert.equal(f.bridged[0].canReply, true, 'an answer finds the chat by the bridge’s contacts');
+  });
+});
+
+test('1.25.2: the direct chat found by the bridge’s contacts gives name and picture; without anything „WhatsApp-Kontakt“', async () => {
+  require('../server/contactchat')._reset();
+  await withHost({ bridges: V12, scan: true }, async (host, c) => {
+    const { room, dm } = await setup(c, host);
+    // the direct chat: its picture (the contact's, private_chat_portal_meta), a message of the number's ghost
+    const pic = host.bridges.file(ANNA.id, { data: JPEG, mime: 'image/jpeg' });
+    await host.bridges.deliver([msg({ ...dm, avatar: pic }, KIM_PN, 'Hallo Anna'), msg(room, LID, 'Wieder da'), msg(room, JO_DOT, 'Ohne Namen')]);
+    await host.tick();
+    const conv = (await get(c, 'conversations')).json.conversations[0];
+    assert.match(String(conv.avatarMediaId), /^[0-9a-f]{32}$/);
+    // the bridge's contacts: the LID ghost (the same contactId as the status) and its direct chat
+    host.bridges.contacts = [{ number: NUMBER, name: '.', contactId: LID.id, chatId: dm.id }];
+    const f = await feedOf(c);
+    const kim = f.bridged.find((x) => x.stories[0].text === 'Wieder da');
+    assert.deepEqual([kim.contact.name, kim.chatId, kim.contact.avatarMediaId], ['Kim Muster', conv.id, conv.avatarMediaId]);
+    const jo = f.bridged.find((x) => x.stories[0].text === 'Ohne Namen');
+    assert.deepEqual([jo.contact.name, jo.chatId, jo.contact.avatarMediaId], ['WhatsApp-Kontakt', null, null]);
+  });
+});
+
+test('1.25.2: the bridge’s contacts name a contact without a chat; the ghost’s own name comes last', async () => {
+  require('../server/contactchat')._reset();
+  await withHost({ bridges: V12 }, async (host, c) => {
+    const { room } = await setup(c, host);
+    host.bridges.contacts = [{ number: NUMBER, name: 'Kim Muster', contactId: LID.id }];
+    await host.bridges.deliver([msg(room, LID, 'Status'), msg(room, JO, 'Status')]);
+    const f = await feedOf(c);
+    assert.deepEqual(f.bridged.map((x) => x.contact.name).sort(), ['Jo Test', 'Kim Muster']);
+  });
+});
+
+test('1.25.2: the contact’s own picture is fetched as the status comes, and the status row learns it', async () => {
+  await withHost({ bridges: V12, scan: true }, async (host, c) => {
+    const { room } = await setup(c, host);
+    const pic = host.bridges.file(ANNA.id, { data: JPEG, mime: 'image/jpeg' });
+    await host.bridges.deliver([msg(room, { ...LID, avatar: pic }, 'Status mit Bild')]);
+    await host.tick();
+    assert.ok(host.events.some((e) => e.type === 'story.bridged' && e.data.action === 'contact'), 'the apps load the feed again');
+    const [x] = (await feedOf(c)).bridged;
+    assert.equal(x.contact.name, 'WhatsApp-Kontakt');
+    assert.match(String(x.contact.avatarMediaId), /^[0-9a-f]{32}$/);
+    assert.equal((await host.mediaGet(ANNA, x.contact.avatarMediaId)).status, 200);
+  });
+});
+
+test('1.25.2: several pictures of one contact, filed right after each other — each status its own file', async () => {
+  await withHost({ bridges: V12, scan: true }, async (host, c) => {
+    const { room } = await setup(c, host);
+    const now = Date.now();
+    const pics = [1, 2, 3].map((k) => {
+      const data = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(800, k)]);
+      return msg(room, KIM, `Bild ${k}`, { kind: 'media', media: { kind: 'image', ref: host.bridges.file(ANNA.id, { data, mime: 'image/jpeg' }), mime: 'image/jpeg', w: 10, h: 10, size: data.length, name: `s${k}.jpg` }, at: now - (4 - k) * 60000 });
+    });
+    await host.bridges.deliver(pics);
+    await host.tick();
+    const [x] = (await feedOf(c)).bridged;
+    assert.deepEqual(x.stories.map((s) => s.text), ['Bild 1', 'Bild 2', 'Bild 3']);
+    const ids = x.stories.map((s) => s.mediaId);
+    assert.equal(new Set(ids).size, 3, 'three files');
+    for (const [k, id] of ids.entries()) {
+      const r = await host.mediaGet(ANNA, id);
+      assert.equal(r.status, 200);
+      assert.equal(Buffer.from(r.body || r.buffer || []).at(-1), k + 1, 'its own picture');
+    }
   });
 });
