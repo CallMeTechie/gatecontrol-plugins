@@ -60,7 +60,7 @@ async function onEvent(gc, ev, now = Date.now()) {
     const d = deviceId ? await store.one(gc, 'SELECT name FROM devices WHERE id = ?', [deviceId]) : null;
     const started = Date.parse(ev.startedAt) || now;
     const via = ev.via === 'app' ? 'app' : 'browser';
-    const engine = ev.engine === 'term' ? 'term' : (ev.engine === 'guac' ? 'guac' : null);
+    const engine = ['term', 'guac', 'screen'].includes(ev.engine) ? ev.engine : null;
     const rec = REC_RE.test(String(ev.recordingId || '')) ? ev.recordingId : null;
     await store.tx(gc, async () => {
       if (await store.one(gc, 'SELECT id FROM sessions WHERE host_session_id = ?', [ev.sessionId])) return;

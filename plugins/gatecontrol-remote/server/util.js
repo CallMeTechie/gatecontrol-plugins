@@ -46,6 +46,8 @@ const STATUS = {
   recording_required: 409,
   recording_unavailable: 409,
   recording_busy: 409,
+  // 1.3: the screen of a phone (GateControl's relay, gc.remote version 4)
+  screen_unavailable: 409,
 };
 
 /** An API error: throw fail('limit', { max: 2 }). */

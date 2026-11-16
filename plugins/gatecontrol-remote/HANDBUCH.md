@@ -1,4 +1,4 @@
-<!-- version: 1.2.0 -->
+<!-- version: 1.3.0 -->
 # Fernzugriff – Handbuch
 
 ## Was das Plugin kann {#was-das-plugin-kann}
@@ -10,6 +10,8 @@ Fernzugriff ist das frühere „Remote Desktops“ von GateControl als eigenes P
 
 Dazu kommen Wake-on-LAN, Wartungsfenster, eine Erinnerung an das Erneuern der Zugangsdaten, Rechte je Person und Gruppe und der Verlauf aller Sitzungen.
 
+Seit 1.3.0 kann ein **Android-Handy seinen Bildschirm freigeben**: In der GateControl-App für Android schaltet die Person „Bildschirm freigeben“ ein, gibt den Code an die Person weiter, die helfen soll, und bestätigt am Handy. Wer hilft, sieht den Bildschirm im Browser – zunächst **nur ansehen** (siehe [Handy-Bildschirm freigeben](#handy)).
+
 Seit 1.2.0 läuft **SSH im eigenen Terminal von GateControl** – im Browser und nativ in den Apps, mit **tmux** (die Sitzung läuft auf dem Gerät weiter, wenn die Verbindung abreißt) und geprüftem Host-Schlüssel. Sitzungen lassen sich auf Wunsch **aufzeichnen** und im Browser abspielen (siehe [SSH im Terminal](#terminal) und [Aufzeichnung](#aufzeichnung)).
 
 Seit 1.1.0 melden sich **Windows-PCs selbst an**: Schaltet jemand in der GateControl-App für Windows „Remote Desktop erlauben“ ein, steht der PC sofort unter Fernzugriff › Geräte. Verbunden wird mit dem Code, der auf dem PC steht, und erst nach der Bestätigung am PC (siehe [Windows-PCs aus der App](#windows-pcs)).
@@ -18,6 +20,7 @@ Passwörter und SSH-Schlüssel speichert nicht das Plugin, sondern der verschlü
 
 ## Voraussetzungen {#voraussetzungen}
 
+- Für die Bildschirm-Freigabe vom Handy: GateControl mit Fernzugriff-Schnittstelle **Version 4** (Relais für den Bildstrom) und die GateControl-App für Android mit „Bildschirm freigeben“. Ein älteres GateControl lehnt die Anmeldung des Handys ab.
 - GateControl **1.285.0** oder neuer (Fernzugriff-Schnittstelle Version 3: Terminal im Kern, tmux, Host-Schlüssel, Aufzeichnung; dazu Version 2: Anmeldung der Windows-PCs, Firewall je Sitzung, stille Signale an den PC).
 - Für Aufzeichnungen: das Laufwerk `remote-recordings` aus der `docker-compose.yml` der neuen Version (GateControl und guacd). Ohne es wird nicht aufgezeichnet.
 - Für Windows-PCs aus der App: die GateControl-App für Windows (Pro) mit „Remote Desktop erlauben“ und Windows **Pro, Enterprise oder Education**. Windows Home kann keinen Remote Desktop anbieten.
@@ -84,6 +87,18 @@ Schaltet jemand in der GateControl-App für Windows **„Remote Desktop erlauben
 - **Schalter aus:** Der PC bleibt als „Abgemeldet“ in der Liste, der Verlauf bleibt. Offene Sitzungen enden, der Code verfällt.
 - **Raten:** Nach 5 falschen Codes in 10 Minuten muss eine Person 15 Minuten warten. Für den ganzen Server gelten 30 Versuche je Stunde. Nach 10 falschen Codes auf einen PC verfällt dessen Code.
 
+### Handy-Bildschirm freigeben {#handy}
+
+In der GateControl-App für Android steht unter **Fernzugriff** der Schalter **„Bildschirm freigeben“**. Ist er an, meldet die App das Handy an und zeigt einen Code aus 9 Ziffern.
+
+- **Helfen:** Im Portal den Tab Fernzugriff öffnen, **„Code eingeben“** tippen und den Code vom Handy eintragen. Am Handy erscheint „… möchte deinen Bildschirm sehen“ mit deinem Namen und Bild. Nach „Erlauben“ fragt Android noch einmal („Jetzt starten“). Erst dann öffnet sich bei dir die Seite mit dem Bildschirm des Handys.
+- **Nur ansehen:** In dieser Version kann die helfende Person nur zusehen, nicht tippen. Die Steuerung kommt mit einer späteren Version.
+- **Während der Freigabe** zeigt das Handy eine rote Leiste und eine Mitteilung „Bildschirm wird geteilt“, beide mit **„Beenden“**. Beenden trennt sofort. Danach zeigt das Handy gleich einen neuen Code.
+- **Ohne Code für Berechtigte:** Auch am Handy gibt es den zweiten Schalter. Dann tippen Personen mit Zugriff auf das Handy im Portal auf „Verbinden“ und sparen sich den Code. **Die Frage am Handy und die Abfrage von Android bleiben immer.**
+- **Wer es sieht:** zuerst nur die Person selbst und die Administratoren; freigeben wie bei einem PC. Mit dem Recht „Support-Codes einlösen“ geht es mit dem Code auch ohne Zugriff.
+- **Über den Server:** Das Bild läuft über deinen GateControl-Server. Er reicht es nur weiter und speichert nichts, es ist aber keine Ende-zu-Ende-Verschlüsselung. Banking-Apps, Passwortfelder und die Tresor-Seiten der App bleiben beim Helfer schwarz.
+- Das Handy braucht kein VPN für die Freigabe. Es gilt als offline, wenn sich die App 20 Minuten nicht gemeldet hat.
+
 ### SSH im Terminal {#terminal}
 
 Ein SSH-Gerät verbindet sich entweder mit dem **Terminal von GateControl** oder wie bisher mit **Guacamole**. Neue SSH-Geräte bekommen das Terminal, vorhandene und übernommene bleiben bei Guacamole, bis du sie umstellst.
@@ -148,6 +163,10 @@ Das Recht wird bei jedem Verbinden neu geprüft.
 
 **tmux fehlt:** Installiere tmux auf dem Gerät (`sudo apt install tmux`). Bis dahin läuft die Sitzung ohne tmux.
 
+**Das Handy erscheint nicht / „Bildschirm-Freigaben brauchen ein neueres GateControl“:** Die Person braucht das Recht „Eigene Geräte freigeben“, und GateControl braucht die Fernzugriff-Schnittstelle Version 4.
+
+**Der Helfer sieht nur „Warte auf das Bild vom Gerät …“:** Am Handy wurde die Abfrage von Android noch nicht mit „Jetzt starten“ bestätigt, oder die Person hat sie abgelehnt. Dann endet die Anfrage und der Helfer sieht „Die Freigabe wurde am Gerät beendet“.
+
 **Der PC erscheint nicht:** Die Person braucht das Recht „Eigene Geräte freigeben“. Unter Windows Home gibt es keinen Remote Desktop – die App zeigt dann einen Hinweis.
 
 **„Der PC hat die Verbindung nicht rechtzeitig geöffnet“:** Die App auf dem PC hat innerhalb von 15 Sekunden nicht gemeldet, dass Port 3389 offen ist. Ist die App gestartet und mit GateControl verbunden?
@@ -155,6 +174,14 @@ Das Recht wird bei jedem Verbinden neu geprüft.
 **„Zu viele falsche Codes“:** Warte 15 Minuten oder lass dir am PC einen neuen Code zeigen.
 
 **Im Browser fragt Windows nach der Anmeldung nicht:** Verlangt der PC die Anmeldung auf Netzwerkebene (NLA), braucht die Sitzung im Browser Benutzername und Passwort, die die Sitzungsseite noch nicht abfragt. Verbinde dich dann aus der GateControl-App.
+
+## Neu in 1.3.0 {#neu-1-3-0}
+
+- **Android-Handys geben ihren Bildschirm frei** – Schalter „Bildschirm freigeben“ in der App, Code, Bestätigung am Handy und die Abfrage von Android; danach sofort ein neuer Code.
+- Zunächst **nur ansehen**: der Bildschirm erscheint im Browser auf einer Seite von GateControl.
+- **„Ohne Code für Berechtigte“** auch am Handy – die Frage am Handy bleibt.
+- Handys stehen unter Geräte mit „Android-Handy“, im Portal mit „nur ansehen“; im Profil heißt der Abschnitt jetzt „Meine Geräte“.
+- Protokoll: „Bildschirm wird angesehen“ und „Bildschirmfreigabe beendet“.
 
 ## Neu in 1.2.0 {#neu-1-2-0}
 

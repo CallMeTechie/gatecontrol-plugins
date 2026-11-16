@@ -54,6 +54,15 @@
 //     remove(id) → { removed }
 //   host.remoteOpen(ref, { via, hostKey }) → start with engine, via, record, recordingId (and hostKey for a terminal);
 //   host.remoteView(ref) — the person opened a playback ticket: event phase recording_viewed
+// GateControl with gc.remote version 4 (stage 5, the screen relay of the phones; opt-in opts.gatecontrol ≥ '1.286.0' or
+// opts.remote.v4):
+//   screen({ viewer, sender: { user, device }, target: { id, name }, mode?, record?, ttlS? }) → { ref, url, expiresAt, senderRef,
+//     senderExpiresAt, mode: 'view', protocol: 'screen', engine: 'screen', record: false } — an enabled viewer (ERR_NOT_FOUND),
+//     sender.device an app device of sender.user (opts.devices; ERR_REMOTE_NOT_ALLOWED), mode view only and no recording
+//     (ERR_INVALID / ERR_REMOTE_RECORDING_UNAVAILABLE); end({ ref }) takes either ref
+//   host.remoteScreenStart(ref, { via })    both sides of the relay are there → { sessionId }, event phase start (engine screen)
+//   host.remoteScreenEnd(ref, reason)       the relay ends (sender / viewer → end, anything else → abort; without a row
+//                                           before both met: abort with sessionId null)
 // The session page and the old app API for tests:
 //   host.remoteOpen(ref)                    the person opens the page: a tunnel opens → { sessionId }, event phase start
 //   host.remoteClose(sessionId, reason)     the tunnel ends (normal → end, heartbeat … → abort)
@@ -99,8 +108,9 @@ function install({ opts, perms, atLeast, enabledUser, hostError, license, person
   const next = !!(o && (o.gateways || o.pools || o.connectHost)) || atLeast(283);
   const v2 = !!(o && o.v2) || atLeast(284);
   const v3 = !!(o && o.v3) || atLeast(285);
+  const v4 = !!(o && o.v4) || atLeast(286);
   const state = { tickets: new Map(), live: new Map(), rows: [], vault: new Map(), listeners: new Map(), wakes: new Map(), calls: [], handlers: [], seq: 0, routeSeq: 500,
-    hostKeys: new Map(), recordings: [], plays: new Map() };
+    hostKeys: new Map(), recordings: [], plays: new Map(), senderRefs: new Map() };
   const recAvail = () => (v3 ? { available: true, reason: null, engines: { term: true, guac: true }, usedBytes: 0, maxBytes: 10 * 1024 ** 3, days: 30, ...((o && o.recordings) || {}) }
     : { available: false, reason: 'not_yet' });
   const cfg = { gateways: (o && o.gateways) || [], pools: (o && o.pools) || [], l4: (o && o.l4) || [], limits: { global: 10, perUser: 2, perTarget: 2, ...((o && o.limits) || {}) } };
@@ -256,10 +266,13 @@ function install({ opts, perms, atLeast, enabledUser, hostError, license, person
     'remote.end': async (a) => {
       need();
       if (a.ref != null) {
-        const t = state.tickets.get(a.ref);
+        const ref = state.tickets.has(a.ref) ? a.ref : (state.senderRefs.get(a.ref) || a.ref);
+        const t = state.tickets.get(ref);
         if (!t) return { ended: false };
-        state.tickets.delete(a.ref);
-        for (const r of state.rows) if (r.ref === a.ref && !r.endedAt) await closeRow(r, 'ended_by_plugin');
+        state.tickets.delete(ref);
+        if (t.senderRef) state.senderRefs.delete(t.senderRef);
+        state.calls.push({ op: 'end', ref });
+        for (const r of state.rows) if (r.ref === ref && !r.endedAt) await closeRow(r, 'ended_by_plugin');
         return { ended: true };
       }
       if (a.sessionId != null) {
@@ -387,6 +400,36 @@ function install({ opts, perms, atLeast, enabledUser, hostError, license, person
     },
     'remote.hostKeys.list': async () => { need(); return [...state.hostKeys.values()].map((p) => ({ ...p })); },
     'remote.hostKeys.remove': async (a) => { need(); if (typeof a.targetId !== 'string' || !ID_RE.test(a.targetId)) throw hostError('ERR_INVALID', 'targetId'); return { removed: state.hostKeys.delete(a.targetId) }; },
+    'remote.screen': async (a) => {
+      need();
+      if (!v4) throw hostError('ERR_UNKNOWN_API', 'unknown host API');
+      const uid = Number(a.viewer);
+      if (!Number.isSafeInteger(uid) || uid <= 0) throw hostError('ERR_INVALID', 'viewer: a user id');
+      if (!enabledUser(uid)) throw hostError('ERR_NOT_FOUND', 'no such enabled person');
+      if (!license.licensed) throw hostError('ERR_REMOTE_UNLICENSED', 'the plugin has no valid licence');
+      const s = a.sender && typeof a.sender === 'object' ? a.sender : {};
+      const owner = Number(s.user);
+      if (!Number.isSafeInteger(owner) || owner <= 0 || !enabledUser(owner)) throw hostError('ERR_NOT_FOUND', 'no such enabled person');
+      const did = s.device == null ? '' : String(s.device);
+      if (!/^[1-9]\d{0,14}$/.test(did)) throw hostError('ERR_INVALID', 'sender.device: an app device id');
+      const dev = deviceList ? deviceList().find((d) => d.id === did) : null;
+      if (!dev || dev.userId !== owner) throw hostError('ERR_REMOTE_NOT_ALLOWED', 'sender.device is no app device of sender.user');
+      if ((a.mode == null ? 'view' : a.mode) !== 'view') throw hostError('ERR_INVALID', 'mode: view');
+      if (a.record === true) throw hostError('ERR_REMOTE_RECORDING_UNAVAILABLE', 'a screen session is not recorded');
+      const tg = a.target && typeof a.target === 'object' ? a.target : {};
+      const tid = tg.id == null ? '' : String(tg.id);
+      if (!ID_RE.test(tid)) throw hostError('ERR_INVALID', 'target.id');
+      const ttlS = a.ttlS == null ? 120 : Number(a.ttlS);
+      if (!Number.isInteger(ttlS) || ttlS < 30 || ttlS > 600) throw hostError('ERR_INVALID', 'ttlS: 30…600');
+      const ref = crypto.randomBytes(32).toString('base64url').slice(0, 43);
+      const senderRef = crypto.randomBytes(32).toString('base64url').slice(0, 43);
+      state.tickets.set(ref, { ref, senderRef, userId: uid, sender: { userId: owner, deviceId: did }, target: { id: tid, name: tg.name == null ? null : String(tg.name).slice(0, 100) },
+        protocol: 'screen', engine: 'screen', mode: 'view', record: false, openBy: Date.now() + ttlS * 1000 });
+      state.senderRefs.set(senderRef, ref);
+      state.calls.push({ op: 'screen', viewer: uid, sender: { user: owner, device: did }, target: tid });
+      const exp = iso(Date.now() + ttlS * 1000);
+      return { ref, url: '/remote/session/' + ref, expiresAt: exp, senderRef, senderExpiresAt: exp, mode: 'view', protocol: 'screen', engine: 'screen', record: false };
+    },
     'remote.hubAddress': async () => { need(); return HUB; },
     'remote.peerAddress': async (a) => {
       need();
@@ -409,7 +452,7 @@ function install({ opts, perms, atLeast, enabledUser, hostError, license, person
     r.endedAt = now;
     r.durationSeconds = Math.max(0, Math.round((now - r.startedAt) / 1000));
     r.endReason = reason;
-    const phase = reason === 'normal' || reason === 'ended_by_plugin' ? 'end' : 'abort';
+    const phase = ['normal', 'ended_by_plugin', 'sender', 'viewer'].includes(reason) ? 'end' : 'abort';
     if (r.recordingId) {
       state.recordings.push({ id: r.recordingId, sessionId: r.id, targetId: r.targetId, userId: r.userId, protocol: r.protocol, format: r.engine === 'term' ? 'asciicast' : 'guac',
         status: 'ready', bytes: 4096, durationSeconds: r.durationSeconds, startedAt: iso(r.startedAt), endedAt: iso(now), createdAt: iso(now) });
@@ -423,7 +466,8 @@ function install({ opts, perms, atLeast, enabledUser, hostError, license, person
     listener.remove = (key) => call('remote.listener.remove', { key });
     const ob = (x) => (x && typeof x === 'object' ? x : {});
     return Object.freeze({
-      version: v3 ? 3 : (v2 ? 2 : 1),
+      version: v4 ? 4 : (v3 ? 3 : (v2 ? 2 : 1)),
+      ...(v4 ? { screen: (x) => call('remote.screen', ob(x)) } : {}),
       session: (x) => call('remote.session', ob(x)),
       end: (x) => call('remote.end', ob(x)),
       sessions: (x) => call('remote.sessions', ob(x)),
@@ -485,6 +529,26 @@ function install({ opts, perms, atLeast, enabledUser, hostError, license, person
     await emit({ phase: 'abort', sessionId: ++state.seq, ref, targetId: t.target.id, userId: t.userId, protocol: t.protocol, mode: t.mode, record: false,
       engine: t.engine, via: 'browser', recordingId: null, startedAt: iso(Date.now()), reason, durationSeconds: 0, endedAt: iso(Date.now()) });
   }
+  /** v4: both sides of a screen relay are there → { sessionId } (event phase start, engine screen). */
+  async function screenStart(ref, x = {}) {
+    const t = state.tickets.get(ref);
+    if (!t || t.engine !== 'screen') throw new Error('mock host: no such screen ticket');
+    const r = { id: ++state.seq, ref, targetId: t.target.id, targetName: t.target.name, userId: t.userId, protocol: 'screen', mode: 'view', startedAt: Date.now(), endedAt: null,
+      engine: 'screen', via: x.via === 'app' ? 'app' : 'browser', record: false, recordingId: null };
+    state.rows.push(r);
+    await emit({ phase: 'start', sessionId: r.id, ref, targetId: r.targetId, userId: r.userId, protocol: 'screen', mode: 'view', record: false, engine: 'screen', via: r.via, recordingId: null, startedAt: iso(r.startedAt) });
+    return { sessionId: r.id };
+  }
+  /** v4: the relay of a screen ticket ends (sender / viewer → end, anything else → abort; no row → abort without sessionId). */
+  async function screenEnd(ref, reason = 'sender') {
+    const t = state.tickets.get(ref);
+    if (t) { state.tickets.delete(ref); state.senderRefs.delete(t.senderRef); }
+    const r = state.rows.find((x) => x.ref === ref && !x.endedAt);
+    if (r) { await closeRow(r, reason); return; }
+    if (!t) throw new Error('mock host: no such screen ticket');
+    await emit({ phase: 'abort', sessionId: null, ref, targetId: t.target.id, userId: t.userId, protocol: 'screen', mode: 'view', record: false, engine: 'screen', via: null,
+      recordingId: null, startedAt: null, reason, durationSeconds: 0, endedAt: iso(Date.now()) });
+  }
   async function close(sessionId, reason = 'normal') {
     const r = state.rows.find((x) => x.id === sessionId && !x.endedAt);
     if (!r) throw new Error('mock host: no such open tunnel');
@@ -530,7 +594,7 @@ function install({ opts, perms, atLeast, enabledUser, hostError, license, person
     return { status, body };
   }
 
-  return { on, v2, v3, api, gcPart, state, open, close, view, abortTerm, facade, vaultSeed: (entry, source) => vaultPut(entry, source), setUnreadable: (h) => { const e = state.vault.get(h); if (e) e.readable = false; } };
+  return { on, v2, v3, v4, api, gcPart, state, open, close, view, abortTerm, screenStart, screenEnd, facade, vaultSeed: (entry, source) => vaultPut(entry, source), setUnreadable: (h) => { const e = state.vault.get(h); if (e) e.readable = false; } };
 }
 
 module.exports = { install };

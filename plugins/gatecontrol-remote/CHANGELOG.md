@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.3.0
+
+Stufe 5 „Android ansehen“. Für Handys braucht es GateControl mit `gc.remote` Version 4 (`gc.remote.screen`, Relais `gc-screen.v1`); ohne sie bleibt alles wie in 1.2 und ein Handy bekommt `screen_unavailable`.
+
+- **Handys aus der App:** `host/register { platform: 'android', name, appVersion, screen: { view, control }, shareMode? }` legt ein Gerät der Art `host` mit `platform: 'android'` und `protocol: 'screen'` an (ohne VPN-Adresse, ohne Firewall – das Handy verbindet sich selbst mit dem Relais von GateControl). Code, `host/state`, `host/share`, `host/access`, `DELETE host` wie bei Windows; ein Handy gilt 20 Minuten nach dem letzten Lebenszeichen als offline.
+- **Anfrage und Bestätigung:** eine Anfrage an ein Handy ist immer „Nur ansehen“ (`kind: 'screen'` in Anfrage und Signal `remote.request`), auch „ohne Code“ fragt das Handy immer (`POST devices/<id>/connect` → `{ request }`). Erlaubt → Ticket des Relais über `gc.remote.screen`: das Handy bekommt die Sender-Seite in der Antwort von `POST host/requests/<id>` (`screen: { ref, expiresAt, wsPath }`), der Helfer die Betrachter-Seite aus `POST requests/<id>/connect` (`session: { ref, engine: 'screen', protocol: 'screen', mode: 'view' }`) → `GC.openSession(ref)` im Browser, `POST /api/v1/client/remote/screen-token` in einer App.
+- **Ende:** `POST host/screen/<id>/end { reason: consent_denied | stopped | failed }` (Android-Abfrage abgelehnt oder vor dem Bild beendet); Ereignisse von GateControl beenden die Anfrage (`endReason`), das Handy hört `remote.screen.end`, wenn der Helfer oder das Plugin beendet hat. Schalter aus beendet ein laufendes Relais.
+- **Anzeige:** Geräte (Admin) mit „Android-Handy“ und „Bildschirm über den Server · nur ansehen“, Portal mit „Nur ansehen“ und Warten auf die Bestätigung nach „Verbinden“ ohne Code, Profil-Abschnitt „Meine Geräte“. Die alten Apps sehen keine Handys.
+- **Protokoll:** `remote_screen_started`, `remote_screen_ended` (`reason`, `durationSeconds`). Migration `004_screen.sql` (`requests.kind`, `screen_ref`, `screen_started_at`, `end_reason`).
+- Neuer Fehler: `screen_unavailable`. Mock-Host: `gc.remote` Version 4 (`opts.gatecontrol ≥ '1.286.0'` oder `opts.remote.v4`), `host.remoteScreenStart` / `host.remoteScreenEnd`.
+
 ## 1.2.0
 
 Stufe 3 „SSH mit tmux und Aufzeichnung“. Benötigt GateControl ≥ 1.285.0 (`gc.remote` Version 3: Terminal im Kern, `tmux.list`, `hostKeys`, `vault.generate`, Aufzeichnungen).

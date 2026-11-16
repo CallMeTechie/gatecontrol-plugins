@@ -1,4 +1,4 @@
-<!-- version: 1.2.0 -->
+<!-- version: 1.3.0 -->
 # Remote access – Handbook
 
 ## What the plugin does {#was-das-plugin-kann}
@@ -10,6 +10,8 @@ Remote access is GateControl's former "Remote desktops" as a plugin of its own. 
 
 On top: wake-on-LAN, maintenance windows, a reminder to renew credentials, rights per person and group, and the history of every session.
 
+Since 1.3.0 an **Android phone can share its screen**: in the GateControl app for Android the person switches on "Share screen", passes the code to the person who helps and confirms on the phone. The helper sees the screen in the browser – for now **view only** (see [Share a phone's screen](#handy)).
+
 Since 1.2.0 **SSH runs in GateControl's own terminal** – in the browser and natively in the apps, with **tmux** (the session keeps running on the device when the connection drops) and a checked host key. Sessions can be **recorded** on request and played back in the browser (see [SSH in the terminal](#terminal) and [Recording](#aufzeichnung)).
 
 Since 1.1.0 **Windows PCs register themselves**: when somebody switches on "Allow Remote Desktop" in the GateControl app for Windows, the PC shows up at once under Remote access › Devices. One connects with the code shown on the PC and only after the confirmation at the PC (see [Windows PCs from the app](#windows-pcs)).
@@ -18,6 +20,7 @@ Passwords and SSH keys are not stored by the plugin but in GateControl's encrypt
 
 ## Requirements {#voraussetzungen}
 
+- For screen sharing from a phone: GateControl with remote access interface **version 4** (the relay of the picture) and the GateControl app for Android with "Share screen". An older GateControl refuses the phone's registration.
 - GateControl **1.285.0** or newer (remote access interface version 3: terminal in the core, tmux, host keys, recording; plus version 2: registration of the Windows PCs, firewall per session, silent signals to the PC).
 - For recordings: the drive `remote-recordings` of the `docker-compose.yml` of the new version (GateControl and guacd). Without it nothing is recorded.
 - For Windows PCs from the app: the GateControl app for Windows (Pro) with "Allow Remote Desktop" and Windows **Pro, Enterprise or Education**. Windows Home cannot offer Remote Desktop.
@@ -84,6 +87,18 @@ When somebody switches on **"Allow Remote Desktop"** in the GateControl app for 
 - **Switch off:** the PC stays in the list as "Signed off", the history stays. Open sessions end, the code is void.
 - **Guessing:** after 5 wrong codes in 10 minutes a person waits 15 minutes. The whole server allows 30 attempts per hour. After 10 wrong codes on one PC its code is void.
 
+### Share a phone's screen {#handy}
+
+In the GateControl app for Android, **Remote access** has the switch **"Share screen"**. When it is on, the app registers the phone and shows a code of 9 digits.
+
+- **Helping:** open the Remote access tab in the portal, tap **"Enter code"** and type the code from the phone. The phone asks "… wants to see your screen" with your name and picture. After "Allow", Android asks once more ("Start now"). Only then the page with the phone's screen opens for you.
+- **View only:** in this version the helper can only watch, not tap. Control comes with a later version.
+- **While sharing** the phone shows a red bar and a notification "Screen is being shared", both with **"Stop"**. Stop disconnects at once. Right after, the phone shows a new code.
+- **No code for permitted people:** the phone has the second switch, too. People with access to the phone then tap "Connect" in the portal and skip the code. **The question on the phone and Android's prompt always stay.**
+- **Who sees it:** at first only the person and the administrators; share it like a PC. With the right "Redeem support codes" it works with the code without access.
+- **Through the server:** the picture runs through your GateControl server. It only passes it on and stores nothing, but it is not end-to-end encryption. Banking apps, password fields and the app's vault pages stay black for the helper.
+- The phone needs no VPN for sharing. It counts as offline when its app has not reported for 20 minutes.
+
 ### SSH in the terminal {#terminal}
 
 An SSH device connects either with **GateControl's terminal** or with **Guacamole** as before. New SSH devices get the terminal; existing and taken-over ones stay on Guacamole until you switch them.
@@ -148,6 +163,10 @@ The right is checked again on every connect.
 
 **tmux is missing:** install tmux on the device (`sudo apt install tmux`). Until then the session runs without tmux.
 
+**The phone does not show up / "Screen sharing needs a newer GateControl":** the person needs the right "Share own devices", and GateControl needs remote access interface version 4.
+
+**The helper only sees "Waiting for the picture from the device …":** Android's prompt on the phone has not been confirmed with "Start now" yet, or the person declined it. Then the request ends and the helper sees "Sharing was ended on the device".
+
 **The PC does not show up:** the person needs the right "Share own devices". Windows Home has no Remote Desktop – the app says so.
 
 **"The PC did not open the connection in time":** the app on the PC did not report within 15 seconds that port 3389 is open. Is the app running and connected to GateControl?
@@ -155,6 +174,14 @@ The right is checked again on every connect.
 **"Too many wrong codes":** wait 15 minutes or let the PC show a new code.
 
 **In the browser Windows does not ask for the sign-in:** when the PC requires network level authentication (NLA), the session in the browser needs a user name and password that the session page does not ask for yet. Connect from the GateControl app then.
+
+## New in 1.3.0 {#neu-1-3-0}
+
+- **Android phones share their screen** – switch "Share screen" in the app, code, confirmation on the phone and Android's prompt; a new code right after.
+- **View only** for now: the screen appears in the browser on a page of GateControl.
+- **"No code for permitted people"** on the phone, too – the question on the phone stays.
+- Phones show up under Devices as "Android phone", in the portal with "view only"; the profile section is now called "My devices".
+- Protocol: "Screen being viewed" and "Screen sharing ended".
 
 ## New in 1.2.0 {#neu-1-2-0}
 

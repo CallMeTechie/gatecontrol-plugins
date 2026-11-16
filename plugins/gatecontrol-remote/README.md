@@ -89,6 +89,23 @@ status of `server/util.js` `STATUS`.
 | `POST host/requests/<id>` | `{ decision: allow\|deny, mode? }` → `{ request }`; `request_expired` |
 | `GET host/firewall` · `POST host/firewall` | `{ open: [{ sessionKey, allow, port, until }] }` · `{ sessionKey, state: open\|closed\|failed, reason? }` |
 
+### The phone's app (1.3, gc.remote version 4 — only watching)
+
+An Android phone ("Bildschirm freigeben") uses the same calls with `platform: 'android'`: a device `kind: 'host'`,
+`platform: 'android'`, `protocol: 'screen'`, no VPN address, no firewall (the phone connects to GateControl's relay
+`gc-screen.v1` itself). A request to a phone is always `mode: 'view'`, `kind: 'screen'` and always asked at the phone
+(also "ohne Code"); signals add `remote.screen.end { requestId, reason }` (the helper or the plugin ended it).
+
+| Call | Answer |
+|---|---|
+| `POST host/register` | `{ platform: 'android', name, appVersion, screen: { view, control }, shareMode? }` → `{ host: { deviceId, platform, shareMode, allowOpen, state }, codeRequired }`; `no_share_right`, `screen_unavailable` (GateControl without `gc.remote.screen`) |
+| `POST host/state` | `{ online: true }` → `{ shareMode, allowOpen, pending: [{ requestId, from, mode, via, kind, expiresAt }] }` — offline 20 min after the last one |
+| `POST host/requests/<id>` | `{ decision: allow\|deny }` → `{ request, screen?: { ref, expiresAt, wsPath: '/api/v1/remote/screen-relay' } }` — `screen.ref` is the sending side: `POST /api/v1/client/remote/screen-token { ref }` at GateControl |
+| `POST host/screen/<id>/end` | `{ reason: consent_denied\|stopped\|failed }` → `{ ended }` |
+
+Helpers: `POST code/redeem` → `{ request }` (`kind: 'screen'`, `mode: 'view'`); a phone "ohne Code": `POST devices/<id>/connect`
+→ `{ request }`; `POST requests/<id>/connect` → `{ session: { ref, expiresAt, protocol: 'screen', engine: 'screen', mode: 'view', device } }`.
+
 ## Admin API (`admin/*`, GateControl's admin UI only)
 
 | Call | Answer |

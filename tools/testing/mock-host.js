@@ -4317,6 +4317,9 @@ async function createHost(pluginDir, opts = {}) {
     /** gc.remote version 3: the person opened a playback ticket / a terminal aborted before it was ready */
     remoteView: (ref) => rm.view(ref),
     remoteAbortTerm: (ref, reason) => rm.abortTerm(ref, reason),
+    /** gc.remote version 4: both sides of a screen relay are there / the relay ends */
+    remoteScreenStart: (ref, x) => rm.screenStart(ref, x),
+    remoteScreenEnd: (ref, reason) => rm.screenEnd(ref, reason),
     remoteClose: (sessionId, reason) => rm.close(sessionId, reason),
     remoteVaultSeed: (entry, source) => rm.vaultSeed(entry, source),
     remoteUnreadable: (handle) => rm.setUnreadable(handle),

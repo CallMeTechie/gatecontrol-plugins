@@ -19,6 +19,14 @@
 //                                     recording, tmux } }; the app turns ref into a token: POST /api/v1/client/remote/term-token
 //   GET  recordings?device&limit      { recordings: [...] } — administrators all, others the recordings of their own devices
 //   POST recordings/<id>/play         { url, ref, expiresAt, format } — GateControl's playback page, for this person only
+//
+// Since 1.3 (gc.remote version 4) — the screen of a phone (GateControl's relay gc-screen.v1, only watching):
+//   host/register { platform: 'android', … }   the phone's switch "Bildschirm freigeben" (server/hosts.js)
+//   POST host/requests/<id> allow       → { request, screen: { ref, expiresAt, wsPath } } — the sending side for the phone
+//   POST host/screen/<id>/end           { reason: consent_denied | stopped | failed } → { ended }
+//   POST devices/<id>/connect           a phone "ohne Code" → { request } (the phone always asks; then GET requests/<id>)
+//   POST requests/<id>/connect          a phone → { session: { ref, expiresAt, protocol: 'screen', engine: 'screen', mode: 'view', device } }
+//   GET  devices                        a phone: protocol 'screen', platform 'android', screen: { view: true, control: false }
 
 const devices = require('./devices');
 const rights = require('./rights');
@@ -51,6 +59,8 @@ function deviceView(d, names, x = {}) {
   }
   if (x.recording) v.recording = x.recording;
   if (d.kind === 'host') {
+    v.platform = d.host.platform;
+    if (devices.isPhone(d)) v.screen = { view: true, control: false };
     v.owner = { id: d.host.owner, name: (names && names.get(d.host.owner)) || null };
     v.connect = { mode: devices.connectMode(d) };
     v.ready = devices.hostReady(d);
@@ -109,7 +119,7 @@ async function profile(gc, user) {
     // 1.2: "immer aufzeichnen" is visible to the person (their own setting or a group's) and on their own PCs
     recording: r.recording || null,
     devices: { total: list.length, rdp: list.filter((d) => rights.rightFor(d.protocol) === 'rdp').length, ssh: list.filter((d) => rights.rightFor(d.protocol) === 'ssh').length },
-    hosts: own.map((d) => ({ id: d.id, name: d.name, registered: d.host.registered, online: d.host.online, shareMode: d.host.shareMode, allowOpen: d.host.allowOpen, recording: d.config.recording || 'off' })),
+    hosts: own.map((d) => ({ id: d.id, name: d.name, platform: d.host.platform, registered: d.host.registered, online: d.host.online, shareMode: d.host.shareMode, allowOpen: d.host.allowOpen, recording: d.config.recording || 'off' })),
     history: own.length ? await log.list(gc, { ownerUserId: user.id, limit: 30 }) : [],
   };
 }
@@ -126,6 +136,8 @@ async function connectHost(gc, user, d, req, { admin = false } = {}) {
   const access = (await devices.accessLists(gc)).get(d.id) || devices.emptyAccess();
   if (!admin && !(await rights.mayUse(gc, user, d, access))) throw fail('no_right');
   const via = req.user && req.user.app === true ? 'app' : 'browser';
+  // a phone always asks its person (and Android asks again): "ohne Code" spares the code, never the question
+  if (devices.isPhone(d)) return { request: await support.create(gc, user, d, { mode: 'view', via, helperDevice: helperDevice(req) }) };
   return support.connectTo(gc, user, d, { mode: req.body && req.body.mode === 'view' && via === 'browser' ? 'view' : 'control', via, helperDevice: helperDevice(req) });
 }
 
@@ -170,6 +182,7 @@ async function hostRoute(req, gc, seg, m) {
     if (m === 'POST') return support.report(gc, d, req.body);
   }
   if (seg.length === 3 && what === 'requests' && m === 'POST') return support.decide(gc, d, seg[2], req.body || {});
+  if (seg.length === 4 && what === 'screen' && seg[3] === 'end' && m === 'POST') return support.phoneEnded(gc, d, seg[2], req.body || {});
   throw fail('not_found');
 }
 
