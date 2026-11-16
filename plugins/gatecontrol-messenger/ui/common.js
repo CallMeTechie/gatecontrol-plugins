@@ -122,6 +122,8 @@
   var NET_GLYPH = {
     whatsapp: { fill: 'M12 2.6a9.3 9.3 0 0 0-8 14l-1.3 4.8 4.9-1.3A9.3 9.3 0 1 0 12 2.6zm0 1.7a7.6 7.6 0 1 1-3.9 14.1l-.3-.2-2.9.8.8-2.8-.2-.3A7.6 7.6 0 0 1 12 4.3z|M9.2 7.6c.2-.4.4-.4.7-.4h.5c.2 0 .4 0 .6.5l.8 1.9c.1.2.1.4 0 .6l-.5.7c-.1.2-.2.3 0 .6.6 1 1.4 1.8 2.5 2.4.3.1.4.1.6-.1l.7-.8c.2-.2.4-.2.6-.1l1.8.9c.2.1.4.2.4.4.1.3 0 1-.3 1.4-.4.5-1.3 1-2 1-1 .1-2.3-.4-4-1.6-1.5-1.2-2.5-2.6-2.9-3.6-.4-1-.2-2 .5-2.8z' },
     gatecontrol: { fill: 'M12 2.5l7.5 2.8v5.9c0 4.8-3.2 8.6-7.5 10.3-4.3-1.7-7.5-5.5-7.5-10.3V5.3z' },
+    // 1.23.0: Signal — a speech bubble in a dashed ring (only to say which service it is)
+    signal: { fill: 'M12 5.6a6.4 6.4 0 0 0-5.5 9.7l-.8 3 3.1-.7A6.4 6.4 0 1 0 12 5.6z', ring: true },
   };
   function netGlyph(network, size) {
     var NS = 'http://www.w3.org/2000/svg';
@@ -133,6 +135,12 @@
     s.setAttribute('aria-hidden', 'true');
     s.setAttribute('focusable', 'false');
     g.fill.split('|').forEach(function (d) { var p = document.createElementNS(NS, 'path'); p.setAttribute('d', d); p.setAttribute('fill', 'currentColor'); p.setAttribute('fill-rule', 'evenodd'); s.appendChild(p); });
+    if (g.ring) {
+      var r = document.createElementNS(NS, 'circle');
+      r.setAttribute('cx', '12'); r.setAttribute('cy', '12'); r.setAttribute('r', '9.6');
+      r.setAttribute('fill', 'none'); r.setAttribute('stroke', 'currentColor'); r.setAttribute('stroke-width', '1.6'); r.setAttribute('stroke-dasharray', '3.2 1.6');
+      s.appendChild(r);
+    }
     return s;
   }
   /** The mark at a picture: the logo on the service's colour (`cls`: another class than ms-net, e.g. a mark in a row). */

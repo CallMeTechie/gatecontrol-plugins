@@ -1,4 +1,4 @@
-<!-- version: 1.22.0 -->
+<!-- version: 1.23.0 -->
 # Messenger
 
 ## What the plugin does
@@ -15,7 +15,7 @@ Everything stays on your server. Texts, locations, file names and group titles a
 
 ## Requirements
 
-- GateControl **1.204.0** or later (group chats for GateControl groups from 1.200.0, virus scan from the version after 1.222.0).
+- GateControl **1.291.0** or later (Signal bridge; group chats for GateControl groups from 1.200.0, virus scan from the version after 1.222.0).
 - A licence for the plugin.
 - For “Save to Drive”: the Drive plugin. For the family chat: the Family plugin.
 
@@ -65,11 +65,24 @@ The browser does not allow the location in the portal. Set the point on the map 
 **I cannot find the family chat.**
 The Family plugin keeps it (page “Features” › messenger group).
 
+**The older Signal history is missing.**
+Signal sends it only once when linking, and only if you choose “Transfer” on your phone. GateControl takes at most 30 days. Changing it later brings nothing from Signal.
+
 **The older WhatsApp history is missing.**
 It only comes when linking and appears at night. When “Load older history” is “Off”, or the administrator switched it off, none comes. WhatsApp does not send everything for every chat.
 
 **Old messages are gone.**
 The administrator set a retention, or the chat is a disappearing chat.
+
+## New in 1.23.0
+
+- **Signal in the messenger.** Under “Linked services” you link your own Signal – like Signal Desktop, as a linked device. Signal chats stand with a blue logo in the same list as GateControl and WhatsApp, with a chip “Signal”, groups included.
+- **QR code only.** Signal links only with a code on a second screen. In the app you tap “Continue in the portal” or “Continue in the Windows client” – the step opens there, signed in as you, and you scan it with Signal on your phone. The code renews itself.
+- **Older history:** after the scan Signal asks on your phone whether to transfer your history. GateControl takes at most the last 30 days of it, at night and in small portions. Signal does not allow this later.
+- **Safety numbers** are checked in the Signal app only: the bridge accepts new keys on its own, a line at the top of a Signal chat says so.
+- **Disappearing messages** from Signal hold here too (“Messages disappear after 1 week”); only Signal can change them. Open a **view-once** message in Signal. Stickers arrive as pictures.
+- **Recognition per service:** after linking, the messenger asks once: “May others on this server recognise you by your Signal?” – separate from WhatsApp, changeable in “My profile” under “Recognition”.
+- **For administrators:** the card “Bridges” has a row for Signal and the switch “Convert animated stickers” (default off: a still picture). When the server's `docker-compose.yml` does not know Signal yet, the card says so – replace it once with the new one.
 
 ## New in 1.22.0
 

@@ -15,15 +15,24 @@
    (GET bridges recognition, PUT bridges/recognition — GateControl with gc.bridges version 9).
    1.17.0: the row „Älteren Verlauf laden“ (nothing, the last 30 days, everything — PUT bridges/history), the warning
    „Handy seit N Tagen nicht gesehen“ under a service (networks[].phone) and „Brücke veraltet“ also when WhatsApp
-   itself turned the bridge's version away (networks[].clientOutdated). */
+   itself turned the bridge's version away (networks[].clientOutdated).
+   1.23.0: Signal — only by QR code (networks[].flows), its own notes (safety numbers only in the Signal app), after the
+   scan „Signal fragt jetzt auf deinem Handy, ob es den Verlauf überträgt“ with what of it GateControl takes (at most 30
+   days, networks[].history), the question „Erkennen“ per network (networks[].recognition), and a step a phone sent to
+   this screen („Im Portal fortsetzen“, GET bridges handoff): the dialog opens right at the QR code. */
 (function () {
   'use strict';
   var M = window.MS;
   var T = M.T;
   var el = M.el;
 
-  var NOTES = { whatsapp: ['unofficial', 'ban', 'phone', 'e2e'] };
+  var NOTES = { whatsapp: ['unofficial', 'ban', 'phone', 'e2e'], signal: ['unofficial', 'phone', 'e2e', 'safety'] };
   var FLOWS = ['phone', 'qr'];
+  /** 1.23.0: the ways in a network offers (an older server names none: both). */
+  function flowsOf(n) { return n && n.flows && n.flows.length ? n.flows.filter(function (f) { return FLOWS.indexOf(f) >= 0; }) : FLOWS; }
+  function firstFlow(n) { var f = flowsOf(n); return f.indexOf('phone') >= 0 ? 'phone' : (f[0] || 'qr'); }
+  /** A text of this page when it exists for the network (else null). */
+  function has(key) { return T(key) !== key; }
   var open = null; // the open dialog: { body, close, run (the link in progress), alive }
 
   function dateOf(isoStr) {
@@ -53,6 +62,7 @@
   }
 
   // ── overview ──
+  var hist = null; // GET bridges history (1.17.0), for the rows
   function row(n) {
     var l = mainLogin(n);
     var sub;
@@ -68,6 +78,8 @@
       right.push(pill(T(n.state === 'starting' ? 'br.pill_starting' : 'br.pill_unreachable'), 'limit'));
     } else if (l && (l.state === 'connected' || l.state === 'connecting')) {
       sub = (l.since ? T('br.sub_linked_since', { date: dateOf(l.since) }) : T('br.sub_linked')) + (l.name ? ' · ' + l.name : '');
+      // 1.23.0: a service that brings its history once at the link (Signal): what of it is still on its way
+      if (n.history && n.history.maxDays && hist && hist.available && hist.days !== 0) sub += ' · ' + T(hist.pending > 0 ? 'br.hist_line_pending' : 'br.hist_line', { n: n.history.maxDays });
       right.push(n.outdated ? pill(T('br.pill_outdated'), 'limit') : pill(T('br.pill_linked')));
       right.push(unlink(T('br.unlink')));
     } else if (l && l.state === 'logged_out') {
@@ -105,6 +117,7 @@
   }
 
   function overview(b) {
+    hist = b.history || null;
     var nodes = [el('p', { class: 'ms-brp-lead', text: T('br.lead') })];
     var outdated = b.networks.filter(function (n) { return n.outdated || n.clientOutdated; });
     if (outdated.length) nodes.push(note('info', T('br.outdated_banner', { name: name(outdated[0].id) }), 'ms-brp-warn'));
@@ -146,6 +159,9 @@
           .catch(function (e) { right.disabled = false; M.warn(e); });
       });
     }
+    // 1.23.0: a service that brings its history only at the link (Signal) — later there is nothing more
+    var once = nets.filter(function (n) { return n.history && n.history.phoneConfirms; })[0];
+    if (once && h.available) sub += ' ' + T('br.hist_once', { name: name(once.id), n: once.history.maxDays || 30 });
     return el('div', { class: 'ms-brp-row is-plain' }, [
       el('span', { class: 'ms-brp-tx' }, [el('b', { text: T('br.hist_title') }), el('small', { text: sub })]),
       right,
@@ -160,6 +176,10 @@
       if (!open) return;
       var b = r.bridges || {};
       if (!b.available) { show([el('p', { class: 'ms-muted', text: T('br.none_offered') })]); return; }
+      // 1.23.0: a phone sent its step here („Im Portal fortsetzen“) — straight to the QR code, once per handoff
+      var ho = b.handoff;
+      var hn = ho && ho.target === 'portal' ? (b.networks || []).filter(function (n) { return n.id === ho.network && n.allowed && n.state === 'running'; })[0] : null;
+      if (hn && open.handoff !== ho.expiresAt) { open.handoff = ho.expiresAt; hist = b.history || null; if (hn.consent) link(hn, 'qr'); else begin(hn); return; }
       overview(b);
     }).catch(function (e) { show([el('p', { class: 'ms-muted', text: M.errText(e) })]); });
   }
@@ -177,18 +197,22 @@
 
   // ── the notes before the first link ──
   function begin(n) {
-    if (n.consent) { link(n, 'phone'); return; }
+    if (n.consent) { link(n, firstFlow(n)); return; }
     var box = el('input', { type: 'checkbox', id: 'ms-brp-ok' });
     var next = el('button', { type: 'button', class: 'btn btn-primary', text: T('br.next'), disabled: true });
     box.addEventListener('change', function () { next.disabled = !box.checked; });
     next.addEventListener('click', function () {
       busy(next, true);
-      M.api('POST', 'bridges/' + n.id + '/consent', { accept: true }).then(function () { n.consent = true; link(n, 'phone'); })
+      M.api('POST', 'bridges/' + n.id + '/consent', { accept: true }).then(function () { n.consent = true; link(n, firstFlow(n)); })
         .catch(function (e) { busy(next, false); M.warn(e); });
     });
     show([
       head(T('br.notes_title', { name: name(n.id) })),
-      el('ul', { class: 'ms-brp-notes' }, (NOTES[n.id] || []).map(function (k) { return el('li', { text: T('br.note_' + n.id + '_' + k) }); })),
+      el('ul', { class: 'ms-brp-notes' }, (NOTES[n.id] || []).map(function (k) {
+        // 1.23.0: a note may have a title (Signal: „Inoffiziell“, „Dein Handy bleibt das Hauptgerät“ …)
+        var t = 'br.note_' + n.id + '_' + k + '_t';
+        return has(t) ? el('li', {}, [el('b', { text: T(t) + ' ' }), el('span', { text: T('br.note_' + n.id + '_' + k) })]) : el('li', { text: T('br.note_' + n.id + '_' + k) });
+      })),
       el('label', { class: 'ms-brp-check', for: 'ms-brp-ok' }, [box, el('span', { text: T('br.notes_confirm') })]),
       el('div', { class: 'ms-brp-bar' }, [el('span', { class: 'ms-muted', text: T('br.notes_free') }), next]),
     ]);
@@ -213,7 +237,10 @@
   }
 
   function tabs(n, flow) {
-    return el('div', { class: 'ms-brp-tabs', role: 'tablist' }, FLOWS.map(function (f) {
+    // 1.23.0: a service with one way in (Signal: the QR code) has no choice
+    var flows = flowsOf(n);
+    if (flows.length < 2) return null;
+    return el('div', { class: 'ms-brp-tabs', role: 'tablist' }, flows.map(function (f) {
       return el('button', { type: 'button', role: 'tab', class: 'ms-chip', 'aria-pressed': f === flow ? 'true' : 'false', 'aria-selected': f === flow ? 'true' : 'false', text: T('br.flow_' + f),
         on: { click: function () { if (f !== flow) { stopRun(true); link(n, f); } } } });
     }));
@@ -270,8 +297,9 @@
     if (d.type === 'qr' && d.matrix && d.matrix.rows) {
       nodes.push(el('p', { class: 'ms-brp-lead', text: T('br.qr_lead_' + n.id) }));
       nodes.push(el('div', { class: 'ms-brp-qrbox' }, [qrSvg(d.matrix)]));
-      nodes.push(steps(['br.qr_step1_' + n.id, 'br.qr_step2_' + n.id]));
-      nodes.push(note('info', T('br.qr_one_phone')));
+      nodes.push(steps(['br.qr_step1_' + n.id, 'br.qr_step2_' + n.id].concat(has('br.qr_step3_' + n.id) ? ['br.qr_step3_' + n.id] : [])));
+      // 1.23.0: Signal renews its code by itself (every 45 s)
+      nodes.push(note('info', T(has('br.qr_renews_' + n.id) ? 'br.qr_renews_' + n.id : 'br.qr_one_phone')));
     } else if (d.type === 'code' && d.data) {
       nodes.push(el('p', { class: 'ms-brp-lead', text: T('br.code_lead', { name: name(n.id) }) }));
       nodes.push(codeBoxes(d.data));
@@ -307,7 +335,7 @@
     if (step.type === 'complete') {
       open.run = null; run.stopped = true;
       M.toast(T('br.linked', { name: name(n.id) }));
-      askRecognition(n);
+      if (n.history && n.history.phoneConfirms) afterLink(n); else askRecognition(n);
     } else if (step.type === 'display_and_wait') {
       showWait(n, flow, run, step); // WhatsApp renews the QR code a few times: each one is a new step
     } else if (step.type === 'user_input') {
@@ -323,15 +351,21 @@
    * Server dich an deinem WhatsApp erkennen?“ (the profile's consent „Erkennung › an meinem verknüpften WhatsApp“, off
    * until the person says yes). Answered before (here or in the profile): the overview at once.
    */
-  function askRecognition(n) {
-    if (n.id !== 'whatsapp') { load(); return; }
+  function askRecognition(n, before) {
     M.api('GET', 'bridges').then(function (r) {
-      var rec = r.bridges && r.bridges.recognition;
-      if (!open || !rec || !rec.available || rec.asked) { load(); return; }
+      var b = r.bridges || {};
+      var net = (b.networks || []).filter(function (x) { return x.id === n.id; })[0] || {};
+      // 1.23.0: one consent per network (an older server: WhatsApp's only)
+      var rec = net.recognition || (n.id === 'whatsapp' ? b.recognition : null);
+      var sfx = n.id === 'whatsapp' ? '' : '_' + n.id;
+      if (!open || !rec || !rec.available || rec.asked || (sfx && !has('person.rec_title' + sfx))) {
+        if (before) { show(before.concat([el('div', { class: 'ms-brp-bar' }, [el('span'), el('button', { type: 'button', class: 'btn btn-primary', text: T('br.done'), on: { click: load } })])])); return; }
+        load(); return;
+      }
       var answer = function (yes, btn) {
         busy(btn, true);
-        M.api('PUT', 'bridges/recognition', { allowed: yes }).then(function () {
-          M.toast(T(yes ? 'person.rec_saved_yes' : 'person.rec_saved_no'));
+        M.api('PUT', 'bridges/recognition', { allowed: yes, network: n.id }).then(function () {
+          M.toast(T((yes ? 'person.rec_saved_yes' : 'person.rec_saved_no') + sfx));
           load();
         }).catch(function (e) { busy(btn, false); M.warn(e); });
       };
@@ -339,13 +373,30 @@
       var yes = el('button', { type: 'button', class: 'btn btn-primary', text: T('person.rec_yes') });
       no.addEventListener('click', function () { answer(false, no); });
       yes.addEventListener('click', function () { answer(true, yes); });
-      show([
-        head(T('person.rec_title')),
-        el('p', { class: 'ms-brp-foot', text: T('person.rec_text') }),
+      show((before || [head(T('person.rec_title' + sfx))]).concat([
+        before ? el('b', { class: 'ms-brp-q', text: T('person.rec_title' + sfx) }) : null,
+        el('p', { class: 'ms-brp-foot', text: T('person.rec_text' + sfx) }),
         note('lock', T('person.rec_note')),
         el('div', { class: 'ms-brp-bar' }, [no, yes]),
-      ]);
+      ]));
     }).catch(function () { load(); });
+  }
+
+  /**
+   * 1.23.0: after the scan, for a service whose phone asks about the history (Signal): what happens now on the phone,
+   * what of it GateControl takes (only when the person wants history), the link done — then the question „Erkennen“.
+   */
+  function afterLink(n) {
+    var nodes = [head(T('br.link_title', { name: name(n.id) }))];
+    nodes.push(note('info', T('br.phone_history', { name: name(n.id) })));
+    var h = hist;
+    if (h && h.available && h.days !== 0) {
+      nodes.push(el('div', { class: 'ms-brp-row is-plain' }, [el('span', { class: 'ms-brp-tx' }, [
+        el('b', { text: T('br.phone_history_chosen', { n: (n.history && n.history.maxDays) || 30 }) }),
+        el('small', { text: T('br.phone_history_take', { name: name(n.id), n: (n.history && n.history.maxDays) || 30 }) })])]));
+    }
+    nodes.push(el('p', { class: 'ms-brp-ok', role: 'status' }, [M.icon('check', 14), el('span', { text: T(has('br.linked_' + n.id) ? 'br.linked_' + n.id : 'br.linked', { name: name(n.id) }) })]));
+    askRecognition(n, nodes);
   }
 
   function askPhone(n, flow, run, step) {
@@ -416,5 +467,8 @@
     load();
   }
 
-  window.MSBridges = { open: openDialog };
+  /** 1.23.0: open the dialog right at a step a phone sent here (GET bridges handoff, live event bridge.handoff). */
+  function openStep() { if (open) { load(); return; } openDialog(); }
+
+  window.MSBridges = { open: openDialog, openStep: openStep };
 }());

@@ -741,7 +741,8 @@ async function refreshHints(ctx) {
     for (const m of matches) {
       if (!m || typeof m.contactId !== 'string' || !Number.isSafeInteger(m.userId) || m.userId === ctx.viewer) continue;
       const strength = m.strength === 'strong' ? 'strong' : 'medium';
-      const via = m.via === 'own_whatsapp' ? 'own_whatsapp' : 'profile_phone';
+      // 1.23.0: the own linked login of any network (own_whatsapp, own_signal)
+      const via = m.via === `own_${n}` ? m.via : 'profile_phone';
       const convId = await chatOfContact(ctx, n, m.contactId, chats);
       if (!convId) continue;
       seen.add(`${convId}|${m.userId}`);
@@ -757,7 +758,7 @@ async function refreshHints(ctx) {
 }
 
 function reasonText(ctx, h, account, contact) {
-  const key = h.via === 'own_whatsapp' ? 'person.why_own' : (h.strength === 'strong' ? 'person.why_confirmed' : 'person.why_unconfirmed');
+  const key = /^own_[a-z]+$/.test(String(h.via || '')) ? 'person.why_own' : (h.strength === 'strong' ? 'person.why_confirmed' : 'person.why_unconfirmed');
   return t(ctx.lang, key, { account, contact, network: labelOf(h.network) });
 }
 

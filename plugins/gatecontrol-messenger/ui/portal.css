@@ -358,6 +358,10 @@ button.ms-loc:hover .ms-locmap{filter:brightness(1.05)}
 .ms-net{position:absolute;right:-3px;bottom:-3px;width:18px;height:18px;box-sizing:border-box;border-radius:50%;border:2px solid var(--surface);background:var(--muted);color:var(--surface);display:inline-flex;align-items:center;justify-content:center}
 .ms-net svg{display:block}
 .ms-net-whatsapp{background:#1f8f5a;color:#fff}
+.ms-net-signal{background:#3a76f0;color:#fff}
+.ms-br-mark-signal{color:#3a76f0}
+.ms-brp-steps-plain{margin-top:0}
+.ms-brp-ok{display:flex;align-items:flex-start;gap:8px;margin:0;font-size:13px}
 .ms-net-gatecontrol{background:var(--accent);color:var(--btn-text)}
 .ms-bridgebar{display:flex;flex-direction:column;border-bottom:1px solid var(--line);background:var(--surface-2)}
 .ms-bridgebar[hidden]{display:none}

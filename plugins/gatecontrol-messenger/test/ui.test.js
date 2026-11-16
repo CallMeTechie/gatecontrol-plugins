@@ -77,10 +77,10 @@ test('texts: every key used by the pages exists in de and en; both languages hav
   for (const k of dyn) for (const l of ['de', 'en']) assert.ok(texts[l][k], `${l}: ${k}`);
 });
 
-test('plugin.json: licence, GateControl 1.204.0, permissions, pages, app and portal tab "Chats"', () => {
+test('plugin.json: licence, GateControl 1.291.0, permissions, pages, app and portal tab "Chats"', () => {
   assert.equal(manifest.id, 'gatecontrol-messenger');
-  assert.equal(manifest.version, '1.22.0');
-  assert.equal(manifest.gatecontrol, '>=1.204.0', '1.17.0: media.areas for the files of bridged chats (1.8.0: media.handOverMaxBytes, GateControl 1.193.0)');
+  assert.equal(manifest.version, '1.23.0');
+  assert.equal(manifest.gatecontrol, '>=1.291.0', '1.23.0: gc.bridges version 10 (Signal) — the 7a release of GateControl');
   assert.equal(manifest.media.handOverMaxBytes, 2147483648, '1.8.0: GateDrop hands over files up to 2 GB; own uploads stay at 25 MB');
   assert.equal(manifest.permissions.notifySink, true);
   assert.deepEqual(manifest.license, { required: true });

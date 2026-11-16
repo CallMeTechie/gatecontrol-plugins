@@ -70,7 +70,7 @@ test('administrators switch the bridges — off by default; nobody else may', as
     assert.deepEqual((await c.as(ANNA)('GET', 'bridges')).json.bridges, { available: false, networks: [] });
 
     for (const u of [ANNA, app(ADMIN), portal(ADMIN)]) assert.equal((await c.call(u, 'PUT', 'admin/bridges', { enabled: true })).status, 403);
-    for (const bad of [null, {}, { enabled: 'yes' }, { networks: { signal: true } }, { networks: { whatsapp: 1 } }, { networks: [] }]) {
+    for (const bad of [null, {}, { enabled: 'yes' }, { networks: { telegram: true } }, { networks: { whatsapp: 1 } }, { networks: [] }]) {
       assert.equal((await c.admin('PUT', 'bridges', bad)).json.code, 'invalid', JSON.stringify(bad));
     }
     assert.equal(host.bridges.state.enabled, false);
@@ -95,9 +95,11 @@ test('a person links their own WhatsApp with the pairing code — notes first', 
   await withHost({ bridges: ON }, async (host, c) => {
     const anna = c.as(ANNA);
     let mine = (await anna('GET', 'bridges')).json.bridges;
-    assert.deepEqual(mine, { available: true, location: 'server', history: null, recognition: null, networks: [{ id: 'whatsapp', state: 'running', allowed: true, lock: null, consent: null, outdated: false, version: '0.2610.0', wantVersion: '0.2610.0', logins: [],
+    assert.deepEqual(mine, { available: true, location: 'server', history: null, recognition: null, handoff: null, networks: [{ id: 'whatsapp', state: 'running', allowed: true, lock: null, consent: null, outdated: false, version: '0.2610.0', wantVersion: '0.2610.0', logins: [],
       clientOutdated: false, phone: { offline: false, days: null, leftDays: null },
-      newChat: { available: false, reason: 'off', limit: { perHour: 10, left: 10, retryAfterS: 0 } } }] });
+      newChat: { available: false, reason: 'off', limit: { perHour: 10, left: 10, retryAfterS: 0 } },
+      // 1.23.0: an older GateControl names no flows (both), no history limit, no consent per network
+      flows: ['phone', 'qr'], history: { maxDays: null, phoneConfirms: false }, recognition: null, handoff: null }] });
 
     // not before the notes were confirmed
     assert.equal((await anna('POST', 'bridges/whatsapp/login', { flow: 'phone' })).json.code, 'consent_required');
@@ -188,7 +190,7 @@ test('QR code; logged out by WhatsApp; unlinking; a cancelled and an expired log
     assert.equal(r.json.code, 'bridge_unsupported');
     // ids are checked before anything reaches GateControl
     assert.equal((await marc('POST', 'bridges/whatsapp/login/a%2F..%2Fb/step', {})).json.code, 'invalid');
-    assert.equal((await marc('POST', 'bridges/signal/login', { flow: 'qr' })).status, 404);
+    assert.equal((await marc('POST', 'bridges/telegram/login', { flow: 'qr' })).status, 404);
   });
 });
 
@@ -223,7 +225,7 @@ test('children: locked until a parent allows it, per child and network', async (
     }
     assert.deepEqual((await c.as(ANNA)('GET', 'bridges/children')).json.children, [{ userId: LENA.id, networks: { whatsapp: false }, linked: { whatsapp: false }, newChat: { whatsapp: false } }]);
     assert.equal((await c.as(ANNA)('PUT', `bridges/children/${MARC.id}`, { networks: { whatsapp: true } })).status, 404, 'a parent is no child');
-    for (const bad of [{}, { networks: {} }, { networks: { signal: true } }, { networks: { whatsapp: 'yes' } }]) {
+    for (const bad of [{}, { networks: {} }, { networks: { telegram: true } }, { networks: { whatsapp: 'yes' } }]) {
       assert.equal((await c.as(ANNA)('PUT', `bridges/children/${LENA.id}`, bad)).json.code, 'invalid');
     }
 
@@ -308,7 +310,7 @@ test('1.13.0 — the services for the Familie page: only Familie, only a parent,
     let r = await svc('bridge_children', { id: ANNA.id });
     assert.deepEqual(r, { ok: true, available: true, networks: ['whatsapp'], newChat: false, children: [{ userId: LENA.id, networks: { whatsapp: false }, linked: { whatsapp: false }, newChat: { whatsapp: false } }] });
     assert.deepEqual(await svc('bridge_child_set', { id: ANNA.id }, { childId: MARC.id, networks: { whatsapp: true } }), { ok: false, code: 'not_found' });
-    for (const bad of [{}, { childId: LENA.id }, { childId: LENA.id, networks: { signal: true } }, { childId: 'x', networks: { whatsapp: true } }]) {
+    for (const bad of [{}, { childId: LENA.id }, { childId: LENA.id, networks: { telegram: true } }, { childId: 'x', networks: { whatsapp: true } }]) {
       assert.deepEqual(await svc('bridge_child_set', { id: ANNA.id }, bad), { ok: false, code: 'invalid' });
     }
     r = await svc('bridge_child_set', { id: ANNA.id }, { childId: LENA.id, networks: { whatsapp: true } });

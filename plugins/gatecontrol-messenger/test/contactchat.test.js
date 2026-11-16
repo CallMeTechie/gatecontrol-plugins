@@ -100,7 +100,7 @@ test('three sections, merged by the number — WhatsApp contacts without a numbe
     r = await list(c, ANNA, '0171 5550123');
     assert.deepEqual(r.number, { e164: '+491715550123', show: '+49 171 5550123', conversationId: null });
     assert.equal((await list(c, ANNA, 'Kim')).number, null);
-    assert.equal((await c.as(ANNA)('GET', 'contacts/new-chat', null, { network: 'signal' })).json.code, 'invalid');
+    assert.equal((await c.as(ANNA)('GET', 'contacts/new-chat', null, { network: 'telegram' })).json.code, 'invalid');
   });
 });
 

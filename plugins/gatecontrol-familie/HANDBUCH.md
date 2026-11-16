@@ -1,5 +1,9 @@
-<!-- version: 1.27.0 -->
+<!-- version: 1.28.0 -->
 # Familie
+
+## Neu in 1.28.0
+
+- **Signal bei „Andere Messenger“:** Bietet dein Server die Signal-Brücke an (Plugin Messenger ab 1.23.0), steht in der Karte **„Andere Messenger“** neben WhatsApp eine Zeile **Signal** je Kind – mit eigenem Schalter, zunächst aus. Zurücknehmen trennt die Verknüpfung des Kindes bei Signal. Die Altersgrenzen der Dienste gelten weiter, das prüfen die Eltern selbst.
 
 ## Neu in 1.27.0
 

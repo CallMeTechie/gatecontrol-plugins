@@ -33,7 +33,9 @@ const { fail } = require('./util');
 
 const PLUGIN = 'gatecontrol-messenger';
 const KEEP_MS = 5 * 60000;
-const NETWORKS = ['whatsapp'];
+// 1.28.0: Signal next to WhatsApp (Messenger ≥ 1.23.0 on a GateControl with Signal) — a column only for a service the
+// Messenger offers (bridge_children.networks)
+const NETWORKS = ['whatsapp', 'signal'];
 const cache = new Map(); // parent id → { at, value }
 
 async function offered(gc, service) {
@@ -113,7 +115,8 @@ async function set(gc, r, childId, body) {
     throw fail(code === 'forbidden' ? 'parents_only' : (code === 'not_found' || code === 'invalid' ? code : 'unavailable'));
   }
   const networks = Object.keys(nets || {});
-  const child = face(r.fam, childOf(x.child, NETWORKS));
+  // the services the Messenger named for this child (an older Messenger: WhatsApp only)
+  const child = face(r.fam, childOf(x.child, NETWORKS.filter((n) => n === 'whatsapp' || (x.child && x.child.networks && Object.prototype.hasOwnProperty.call(x.child.networks, n)))));
   const unlinked = {};
   for (const n of networks) if (x.unlinked && typeof x.unlinked[n] === 'boolean') unlinked[n] = x.unlinked[n];
   return { child, unlinked };

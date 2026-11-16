@@ -3,6 +3,31 @@
 Chats zwischen den GateControl-Konten – in der GateControl-App (eigener Tab „Chats“), im
 Windows-Client und im Portal (eigener Tab „Chats“). Alles bleibt auf dem eigenen Server.
 
+## 1.23.0
+**Signal** („Brücken Stufe 7a“) — die zweite Brücke neben WhatsApp, für GateControl mit `gc.bridges` Version 10 (die
+Signal-Brücke, update.sh 10, die neue `docker-compose.yml`). **Braucht GateControl ≥ 1.291.0** (`plugin.json`
+`gatecontrol`; die genaue Nummer setzt die Server-Veröffentlichung von Stufe 7a).
+- **Netz `signal`** überall, wo bisher `whatsapp` stand (`bridges.js`, `bridgechats.js`, Personen, Kinder-Freigaben).
+  `GET bridges` je Netz neu `flows` (Signal nur `qr`; `POST …/login` lehnt andere Wege ab), `history { maxDays,
+  phoneConfirms }` (Signal: höchstens 30 Tage, nur beim Verknüpfen, das Handy fragt), `recognition { available, asked,
+  allowed }` (eine Zustimmung „Erkennen“ je Dienst) und `handoff`.
+- **Am PC fortsetzen:** `POST bridges/:network/handoff { target: portal | windows }` → `{ handoff: { network, target,
+  expiresAt, portalPath } }`, 10 Minuten im Speicher, Live-Ereignis `bridge.handoff` an die Person; `DELETE
+  bridges/:network/handoff`; endet mit dem Verknüpfen. Das Portal öffnet „Verknüpfte Dienste“ dann direkt beim QR-Code.
+- **Verknüpfte Dienste (Portal):** Signal mit eigenen Hinweisen (inoffiziell, Handy bleibt Hauptgerät, lesbar auf dem
+  Server, Sicherheitsnummern nur in der Signal-App), nur QR (ohne Wegwahl), nach dem Scannen „Signal fragt jetzt auf
+  deinem Handy, ob es den Verlauf überträgt“ mit dem gewählten Verlauf, dann die Frage „Erkennen“ für Signal; die Zeile
+  „Verlauf: 30 Tage, wird nachts geladen“; „Älteren Verlauf laden“ sagt, dass Signal nur beim Verknüpfen liefert.
+- `PUT bridges/recognition { allowed, network? }` → `{ recognition, recognitions }`; Vorschläge mit `via: own_signal`.
+- **Signal-Chats:** Logo (blaue Sprechblase) und Chip, Hinweis „Sicherheitsnummern prüfst du in der Signal-App …“ oben,
+  der Timer verschwindender Nachrichten als `disappearingS` (beliebige Dauer, nur in Signal änderbar — hier läuft nichts
+  ab, die Brücke löscht selbst), seine Änderung als Systemzeile `disappearing` mit `network`, eine Einmal-Ansicht als
+  Platzhalter `view_once` („Einmal-Ansicht. Öffne sie in Signal.“), Sticker als Bild.
+- **Verwaltung:** Zeile Signal in der Karte „Brücken“, Schalter **„Animierte Sticker umwandeln“** (Standard aus:
+  Standbild; `PUT admin/bridges { animatedStickers }`, gilt für Brücken, die umwandeln — Telegram folgt), Hinweis, wenn die
+  `docker-compose.yml` des Servers Signal noch nicht kennt (`networks[].needs`).
+- Tests `test/signal.test.js`; `tools/testing/mock-bridges.js` kennt Version 10.
+
 ## 1.22.0
 **„Wer sieht dein Bild?“ aus dem Profil** (GateControl mit `gc.users.setAvatarVisibility` / `adoptAvatarVisibility`,
 feature-erkannt; ältere Server: alles wie bisher). `server/avatarvis.js`.

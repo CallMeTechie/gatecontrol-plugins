@@ -1275,6 +1275,21 @@ conversation, so „Trennen“ loses nothing. Groups and channels are never merg
 | `GET bridges` → `recognition` | `{ available, network, asked, allowed } \| null` — „Dürfen andere auf diesem Server dich an deinem WhatsApp erkennen?“ (the profile's consent), asked once after WhatsApp was linked |
 | `PUT bridges/recognition { allowed }` | `{ recognition }` (`403 feature_off` without `gc.bridges` version 9) |
 
+1.23.0 — Signal (GateControl with `gc.bridges` version 10; see `apps-contract-7a` in the release notes):
+
+| Call | Answer |
+|---|---|
+| `GET bridges` → `networks[]` | + `flows` (`["qr"]` for Signal — the only way in; missing on an older server: both), `history { maxDays, phoneConfirms }` (Signal: `30`, `true` — once at the link, the phone asks), `recognition { available, asked, allowed } \| null` (the consent of this network), `handoff` |
+| `GET bridges` → `handoff` | `{ network, target, expiresAt } \| null` — an open „am PC fortsetzen“ of this person |
+| `PUT bridges/recognition { allowed, network? }` | `{ recognition, recognitions: { whatsapp, signal } }` — `network` missing: `whatsapp`; another network needs `gc.bridges` version 10 (`403 feature_off`) |
+| `POST bridges/:network/handoff { target: "portal" \| "windows" }` | `{ handoff: { network, target, expiresAt, portalPath } }` — the phone cannot scan its own screen: the step on a second screen (10 minutes); a live event `bridge.handoff { network, target, expiresAt }` to the person; only for a network that links by QR code, after the notes (`409 consent_required`) |
+| `DELETE bridges/:network/handoff` | `{ handoff: null }` (also over at a completed link) |
+| `PUT admin/bridges { animatedStickers }` | the admin view with `stickers { animated }` — one switch for every bridge that converts animated stickers (off: a still picture); `403 feature_off` before version 10 |
+
+A Signal chat: `conversation.disappearingS` is the chat's timer at Signal (any length; `can.setDisappearing` false —
+nothing runs out here, the bridge deletes), its change a system message `{ event: "disappearing", by: null, seconds,
+network }`; a view-once picture `bridge.placeholder.kind: "view_once"` (no file).
+
 `person`: `{ id, name, nameFrom: "account" | <conversationId>, userId, conversationId (the lead), names (every name — the
 search finds each), ways: [{ way, label, conversationId, title, avatarUrl, avatarMediaId, unread, muted, archived,
 lastMessageAt, bridge, can: { send, sendReason, react } }], reply: { way, label, conversationId }, createdAt }`. With

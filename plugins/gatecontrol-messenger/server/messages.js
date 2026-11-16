@@ -332,7 +332,9 @@ async function bindMedia(ctx, info, { convId, msgId, role, kind }) {
 async function insert(ctx, conv, row) {
   const r = await store.run(ctx.gc, `INSERT INTO messages (conv_id, sender_id, client_id, kind, body_enc, reply_to, media_id, thumb_media_id, meta_enc, via, created_at, expires_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [conv.id, row.senderId, row.clientId || null, row.kind, seal.seal(row.text), row.replyTo || null, row.mediaId || null,
-    row.thumbId || null, seal.sealJson(row.meta), row.via || null, ctx.now, conv.disappearing_s > 0 ? ctx.now + conv.disappearing_s * 1000 : null, ctx.now]);
+    // 1.23.0: a bridged chat's timer is the other messenger's (Signal: from reading on) — the bridge deletes those
+    // messages itself, nothing runs out here
+    row.thumbId || null, seal.sealJson(row.meta), row.via || null, ctx.now, conv.disappearing_s > 0 && !conv.bridge_net ? ctx.now + conv.disappearing_s * 1000 : null, ctx.now]);
   const id = r.lastInsertRowid;
   await store.run(ctx.gc, 'UPDATE conversations SET last_msg_id = ?, updated_at = ? WHERE id = ?', [id, ctx.now, conv.id]);
   conv.last_msg_id = id;
