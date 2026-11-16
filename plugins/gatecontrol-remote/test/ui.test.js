@@ -64,6 +64,25 @@ describe('pages and texts', () => {
     assert.match(fs.readFileSync(path.join(UI, 'style.css'), 'utf8'), /\.rm-portal \.btn[^{]*\{min-height:44px/);
   });
 
+  it('1.7.1: the Linux set-up names the fixed download links of the agent, no placeholders', () => {
+    const DL = 'https://github.com/CallMeTechie/gatecontrol-linux-agent/releases/latest/download';
+    const portal = fs.readFileSync(path.join(UI, 'portal.js'), 'utf8');
+    assert.match(portal, /'https:\/\/github\.com\/CallMeTechie\/gatecontrol-linux-agent\/releases'/);
+    assert.match(portal, /AGENT_DL \+ '\/gatecontrol-agent_\$\(dpkg --print-architecture\)\.deb/);
+    assert.match(portal, /AGENT_DL \+ '\/gatecontrol-agent_x86_64\.pkg\.tar\.zst/);
+    assert.doesNotMatch(portal, /gatecontrol-agent_<version>|gatecontrol-agent-<version>/);
+    for (const f of ['HANDBUCH.md', 'HANDBOOK.md']) {
+      const h = fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
+      for (const a of ['gatecontrol-agent_amd64.deb', 'gatecontrol-agent_x86_64.pkg.tar.zst', 'gatecontrol-agent_x86_64.rpm']) {
+        assert.ok(h.includes(`curl -LO ${DL}/${a}`), `${f}: ${a}`);
+      }
+      assert.ok(h.includes('](https://github.com/CallMeTechie/gatecontrol-linux-agent/releases)'), f);
+      assert.doesNotMatch(h, /gatecontrol-agent_<version>|gatecontrol-agent-<version>/, f);
+    }
+    assert.match(texts.de['linux.step1'], /gatecontrol-linux-agent\/releases/);
+    assert.match(texts.en['linux.step1'], /gatecontrol-linux-agent\/releases/);
+  });
+
   it('plugin.json: the permissions of the contract, an own licence, the profile section', () => {
     const m = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'plugin.json'), 'utf8'));
     assert.equal(m.id, 'gatecontrol-remote');
