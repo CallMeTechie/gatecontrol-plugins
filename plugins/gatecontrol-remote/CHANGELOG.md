@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.7.1
+
+- **Linux-Agent herunterladen:** „Linux-Gerät einrichten“ im Portal und die Handbücher (Abschnitt „Linux-Geräte“) nennen die festen Links von `gatecontrol-linux-agent`, die immer die neueste Version liefern (`releases/latest/download/gatecontrol-agent_<arch>.deb` mit `amd64`/`arm64`/`armhf`, `gatecontrol-agent_x86_64.pkg.tar.zst`, `gatecontrol-agent_x86_64.rpm`), und die Seite mit allen Releases – statt Platzhaltern wie `./gatecontrol-agent_<version>_<arch>.deb` ohne Bezugsquelle. Im Portal holt `$(dpkg --print-architecture)` das passende `.deb`. Handbuch „Neu in 1.7.1“.
+- Test `test/ui.test.js`: Portal und Handbücher enthalten die Links, keine Platzhalter mehr.
+
 ## 1.7.0
 
 „Gerät hinzufügen“ neu (Entwurf „Gerät hinzufügen“, freigegeben mit allen 8 Empfehlungen; Vertrag `contract-geraet-v7`). Braucht GateControl mit `gc.remote` Version 7 (`candidates`, `scan`, `listenPort: 'auto'`, `wake` mit `watch`; gatecontrol#509). Mindestversion **GateControl 1.292.0** (`gatecontrol.ref` = v1.292.0). Ohne Version 7 bleibt das bisherige Formular mit Reitern.

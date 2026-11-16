@@ -285,6 +285,10 @@
     linuxSetup();
   }
 
+  /** 1.7.1: fixed links of gatecontrol-linux-agent that always give the newest release (no version in the name). */
+  var AGENT_RELEASES = 'https://github.com/CallMeTechie/gatecontrol-linux-agent/releases';
+  var AGENT_DL = AGENT_RELEASES + '/latest/download';
+
   /** 1.6: how to set up an own Linux device (people who may share their own devices). */
   function linuxSetup() {
     var old = $('#rm-linux');
@@ -294,7 +298,12 @@
     var box = el('details', { class: 'rm-linux', id: 'rm-linux' }, [
       el('summary', { text: T('linux.enroll') }),
       el('p', { class: 'rm-hint', text: T('linux.step1') }),
-      cmd('sudo apt install ./gatecontrol-agent_<version>_<arch>.deb      # Debian, Ubuntu, Raspberry Pi OS\nsudo pacman -U gatecontrol-agent-<version>-1-x86_64.pkg.tar.zst  # CachyOS, Arch'),
+      cmd('# Debian, Ubuntu, Raspberry Pi OS (amd64, arm64, armhf)\n' +
+        'curl -LO ' + AGENT_DL + '/gatecontrol-agent_$(dpkg --print-architecture).deb\n' +
+        'sudo apt install ./gatecontrol-agent_$(dpkg --print-architecture).deb\n' +
+        '# CachyOS, Arch (x86_64)\n' +
+        'curl -LO ' + AGENT_DL + '/gatecontrol-agent_x86_64.pkg.tar.zst\n' +
+        'sudo pacman -U gatecontrol-agent_x86_64.pkg.tar.zst'),
       el('p', { class: 'rm-hint', text: T('linux.step2') }),
       cmd('sudo gatecontrol-agent enroll https://<server> <code>'),
       el('p', { class: 'rm-hint', text: T('linux.step3') }),

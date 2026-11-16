@@ -1,4 +1,4 @@
-<!-- version: 1.7.0 -->
+<!-- version: 1.7.1 -->
 # Remote access – Handbook
 
 ## What the plugin does {#was-das-plugin-kann}
@@ -139,7 +139,10 @@ In the GateControl app for Windows, **Settings › Security** has the switch **�
 
 A Linux computer – with or without a desktop (Debian, Ubuntu, Raspberry Pi OS, CachyOS) – signs up through the service **gatecontrol-agent** (a package of its own, repository `gatecontrol-linux-agent`). The portal tab Remote access shows the same steps under **“Set up a Linux device”**.
 
-1. Install the package: `sudo apt install ./gatecontrol-agent_<version>_<arch>.deb` (Debian, Ubuntu, Raspberry Pi OS) or `sudo pacman -U gatecontrol-agent-<version>-1-x86_64.pkg.tar.zst` (CachyOS, Arch).
+1. Install the package – the newest version from the [Releases](https://github.com/CallMeTechie/gatecontrol-linux-agent/releases) page (older versions and `SHA256SUMS` are there too):
+   - Debian, Ubuntu, Raspberry Pi OS: `curl -LO https://github.com/CallMeTechie/gatecontrol-linux-agent/releases/latest/download/gatecontrol-agent_amd64.deb && sudo apt install ./gatecontrol-agent_amd64.deb` – instead of `amd64` use `arm64` or `armhf` depending on the computer (`dpkg --print-architecture` names it).
+   - CachyOS, Arch: `curl -LO https://github.com/CallMeTechie/gatecontrol-linux-agent/releases/latest/download/gatecontrol-agent_x86_64.pkg.tar.zst && sudo pacman -U gatecontrol-agent_x86_64.pkg.tar.zst` (ARM: `aarch64`).
+   - Fedora, openSUSE (no promise): `curl -LO https://github.com/CallMeTechie/gatecontrol-linux-agent/releases/latest/download/gatecontrol-agent_x86_64.rpm && sudo dnf install ./gatecontrol-agent_x86_64.rpm`.
 2. Create a code under **My devices › Add device** and sign in: `sudo gatecontrol-agent enroll https://<server> <code>`. The agent sets up WireGuard for the VPN network only (no default route, no DNS).
 3. Share: `sudo gatecontrol-agent share ssh --as <account> --tmux` and – with a desktop – `sudo gatecontrol-agent share desktop`. `gatecontrol-agent code` shows the code for the helper, `gatecontrol-agent status` the state.
 
@@ -252,6 +255,10 @@ The right is checked again on every connect.
 **"Too many wrong codes":** wait 15 minutes or let the PC show a new code.
 
 **In the browser Windows does not ask for the sign-in:** when the PC requires network level authentication (NLA), the session in the browser needs a user name and password that the session page does not ask for yet. Connect from the GateControl app then.
+
+## New in 1.7.1 {#neu-1-7-1}
+
+- **Download the Linux agent:** the guide “Set up a Linux device” (portal and [Linux devices](#linux)) now gives the fixed download links that always fetch the newest version of the agent, and the page with every release – instead of placeholders like `<version>` and `<arch>`.
 
 ## New in 1.7.0 {#neu-1-7-0}
 
