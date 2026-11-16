@@ -321,7 +321,7 @@ async function chatPicture(gc, b, conv, box, now) {
   });
 }
 
-async function contactPicture(gc, b, k, now) {
+async function contactPicture(gc, b, k, now, box = null) {
   const ref = k.avatar_ref;
   const p = await fetchPicture(gc, b, k.owner_id, k.network, ref, 'k' + k.id, now);
   if (!p) return;
@@ -335,6 +335,8 @@ async function contactPicture(gc, b, k, now) {
     await store.run(gc, `INSERT INTO media (media_id, conv_id, msg_id, role, kind, mime, bytes, owner_id, created_at, scan_state, scan_blocked, scan_finding)
       VALUES (?, 0, NULL, 'avatar', 'avatar', ?, ?, ?, ?, ?, ?, ?)`, [p.mediaId, p.mime, p.bytes, k.owner_id, now, ...scan.cols(p.scan)]);
     await store.run(gc, 'UPDATE bridge_contacts SET avatar_media_id = ?, avatar_got = ? WHERE id = ?', [p.mediaId, ref, k.id]);
+    // 1.25.2: a contact with a WhatsApp status — the status row shows the picture now
+    if (box) await require('./bridgestatus').pictureCame(gc, box, k, now);
   });
 }
 
@@ -377,7 +379,7 @@ async function runOnce(gc) {
   const contacts = (await store.all(gc, `SELECT * FROM bridge_contacts WHERE avatar_want = 1 AND avatar_ref IS NOT NULL
     AND (avatar_got IS NULL OR avatar_got <> avatar_ref) LIMIT ?`, [PICTURE_SCAN])).filter((k) => due('k' + k.id));
   for (const k of contacts.slice(0, RUN_PICTURES)) {
-    try { await contactPicture(gc, b, k, now); pictures++; } catch (e) { gc.log.warn('bridge picture failed', (e && (e.code || e.message)) || 'error'); }
+    try { await contactPicture(gc, b, k, now, box); pictures++; } catch (e) { gc.log.warn('bridge picture failed', (e && (e.code || e.message)) || 'error'); }
   }
   await live.flush(gc, box);
   return { files, pictures };

@@ -78,7 +78,12 @@ The administrator set a retention, or the chat is a disappearing chat.
 
 - **Older WhatsApp pictures, videos and voice messages** of the history that WhatsApp no longer keeps no longer show an English note but “Older voice message – open it in WhatsApp” (or picture, video, file, sticker).
 - **Fetch from the phone:** the administrator can turn on **“Fetch old media from the phone”** on the card “Bridges” – “Once a day (recommended)” or “Right away”. The chat then says “… – will be loaded from the phone later” or “… – loading”, and once the phone sends the file it replaces the placeholder. The phone has to be online; it costs data volume and battery. “Once a day” means about 8 hours after the bridges' nightly backup (the card names the time); to have it at night, move the backup to the evening. When the phone no longer has the file, it says “… – the phone could not send it; open it in WhatsApp”.
-- WhatsApp only. Needs GateControl with `gc.bridges` version 13.
+- WhatsApp only. Needs GateControl 1.295.0 or newer.
+
+## New in 1.25.2
+
+- **WhatsApp status with the right name and picture.** A status sometimes showed in the status row with the name “.” and no profile picture, although WhatsApp shows the contact with name and picture. For a status WhatsApp gives the bridge only the contact’s public name, and some people set it to “.”. Now the contact is named as you know them: first as in your address book (Mail), then as your chat with them, then as in your WhatsApp contacts. If none of these is known, it says “WhatsApp contact”, never “.” and never the number. The picture is the one of your chat, else the contact’s own. This applies to the status row and the status viewer.
+- **In the chat list too** a chat is no longer called “.”, “-” or “…”, but as in your address book or “WhatsApp contact”.
 
 ## New in 1.25.1
 

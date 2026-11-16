@@ -78,7 +78,12 @@ Der Administrator hat eine Aufbewahrung eingestellt, oder der Chat ist selbstlö
 
 - **Ältere WhatsApp-Bilder, -Videos und -Sprachnachrichten** aus dem Verlauf, die WhatsApp nicht mehr bereithält, erscheinen nicht mehr mit einem englischen Hinweis, sondern als „Ältere Sprachnachricht – öffne sie in WhatsApp“ (bzw. Bild, Video, Datei, Sticker).
 - **Vom Handy nachladen:** Der Administrator kann in der Karte „Brücken“ den Schalter **„Alte Medien vom Handy nachladen“** einschalten – „Einmal am Tag (empfohlen)“ oder „Sofort“. Dann steht im Chat „… – wird später vom Handy geladen“ bzw. „… – wird geladen“, und sobald das Handy die Datei schickt, ersetzt sie den Platzhalter. Das Handy muss dafür online sein; es kostet Datenvolumen und Akku. „Einmal am Tag“ heißt etwa 8 Stunden nach der nächtlichen Sicherung der Brücken (die Karte nennt die Uhrzeit); wer es nachts will, legt die Sicherung auf den Abend. Hat das Handy die Datei nicht mehr, steht dort „… – kam vom Handy nicht; öffne sie in WhatsApp“.
-- Nur WhatsApp. Braucht GateControl mit `gc.bridges` Version 13.
+- Nur WhatsApp. Braucht GateControl 1.295.0 oder neuer.
+
+## Neu in 1.25.2
+
+- **WhatsApp-Status mit richtigem Namen und Bild.** Ein Status stand manchmal mit dem Namen „.“ und ohne Profilbild in der Status-Reihe, obwohl WhatsApp den Kontakt mit Namen und Bild zeigt. WhatsApp gibt der Brücke für einen Status nur den öffentlichen Namen des Kontakts mit, und den setzen manche auf „.“. Jetzt heißt der Kontakt wie bei dir: zuerst wie in deinem Adressbuch (Mail), dann wie dein Chat mit ihm, dann wie in den Kontakten von WhatsApp. Ist nichts davon bekannt, steht „WhatsApp-Kontakt“ da, nie „.“ und nie die Nummer. Als Bild kommt das Bild eures Chats, sonst das des Kontakts. Das gilt für die Status-Reihe und die Status-Ansicht.
+- **Auch in der Chatliste** heißt ein Chat nicht mehr „.“, „-“ oder „…“, sondern wie in deinem Adressbuch oder „WhatsApp-Kontakt“.
 
 ## Neu in 1.25.1
 
