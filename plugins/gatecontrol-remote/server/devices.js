@@ -165,6 +165,9 @@ function hostOf(r, now = Date.now()) {
     lastSeen: r.last_seen || null, osUser: r.os_user || null, appVersion: r.app_version || null,
     // 1.4: the app of a phone can carry input out (GitHub build); whether the person allows it is asked every time
     screenControl: r.screen_control === 1,
+    // 1.5: a PC — "Bildschirm teilen" on (a phone always shares its screen), "Remote Desktop erlauben" on (NULL: apps before 1.5)
+    screenView: r.platform === 'android' ? true : r.screen_view === 1,
+    rdpOffered: r.platform === 'android' ? false : r.rdp_offered !== 0,
   };
 }
 
@@ -179,7 +182,26 @@ function isPhone(d) {
  * phone still decides for every request.
  */
 function phoneCanControl(gc, d) {
-  return isPhone(d) && d.host.screenControl === true && !!(gc && gc.remote && gc.remote.version >= 5);
+  return isPhone(d) && screenCanControl(gc, d);
+}
+
+/** 1.5: does this device share its screen now — a phone, or a PC with "Bildschirm teilen" on? */
+function screenOffered(d) {
+  return !!(d && d.host && d.host.registered && d.host.screenView === true && (isPhone(d) || d.host.platform === 'windows'));
+}
+
+/** 1.5: does this PC offer Remote Desktop ("Remote Desktop erlauben" on, an edition that can)? */
+function rdpOffered(d) {
+  return !!(d && d.host && !isPhone(d) && d.protocol === 'rdp' && d.host.rdpOffered !== false && d.host.rdpAvailable !== false);
+}
+
+/**
+ * 1.4/1.5: may a helper ask for "Ansehen und steuern" of the screen? Its app can carry input out (screen.control — the
+ * GitHub build of the phone app, the Windows app) and GateControl's relay knows control (gc.remote version 5). The person
+ * at the device still decides for every request.
+ */
+function screenCanControl(gc, d) {
+  return screenOffered(d) && d.host.screenControl === true && !!(gc && gc.remote && gc.remote.version >= 5);
 }
 
 /** How a person connects to a PC now: 'open' (no code, no question) only when the owner switched it on and the admin allows it. */
@@ -188,9 +210,9 @@ function connectMode(d) {
   return d.host.shareMode === 'open' && d.host.allowOpen ? 'open' : 'code';
 }
 
-/** Can a session reach the PC at all (switch on, Remote Desktop on in Windows, the app reports)? */
+/** Can a session reach the PC at all (switch on, Remote Desktop on in Windows or 1.5 the screen shared, the app reports)? */
 function hostReady(d) {
-  return !!(d && d.host && d.host.registered && d.host.rdpEnabled !== false && d.host.online);
+  return !!(d && d.host && d.host.registered && (d.host.rdpEnabled !== false || screenOffered(d)) && d.host.online);
 }
 
 function fromRow(r) {
@@ -307,7 +329,9 @@ function hostView(d) {
   const h = d.host;
   return { owner: h.owner, platform: h.platform, edition: h.edition, rdpAvailable: h.rdpAvailable, rdpEnabled: h.rdpEnabled, shareMode: h.shareMode, allowOpen: h.allowOpen,
     connect: connectMode(d), registered: h.registered, online: h.online, lastSeen: iso(h.lastSeen), osUser: h.osUser, appVersion: h.appVersion,
-    ...(h.platform === 'android' ? { screenControl: h.screenControl } : {}) };
+    ...(h.platform === 'android' ? { screenControl: h.screenControl } : {}),
+    // 1.5: the two switches of a PC
+    ...(h.platform === 'windows' ? { screenView: h.screenView, screenControl: h.screenControl, rdpOffered: h.rdpOffered } : {}) };
 }
 
 /** The next id of a device made in the plugin (≥ 100000, never one of GateControl's rdp_routes). */
@@ -457,7 +481,7 @@ async function setStatus(gc, id, s, now = Date.now()) {
 
 module.exports = {
   PROTOCOLS, DEFAULT_PORT, ACCESS_MODES, FIELDS, KEPT, BOOLS, DEFAULTS, FIRST_OWN_ID, HOST_OFFLINE_MS, TMUX_RE, RECORDING, engineOf, tmuxOf,
-  hostOf, hostView, connectMode, hostReady, isPhone, phoneCanControl, PHONE_OFFLINE_MS,
+  hostOf, hostView, connectMode, hostReady, isPhone, phoneCanControl, screenOffered, rdpOffered, screenCanControl, PHONE_OFFLINE_MS,
   get, need, all, accessLists, emptyAccess, targetOf, listenerKey, vaultInfo, credentialView, adminView, rotationDue,
   applyPatch, checkField, save, remove, rotated, setStatus, setAccess, write, fromRow, nextId,
 };

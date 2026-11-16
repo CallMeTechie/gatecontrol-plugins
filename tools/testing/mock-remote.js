@@ -66,6 +66,8 @@
 // GateControl with gc.remote version 5 (stage 6, controlling the phone; opt-in opts.gatecontrol ≥ '1.287.0' or opts.remote.v5):
 //   screen({ …, mode: 'view' | 'control' }) — the ticket keeps the mode asked for (anything else ERR_INVALID)
 //   host.remoteScreenMode(ref, reason)      the phone went down to view (the relay): event phase mode, mode view, reason
+// GateControl with gc.remote version 6 (stage 7, a Windows PC as sender with mouse and keyboard; opt-in opts.gatecontrol
+// ≥ '1.288.0' or opts.remote.v6): only the version number — the relay's frames are GateControl's, not the plugin's
 // The session page and the old app API for tests:
 //   host.remoteOpen(ref)                    the person opens the page: a tunnel opens → { sessionId }, event phase start
 //   host.remoteClose(sessionId, reason)     the tunnel ends (normal → end, heartbeat … → abort)
@@ -111,7 +113,8 @@ function install({ opts, perms, atLeast, enabledUser, hostError, license, person
   const next = !!(o && (o.gateways || o.pools || o.connectHost)) || atLeast(283);
   const v2 = !!(o && o.v2) || atLeast(284);
   const v3 = !!(o && o.v3) || atLeast(285);
-  const v5 = !!(o && o.v5) || atLeast(287);
+  const v6 = !!(o && o.v6) || atLeast(288);
+  const v5 = v6 || !!(o && o.v5) || atLeast(287);
   const v4 = v5 || !!(o && o.v4) || atLeast(286);
   const state = { tickets: new Map(), live: new Map(), rows: [], vault: new Map(), listeners: new Map(), wakes: new Map(), calls: [], handlers: [], seq: 0, routeSeq: 500,
     hostKeys: new Map(), recordings: [], plays: new Map(), senderRefs: new Map() };
@@ -471,7 +474,7 @@ function install({ opts, perms, atLeast, enabledUser, hostError, license, person
     listener.remove = (key) => call('remote.listener.remove', { key });
     const ob = (x) => (x && typeof x === 'object' ? x : {});
     return Object.freeze({
-      version: v5 ? 5 : (v4 ? 4 : (v3 ? 3 : (v2 ? 2 : 1))),
+      version: v6 ? 6 : (v5 ? 5 : (v4 ? 4 : (v3 ? 3 : (v2 ? 2 : 1)))),
       ...(v4 ? { screen: (x) => call('remote.screen', ob(x)) } : {}),
       session: (x) => call('remote.session', ob(x)),
       end: (x) => call('remote.end', ob(x)),

@@ -27,6 +27,11 @@
 // 1.4 (stage 6): screen.control of host/register and host/state says whether this app can carry input out (the GitHub
 // build of the Android app with its accessibility service; the Google Play build only shows the screen). Only then may a
 // helper ask for "Ansehen und steuern" — and the person at the phone decides for every request (server/support.js).
+//
+// 1.5 (stage 7): a PC has two switches in its app — "Remote Desktop erlauben" (rdp.offered; missing = on, apps before 1.5)
+// and "Bildschirm teilen" (screen: { view, control }, GateControl's relay like a phone, also on Windows Home). One device
+// per app installation: protocol `rdp` while Remote Desktop is offered (the screen besides it when shared), else `screen`.
+// Windows Home with "Bildschirm teilen" is a device now (protocol screen); without it, home_edition as before.
 
 const store = require('./store');
 const devices = require('./devices');
@@ -68,13 +73,17 @@ async function changed(gc, ids) {
 
 function stateOf(d) {
   if (!d.host.registered) return 'off';
+  // 1.5: a PC that only shares its screen (Windows Home, or Remote Desktop off in the app) is ready with it
+  if (!devices.isPhone(d) && devices.screenOffered(d) && !devices.rdpOffered(d)) return 'ready';
   if (d.host.rdpAvailable === false) return 'home_edition';
   if (d.host.rdpEnabled === false) return 'rdp_off';
   return 'ready';
 }
 
 function hostAnswer(d) {
-  return { deviceId: d.id, platform: d.host.platform, shareMode: d.host.shareMode, allowOpen: d.host.allowOpen, state: stateOf(d) };
+  return { deviceId: d.id, platform: d.host.platform, shareMode: d.host.shareMode, allowOpen: d.host.allowOpen, state: stateOf(d),
+    // 1.5: what a PC offers now
+    ...(d.host.platform === 'windows' ? { screen: { view: d.host.screenView, control: d.host.screenControl }, rdp: { offered: devices.rdpOffered(d) } } : {}) };
 }
 
 function bodyOf(req) { return req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {}; }
@@ -88,49 +97,76 @@ async function register(gc, req, now = Date.now()) {
   if (b.platform === 'android') return registerPhone(gc, req, now);
   const edition = typeof b.edition === 'string' ? b.edition.toLowerCase() : '';
   if (!EDITIONS.includes(edition)) throw fail('invalid', { field: 'edition' });
-  // Windows Home cannot offer Remote Desktop: no device, the app shows "Bildschirm teilen"
-  if (edition === 'home') throw fail('home_edition');
   const rdp = b.rdp && typeof b.rdp === 'object' ? b.rdp : {};
   if (rdp.port != null && Number(rdp.port) !== RDP_PORT) throw fail('invalid', { field: 'rdp.port' });
-  if (!dev.vpnIp) throw fail('no_vpn');
+  // 1.5: "Bildschirm teilen" (GateControl's relay) and whether "Remote Desktop erlauben" is on
+  const scr = pcScreenOf(gc, b);
+  let rdpOffered = rdp.offered !== false && rdp.available !== false;
+  // Windows Home cannot offer Remote Desktop: without "Bildschirm teilen" no device, the app shows the hint
+  if (edition === 'home') {
+    if (!scr.view) throw fail(scr.asked ? 'screen_unavailable' : 'home_edition');
+    rdpOffered = false;
+  }
+  if (!rdpOffered && !scr.view) throw fail(scr.asked ? 'screen_unavailable' : 'invalid', { field: 'screen' });
+  // Remote Desktop needs the PC's VPN address; the screen goes out to GateControl's relay
+  if (rdpOffered && !dev.vpnIp) throw fail('no_vpn');
+  const protocol = rdpOffered ? 'rdp' : 'screen';
   const name = clip(b.name, 100) || 'Windows-PC';
   const shareMode = b.shareMode === 'open' ? 'open' : (b.shareMode === 'code' || b.shareMode == null ? null : undefined);
   if (shareMode === undefined) throw fail('invalid', { field: 'shareMode' });
-  const fields = [rdp.available === false ? 0 : 1, rdp.enabled === true ? 1 : 0, clip(b.osUser, 100) || null, clip(b.appVersion, 40) || null];
+  const fields = [rdp.available === false || edition === 'home' ? 0 : 1, rdp.enabled === true ? 1 : 0, clip(b.osUser, 100) || null, clip(b.appVersion, 40) || null];
+  const screenCols = [scr.view ? 1 : 0, scr.control ? 1 : 0, rdpOffered ? 1 : 0];
   let d = await byToken(gc, dev.id);
   if (devices.isPhone(d)) throw fail('invalid', { field: 'platform' });
   const first = !d || !d.host.registered;
   await store.tx(gc, async () => {
     if (!d) {
       const id = await devices.nextId(gc);
-      const config = { ...devices.DEFAULTS, host: dev.vpnIp, port: RDP_PORT, access_mode: 'internal', browser_enabled: true, health_check_enabled: false, credential_mode: 'none' };
+      const config = { ...devices.DEFAULTS, host: dev.vpnIp || '', port: rdpOffered ? RDP_PORT : 0, access_mode: 'internal', browser_enabled: true, health_check_enabled: false, credential_mode: 'none' };
       await store.run(gc, `INSERT INTO devices (id, name, protocol, enabled, source, config, kind, owner_user_id, token_device_id, platform, edition,
-        rdp_available, rdp_enabled, os_user, app_version, share_mode, allow_open, registered, last_seen, created_at, updated_at)
-        VALUES (?, ?, 'rdp', 1, 'app', ?, 'host', ?, ?, 'windows', ?, ?, ?, ?, ?, ?, 1, 1, ?, ?, ?)`,
-      [id, name, JSON.stringify(config), user.id, dev.id, edition, ...fields, shareMode || 'code', now, now, now]);
+        rdp_available, rdp_enabled, os_user, app_version, share_mode, allow_open, registered, last_seen, created_at, updated_at, screen_view, screen_control, rdp_offered)
+        VALUES (?, ?, ?, 1, 'app', ?, 'host', ?, ?, 'windows', ?, ?, ?, ?, ?, ?, 1, 1, ?, ?, ?, ?, ?, ?)`,
+      [id, name, protocol, JSON.stringify(config), user.id, dev.id, edition, ...fields, shareMode || 'code', now, now, now, ...screenCols]);
       // a new PC: only its owner (and the administrators) see it until the owner shares it
       await store.run(gc, "INSERT INTO device_access (device_id, kind, principal_id) VALUES (?, 'user', ?)", [id, user.id]);
       return;
     }
-    const config = { ...d.config, host: dev.vpnIp, port: RDP_PORT, access_mode: 'internal' };
+    const config = { ...d.config, host: dev.vpnIp || d.config.host || '', port: rdpOffered ? RDP_PORT : (d.config.port || 0), access_mode: 'internal' };
     // the same app installation, another owner (a token is a person's): the PC starts over, private
     if (d.host.owner !== user.id) {
       await store.run(gc, 'DELETE FROM device_access WHERE device_id = ?', [d.id]);
       await store.run(gc, "INSERT INTO device_access (device_id, kind, principal_id) VALUES (?, 'user', ?)", [d.id, user.id]);
       await store.run(gc, 'DELETE FROM codes WHERE device_id = ?', [d.id]);
     }
-    await store.run(gc, `UPDATE devices SET name = ?, config = ?, owner_user_id = ?, edition = ?, rdp_available = ?, rdp_enabled = ?, os_user = ?, app_version = ?,
-      share_mode = COALESCE(?, share_mode), registered = 1, last_seen = ?, updated_at = ? WHERE id = ?`,
-    [d.host.owner === user.id ? d.name : name, JSON.stringify(config), user.id, edition, ...fields, shareMode, now, now, d.id]);
+    await store.run(gc, `UPDATE devices SET name = ?, protocol = ?, config = ?, owner_user_id = ?, edition = ?, rdp_available = ?, rdp_enabled = ?, os_user = ?, app_version = ?,
+      share_mode = COALESCE(?, share_mode), registered = 1, last_seen = ?, updated_at = ?, screen_view = ?, screen_control = ?, rdp_offered = ? WHERE id = ?`,
+    [d.host.owner === user.id ? d.name : name, protocol, JSON.stringify(config), user.id, edition, ...fields, shareMode, now, now, ...screenCols, d.id]);
   });
+  // a switch went off: what ran over it ends (Remote Desktop: its rules; the screen: its relay)
+  if (d && d.host.registered) {
+    const support = require('./support');
+    if (d.host.screenView && !scr.view) await support.endKind(gc, d, 'screen', 'switched_off', now);
+    if (devices.rdpOffered(d) && !rdpOffered) await support.endKind(gc, d, 'rdp', 'switched_off', now);
+  }
   d = await byToken(gc, dev.id);
   if (d.host.shareMode === 'open' && !d.host.allowOpen) {
     await store.run(gc, "UPDATE devices SET share_mode = 'code' WHERE id = ?", [d.id]);
     d = await byToken(gc, dev.id);
   }
-  if (first) await log.write(gc, 'remote_host_registered', { device: d, userId: user.id, details: { edition } }, now);
+  if (first) await log.write(gc, 'remote_host_registered', { device: d, userId: user.id, details: { edition, ...(scr.view ? { screen: true } : {}), ...(rdpOffered ? {} : { rdp: false }) } }, now);
   await changed(gc, [d.id]);
   return { host: hostAnswer(d), codeRequired: devices.connectMode(d) !== 'open' };
+}
+
+/**
+ * 1.5: "Bildschirm teilen" of a PC → { view, control, asked } — only with GateControl's relay (gc.remote.screen); asked: the
+ * app wanted it (without the relay the answer says so: screen_unavailable when nothing else is left).
+ */
+function pcScreenOf(gc, b) {
+  const s = b && b.screen && typeof b.screen === 'object' ? b.screen : null;
+  const asked = !!(s && s.view === true);
+  const relay = !!(gc.remote && typeof gc.remote.screen === 'function');
+  return { view: asked && relay, control: asked && relay && s.control === true, asked };
 }
 
 /**

@@ -1,4 +1,4 @@
-<!-- version: 1.4.0 -->
+<!-- version: 1.5.0 -->
 # Fernzugriff – Handbuch
 
 ## Was das Plugin kann {#was-das-plugin-kann}
@@ -9,6 +9,8 @@ Fernzugriff ist das frühere „Remote Desktops“ von GateControl als eigenes P
 - **in den GateControl-Apps** (Android, Windows) mit RDP wie bisher. Die Apps merken vom Umzug nichts.
 
 Dazu kommen Wake-on-LAN, Wartungsfenster, eine Erinnerung an das Erneuern der Zugangsdaten, Rechte je Person und Gruppe und der Verlauf aller Sitzungen.
+
+Seit 1.5.0 kann auch ein **Windows-PC seinen Bildschirm teilen** – mit „Bildschirm teilen“ in der GateControl-App für Windows, auch mit **Windows Home**. Wer hilft, sieht den Bildschirm im Browser und darf ihn nach der Bestätigung am PC mit Maus und Tastatur steuern (siehe [Windows-Bildschirm teilen](#windows-teilen)).
 
 Seit 1.4.0 darf die helfende Person das Handy auf Wunsch auch **steuern** – tippen, wischen, schreiben, Zurück/Start/Übersicht –, wenn die Person am Handy das für diese Anfrage erlaubt. Das geht nur mit der App **von GitHub**; die App aus Google Play zeigt den Bildschirm nur (siehe [Handy steuern](#steuern)).
 
@@ -22,11 +24,12 @@ Passwörter und SSH-Schlüssel speichert nicht das Plugin, sondern der verschlü
 
 ## Voraussetzungen {#voraussetzungen}
 
+- Für „Bildschirm teilen“ am Windows-PC: GateControl **1.287.0** oder neuer und die GateControl-App für Windows (Pro) mit „Bildschirm teilen“. Maus und Tastatur so, wie sie sind (auch Tastenkombinationen, mehrere Bildschirme), bringt GateControl mit der Fernzugriff-Schnittstelle **Version 6** (GateControl 1.288.0 oder neuer); mit Version 5 geht Steuern mit Klicken, Ziehen, Scrollen und Text.
 - Zum Steuern eines Handys: GateControl mit der Fernzugriff-Schnittstelle **Version 5** (GateControl 1.287.0 oder neuer) und die GateControl-App für Android **aus GitHub** mit eingeschalteter Bedienungshilfe „GateControl-Fernsteuerung“. Mit einem älteren GateControl oder der App aus Google Play geht nur Ansehen.
 - Für die Bildschirm-Freigabe vom Handy: GateControl **1.286.0** oder neuer (Fernzugriff-Schnittstelle Version 4, Relais für den Bildstrom) und die GateControl-App für Android mit „Bildschirm freigeben“. Ein älteres GateControl lehnt die Anmeldung des Handys ab.
 - GateControl **1.285.0** oder neuer (Fernzugriff-Schnittstelle Version 3: Terminal im Kern, tmux, Host-Schlüssel, Aufzeichnung; dazu Version 2: Anmeldung der Windows-PCs, Firewall je Sitzung, stille Signale an den PC).
 - Für Aufzeichnungen: das Laufwerk `remote-recordings` aus der `docker-compose.yml` der neuen Version (GateControl und guacd). Ohne es wird nicht aufgezeichnet.
-- Für Windows-PCs aus der App: die GateControl-App für Windows (Pro) mit „Remote Desktop erlauben“ und Windows **Pro, Enterprise oder Education**. Windows Home kann keinen Remote Desktop anbieten.
+- Für Windows-PCs aus der App: die GateControl-App für Windows (Pro) mit „Remote Desktop erlauben“ und Windows **Pro, Enterprise oder Education**. Windows Home kann keinen Remote Desktop anbieten – dort gibt es „Bildschirm teilen“.
 - Eine **eigene Lizenz** für Fernzugriff: Monat, Jahr oder Lifetime des Plugins. Fernzugriff ist **nicht** im GateControl-Plan und nicht in einer Server-Lifetime-Lizenz enthalten.
 - Für Geräte im Heimnetz: ein Home-Gateway, das das Gerät erreicht.
 
@@ -89,6 +92,18 @@ Schaltet jemand in der GateControl-App für Windows **„Remote Desktop erlauben
 - **Firewall je Sitzung:** Zwischen den Sitzungen ist Port 3389 am PC zu. Für eine Sitzung öffnet die App ihn nur für genau einen Gegenüber – im Browser für GateControl selbst, in einer App für das Gerät des Helfers – und schließt ihn mit dem Ende der Sitzung, spätestens nach 8 Stunden.
 - **Schalter aus:** Der PC bleibt als „Abgemeldet“ in der Liste, der Verlauf bleibt. Offene Sitzungen enden, der Code verfällt.
 - **Raten:** Nach 5 falschen Codes in 10 Minuten muss eine Person 15 Minuten warten. Für den ganzen Server gelten 30 Versuche je Stunde. Nach 10 falschen Codes auf einen PC verfällt dessen Code.
+
+### Windows-Bildschirm teilen {#windows-teilen}
+
+In der GateControl-App für Windows steht unter **Einstellungen › Sicherheit** neben „Remote Desktop erlauben“ der Schalter **„Bildschirm teilen“** – für Hilfe: Beide sehen dasselbe, niemand wird abgemeldet. Das geht mit jeder Windows-Ausgabe, auch **Windows Home**.
+
+- **Helfen:** Im Portal den Tab Fernzugriff öffnen, **„Code eingeben“** tippen, den Code vom PC eintragen und „Ansehen und steuern“ oder „Nur ansehen“ wählen. Bietet der PC auch Remote Desktop an, wählst du die **Verbindung** („Bildschirm teilen“ oder „Remote Desktop“). Am PC erscheint die Frage mit deinem Namen; dort wählt die Person „Ablehnen“, „Nur ansehen“ oder „Ansehen und steuern“. Ohne Antwort ist nach 30 Sekunden Schluss.
+- **Während der Freigabe** steht oben auf dem Bildschirm des PCs eine rote Leiste „… sieht deinen Bildschirm“ bzw. „… steuert deinen Bildschirm“ mit **„Beenden“** (beim Steuern auch **„Nur ansehen“**). Beenden trennt sofort, gedrückte Tasten werden losgelassen. Danach zeigt der PC einen neuen Code.
+- **Steuern:** Maus und Tastatur gehen so an den PC, wie du sie benutzt – auch Tastenkombinationen. Was dein eigener Browser oder dein System abfängt (z. B. Alt+Tab), kommt nicht an. Einfügen schreibt Text. Hat der PC mehrere Bildschirme, wählst du oben in der Leiste, welchen du siehst.
+- **Was nicht geht:** Die Windows-Abfrage für Administratorrechte (UAC), der Sperr- und Anmeldebildschirm und Strg+Alt+Entf lassen sich nicht fernbedienen – das kann nur die Person am PC. Solange so etwas offen ist, steht das Bild still und ein Hinweis erscheint.
+- **Ohne Code für Berechtigte** spart beim Bildschirm nur den Code: **die Frage am PC bleibt immer.**
+- **Über den Server:** Bild und Eingaben laufen über deinen GateControl-Server wie beim Handy. Er reicht sie nur weiter, speichert nichts und schreibt keine Eingabe ins Protokoll – es ist aber keine Ende-zu-Ende-Verschlüsselung.
+- Für das Teilen braucht der PC kein offenes Port und keine VPN-Adresse; Remote Desktop braucht sie weiter.
 
 ### Handy-Bildschirm freigeben {#handy}
 
@@ -192,6 +207,13 @@ Das Recht wird bei jedem Verbinden neu geprüft.
 **„Zu viele falsche Codes“:** Warte 15 Minuten oder lass dir am PC einen neuen Code zeigen.
 
 **Im Browser fragt Windows nach der Anmeldung nicht:** Verlangt der PC die Anmeldung auf Netzwerkebene (NLA), braucht die Sitzung im Browser Benutzername und Passwort, die die Sitzungsseite noch nicht abfragt. Verbinde dich dann aus der GateControl-App.
+
+## Neu in 1.5.0 {#neu-1-5-0}
+
+- **Windows-Bildschirm teilen** – „Bildschirm teilen“ in der GateControl-App für Windows, auch mit **Windows Home**: ansehen und nach der Bestätigung am PC mit Maus und Tastatur steuern, über dasselbe Relais wie die Handys.
+- **Die Person am PC entscheidet jedes Mal** („Nur ansehen“ / „Ansehen und steuern“) und sieht oben eine Leiste mit „Beenden“; auch „ohne Code“ fragt der PC.
+- **Portal:** bei einem PC mit Remote Desktop und Bildschirm die Wahl der Verbindung; Geräte-Liste mit „Windows · Bildschirm teilen“.
+- Windows Home erscheint jetzt unter Geräte, sobald „Bildschirm teilen“ an ist.
 
 ## Neu in 1.4.0 {#neu-1-4-0}
 
