@@ -28,7 +28,7 @@ Passwörter und SSH-Schlüssel speichert nicht das Plugin, sondern der verschlü
 
 ## Voraussetzungen {#voraussetzungen}
 
-- Für „Schlüssel automatisch einrichten“, das Beenden von tmux-Sitzungen und Codes für den Linux-Agent auf der Admin-Seite: GateControl mit der Fernzugriff-Schnittstelle **Version 9**. Mit einem älteren GateControl fehlen diese Knöpfe; „SSH-Schlüssel erzeugen“ bleibt, und den Code für den Agent erzeugst du wie bisher unter Benutzer › Gerät hinzufügen.
+- Für „Schlüssel automatisch einrichten“, das Beenden von tmux-Sitzungen und Codes für den Linux-Agent auf der Admin-Seite: GateControl mit der Fernzugriff-Schnittstelle **Version 9** (GateControl **1.297.0** oder neuer). Mit einem älteren GateControl fehlen diese Knöpfe; „SSH-Schlüssel erzeugen“ bleibt, und den Code für den Agent erzeugst du wie bisher unter Benutzer › Gerät hinzufügen.
 - Für den neuen Dialog „Gerät hinzufügen“: GateControl mit der Fernzugriff-Schnittstelle **Version 7** (GateControl **1.292.0** oder neuer). Mit einem älteren GateControl bleibt das bisherige Formular mit Reitern.
 - Für Linux-Geräte: GateControl **1.289.0** oder neuer und auf dem Rechner der Agent **gatecontrol-agent** (siehe [Linux-Geräte](#linux)).
 - Für „Bildschirm teilen“ am Windows-PC: GateControl **1.287.0** oder neuer und die GateControl-App für Windows (Pro) mit „Bildschirm teilen“. Maus und Tastatur so, wie sie sind (auch Tastenkombinationen, mehrere Bildschirme), bringt GateControl mit der Fernzugriff-Schnittstelle **Version 6** (GateControl 1.288.0 oder neuer); mit Version 5 geht Steuern mit Klicken, Ziehen, Scrollen und Text.
@@ -324,7 +324,7 @@ Das Recht wird bei jedem Verbinden neu geprüft.
 - **„Anmeldung fehlgeschlagen“** auf der Karte, wenn das Terminal abgewiesen wurde, mit dem passenden Knopf.
 - **Linux-Gerät mit Agent:** Code, fertiger Befehl und Live-Status direkt auf der Admin-Seite; wartende Codes als Platzhalter in der Liste. **Mit Agent verbinden** stellt ein von Hand angelegtes Gerät auf den Agent um – ein Gerät statt zwei.
 - **tmux:** Fenster ansehen, Sitzungen beenden, Fenster schließen, alle getrennten Sitzungen beenden – im Portal, auf der Admin-Seite und in den Apps.
-- Braucht GateControl mit der Fernzugriff-Schnittstelle Version 9; mit einem älteren GateControl bleibt alles wie bisher, die neuen Knöpfe fehlen.
+- Braucht GateControl mit der Fernzugriff-Schnittstelle Version 9 (GateControl 1.297.0 oder neuer); mit einem älteren GateControl bleibt alles wie bisher, die neuen Knöpfe fehlen.
 
 ## Neu in 1.7.2 {#neu-1-7-2}
 

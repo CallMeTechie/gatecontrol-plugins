@@ -28,7 +28,7 @@ Passwords and SSH keys are not stored by the plugin but in GateControl's encrypt
 
 ## Requirements {#voraussetzungen}
 
-- For “Set up the key automatically”, ending tmux sessions and codes for the Linux agent on the admin page: GateControl with remote access interface **version 9**. With an older GateControl these buttons are missing; “Generate SSH key” stays, and you make the code for the agent as before under Users › Add device.
+- For “Set up the key automatically”, ending tmux sessions and codes for the Linux agent on the admin page: GateControl with remote access interface **version 9** (GateControl **1.297.0** or newer). With an older GateControl these buttons are missing; “Generate SSH key” stays, and you make the code for the agent as before under Users › Add device.
 - To control a phone: GateControl with remote access interface **version 5** (GateControl 1.287.0 or newer) and the GateControl app for Android **from GitHub** with the accessibility service "GateControl remote control" switched on. With an older GateControl or the app from Google Play only viewing works.
 - For screen sharing from a phone: GateControl **1.286.0** or newer (remote access interface version 4, the relay of the picture) and the GateControl app for Android with "Share screen". An older GateControl refuses the phone's registration.
 - GateControl **1.285.0** or newer (remote access interface version 3: terminal in the core, tmux, host keys, recording; plus version 2: registration of the Windows PCs, firewall per session, silent signals to the PC).
@@ -324,7 +324,7 @@ The right is checked again on every connect.
 - **“Sign-in failed”** on the card when the terminal was refused, with the fitting button.
 - **Linux device with agent:** code, finished command and live state right on the admin page; waiting codes as placeholders in the list. **Connect with the agent** switches a device made by hand to the agent – one device instead of two.
 - **tmux:** see the windows, end sessions, close windows, end all detached sessions – in the portal, on the admin page and in the apps.
-- Needs GateControl with remote access interface version 9; with an older GateControl everything stays as it was, the new buttons are missing.
+- Needs GateControl with remote access interface version 9 (GateControl 1.297.0 or newer); with an older GateControl everything stays as it was, the new buttons are missing.
 
 ## New in 1.7.2 {#neu-1-7-2}
 
