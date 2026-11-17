@@ -3,6 +3,40 @@
 Chats zwischen den GateControl-Konten – in der GateControl-App (eigener Tab „Chats“), im
 Windows-Client und im Portal (eigener Tab „Chats“). Alles bleibt auf dem eigenen Server.
 
+## 1.27.0
+**Versandweg, Standort über Brücken, Ortsnachrichten.** Braucht GateControl ≥ 1.296.0 (`gc.bridges` Version 14 für
+den Standort über eine Brücke).
+- **„Nachrichten senden über“ pro Person:** `person.replyPref` (`auto` | `gatecontrol` | Netz) in jeder Personen-Antwort,
+  `PUT persons/:id { replyPref }` (nur eigene Person; ein Weg, den die Person nicht hat → `400 bad_request`).
+  `person.reply` folgt der Wahl; kann der gewählte Weg gerade nicht senden, geht es über GateControl
+  (`person.reply.fallback: true`). Eine Antwort auf eine Nachricht geht weiter über deren Weg. Migration 016
+  (`persons.reply_pref`).
+- **Standort über WhatsApp und Telegram** (`gc.bridges` Version 14): `bridge.supports` nennt `location`, wenn die Brücke
+  des Netzes Standorte sendet (`status().networks[].location`; Signal nie); `kind: 'location'` geht dann als echte
+  Standortnachricht hinaus (`send(…, { location: { lat, lon, label }, replyTo })`). Vor Version 14 bleibt es bei
+  `bridge_text_only`.
+- **Eingehender Brücken-Standort** (Platzhalter mit `geo`) wird eine echte Nachricht der Art `location`
+  `{ lat, lon, label }` (Bezeichnung ohne das „Location:“ der Brücke), Push „Standort: …“. Ohne gültige Koordinaten
+  bleibt der Platzhalter.
+- **Ortsnachrichten** („Beim Ankommen senden“, `features.placeMessages`): `GET/POST place-messages`,
+  `PUT/DELETE place-messages/:id`, `POST place-messages/:id/fire { at, deviceId }`. Der Ort wird versiegelt für das
+  Handy gespeichert, der Server erfährt nie die Position; die gesendete Nachricht trägt `meta.placeMessage { name,
+  trigger }` (nur in der eigenen Ansicht). Grenzen: 10 aktive (`limit`), einmal pro Stunde (`too_soon`), höchstens 30
+  Minuten verspätet (`expired`), Radius 100–2000 m (Vorgabe 150), Text bis 1000 Zeichen, nur Chats, in die man schreiben
+  darf. Ereignis `place_messages.changed` an die eigenen Geräte (GateControl nimmt nur kleingeschriebene Ereignisnamen).
+- **Portal:** Chat-Info „Nachrichten senden über“ (Automatisch · gerade X / Immer GateControl / Immer <Netz>) mit Hinweis
+  zu Antworten; Hinweis unter dem Schreibfeld, wenn der gewählte Weg nicht verbunden ist. Plus-Menü zeigt alles, was die
+  Person über irgendeinen Weg empfangen kann: Abstimmung, Termin und Haus-Aktionen mit GateControl-Logo gehen an den
+  GateControl-Chat (nur mit GateControl-Weg), Standort ohne Logo über den Textweg, wenn dessen Brücke ihn kann, sonst mit
+  Logo über GateControl; Dateien folgen dem Textweg. Eingehender Brücken-Standort als Standortkarte, Ortszeile
+  „Ortsnachricht · <Ort>“ an der eigenen Nachricht.
+- **Portal, ruhigeres Schreibfeld:** Die Hinweisleiste „Geht über WhatsApp. Die Verschlüsselung … endet an der Brücke …“
+  über dem Schreibfeld entfällt (Text `person.wa_hint` entfernt); der Platzhalter „Nachricht über <Dienst>“ nennt den
+  Weg. In der Kopfzeile einer Person stehen unter dem Namen nur noch die Logos der Wege (title/aria-label „über
+  <Dienst>“) statt „GateControl · WhatsApp“.
+- Mock-Host: `gc.bridges` Version 14 (`status().networks[].location`, `send` mit `location`; Signal `ERR_INVALID` /
+  `unsupported`). Die Fähigkeit kommt allein aus `status().networks[].location`. Tests in `test/versandweg.test.js`.
+
 ## 1.26.0
 **Alte Medien vom Handy nachladen** — für GateControl mit `gc.bridges` Version 13. **Braucht GateControl ≥ 1.295.0.**
 - **Platzhalter statt englischer Brücken-Notiz:** Eine WhatsApp-Datei aus dem Verlauf, deren Kopie bei WhatsApp

@@ -75,6 +75,12 @@ const STATUS = {
   mail_missing: 409,
   // 1.21.0: persons — these chats cannot be one person (reason: group | channel | not_direct | two_accounts | one_way)
   cannot_merge: 409,
+  // 1.27.0: „Nachrichten senden über“ names a way the person does not have; place messages — more than 10 active, sent
+  // less than an hour ago, went off more than 30 minutes ago
+  bad_request: 400,
+  limit: 409,
+  too_soon: 409,
+  expired: 409,
   internal: 500,
 };
 

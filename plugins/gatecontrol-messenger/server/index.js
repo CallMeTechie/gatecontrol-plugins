@@ -367,6 +367,8 @@ module.exports = {
     }
     // 1.21.0: persons whose ways went (a conversation deleted) — nothing else is kept of them
     try { await store.tx(gc, () => require('./persons').tidy(gc)); } catch (e) { gc.log.warn('persons tidy failed', (e && (e.code || e.message)) || 'error'); }
+    // 1.27.0: place messages whose chat went
+    try { await store.tx(gc, () => require('./placemsgs').tidy(gc)); } catch (e) { gc.log.warn('place messages tidy failed', (e && (e.code || e.message)) || 'error'); }
     // 1.9.0: the group chats of GateControl groups — after a start and every 6 hours
     try { await groupchats.tick(gc, Date.now()); } catch (e) { gc.log.warn('group chats tick failed', (e && (e.code || e.message)) || 'error'); }
     return out;

@@ -52,6 +52,11 @@
 // like any other (bridgemedia.js, with the virus scan); an edit with oldMedia { request: 'failed' } marks it failed.
 // Never the bridge's text on such a placeholder.
 //
+// 1.27.0 (GateControl with gc.bridges version 14): a location crosses — to the networks whose bridge sends one (status()
+// networks[].location: WhatsApp and Telegram, not Signal), as m.location; the conversation's bridge.supports then names
+// 'location'. A location that comes in (the bridge's placeholder with geo) is filed as a real message of kind
+// 'location' { lat, lon, label } — every app shows its normal map card.
+//
 // Clients that do not know bridged chats never see one: every route answers 404 for a bridged conversation unless
 // the request says ?bridged=1 (or `bridged: true` in its body — the buttons of a push; README "App-API", since 1.14.0).
 
@@ -86,6 +91,22 @@ const SUPPORTS = ['text', 'reply', 'reaction', 'edit', 'delete', 'read', 'typing
 const PLACEHOLDERS = ['image', 'video', 'audio', 'voice', 'file', 'sticker', 'location', 'unsupported', 'view_once'];
 // 1.26.0: the kinds of an old file and what became of the request to the phone (bridgemedia.OLD_STATES)
 const OLD_KINDS = ['image', 'video', 'audio', 'voice', 'file', 'sticker'];
+
+/**
+ * 1.27.0: a location of the bridge (media { kind: 'location', geo: { lat, lon } }, the caption its name) → meta.location
+ * { lat, lon, label }, or null (no valid geo — it stays a placeholder). A caption that is only the geo URI or a map link
+ * is no name.
+ */
+function inLocation(m, caption) {
+  if (!m || typeof m !== 'object' || m.kind !== 'location' || !m.geo || typeof m.geo !== 'object') return null;
+  const lat = Number(m.geo.lat);
+  const lon = Number(m.geo.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+  let label = typeof caption === 'string' ? caption.replace(/\s+/g, ' ').trim() : '';
+  label = label.replace(/^(location|standort)\s*:\s*/i, '');
+  if (/^(geo:|https?:\/\/)\S*$/i.test(label)) label = '';
+  return { lat, lon, label: label ? label.slice(0, 200) : null };
+}
 
 /** 1.26.0: message.oldMedia → meta.bridge of a placeholder (kind, a file's name, `old`: off | daily | now | failed). */
 function oldPlaceholder(o) {
@@ -128,6 +149,33 @@ const reasonOf = (e) => (e && typeof e.reason === 'string' && REASON_RE.test(e.r
 
 // ─── state of a person's link (what the conversation view shows) ───────────
 
+/** gc.bridges.status() once per request (ctx.bridgeState.host). */
+async function hostOf(ctx) {
+  const c = ctx.bridgeState || (ctx.bridgeState = { host: null, links: new Map(), allowed: new Map() });
+  if (!c.host) {
+    let s = null;
+    try { s = api(ctx.gc) ? await ctx.gc.bridges.status() : null; } catch { s = null; }
+    c.host = s && typeof s === 'object' ? s : { available: false };
+  }
+  return c.host;
+}
+
+/** 1.27.0: gc.bridges that sends a location (version ≥ 14), else null. */
+function locationApi(gc) {
+  const b = api(gc);
+  return b && Number(b.version) >= 14 ? b : null;
+}
+
+/** 1.27.0: does the bridge of this network send a location (status() networks[].location; version ≥ 14)? */
+async function takesLocation(ctx, net) {
+  if (!locationApi(ctx.gc)) return false;
+  const h = await hostOf(ctx);
+  const n = (Array.isArray(h.networks) ? h.networks : []).find((x) => x && x.id === net);
+  if (!n) return false;
+  // what the server says per network (WhatsApp, Telegram: true; Signal: false) — never guessed from the name
+  return n.location === true;
+}
+
 /**
  * The state of the bridge for one person and network, without asking the bridge:
  *   ok | off (not offered / switched off) | unreachable (does not run) | logged_out (the service dropped the linked
@@ -135,12 +183,8 @@ const reasonOf = (e) => (e && typeof e.reason === 'string' && REASON_RE.test(e.r
  * `cache` (per request): { host, links: Map }.
  */
 async function stateFor(ctx, userId, net) {
-  const c = ctx.bridgeState || (ctx.bridgeState = { host: null, links: new Map(), allowed: new Map() });
-  if (!c.host) {
-    let s = null;
-    try { s = api(ctx.gc) ? await ctx.gc.bridges.status() : null; } catch { s = null; }
-    c.host = s && typeof s === 'object' ? s : { available: false };
-  }
+  await hostOf(ctx);
+  const c = ctx.bridgeState;
   const n = c.host.available && c.host.enabled ? (c.host.networks || []).find((x) => x.id === net) : null;
   if (!n || !n.enabled) return 'off';
   const k = `${userId}:${net}`;
@@ -179,6 +223,8 @@ async function convInfo(ctx, conv) {
   const state = await stateFor(ctx, conv.bridge_owner, conv.bridge_net);
   // 1.15.0: files cross (GateControl with gc.bridges version 4) — `mediaTypes` names what the bridge takes per kind
   const media = !!bridgemedia.api(ctx.gc);
+  // 1.27.0: a location crosses (gc.bridges version 14, the networks whose bridge sends one)
+  const loc = await takesLocation(ctx, conv.bridge_net);
   return {
     network: conv.bridge_net, label: LABEL[conv.bridge_net] || conv.bridge_net, state, closed: !!conv.bridge_closed,
     // 1.20.0: a channel (only the channel writes; reactions: the person's own — 'own' — or none after the bridge refused
@@ -188,7 +234,7 @@ async function convInfo(ctx, conv) {
     // 1.24.0: a chat with a Telegram bot; the member count of a group as the service reports it
     ...(conv.bridge_bot ? { bot: true } : {}),
     ...(Number.isSafeInteger(conv.bridge_members) && conv.bridge_members > 0 && conv.kind === 'group' ? { members: conv.bridge_members } : {}),
-    supports: media ? SUPPORTS.concat(bridgemedia.SUPPORTS) : SUPPORTS,
+    supports: [...SUPPORTS, ...(media ? bridgemedia.SUPPORTS : []), ...(loc ? ['location'] : [])],
     ...(media ? { mediaTypes: { image: bridgemedia.OUT_TYPES.image, video: bridgemedia.OUT_TYPES.video, voice: bridgemedia.OUT_TYPES.voice, file: null } } : {}),
   };
 }
@@ -471,7 +517,12 @@ async function apply(c, ev, { parked = false } = {}) {
     else if (ev.tooLarge === true) { meta.bridge = { placeholder: 'file', name: null, reason: 'too_large' }; text = null; }
     // 1.26.0: an old WhatsApp file (its copy at WhatsApp ran out) — the caption stays the text
     else if (ev.oldMedia && typeof ev.oldMedia === 'object' && !Array.isArray(ev.oldMedia)) meta.bridge = oldPlaceholder(ev.oldMedia);
-    else if (ev.kind === 'media') {
+    // 1.27.0: a location — a real message of kind 'location' (the map card in every app), no placeholder
+    else if (ev.kind === 'media' && inLocation(ev.media, text)) {
+      kind = 'location';
+      meta.location = inLocation(ev.media, text);
+      text = null;
+    } else if (ev.kind === 'media') {
       // 1.15.0: the file's reference and details too — fetched afterwards into the media of this plugin (bridgemedia.js)
       meta.bridge = bridgemedia.placeholderOf(ev.media && typeof ev.media === 'object' ? ev.media : {}, PLACEHOLDERS);
     } else if (ev.kind !== 'text' && ev.kind !== 'notice') { meta.bridge = { placeholder: 'unsupported', name: null }; text = null; }
@@ -791,6 +842,8 @@ async function push(gc, job, users, now) {
   const ph = job.meta && job.meta.bridge ? job.meta.bridge.placeholder : null;
   let text = typeof job.text === 'string' ? job.text : '';
   if (ph) text = [t(lang, 'bridgechat.placeholder.' + ph), text].filter(Boolean).join(': ');
+  // 1.27.0: a location — „Standort: <name>“
+  else if (row.kind === 'location') text = [t(lang, 'bridgechat.placeholder.location'), job.meta && job.meta.location ? job.meta.location.label : null].filter(Boolean).join(': ');
   text = text.replace(/\s+/g, ' ').trim();
   const n = {
     topic: 'message',
@@ -846,11 +899,19 @@ function writable(conv) {
  * otherwise; infected / blocked files are refused by messages.send as everywhere), in a type the bridge takes
  * (bridge_media_type, reason = the kind). Everything else is refused before anything is stored.
  */
-async function checkBody(ctx, b) {
+async function checkBody(ctx, b, conv = null) {
   const x = b && typeof b === 'object' && !Array.isArray(b) ? b : null;
   if (!x) throw fail('invalid');
   const kind = x.kind == null ? 'text' : x.kind;
-  for (const k of ['location', 'poll', 'event', 'arrival', 'action', 'replyStory']) if (x[k] != null) throw fail('bridge_text_only', { reason: 'kind' });
+  // 1.27.0: a location to a network whose bridge sends one (gc.bridges version 14)
+  const loc = kind === 'location' && !!conv && !bridgestatus.isStatus(conv) && await takesLocation(ctx, conv.bridge_net);
+  for (const k of ['location', 'poll', 'event', 'arrival', 'action', 'replyStory']) if (x[k] != null && !(k === 'location' && loc)) throw fail('bridge_text_only', { reason: 'kind' });
+  if (kind === 'location') {
+    if (!loc) throw fail('bridge_text_only', { reason: 'kind' });
+    for (const k of ['mediaId', 'thumbMediaId', 'video', 'meta']) if (x[k] != null) throw fail('bridge_text_only', { reason: 'kind' });
+    if (typeof x.text === 'string' && x.text.trim()) throw fail('invalid');
+    return;
+  }
   if (kind === 'text') {
     for (const k of ['mediaId', 'thumbMediaId', 'video', 'meta']) if (x[k] != null) throw fail('bridge_text_only', { reason: 'kind' });
     return;
@@ -884,8 +945,12 @@ async function deliver(ctx, b, conv, row) {
     const f = await store.one(ctx.gc, 'SELECT mime FROM media WHERE media_id = ?', [row.media_id]);
     media = bridgemedia.outMedia(row, f || {});
   }
+  // 1.27.0: a location (gc.bridges version 14) — m.location at the bridge, its name as the body
+  const lm = row.kind === 'location' ? (require('./messages').metaOf(row) || {}).location : null;
+  const location = lm ? { lat: lm.lat, lon: lm.lon, ...(lm.label ? { label: lm.label } : {}) } : null;
   try {
-    const r = await b.send(ctx.viewer, conv.bridge_net, conv.bridge_ref, { txnId: txnOf(row), ...(media ? { media, ...(text ? { text } : {}) } : { text }), ...(replyTo ? { replyTo } : {}) });
+    const what = location ? { location } : (media ? { media, ...(text ? { text } : {}) } : { text });
+    const r = await b.send(ctx.viewer, conv.bridge_net, conv.bridge_ref, { txnId: txnOf(row), ...what, ...(replyTo ? { replyTo } : {}) });
     ext = r && EVENT_RE.test(String(r.id || '')) ? r.id : null;
     if (!ext) reason = 'bad_answer';
   } catch (e) {
@@ -1093,7 +1158,7 @@ async function catchUpStatus(ctx) {
 }
 
 module.exports = {
-  api, isBridged, via, convInfo, marks, marksFor, decorate, apply, applyEphemeral, pump, sweep, push, gate, writable, checkBody, sendOut, resend, editOut, deleteOut, reactOut, readOut, typingOut,
+  api, locationApi, takesLocation, isBridged, via, convInfo, marks, marksFor, decorate, apply, applyEphemeral, pump, sweep, push, gate, writable, checkBody, sendOut, resend, editOut, deleteOut, reactOut, readOut, typingOut,
   refreshLinks, stateFor, hasChats, openChat, mapped, fixNames, catchUpStatus, toStatusRoom, titleFor, titleLabel, NETWORKS, LABEL, SUPPORTS, PLACEHOLDERS, LARGE_GROUP,
   _reset: () => { linkChecked.clear(); pumping = Promise.resolve(); namesFixed = false; catchUpAt.clear(); },
 };

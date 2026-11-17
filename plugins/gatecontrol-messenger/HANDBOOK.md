@@ -1,4 +1,4 @@
-<!-- version: 1.26.0 -->
+<!-- version: 1.27.0 -->
 # Messenger
 
 ## What the plugin does
@@ -73,6 +73,15 @@ It only comes when linking and appears at night. When “Load older history” i
 
 **Old messages are gone.**
 The administrator set a retention, or the chat is a disappearing chat.
+
+## New in 1.27.0
+
+- **Send messages via:** when a person has several ways (GateControl and WhatsApp), choose in the chat info under “Send messages via”: **Automatic** (the way of their last message, as before), **Always GateControl** or **Always WhatsApp** (or Signal, Telegram). When WhatsApp is not connected right now, the message goes via GateControl and the line under the composer says “WhatsApp not connected”. When you reply to a particular message, the reply still goes the way of that message. The choice holds in the portal, the app and the Windows client.
+- **Calmer composer:** the line above the composer (“Goes via WhatsApp …”) is gone. The composer itself says which way your message takes (“Message via WhatsApp”). The header shows only the logos of the ways under the name.
+- **Full plus menu:** even when your text goes via WhatsApp, the plus menu offers polls, events and home actions. They carry the GateControl logo and go to the person's GateControl chat (only when they have a GateControl account).
+- **Location via WhatsApp and Telegram:** a location goes out as a real location message when the chat runs via WhatsApp or Telegram. Via Signal it goes, with the GateControl logo, to the GateControl chat (Signal has no location message). A location someone sends you via WhatsApp or Telegram shows as a map. Needs GateControl with the new bridge version.
+- **Place messages:** in the Android app a message can be sent automatically when you reach or leave a place (“Send on arrival”). The phone watches the place itself; the server never learns where you are. At most 10 active ones, each at most once an hour; without network it is sent up to 30 minutes later. Your own message shows a small “Place message · Home”; the recipients see only the text.
+- Needs GateControl 1.296.0 or newer.
 
 ## New in 1.26.0
 

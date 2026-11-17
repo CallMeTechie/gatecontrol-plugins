@@ -100,6 +100,10 @@
 //   { mode, options, dailyAt, timeZone } and configure({ mediaRequests: 'off' | 'daily' | 'now' }) —
 //   host.bridges.mediaRequests is the mode. Events with message.oldMedia / edit.media / edit.oldMedia are delivered as
 //   the test writes them (host.bridges.deliver).
+// Version 14 (a location over the bridge; createHost(dir, { bridges: { …, version: 14 } })): status().networks[].location
+//   (whatsapp, telegram: true; signal: false) and send(…, { txnId, location: { lat, lon, label? }, replyTo? }) — m.location
+//   at the bridge; to a network without location ERR_INVALID / unsupported; with text, media or edit ERR_INVALID. Sent rows: { op: 'send', …, text: null,
+//   location: { lat, lon, label }, replyTo }.
 // events.pull / events.ack need no person; chats() a request of that person; send / react / redact / read / typing a
 // changing request of that person, their own chat (else ERR_INVALID 'unknown chat'), a bridge that runs.
 //
@@ -133,6 +137,8 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
   const v11 = !!(o && o.version >= 11);
   // version 13: old media from the phone
   const v13 = !!(o && o.version >= 13);
+  // version 14: a location over the bridge
+  const v14 = !!(o && o.version >= 14);
   // version 10: Signal next to WhatsApp
   const NETS = v11 ? ['whatsapp', 'signal', 'telegram'] : (v10 ? ['whatsapp', 'signal'] : NETWORKS);
   const host = !!o;
@@ -146,7 +152,7 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
     host: { state: o && o.running ? 'running' : null, error: null, running: !!(o && o.running), memMb: o && o.running ? 88 : null, outdated: false, probe: null },
     logins: new Map(), processes: new Map(), log: [], seq: 0, oddStep: null, elsewhere: new Map(),
   };
-  const version = o && [1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13].includes(o.version) ? o.version : 2;
+  const version = o && [1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14].includes(o.version) ? o.version : 2;
   Object.assign(st, { inbox: [], inboxSeq: 0, chats: new Map(), sent: [], failSend: null, wake: null });
   Object.assign(st, { files: new Map(), fetches: [], numbers: new Map(), lookups: new Map(), dms: new Map(), failFetch: null });
   Object.assign(st, { contacts: [], contactRefs: new Map(), contactDms: new Map() });
@@ -175,6 +181,7 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
           ...(version >= 2 ? { outdated: up && st.host.outdated === true, wantVersion: '0.2610.0' } : {}),
           ...(version >= 5 ? { clientOutdated: [...st.logins.values()].some((l) => l.some((x) => x.clientOutdated)) } : {}),
           ...(v10 ? { flows: [...NET_FACTS[id].flows], history: { ...NET_FACTS[id].history }, needs: noApp ? 'app' : (st.needs[id] || null), scriptNeeded: NET_FACTS[id].scriptNeeded } : {}),
+          ...(v14 ? { location: id !== 'signal' } : {}),
         };
       }),
       ...(v10 ? { stickers: { animated: st.stickers } } : {}),
@@ -410,6 +417,21 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
         if (c.txns.has(key)) return { id: c.txns.get(key) };
         const id = `$out${++st.seq}`;
         out('send', userId, network, chatId, { txnId: m.txnId, text: typeof m.text === 'string' && m.text.trim() ? m.text : null, replyTo: m.replyTo || null, edit: null, media: { ...m.media }, mime: file.mime, bytes: file.bytes, id });
+        c.txns.set(key, id);
+        return { id };
+      }
+      // version 14: a location (m.location at the bridge) — only where the bridge sends one
+      if (v14 && m && m.location != null) {
+        const l = m.location && typeof m.location === 'object' && !Array.isArray(m.location) ? m.location : null;
+        const ok = l && typeof l.lat === 'number' && Number.isFinite(l.lat) && Math.abs(l.lat) <= 90 && typeof l.lon === 'number' && Number.isFinite(l.lon) && Math.abs(l.lon) <= 180
+          && (l.label == null || (typeof l.label === 'string' && l.label.length <= 200));
+        if (!ok || m.edit != null || m.media != null || (typeof m.text === 'string' && m.text.trim()) || !TXN_RE.test(String(m.txnId || ''))) throw hostError('ERR_INVALID', 'location: { lat, lon, label? }');
+        if (m.replyTo != null && !EVENT_RE.test(String(m.replyTo))) throw hostError('ERR_INVALID', 'replyTo: a message id');
+        if (network === 'signal') throw err('ERR_INVALID', 'this network sends no location', 'unsupported');
+        const key = `${userId}|${m.txnId}`;
+        if (c.txns.has(key)) return { id: c.txns.get(key) };
+        const id = `$out${++st.seq}`;
+        out('send', userId, network, chatId, { txnId: m.txnId, text: null, location: { lat: l.lat, lon: l.lon, label: l.label || null }, replyTo: m.replyTo || null, edit: null, id });
         c.txns.set(key, id);
         return { id };
       }

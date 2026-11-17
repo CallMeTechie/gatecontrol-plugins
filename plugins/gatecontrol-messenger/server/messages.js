@@ -133,6 +133,8 @@ async function view(ctx, me, r, rc, reacts, replies, hiddenReplies) {
     poll: null, event: null, arrival: null, action: null, card: null, replyStory: null,
     // 1.14.0: only in a bridged chat (bridgechats.decorate)
     bridge: null,
+    // 1.27.0: sent by a place message — { name, trigger: enter | exit }, only in the sender's own view (never where)
+    placeMessage: null,
   };
   if (mine && rc) {
     base.status = rc.readUpTo != null && r.id <= rc.readUpTo ? 'read' : (rc.deliveredUpTo != null && r.id <= rc.deliveredUpTo ? 'delivered' : 'sent');
@@ -150,6 +152,7 @@ async function view(ctx, me, r, rc, reacts, replies, hiddenReplies) {
     base.system = m.system && typeof m.system === 'object' ? m.system : { event: 'notice' };
   }
   if (r.kind === 'location' && m.location) base.location = m.location;
+  if (mine && m.placeMessage && typeof m.placeMessage === 'object') base.placeMessage = { name: m.placeMessage.name || null, trigger: m.placeMessage.trigger === 'exit' ? 'exit' : 'enter' };
   const metaOut = {};
   for (const k of ['durationMs', 'waveform', 'w', 'h', 'fileName']) if (m[k] != null) metaOut[k] = m[k];
   base.meta = Object.keys(metaOut).length ? metaOut : null;
@@ -419,6 +422,8 @@ async function send(ctx, conv, me, members, body) {
   }
   if (kind === 'location') meta.location = cleanLocation(b.location);
   else if (b.location != null) throw fail('invalid');
+  // 1.27.0: a text a place message sends (placemsgs.fire) — the place's name and enter | exit, never its coordinates
+  if (ctx.placeMessage && kind === 'text') meta.placeMessage = { name: ctx.placeMessage.name, trigger: ctx.placeMessage.trigger };
   const id = await insert(ctx, conv, { senderId: ctx.viewer, clientId: b.clientId, kind, text, replyTo, mediaId: media && media.mediaId, thumbId: thumb && thumb.mediaId, meta });
   if (media) await bindMedia(ctx, media, { convId: conv.id, msgId: id, role: 'file', kind });
   if (thumb) await bindMedia(ctx, thumb, { convId: conv.id, msgId: id, role: 'thumb', kind });

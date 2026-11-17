@@ -13,7 +13,10 @@
 //               reply, … }; the other ways leave the list (`folded`).
 //   reply       a message to the person goes over the way of the newest incoming message (a tie: GateControl; none:
 //               GateControl) — never chosen in the composer. A bridged way that cannot send right now (bridge away,
-//               logged out) gives way to GateControl.
+//               logged out) gives way to GateControl. 1.27.0: „Nachrichten senden über“ in the chat info — replyPref
+//               'gatecontrol' or a network ('whatsapp' …) holds that way while it can send; while it cannot, the chat
+//               inside GateControl takes over (person.reply.fallback); 'auto' (the default) as before. An answer to a
+//               message still goes back that message's way.
 //   settings    mute, notifications and archive hold for the person: a change on one way is copied to the others.
 //   pushes      name the person and the way: „Jenny Backes · über WhatsApp“.
 //   suggestions GateControl recognises a bridged chat as an account (gc.bridges.matchAccounts, version 8 — the server
@@ -37,6 +40,8 @@ const PAGE_DEFAULT = 50;
 const PAGE_MAX = 100;
 const SEARCH_RESULTS = 50;
 const LABEL = { gatecontrol: 'GateControl', whatsapp: 'WhatsApp', signal: 'Signal', telegram: 'Telegram' };
+// 1.27.0: the choice of „Nachrichten senden über“ (persons.reply_pref; NULL = auto)
+const PREF_RE = /^[a-z]{2,20}$/;
 
 // per host (gc): `${viewer}|${net}` → when matchAccounts was last asked
 const askedBy = new WeakMap();
@@ -139,11 +144,19 @@ async function lastIncoming(gc, me) {
 
 /**
  * The way an answer takes: the way of the newest incoming message (a tie: GateControl), none: GateControl, else the
- * lead. A bridged way that cannot send gives way to GateControl. → the view of that way.
+ * lead. A bridged way that cannot send gives way to GateControl. 1.27.0: the person's replyPref (not 'auto') first —
+ * while that way can send it is taken; while it cannot, the chat inside GateControl (→ fallback: true); a replyPref whose
+ * way is gone counts as 'auto'. → { view, fallback } of that way, or null.
  */
-async function replyWay(ctx, ways, views) {
+async function replyWay(ctx, ways, views, pref = null) {
   const byId = new Map(views.map((v) => [v.id, v]));
   const gcWay = ways.find((w) => !w.conv.bridge_net);
+  const sends = (w) => { const v = w ? byId.get(w.conv.id) : null; return !!(v && v.can && v.can.send); };
+  if (pref && pref !== 'auto') {
+    const want = ways.find((w) => wayOf(w.conv) === pref);
+    if (want && sends(want)) return { view: byId.get(want.conv.id) || null, fallback: false };
+    if (want && gcWay && gcWay !== want) return { view: byId.get(gcWay.conv.id) || null, fallback: true };
+  }
   let best = null;
   for (const w of ways) {
     const li = await lastIncoming(ctx.gc, w.me);
@@ -151,10 +164,13 @@ async function replyWay(ctx, ways, views) {
     if (!best || li.at > best.li.at || (li.at === best.li.at && !w.conv.bridge_net && best.w.conv.bridge_net)) best = { w, li };
   }
   let pick = best ? best.w : (gcWay || leadOf(ways));
-  const pv = pick ? byId.get(pick.conv.id) : null;
-  if (pick && pick.conv.bridge_net && gcWay && !(pv && pv.can && pv.can.send)) pick = gcWay;
-  return pick ? byId.get(pick.conv.id) || null : null;
+  if (pick && pick.conv.bridge_net && gcWay && !sends(pick)) pick = gcWay;
+  const view = pick ? byId.get(pick.conv.id) || null : null;
+  return view ? { view, fallback: false } : null;
 }
+
+/** The stored choice of a person → 'auto' | 'gatecontrol' | a network. */
+const prefOf = (p) => (p && typeof p.reply_pref === 'string' && PREF_RE.test(p.reply_pref) ? p.reply_pref : 'auto');
 
 /** The name and picture of a person: from the chosen way (the account by default), a missing picture from another way. */
 function face(ctx, p, views, lead) {
@@ -188,7 +204,9 @@ async function entry(ctx, p, ways, views) {
   const lw = leadOf(ways);
   const lead = (lw && views.find((v) => v.id === lw.conv.id)) || views[0];
   const f = face(ctx, p, views, lead);
-  const reply = await replyWay(ctx, ways, views);
+  const replyPref = prefOf(p);
+  const rw = await replyWay(ctx, ways, views, replyPref);
+  const reply = rw ? rw.view : null;
   const acc = p.user_id != null ? ctx.users.get(p.user_id) : null;
   const names = [];
   for (const n of [f.name, acc && acc.name, ...views.map((v) => v.title)]) if (n && !names.includes(n)) names.push(n);
@@ -208,7 +226,9 @@ async function entry(ctx, p, ways, views) {
       lastMessageAt: v.lastMessage ? v.lastMessage.createdAt : null, bridge: v.bridge || null,
       can: { send: !!(v.can && v.can.send), sendReason: (v.can && v.can.sendReason) || null, react: v.can ? v.can.react !== false : true },
     })),
-    reply: reply ? { way: reply.bridge ? reply.bridge.network : GC_WAY, label: reply.bridge ? reply.bridge.label : labelOf(GC_WAY), conversationId: reply.id } : null,
+    reply: reply ? { way: reply.bridge ? reply.bridge.network : GC_WAY, label: reply.bridge ? reply.bridge.label : labelOf(GC_WAY), conversationId: reply.id, ...(rw.fallback ? { fallback: true } : {}) } : null,
+    // 1.27.0: „Nachrichten senden über“ — 'auto' | 'gatecontrol' | a network (PUT persons/:id { replyPref })
+    replyPref,
     createdAt: iso(p.created_at),
   };
   return {
@@ -398,14 +418,23 @@ async function merge(ctx, body) {
   return { conversation: e, person: e ? e.person : null };
 }
 
-/** PATCH persons/:id { name?, notify?, mutedUntil? } → { conversation, person } */
+/** PATCH persons/:id { name?, notify?, mutedUntil?, replyPref? } → { conversation, person } */
 async function patch(ctx, idRaw, body) {
   const conversations = require('./conversations');
   const p = await needPerson(ctx, idRaw);
   const b = body && typeof body === 'object' && !Array.isArray(body) ? body : null;
   if (!b) throw fail('invalid');
-  for (const k of Object.keys(b)) if (!['name', 'notify', 'mutedUntil', 'bridged', 'channels', 'people'].includes(k)) throw fail('invalid');
+  for (const k of Object.keys(b)) if (!['name', 'notify', 'mutedUntil', 'replyPref', 'bridged', 'channels', 'people'].includes(k)) throw fail('invalid');
   const ways = await waysOf(ctx, p);
+  // 1.27.0: „Nachrichten senden über“ — automatic, or one of the person's ways (bad_request: the person has no such way)
+  if (b.replyPref !== undefined) {
+    const v = b.replyPref === null ? 'auto' : b.replyPref;
+    if (typeof v !== 'string' || !PREF_RE.test(v)) throw fail('invalid');
+    if (v !== 'auto' && !ways.some((w) => wayOf(w.conv) === v)) throw fail('bad_request');
+    await store.run(ctx.gc, 'UPDATE persons SET reply_pref = ?, updated_at = ? WHERE id = ?', [v === 'auto' ? null : v, ctx.now, p.id]);
+    p.reply_pref = v === 'auto' ? null : v;
+    changed(ctx, ways.map((w) => w.conv.id), p.id);
+  }
   if (b.name !== undefined) {
     let nameFrom;
     if (b.name === 'account' || b.name === null) {
@@ -696,7 +725,8 @@ async function sendWay(ctx, idRaw, body) {
     const w = row ? e.person.ways.find((x) => x.conversationId === row.conv_id) : null;
     if (w && w.can.send) return { way: w.way, label: w.label, conversationId: w.conversationId };
   }
-  return e.person.reply;
+  const r = e.person.reply;
+  return { way: r.way, label: r.label, conversationId: r.conversationId };
 }
 
 // ─── suggestions ────────────────────────────────────────────────────────────
@@ -864,6 +894,6 @@ async function pushName(gc, userId, convId, users) {
 
 module.exports = {
   GC_WAY, LABEL, on, matchApi, chatOfContact, wayOf, labelOf, wayMap, personOf, waysOf, leadOf, fold, entryOf, personFor, syncFrom, merge, patch, archive, split, page, read, search,
-  sendWay, suggestions, answer, candidates, tidy, pushName, needPerson, t,
+  sendWay, suggestions, answer, candidates, tidy, pushName, needPerson, prefOf, t,
   _reset: (gc) => askedOf(gc).clear(),
 };

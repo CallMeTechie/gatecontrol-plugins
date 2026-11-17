@@ -112,6 +112,17 @@
     if (!w) return c;
     return Object.assign({}, c, { bridge: w.bridge, can: w.can });
   }
+  /** 1.27.0: may this entry get GateControl's own kinds? A chat inside GateControl, or a person with a GateControl way (its lead). */
+  function hasGc(c) { return !!c && !c.bridge; }
+  /** 1.27.0: where a location goes — 'text' (the way of the text, the bridge sends one), 'gc' (the chat inside GateControl), null. */
+  function locRoute(c) {
+    if (!c || S.features.location === false) return null;
+    var tw = sendConv(c);
+    if (!tw.bridge || bridgeTakes(tw, 'location')) return 'text';
+    return hasGc(c) ? 'gc' : null;
+  }
+  /** 1.27.0: may files go the way of the text? */
+  function filesGo(c) { var tw = sendConv(c); return !tw.bridge || bridgeTakes(tw, 'file') || bridgeTakes(tw, 'image'); }
   /** Messages in the order shown: by time for a person (its ways are mixed), else by id; pending ones last. */
   function msgOrder(c) {
     if (isPerson(c)) return function (a, b) { if (a.pending !== b.pending) return a.pending ? 1 : -1; return a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : a.id - b.id; };
@@ -437,11 +448,8 @@
     var typ = typingText(c);
     if (typ) return { text: typ, typing: true };
     if (isChan(c)) return { text: T('ch.sub', { network: c.bridge.label }), typing: false };
-    // 1.21.0: the ways of a person („GateControl · WhatsApp“)
-    if (isPerson(c)) {
-      var seen = {};
-      return { text: c.person.ways.filter(function (w) { if (seen[w.way]) return false; seen[w.way] = true; return true; }).map(function (w) { return w.label; }).join(' · '), typing: false, person: true };
-    }
+    // 1.21.0: the ways of a person — 1.27.0: only their logos (title / aria-label „über <Dienst>“), no text
+    if (isPerson(c)) return { text: '', typing: false, person: true };
     if (c.bridge) return { text: T('bc.via', { network: c.bridge.label }), typing: false };
     if (c.kind === 'direct') {
       if (c.peer && c.peer.gone) return { text: T('portal.gone_hint'), typing: false };
@@ -463,7 +471,7 @@
     h.appendChild(convAvatar(c, 42));
     var sub = headSub(c);
     h.appendChild(el('button', { type: 'button', class: 'ms-head-tx', 'aria-label': T('info.open'), on: { click: toggleInfo } }, [
-      el('b', { text: convTitle(c) }), sub.person ? el('span', { class: 'ms-head-sub' }, [P.marks(c.person, 10), el('span', { text: sub.text })]) : el('span', { class: 'ms-head-sub' + (sub.typing ? ' ms-typing' : ''), text: sub.text }),
+      el('b', { text: convTitle(c) }), sub.person ? el('span', { class: 'ms-head-sub' }, [P.marks(c.person, 10)]) : el('span', { class: 'ms-head-sub' + (sub.typing ? ' ms-typing' : ''), text: sub.text }),
     ]));
     // 1.20.0: a channel's bell — struck through while it sends no pushes (the default)
     if (isChan(c)) {
@@ -830,6 +838,8 @@
     }
     var warn = scanWarnEl(m);
     if (warn) b.appendChild(warn);
+    // 1.27.0: sent by a place message — the line only the sender sees („Ortsnachricht · Zuhause“)
+    if (m.mine && m.placeMessage && m.placeMessage.name) b.appendChild(el('div', { class: 'ms-pmline' }, [M.icon('pin', 12), el('span', { text: T('pm.line', { name: m.placeMessage.name }) })]));
     b.appendChild(metaEl(m, c));
     wrap.appendChild(b);
     var rx = reactionsEl(m);
@@ -1142,14 +1152,20 @@
     }
     // 1.14.0: only text crosses a bridge — none of GateControl's own message kinds; 1.15.0: files where the bridge
     // says it takes them (bridge.supports)
-    if (!S.edit && (!c.bridge || bridgeTakes(c, 'file') || bridgeTakes(c, 'image'))) {
+    // 1.27.0: the plus menu shows everything the person can get over any way (GateControl's own kinds with its logo)
+    if (!S.edit && (filesGo(entry) || locRoute(entry) || hasGc(entry))) {
       var attachBtn = el('button', { type: 'button', class: 'ms-ib', 'aria-label': T('portal.attach'), title: T('portal.attach'), 'aria-haspopup': 'menu', on: { click: function () { attachMenu(attachBtn); } } }, [M.icon('attach', 18)]);
       rowEl.appendChild(attachBtn);
     }
     var hint = c.bridge ? T('bc.placeholder', { network: c.bridge.label }) : null;
     var rw = replyWay(entry);
     if (rw) hint = T('person.placeholder', { way: rw.label });
-    if (rw && rw.bridge && !S.edit) box.appendChild(P.wayHint(rw.label));
+    // 1.27.0: no line above the composer any more — the placeholder names the way („Nachricht über WhatsApp“)
+    // 1.27.0: „Immer <Netz>“, but that way cannot send right now — GateControl took over
+    if (rw && entry.person.reply.fallback && !S.edit && P.fallbackHint) {
+      var want = entry.person.ways.filter(function (w) { return w.way === entry.person.replyPref; })[0];
+      box.appendChild(P.fallbackHint(want ? want.label : P.labelOf(entry.person.replyPref)));
+    }
     var input = el('textarea', { class: 'ms-input', rows: '1', placeholder: hint || T('portal.placeholder_short'), title: narrow() ? null : (hint || T('portal.placeholder')), 'aria-label': hint || T('portal.placeholder'), maxlength: String(S.limits.textMax || 4000) });
     if (S.edit) input.value = S.edit.text || '';
     if (refs.draft && !S.edit) { input.value = refs.draft; refs.draft = ''; }
@@ -1197,10 +1213,11 @@
     if (st) st.list = st.list.filter(function (x) { return x !== pending; });
     if (S.cur === c.id) renderMessages('keep');
   }
-  function send(c, body, pendingExtra) {
+  function send(c, body, pendingExtra, opts) {
     var pending = addPending(c, body, pendingExtra);
-    // 1.21.0: a person — the server picks the way (the newest incoming message's; an answer goes back its message's way)
-    var path = isPerson(c) ? 'persons/' + c.person.id + '/messages' : 'conversations/' + c.id + '/messages';
+    // 1.21.0: a person — the server picks the way (the newest incoming message's; an answer goes back its message's way);
+    // 1.27.0: GateControl's own kinds (opts.gc) go to the chat inside GateControl — a person's lead, so its id
+    var path = isPerson(c) && !(opts && opts.gc) ? 'persons/' + c.person.id + '/messages' : 'conversations/' + c.id + '/messages';
     return M.api('POST', path, body).then(function (r) { settle(c, pending, r.message); if (isPerson(c)) refreshConv(c.id); return r.message; })
       .catch(function (e) { dropPending(c, pending); throw e; });
   }
@@ -1613,7 +1630,8 @@
         var b = { clientId: M.uuid(), kind: 'location', location: loc };
         if (S.reply) { b.replyTo = S.reply.id; }
         var replyWas = S.reply;
-        send(c, b, { location: loc }).catch(function (e) { M.warn(e); });
+        // 1.27.0: over the way of the text when its bridge sends a location, else to the chat inside GateControl
+        send(c, b, { location: loc }, { gc: locRoute(c) === 'gc' }).catch(function (e) { M.warn(e); });
         S.reply = null;
         if (replyWas) renderComposer();
         return true;
@@ -1636,18 +1654,22 @@
   /** The attach button: a small menu — file or photo, location. */
   function attachMenu(btn) {
     closeMenu();
-    var items = [
-      el('button', { type: 'button', class: 'ms-menu-item', role: 'menuitem', on: { click: function () { closeMenu(); pickFile(); } } }, [M.icon('attach', 16), T('portal.attach_file')]),
-    ];
+    var items = [];
     var cc = conv(S.cur);
-    // 1.15.0: over a bridge only files — no location, no poll, no event, no home action
-    var own = !(cc && cc.bridge);
-    if (own && S.features.location !== false) {
-      items.push(el('button', { type: 'button', class: 'ms-menu-item', role: 'menuitem', on: { click: function () { closeMenu(); pickLocation(); } } }, [M.icon('pin', 16), T('loc.send')]));
-    }
-    if (own && feature('polls')) items.push(el('button', { type: 'button', class: 'ms-menu-item', role: 'menuitem', on: { click: function () { closeMenu(); R.createPoll(cc); } } }, [R.icon('poll', 16), T('poll.create')]));
-    if (own && feature('events')) items.push(el('button', { type: 'button', class: 'ms-menu-item', role: 'menuitem', on: { click: function () { closeMenu(); R.createEvent(cc); } } }, [R.icon('cal', 16), T('ev.create')]));
-    if (own && feature('actions')) items.push(el('button', { type: 'button', class: 'ms-menu-item', role: 'menuitem', on: { click: function () { closeMenu(); R.createAction(cc); } } }, [R.icon('home', 16), T('act.create')]));
+    // 1.27.0: everything the person can get over any way. Files follow the way of the text; a location too when its
+    // bridge sends one; GateControl's own kinds (poll, event, home actions) go to the chat inside GateControl — with its
+    // logo while the text goes over a bridge; without a GateControl way they are not offered
+    var tw = sendConv(cc);
+    var gcMark = function () { return tw && tw.bridge ? M.netLogo('gatecontrol', T('plus.via_gc'), 11, 'ms-way') : null; };
+    var item = function (icon, label, fn, logo) { return el('button', { type: 'button', class: 'ms-menu-item', role: 'menuitem', on: { click: function () { closeMenu(); fn(); } } }, [icon, el('span', { class: 'ms-menu-lb', text: label }), logo || null]); };
+    if (filesGo(cc)) items.push(item(M.icon('attach', 16), T('portal.attach_file'), pickFile));
+    var lr = locRoute(cc);
+    if (lr) items.push(item(M.icon('pin', 16), T('loc.send'), pickLocation, lr === 'gc' ? gcMark() : null));
+    var own = hasGc(cc);
+    if (own && feature('polls')) items.push(item(R.icon('poll', 16), T('poll.create'), function () { R.createPoll(cc); }, gcMark()));
+    if (own && feature('events')) items.push(item(R.icon('cal', 16), T('ev.create'), function () { R.createEvent(cc); }, gcMark()));
+    if (own && feature('actions')) items.push(item(R.icon('home', 16), T('act.create'), function () { R.createAction(cc); }, gcMark()));
+    if (!items.length) return;
     var layer = el('div', { style: 'position:absolute;inset:0;z-index:19', on: { click: function (e) { if (e.target === layer) closeMenu(); } } });
     var menu = el('div', { class: 'ms-menu', role: 'menu', 'aria-label': T('portal.attach') }, items);
     layer.appendChild(menu);
@@ -1821,6 +1843,8 @@
     }
     pane.appendChild(top);
     // 1.21.0: the ways of a person („Trennen“), or „Mit Person zusammenführen …“ in a chat with one person
+    // 1.27.0: „Nachrichten senden über“ (only the ways the person has), then the ways
+    if (isPerson(c) && P.replySection) pane.appendChild(P.replySection(c, personsHost()));
     if (isPerson(c)) pane.appendChild(P.waysSection(c, personsHost()));
     else if (P && feature('chat_people') && c.kind === 'direct' && !isChan(c) && !c.notice && !c.readonly && !c.managedBy && (c.bridge || (c.peer && !c.peer.gone))) {
       pane.appendChild(el('div', { class: 'ms-info-sec' }, [el('button', { type: 'button', class: 'btn btn-sm', on: { click: function () { P.pickDialog(c, personsHost()); } } }, [M.icon('plus', 14), T('person.add_way')])]));
@@ -2322,7 +2346,8 @@
     return {
       api: M.api, me: function () { return S.me; }, conv: conv, nameOf: nameOf, replace: replaceMsg, features: function () { return S.features || {}; },
       integrations: function () { return S.integrations || {}; }, refreshFeed: refreshFeed, people: loadPeople, uploadImage: uploadImage,
-      send: function (c, body) { return send(c, body); }, setPrefs: function (p) { S.prefs = p; if (S.me) S.me.prefs = p; refreshAll().catch(function () {}); },
+      // 1.27.0: GateControl's own kinds always to the chat inside GateControl (for a person: its lead, not the text's way)
+      send: function (c, body) { return send(c, body, null, { gc: true }); }, setPrefs: function (p) { S.prefs = p; if (S.me) S.me.prefs = p; refreshAll().catch(function () {}); },
       reload: function () { refreshAll().catch(function () {}); refreshFeed(true); }, convs: function () { return S.convs; }, title: convTitle,
       setLists: function (l) { S.lists = l; renderList(); },
     };

@@ -121,7 +121,8 @@ test('voice message, video, file, sticker, location — each as GateControl show
     assert.deepEqual([m[2].kind, m[2].meta.fileName], ['file', 'Vertrag.pdf']);
     assert.deepEqual([m[3].kind, m[3].media.mime], ['file', 'application/octet-stream'], 'another type: a download');
     assert.deepEqual([m[4].kind, m[4].media.mime], ['image', 'image/webp']);
-    assert.deepEqual([m[5].kind, m[5].text, m[5].bridge.placeholder], ['text', 'Location: Marktplatz', { kind: 'location', name: null, state: null, reason: null, geo: { lat: 51.12, lon: 7.65 } }]);
+    // 1.27.0: a real location (the map card), its name without the bridge's „Location:“
+    assert.deepEqual([m[5].kind, m[5].text, m[5].location, m[5].bridge.placeholder], ['location', null, { lat: 51.12, lon: 7.65, label: 'Marktplatz' }, null]);
   });
 });
 
