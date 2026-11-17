@@ -225,6 +225,34 @@ test('place messages: the feature word, create / list / change / delete with pla
   });
 });
 
+test('place messages: Familie ids home and place:<id> (1.27.1), bad text ids refused', async () => {
+  await withHost({ bridges: V14 }, async (host, c) => {
+    const { gcId } = await merged(c, host);
+    const me = as(c, ANNA);
+    const at = (familieId) => ({ ...HOME, familieId });
+    let r = await me('POST', 'place-messages', pm(gcId, { place: at('home') }));
+    assert.equal(r.status, 200, JSON.stringify(r.json));
+    assert.equal(r.json.placeMessage.place.familieId, 'home');
+    const id = r.json.placeMessage.id;
+    r = await me('POST', 'place-messages', pm(gcId, { place: { ...at('place:3'), name: 'Schule' } }));
+    assert.equal(r.status, 200, JSON.stringify(r.json));
+    assert.equal(r.json.placeMessage.place.familieId, 'place:3');
+    r = await me('PUT', `place-messages/${id}`, { place: { ...at('place:3'), name: 'Schule' } });
+    assert.equal(r.status, 200, JSON.stringify(r.json));
+    assert.deepEqual([r.json.placeMessage.place.familieId, r.json.placeMessage.place.name], ['place:3', 'Schule']);
+    r = await me('PUT', `place-messages/${id}`, { place: at('home') });
+    assert.equal(r.status, 200, JSON.stringify(r.json));
+    assert.equal(r.json.placeMessage.place.familieId, 'home');
+    assert.deepEqual((await me('GET', 'place-messages')).json.placeMessages.map((x) => x.place.familieId).sort(), ['home', 'place:3']);
+    for (const bad of ['', 'place 3', ' home', 'x'.repeat(65), 'place:3/4', 0, -1, 1.5, true, {}]) {
+      assert.equal((await me('POST', 'place-messages', pm(gcId, { place: at(bad) }))).json.code, 'invalid', JSON.stringify(bad));
+      assert.equal((await me('PUT', `place-messages/${id}`, { place: at(bad) })).json.code, 'invalid', JSON.stringify(bad));
+    }
+    assert.equal((await me('POST', 'place-messages', pm(gcId, { place: at('p'.repeat(64)) }))).status, 200, '64 characters are fine');
+    assert.equal((await me('GET', `place-messages`)).json.placeMessages.find((x) => x.id === id).place.familieId, 'home', 'a refused change keeps the place');
+  });
+});
+
 test('place messages: no channel or read-only target; a chat that is no person takes auto or its own way', async () => {
   await withHost({ bridges: V14 }, async (host, c) => {
     const { kimId } = await setup(c, host);

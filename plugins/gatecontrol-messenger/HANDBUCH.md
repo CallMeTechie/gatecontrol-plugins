@@ -1,4 +1,4 @@
-<!-- version: 1.27.0 -->
+<!-- version: 1.27.1 -->
 # Messenger
 
 ## Was das Plugin kann
@@ -73,6 +73,10 @@ Er kommt nur beim Verknüpfen und erscheint nachts. Steht „Älteren Verlauf la
 
 **Alte Nachrichten sind weg.**
 Der Administrator hat eine Aufbewahrung eingestellt, oder der Chat ist selbstlöschend.
+
+## Neu in 1.27.1
+
+- **Ortsnachrichten mit jedem Familie-Ort:** Eine Ortsnachricht mit einem Ort aus „Familie“ außer „Zuhause“ (zum Beispiel „Schule“) ließ sich nicht speichern. Jetzt geht das mit allen Familie-Orten.
 
 ## Neu in 1.27.0
 
