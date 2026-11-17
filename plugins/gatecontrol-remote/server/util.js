@@ -67,6 +67,7 @@ const STATUS = {
   timeout: 504,
   tmux_gone: 404,
   tmux_changed: 409,
+  tmux_failed: 502,
   user_disabled: 409,
   no_valid_scopes: 409,
   no_client_access: 409,

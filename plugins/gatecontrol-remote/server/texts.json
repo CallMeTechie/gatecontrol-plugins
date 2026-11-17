@@ -1113,7 +1113,8 @@
     "ag.weg_a4": "Optionen: VPN-Peer auf „Neuer Peer (automatisch)“ lassen, Ablauf „Nie“.",
     "ag.weg_a5": "Code abschreiben – er gilt 10 Minuten.",
     "ag.old_more": "Die zweite Zeile ist nötig: ohne SSH- oder Desktop-Freigabe nimmt der Fernzugriff das Gerät nicht an. Die dritte erlaubt „ohne Code“ – sonst nur mit Code und Bestätigung am Gerät.",
-    "ed.auth_failed_text2": "{{when}} im Terminal. Passwort im Tresor falsch oder keins gespeichert."
+    "ed.auth_failed_text2": "{{when}} im Terminal. Passwort im Tresor falsch oder keins gespeichert.",
+    "error.tmux_failed": "tmux auf dem Gerät hat den Befehl nicht ausgeführt."
   },
   "en": {
     "access.all": "Everybody with the right",
@@ -2229,6 +2230,7 @@
     "ag.weg_a4": "Options: leave the VPN peer at “New peer (automatic)”, expiry “Never”.",
     "ag.weg_a5": "Copy the code – it is valid for 10 minutes.",
     "ag.old_more": "The second line is needed: without an SSH or desktop share Remote access does not take the device. The third allows “without a code” – otherwise only with a code and confirmation at the device.",
-    "ed.auth_failed_text2": "{{when}} in the terminal. The password in the vault is wrong or none is stored."
+    "ed.auth_failed_text2": "{{when}} in the terminal. The password in the vault is wrong or none is stored.",
+    "error.tmux_failed": "tmux on the device did not carry the command out."
   }
 }
