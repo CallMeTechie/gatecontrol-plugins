@@ -448,11 +448,8 @@
     var typ = typingText(c);
     if (typ) return { text: typ, typing: true };
     if (isChan(c)) return { text: T('ch.sub', { network: c.bridge.label }), typing: false };
-    // 1.21.0: the ways of a person („GateControl · WhatsApp“)
-    if (isPerson(c)) {
-      var seen = {};
-      return { text: c.person.ways.filter(function (w) { if (seen[w.way]) return false; seen[w.way] = true; return true; }).map(function (w) { return w.label; }).join(' · '), typing: false, person: true };
-    }
+    // 1.21.0: the ways of a person — 1.27.0: only their logos (title / aria-label „über <Dienst>“), no text
+    if (isPerson(c)) return { text: '', typing: false, person: true };
     if (c.bridge) return { text: T('bc.via', { network: c.bridge.label }), typing: false };
     if (c.kind === 'direct') {
       if (c.peer && c.peer.gone) return { text: T('portal.gone_hint'), typing: false };
@@ -474,7 +471,7 @@
     h.appendChild(convAvatar(c, 42));
     var sub = headSub(c);
     h.appendChild(el('button', { type: 'button', class: 'ms-head-tx', 'aria-label': T('info.open'), on: { click: toggleInfo } }, [
-      el('b', { text: convTitle(c) }), sub.person ? el('span', { class: 'ms-head-sub' }, [P.marks(c.person, 10), el('span', { text: sub.text })]) : el('span', { class: 'ms-head-sub' + (sub.typing ? ' ms-typing' : ''), text: sub.text }),
+      el('b', { text: convTitle(c) }), sub.person ? el('span', { class: 'ms-head-sub' }, [P.marks(c.person, 10)]) : el('span', { class: 'ms-head-sub' + (sub.typing ? ' ms-typing' : ''), text: sub.text }),
     ]));
     // 1.20.0: a channel's bell — struck through while it sends no pushes (the default)
     if (isChan(c)) {
@@ -1163,7 +1160,7 @@
     var hint = c.bridge ? T('bc.placeholder', { network: c.bridge.label }) : null;
     var rw = replyWay(entry);
     if (rw) hint = T('person.placeholder', { way: rw.label });
-    if (rw && rw.bridge && !S.edit) box.appendChild(P.wayHint(rw.label));
+    // 1.27.0: no line above the composer any more — the placeholder names the way („Nachricht über WhatsApp“)
     // 1.27.0: „Immer <Netz>“, but that way cannot send right now — GateControl took over
     if (rw && entry.person.reply.fallback && !S.edit && P.fallbackHint) {
       var want = entry.person.ways.filter(function (w) { return w.way === entry.person.replyPref; })[0];

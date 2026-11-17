@@ -31,8 +31,12 @@ das 1.26.0 trägt.
   GateControl-Chat (nur mit GateControl-Weg), Standort ohne Logo über den Textweg, wenn dessen Brücke ihn kann, sonst mit
   Logo über GateControl; Dateien folgen dem Textweg. Eingehender Brücken-Standort als Standortkarte, Ortszeile
   „Ortsnachricht · <Ort>“ an der eigenen Nachricht.
-- Mock-Host: `gc.bridges` Version 14 (`status().networks[].location`, `send` mit `location`). Tests in
-  `test/versandweg.test.js`.
+- **Portal, ruhigeres Schreibfeld:** Die Hinweisleiste „Geht über WhatsApp. Die Verschlüsselung … endet an der Brücke …“
+  über dem Schreibfeld entfällt (Text `person.wa_hint` entfernt); der Platzhalter „Nachricht über <Dienst>“ nennt den
+  Weg. In der Kopfzeile einer Person stehen unter dem Namen nur noch die Logos der Wege (title/aria-label „über
+  <Dienst>“) statt „GateControl · WhatsApp“.
+- Mock-Host: `gc.bridges` Version 14 (`status().networks[].location`, `send` mit `location`; Signal `ERR_INVALID` /
+  `unsupported`). Die Fähigkeit kommt allein aus `status().networks[].location`. Tests in `test/versandweg.test.js`.
 
 ## 1.26.0
 **Alte Medien vom Handy nachladen** — für GateControl mit `gc.bridges` Version 13. **Braucht GateControl ≥ 1.295.0.**

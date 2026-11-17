@@ -3,8 +3,8 @@
    view: the suggestion card above the list ("„Schatzimausi 💕“ bei WhatsApp ist vielleicht Jenny Backes."), the dialog
    „Zu einer Person zusammenführen?“ with the choice of the name (the account's by default), „Nicht jetzt“ and „Nicht mehr
    vorschlagen“; „Mit Person zusammenführen …“ in the chat info (an account or another chat — never guessed by name);
-   „Wege von …“ with „Trennen“ (nothing is lost); the source chips of the shared history and the line under the composer
-   when the answer goes over WhatsApp. The way of an answer is never chosen in the composer: the server takes the way of
+   „Wege von …“ with „Trennen“ (nothing is lost); the source chips of the shared history (1.27.0: no line above the
+   composer any more — the placeholder names the way). The way of an answer is never chosen in the composer: the server takes the way of
    the newest incoming message — 1.27.0: unless „Nachrichten senden über“ in the chat info holds one (replySection: PUT
    persons/:id { replyPref }). Built from elements and text nodes only. */
 (function () {
@@ -230,10 +230,5 @@
     return box;
   }
 
-  /** The line above the composer when the answer goes over a bridge. */
-  function wayHint(label) {
-    return el('div', { class: 'ms-wayhint' }, [M.icon('info', 13), el('span', { text: T('person.wa_hint', { network: label }) })]);
-  }
-
-  window.MSPersons = { mark: mark, marks: marks, labelOf: labelOf, card: card, mergeDialog: mergeDialog, pickDialog: pickDialog, waysSection: waysSection, srcChips: srcChips, wayHint: wayHint, replySection: replySection, fallbackHint: fallbackHint };
+  window.MSPersons = { mark: mark, marks: marks, labelOf: labelOf, card: card, mergeDialog: mergeDialog, pickDialog: pickDialog, waysSection: waysSection, srcChips: srcChips, replySection: replySection, fallbackHint: fallbackHint };
 }());
