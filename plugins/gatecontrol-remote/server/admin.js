@@ -16,6 +16,8 @@ const log = require('./log');
 const recordings = require('./recordings');
 const homes = require('./homes');
 const way = require('./way');
+const keys = require('./keys');
+const enroll = require('./enroll');
 const { fail, fromHost, posInt, clip } = require('./util');
 
 const v3 = (gc) => !!(gc.remote && gc.remote.version >= 3);
@@ -116,29 +118,59 @@ async function gateways(gc) {
   }
 }
 
-async function deviceList(gc) {
+/** 1.8: the VPN of GateControl for the way of a device (version 7: subnet and peer addresses), else null. */
+async function vpnNet(gc, user) {
+  if (!v7(gc) || !user) return null;
+  try {
+    const c = await gc.remote.candidates({ user: user.id });
+    return { subnet: c && c.vpn ? c.vpn.subnet : null, peers: new Set(((c && c.peers) || []).map((p) => p.address).filter(Boolean)) };
+  } catch { return null; }
+}
+
+async function deviceList(gc, user) {
   const [list, lists, vault, active] = [await devices.all(gc), await devices.accessLists(gc), await devices.vaultInfo(gc), await history.activeCounts(gc)];
   const now = Date.now();
   const names = new Map();
   try { for (const u of (await gc.users.list()) || []) names.set(u.id, u.name); } catch { /* names stay empty */ }
+  const net = await vpnNet(gc, user);
   return list.map((d) => {
-    const v = { ...devices.adminView(d, lists.get(d.id), vault, now), activeSessions: active.get(d.id) || 0 };
+    const v = { ...devices.adminView(d, lists.get(d.id), vault, now, net), activeSessions: active.get(d.id) || 0 };
     if (v.host) v.host.ownerName = names.get(v.host.owner) || null;
+    if (v.lastAuthFailed && v.lastAuthFailed.userId) v.lastAuthFailed.userName = names.get(v.lastAuthFailed.userId) || null;
+    if (v.key && v.key.installedBy) v.key.installedByName = names.get(v.key.installedBy) || null;
     return v;
   });
+}
+
+/** 1.8: what GateControl offers the page (gc.remote version 9: key set-up, closing tmux sessions, codes for the agent). */
+function features(gc) {
+  return { keySetup: keys.v9(gc), tmuxKill: connect.tmuxV9(gc), enroll: enroll.v9(gc), remote: gc.remote ? gc.remote.version : null };
+}
+
+/** 1.8: „Duplizieren“ — the settings of a device under a new name, without credentials, rights or listener port. */
+async function duplicate(gc, user, id) {
+  const d = await devices.need(gc, id);
+  if (d.kind !== 'target') throw fail('invalid', { field: 'kind' });
+  const config = {};
+  for (const k of Object.keys(devices.FIELDS)) if (d.config[k] !== undefined) config[k] = d.config[k];
+  config.gateway_listen_port = null;
+  return devices.save(gc, null, { name: (d.name + ' (2)').slice(0, 100), protocol: d.protocol, enabled: d.enabled, config, access: { users: [user.id], groups: [] } });
 }
 
 async function one(gc, id, user) {
   const d = await devices.need(gc, id);
   const lists = await devices.accessLists(gc);
-  const v = devices.adminView(d, lists.get(d.id), await devices.vaultInfo(gc));
-  // 1.7: the way for the editor of one page
-  if (user) v.way = await wayOfDevice(gc, user, d);
+  const v = devices.adminView(d, lists.get(d.id), await devices.vaultInfo(gc), Date.now(), await vpnNet(gc, user));
+  // 1.7: the way for the editor of one page (1.8: `way` is the word of the list, the details are `wayDetail`)
+  if (user) v.wayDetail = await wayOfDevice(gc, user, d);
+  if (v.key && v.key.installedBy) { try { const u = await gc.users.get(v.key.installedBy); v.key.installedByName = u ? u.name : null; } catch { /* no name */ } }
   // 1.2: the SSH terminal — the engine in use, tmux, the pinned host key, the public half of a key made in GateControl
   if (d.protocol === 'ssh') {
     const vault = d.credential ? (await devices.vaultInfo(gc)).get(d.credential) : null;
     v.ssh = { engine: devices.engineOf(d, gc), tmux: devices.tmuxOf(d), hostKey: await hostKeyOf(gc, d), publicKey: vault && vault.publicKey ? vault.publicKey : null,
-      termTestedAt: d.config.term_tested_at || null, available: v3(gc) };
+      termTestedAt: d.config.term_tested_at || null, available: v3(gc),
+      // 1.8: the line for authorized_keys (the copy way) and whether an own key is stored
+      line: vault && vault.publicKey ? await keys.lineFor(gc, d, vault.publicKey) : null, ownKey: !!(vault && vault.has && vault.has.privateKey && !vault.publicKey) };
   }
   return v;
 }
@@ -163,8 +195,19 @@ async function route(req, gc, seg, cfg) {
     if (m === 'POST' && seg.length === 3 && seg[2] === 'wake') return { wake: await wakeCandidate(gc, user, b) };
   }
   if (what === 'way' && m === 'POST' && seg.length === 2) return wayTo(gc, user, b);
+  // 1.8: who is asking (the owner „Ich“ of a code for the agent)
+  if (what === 'whoami' && m === 'GET' && seg.length === 2) return { user: { id: user.id, name: user.name || null } };
+  // 1.8: codes for the Linux agent (gc.remote version 9, server/enroll.js)
+  if (what === 'enroll') {
+    if (m === 'GET' && seg.length === 2) return { enrollments: await enroll.list(gc), available: enroll.v9(gc) };
+    if (m === 'POST' && seg.length === 2) return { enrollment: await enroll.create(gc, user, b) };
+    if (seg.length === 3 && m === 'GET') return { enrollment: await enroll.get(gc, seg[2]) };
+    if (seg.length === 3 && m === 'PUT') return { enrollment: await enroll.update(gc, seg[2], b) };
+    if (seg.length === 3 && m === 'DELETE') return enroll.remove(gc, seg[2]);
+    if (seg.length === 4 && m === 'POST' && (seg[3] === 'merge' || seg[3] === 'keep')) return { enrollment: await enroll.decide(gc, user, seg[2], seg[3]) };
+  }
   if (what === 'devices') {
-    if (m === 'GET' && seg.length === 2) return { devices: await deviceList(gc), ...(await gateways(gc)), wizard: v7(gc) };
+    if (m === 'GET' && seg.length === 2) return { devices: await deviceList(gc, user), ...(await gateways(gc)), wizard: v7(gc), features: features(gc) };
     if (m === 'POST' && seg.length === 2) {
       // 1.7: the wizard makes a device that only administrators see at first (access: 'admins' → this administrator;
       // administrators reach every device anyway)
@@ -172,11 +215,11 @@ async function route(req, gc, seg, cfg) {
       return { device: await one(gc, await devices.save(gc, null, body), user) };
     }
     // 1.2: switch SSH devices to the terminal (or back) — one, some or all
-    if (m === 'POST' && seg.length === 3 && seg[2] === 'ssh-engine') return { ...(await switchEngine(gc, user, b)), devices: await deviceList(gc) };
+    if (m === 'POST' && seg.length === 3 && seg[2] === 'ssh-engine') return { ...(await switchEngine(gc, user, b)), devices: await deviceList(gc, user) };
     if (m === 'POST' && seg.length === 3 && seg[2] === 'check') {
       // a PC is not checked: 3389 is closed between sessions, its app reports its state
       for (const d of (await devices.all(gc)).filter((x) => x.enabled && x.kind !== 'host')) await connect.probe(gc, d);
-      return { devices: await deviceList(gc) };
+      return { devices: await deviceList(gc, user) };
     }
     const id = posInt(seg[2]);
     if (!id) throw fail('not_found');
@@ -189,7 +232,17 @@ async function route(req, gc, seg, cfg) {
         return devices.remove(gc, id);
       }
     }
+    // 1.8: the tmux sessions with their windows, closing them (the same calls as the portal, as an administrator)
+    if (seg.length === 4 && seg[3] === 'tmux' && m === 'GET') return connect.tmuxSessions(gc, user, id, { admin: true, windows: true });
+    if (seg.length === 5 && seg[3] === 'tmux' && m === 'POST' && seg[4] === 'kill') return connect.tmuxKill(gc, user, id, b, { admin: true });
+    if (seg.length === 5 && seg[3] === 'tmux' && m === 'POST' && seg[4] === 'kill-detached') return connect.tmuxKillDetached(gc, user, id, b, { admin: true });
+    // 1.8: „Schlüssel automatisch einrichten“ (server/keys.js)
+    if (seg.length === 4 && m === 'DELETE' && seg[3] === 'key') return { ...(await keys.remove(gc, user, id)), device: await one(gc, id, user) };
     if (seg.length === 4 && m === 'POST') {
+      if (seg[3] === 'hostkey-scan') return { hostKey: await keys.scan(gc, id) };
+      if (seg[3] === 'install-key') return { result: await keys.install(gc, user, id, b), device: await one(gc, id, user) };
+      if (seg[3] === 'test-key') return { result: await keys.test(gc, user, id), device: await one(gc, id, user) };
+      if (seg[3] === 'duplicate') return { device: await one(gc, await duplicate(gc, user, id), user) };
       if (seg[3] === 'check') {
         const d = await devices.need(gc, id);
         if (d.kind === 'host') return { status: { online: d.status.online, responseTime: null, lastCheck: d.host.lastSeen ? new Date(d.host.lastSeen).toISOString() : null } };
@@ -211,9 +264,11 @@ async function route(req, gc, seg, cfg) {
         if (d.protocol !== 'ssh' || d.kind === 'host') throw fail('invalid', { field: 'protocol' });
         const username = typeof b.username === 'string' && b.username.trim() ? b.username.trim().slice(0, 256) : undefined;
         let k;
-        try { k = await gc.remote.vault.generate({ kind: 'ed25519', label: d.name.slice(0, 60), ...(username ? { username } : {}), ...(d.credential ? { handle: d.credential } : {}) }); } catch (e) { throw fromHost(e); }
+        // 1.8: the comment of the key is gatecontrol:dev-<id> (GateControl with version 9 finds its own line by it)
+        const comment = keys.v9(gc) ? { comment: 'gatecontrol:dev-' + d.id } : {};
+        try { k = await gc.remote.vault.generate({ kind: 'ed25519', label: d.name.slice(0, 60), ...comment, ...(username ? { username } : {}), ...(d.credential ? { handle: d.credential } : {}) }); } catch (e) { throw fromHost(e); }
         if (d.credential !== k.handle) { d.credential = k.handle; d.credentialUnreadable = false; await devices.write(gc, d); }
-        return { publicKey: k.publicKey, device: await one(gc, id) };
+        return { publicKey: k.publicKey, line: await keys.lineFor(gc, d, k.publicKey), device: await one(gc, id, user) };
       }
       if (seg[3] === 'rotated') { await devices.rotated(gc, id); return { device: await one(gc, id) }; }
       if (seg[3] === 'toggle') {
@@ -288,4 +343,4 @@ async function recordingStatus(gc) {
   try { return gc.remote ? await gc.remote.recordings.available() : { available: false, reason: 'not_yet' }; } catch { return { available: false, reason: 'not_yet' }; }
 }
 
-module.exports = { route, gateways, deviceList, candidateList, v7 };
+module.exports = { route, gateways, deviceList, candidateList, v7, features };

@@ -1,30 +1,26 @@
-<main class="rm-page">
+<main class="rm-page rm-devpage">
   <p class="rm-note" id="rm-licence" role="status" hidden></p>
   <div class="rm-stats" id="rm-stats" aria-live="polite"></div>
   <section class="rm-card" aria-labelledby="rm-dev-h">
     <div class="rm-card-head">
       <h2 class="rm-card-title" id="rm-dev-h">{{t:dev.title}}</h2>
       <button class="btn btn-sm" type="button" id="rm-switch-all" hidden>{{t:dev.switch_all}}</button>
-      <button class="btn btn-sm" type="button" id="rm-check">{{t:dev.check_all}}</button>
+      <button class="btn btn-sm" type="button" id="rm-check" data-tip="{{t:dev.check_all_tip}}">{{t:dev.check_all}}</button>
       <button class="btn btn-sm btn-primary" type="button" id="rm-add">{{t:dev.add}}</button>
     </div>
-    <div class="rm-toolbar">
-      <input class="form-input" type="search" id="rm-search" placeholder="{{t:dev.search}}" aria-label="{{t:dev.search}}">
-      <select class="form-select" id="rm-proto" aria-label="{{t:dev.protocol}}">
-        <option value="">{{t:dev.all_protocols}}</option>
-        <option value="rdp">{{t:proto.rdp}}</option>
-        <option value="vnc">{{t:proto.vnc}}</option>
-        <option value="ssh">{{t:proto.ssh}}</option>
-        <option value="telnet">{{t:proto.telnet}}</option>
-      </select>
-      <select class="form-select" id="rm-state" aria-label="{{t:dev.state}}">
-        <option value="">{{t:dev.all_states}}</option>
-        <option value="online">{{t:state.online}}</option>
-        <option value="offline">{{t:state.offline}}</option>
-      </select>
+    <div class="rm-tb">
+      <label class="rm-srch" for="rm-search"><span class="rm-srch-ico" id="rm-srch-ico" aria-hidden="true"></span><input type="search" id="rm-search" placeholder="{{t:dev.search_more}}" aria-label="{{t:dev.search}}" autocomplete="off"></label>
+      <div class="rm-fchips" id="rm-protos" role="group" aria-label="{{t:dev.protocol}}"></div>
+      <button class="btn btn-sm rm-fbtn" type="button" id="rm-filter" aria-haspopup="true" aria-expanded="false">{{t:dev.filter}}</button>
+      <div class="rm-fchips" id="rm-active" aria-live="polite"></div>
+      <span class="rmx-sp"></span>
+      <label class="rm-sortl"><span class="rm-vh">{{t:dev.sort}}</span><select class="form-select rm-sort" id="rm-sort" aria-label="{{t:dev.sort}}"></select></label>
+      <span class="rm-count" id="rm-count" aria-live="polite"></span>
+      <div class="rm-vseg" role="group" aria-label="{{t:dev.view}}" id="rm-view"></div>
     </div>
-    <div class="rm-list" id="rm-devices" aria-live="polite"></div>
+    <div id="rm-devices" aria-live="polite"></div>
     <p class="rm-hint" id="rm-none" hidden>{{t:dev.none}}</p>
+    <p class="rm-hint" id="rm-nomatch" hidden>{{t:dev.no_match}}</p>
     <p class="rm-hint">{{t:dev.hint}}</p>
     <p class="rm-hint">{{t:dev.host_hint}}</p>
   </section>

@@ -4,7 +4,10 @@
    way as one line, step 3 asks for the login. The way is derived as in server/way.js; nothing of the list is stored.
    window.RMW.open({ device? }) — with a device only steps 1 and 2 („Ziel ändern“ of the editor) → the new target.
    1.7.2: the home networks come as `homes` (server/homes.js): the gateways of one failover pool are one section, each
-   device once; the target goes through the pool, scan and wake through an online gateway of it. */
+   device once; the target goes through the pool, scan and wake through an online gateway of it.
+   1.8: the large dialog — on wide frames the list on the left and the details of the choice on the right (the ports and the
+   way of step 2 in the same view); on top „Linux-Gerät mit Agent“ with its own steps Ziel · Code & Befehl · Fertig
+   (ui/agent.js; GateControl with gc.remote version 9, else the way through the user) and „Windows-PC oder Android-Handy“. */
 (function () {
   'use strict';
   var P = window.RM;
@@ -31,6 +34,7 @@
     warn: [['path', { d: 'M12 3 2 20h20L12 3Z' }], ['path', { d: 'M12 10v4M12 17v.5' }]],
     info: [['circle', { cx: 12, cy: 12, r: 9 }], ['path', { d: 'M12 11v6M12 7.5v.5' }]],
     lock: [['rect', { x: 5, y: 11, width: 14, height: 9, rx: 2 }], ['path', { d: 'M8 11V8a4 4 0 0 1 8 0v3' }]],
+    chip2: [['rect', { x: 6, y: 6, width: 12, height: 12, rx: 2 }], ['path', { d: 'M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4' }]],
     line: [['path', { d: 'M4 12h16' }]],
     vline: [['path', { d: 'M12 3v18' }]],
   };
@@ -128,13 +132,19 @@
     return h && h.online ? { peerId: h.peerId, ref: dev ? dev.ref : null } : null;
   }
 
-  function model(c) {
+  function model(c, withNew) {
     var known = c.known || [];
     var devOf = function (gwId, ref) {
       var h = homeOf(c, gwId);
       return h ? (h.devices || []).filter(function (d) { return d.ref === ref || (d.refs || []).indexOf(ref) >= 0; })[0] || null : null;
     };
     var groups = [];
+    if (withNew) {
+      groups.push({ id: 'new', title: T('ag.grp_new'), rows: [
+        { key: 'agent', kind: 'agent', ico: 'ag', glyph: 'chip', name: T('ag.row'), sub: [T('ag.row_sub')], protos: { ssh: 22, rdp: 3389, vnc: 5900 }, big: true, search: T('ag.row') + ' linux agent' },
+        { key: 'apps', kind: 'apps', ico: 'vpn', glyph: 'pc', name: T('ag.apps_row'), sub: [T('ag.apps_sub')], protos: {}, flat: true, tag: T('ag.help'), search: 'windows android app' },
+      ], more: [] });
+    }
     var vpn = { id: 'vpn', title: T('wz.grp_vpn'), rows: [], more: [] };
     (c.peers || []).forEach(function (p) {
       if (p.app === 'android') return; // a phone shares its screen through the app, it is no target of its own
@@ -199,8 +209,9 @@
       proto: 'rdp', port: 3389, portTouched: false, name: '', extHost: '', extWay: null, wayBusy: false, twinVia: 'vpn', gwPick: null,
       scan: null, scanBusy: false, scanErr: null, scanKey: null,
       user: '', password: '', sshMode: 'gc', privateKey: '', passphrase: '', browser: true,
-      saving: false, saveErr: null, saved: null, publicKey: null, again: null,
+      saving: false, saveErr: null, saved: null, publicKey: null, again: null, agent: null, agentCtl: null, adoptPick: '',
     };
+    var F = o.features || {};
     var resolveFn;
     var done = new Promise(function (r) { resolveFn = r; });
     var body = el('div', { class: 'rmx-body' });
@@ -210,15 +221,27 @@
     var next = el('button', { type: 'button', class: 'btn btn-primary', text: T('wz.next') });
     var title = el('div', { class: 'rmx-title', text: retarget ? T('wz.retarget_title', { name: o.device.name }) : T('dev.add') });
     var close = el('button', { type: 'button', class: 'rmx-x', 'aria-label': T('common.close'), text: '×' });
-    var modal = el('div', { class: 'modal rmx-modal' }, [
+    var hintFoot = el('span', { class: 'rmx-small', text: T('ag.close_ok'), hidden: true });
+    var modal = el('div', { class: 'modal rmx-modal rm-wiz' }, [
       el('div', { class: 'rmx-head' }, [title, close]), stepsBox, body,
-      el('div', { class: 'rmx-foot' }, [back, el('span', { class: 'rmx-sp' }), cancel, next]),
+      el('div', { class: 'rmx-foot' }, [back, hintFoot, el('span', { class: 'rmx-sp' }), cancel, next]),
     ]);
     var ov = el('div', { class: 'modal-overlay rmx-ov', role: 'dialog', 'aria-modal': 'true', 'aria-label': T('dev.add') }, [modal]);
-    function finish(v) { ov.remove(); resolveFn(v); }
+    function finish(v) { if (S.agentCtl) S.agentCtl.stop(); P.hideTip(); ov.remove(); document.removeEventListener('keydown', onKey); window.removeEventListener('resize', onResize); resolveFn(v); }
+    function onKey(ev) { if (ev.key === 'Escape' && document.querySelectorAll('.modal-overlay')[document.querySelectorAll('.modal-overlay').length - 1] === ov) close.click(); }
+    var wasWide = null;
+    function onResize() { var w = wide(); if (w !== wasWide && S.step === 1) render(); }
+    document.addEventListener('keydown', onKey);
+    window.addEventListener('resize', onResize);
+    /** 1.8: list and details side by side (the frame is wide enough) */
+    function wide() { return (window.innerWidth || 0) >= 820; }
     close.addEventListener('click', function () { finish(S.saved ? { saved: S.saved } : null); });
     cancel.addEventListener('click', function () { finish(S.saved ? { saved: S.saved } : null); });
-    back.addEventListener('click', function () { if (S.step > 1 && S.step < 4) go(S.step - 1); });
+    back.addEventListener('click', function () {
+      if (S.step === 'A') { if (S.agentCtl) S.agentCtl.stop(); S.agentCtl = null; go(1); return; }
+      if (S.step === 3 && wide()) { go(1); return; }
+      if (S.step > 1 && S.step < 4) go(S.step - 1);
+    });
     next.addEventListener('click', onNext);
 
     // ── the effective target of the selection (twin: the way chosen) ──
@@ -340,6 +363,7 @@
     // ── the steps ──
     function go(n) {
       S.step = n;
+      if (n === 2 && S.sel && (S.sel.kind === 'agent' || S.sel.kind === 'apps')) { render(); body.scrollTop = 0; return; }
       if (n === 2) {
         if (S.sel && S.sel.kind === 'ext' && S.extHost && !S.extWay) resolveExt();
         else runScan();
@@ -348,6 +372,14 @@
       body.scrollTop = 0; // 1.7.2: the body scrolls inside the dialog — each step from its top
     }
     function onNext() {
+      if (S.step === 'AD') { finish({ connectId: S.agent.deviceId, saved: true }); return; }
+      if (S.sel && S.sel.kind === 'agent' && (S.step === 2 || (S.step === 1 && wide()))) { if (F.enroll) go('A'); return; }
+      if (S.step === 1 && wide() && S.sel) {
+        if (!canGoOn()) return;
+        if (retarget) { finish({ target: result() }); return; }
+        go(3);
+        return;
+      }
       if (S.step === 1) { if (S.sel) go(2); return; }
       if (S.step === 2) {
         if (retarget) { finish({ target: result() }); return; }
@@ -359,6 +391,8 @@
     }
 
     function pick(it) {
+      var keep = body.querySelector('.rmx-colL');
+      S.listTop = keep ? keep.scrollTop : 0;
       S.sel = it;
       S.scan = null; S.scanErr = null; S.scanKey = null; S.protoTouched = false; S.portTouched = false; S.extWay = null; S.gwPick = null;
       S.twinVia = 'vpn';
@@ -368,6 +402,9 @@
         S.proto = it.kind === 'route' ? it.route.protocol : firstProto(it.protos, retarget ? o.device.protocol : 'rdp');
         S.port = it.kind === 'route' ? it.route.target.port : (it.protos[S.proto] || DEF_PORT[S.proto]);
       }
+      if (it.kind === 'agent' || it.kind === 'apps') { S.name = ''; render(); return; }
+      // 1.8: on a wide frame the details of step 2 stand beside the list — the check starts with the choice
+      if (wide() && it.kind !== 'ext') runScan();
       render();
     }
 
@@ -433,25 +470,51 @@
 
     // ── render ──
     function render() {
+      P.hideTip();
       P.clear(stepsBox);
-      var labels = retarget ? ['wz.step1', 'wz.step2'] : ['wz.step1', 'wz.step2', 'wz.step3'];
+      var agentPath = S.sel && S.sel.kind === 'agent' && !retarget;
+      var w = wide();
+      wasWide = w;
+      var labels = retarget ? ['wz.step1', 'wz.step2'] : (agentPath ? ['wz.step1', 'ag.step2', 'ag.step3'] : (w ? ['wz.step12', 'wz.step3'] : ['wz.step1', 'wz.step2', 'wz.step3']));
+      var cur = agentPath ? (S.step === 'A' ? 2 : (S.step === 'AD' ? 3 : 1)) : (w && !retarget ? (S.step <= 2 ? 1 : S.step - 1) : S.step);
       labels.forEach(function (k, i) {
         var n = i + 1;
-        stepsBox.appendChild(el('span', { class: n === S.step ? 'on' : (n < S.step ? 'done' : '') }, [el('b', { text: String(n) }), T(k)]));
+        stepsBox.appendChild(el('span', { class: n === cur ? 'on' : (n < cur ? 'done' : '') }, [el('b', { text: n < cur ? '✓' : String(n) }), T(k)]));
       });
-      P.clear(body);
-      if (S.step === 1) step1();
+      title.textContent = retarget ? T('wz.retarget_title', { name: o.device.name }) : (agentPath && S.step !== 1 ? T('ag.title') : T('dev.add'));
+      var root = body;
+      P.clear(root);
+      root.classList.remove('rmx-two');
+      if (S.step === 1 && w) {
+        root.classList.add('rmx-two');
+        var L = el('div', { class: 'rmx-colL' });
+        var R = el('div', { class: 'rmx-colR', 'aria-live': 'polite' });
+        root.appendChild(L);
+        root.appendChild(R);
+        body = L;
+        step1();
+        body = R;
+        if (!S.sel) body.appendChild(el('div', { class: 'rmx-empty' }, [svg('way', 28), el('b', { text: T('wz.pick_head') }), el('span', { class: 'rmx-small', text: T('wz.pick_text') })]));
+        else step2();
+        body = root;
+        if (S.listTop) L.scrollTop = S.listTop;
+      } else if (S.step === 1) step1();
       else if (S.step === 2) step2();
       else if (S.step === 3) step3();
+      else if (S.step === 'A') stepAgent();
+      else if (S.step === 'AD') stepAgentDone();
       else step4();
-      back.hidden = S.step === 1 || S.step === 4;
-      cancel.textContent = S.step === 4 ? T('common.close') : T('common.cancel');
-      next.textContent = S.step === 4 ? T('dev.connect') : (S.step === 3 ? T('common.save') : (S.step === 2 && retarget ? T('wz.apply') : T('wz.next')));
-      next.hidden = S.step === 4 && !(S.saved && S.saved.config && S.saved.config.browser_enabled);
-      next.disabled = (S.step === 1 && !S.sel) || (S.step === 2 && !canGoOn()) || S.saving;
+      back.hidden = S.step === 1 || S.step === 4 || S.step === 'AD';
+      cancel.textContent = S.step === 4 || S.step === 'A' || S.step === 'AD' ? T('common.close') : T('common.cancel');
+      next.textContent = S.step === 4 || S.step === 'AD' ? T('dev.connect') : (S.step === 3 ? T('common.save') : ((S.step === 2 || (S.step === 1 && w)) && retarget ? T('wz.apply') : T('wz.next')));
+      next.hidden = (S.step === 4 && !(S.saved && S.saved.config && S.saved.config.browser_enabled)) || S.step === 'A' || (S.step === 'AD' && !(S.agent && S.agent.device && S.agent.device.ssh))
+        || (agentPath && !F.enroll) || !!(S.sel && S.sel.kind === 'apps');
+      next.disabled = (S.step === 1 && !S.sel) || ((S.step === 2 || (S.step === 1 && w && S.sel && !agentPath)) && !canGoOn()) || S.saving;
+      hintFoot.hidden = S.step !== 'A';
     }
     function canGoOn() {
-      if (!S.sel || S.sel.self) return false;
+      if (S.sel && S.sel.kind === 'agent') return true;
+      if (!S.sel || S.sel.self || S.sel.kind === 'apps') return false;
       if (S.sel.kind === 'ext') return !!(S.extHost.trim() && S.extWay && !S.wayBusy);
       return !!S.port;
     }
@@ -473,6 +536,7 @@
         var needle = S.q.trim().toLowerCase();
         var match = function (it) {
           if (it.kind === 'ext') return true;
+          if (it.kind === 'agent' || it.kind === 'apps') return !needle || (it.search + ' ' + it.name).toLowerCase().indexOf(needle) >= 0;
           var okQ = !needle || (it.search + ' ' + it.name).toLowerCase().indexOf(needle) >= 0;
           var okF = S.filter === 'all' || !!it.protos[S.filter];
           return okQ && okF;
@@ -497,14 +561,14 @@
       drawList();
     }
     function rowEl(it) {
-      var b = el('button', { type: 'button', class: 'rmx-row' + (it.dim ? ' dim' : '') + (S.sel && S.sel.key === it.key ? ' sel' : ''), 'data-k': it.key, 'aria-pressed': S.sel && S.sel.key === it.key ? 'true' : 'false' }, [
+      var b = el('button', { type: 'button', class: 'rmx-row' + (it.dim ? ' dim' : '') + (it.big ? ' big' : '') + (S.sel && S.sel.key === it.key ? ' sel' : ''), 'data-k': it.key, 'aria-pressed': S.sel && S.sel.key === it.key ? 'true' : 'false' }, [
         ico(it.ico, it.glyph),
         el('span', { class: 'rmx-rmain' }, [el('span', { class: 'rmx-rname', text: it.name }), el('span', { class: 'rmx-rsub' }, joinSub(it.sub))]),
         it.flat ? null : protosEl(it),
         it.tag ? tag(it.tag, 'ok') : null,
       ]);
       b.addEventListener('click', function () { pick(it); });
-      b.addEventListener('dblclick', function () { pick(it); go(2); });
+      b.addEventListener('dblclick', function () { pick(it); onNext(); });
       return b;
     }
     function protosEl(it) {
@@ -537,6 +601,8 @@
     function step2() {
       var s = S.sel;
       if (!s) { go(1); return; }
+      if (s.kind === 'agent') { agentPane(); return; }
+      if (s.kind === 'apps') { appsPane(); return; }
       // a PC or Linux computer that registers itself
       if (s.self) {
         body.appendChild(targetCard(s.name, joinSub([T(s.self === 'windows' ? 'wz.self_windows' : 'wz.self_linux')]), 1, s.hostDev ? tag(T('wz.in_list'), 'ok') : null));
@@ -834,13 +900,70 @@
       }).catch(P.warn);
     }
 
+
+    // ── 1.8: „Linux-Gerät mit Agent“ ──
+    function agentPane() {
+      body.appendChild(el('div', { class: 'rmx-panehead' }, [el('span', { class: 'rmx-ico ag' }, [svg('chip')]), el('b', { text: T('ag.row') })]));
+      if (!F.enroll) { var fb = el('div', { class: 'rmx-fallback' }); body.appendChild(fb); window.RMA.fallback(fb, ''); return; }
+      var how = el('ol', { class: 'rm-howto' });
+      ['ag.how1', 'ag.how2', 'ag.how3'].forEach(function (k) { how.appendChild(el('li', { text: T(k) })); });
+      body.appendChild(el('div', null, [el('span', { class: 'rmx-flabel', text: T('ag.how') }), how]));
+      body.appendChild(el('div', { class: 'rmx-kv rm-kv-left' }, [
+        el('span', { text: T('ag.kv_way') }), el('b', { text: T('ag.kv_way_v') }), el('span', { text: T('ag.kv_login') }), el('b', { text: T('ag.kv_login_v') }),
+        el('span', { text: T('ag.kv_hostkey') }), el('b', { text: T('ag.kv_hostkey_v') }), el('span', { text: T('ag.kv_code') }), el('b', { text: T('ag.kv_code_v') }),
+      ]));
+      body.appendChild(el('details', { class: 'rmx-adv' }, [el('summary', { text: T('ag.install') }), el('div', { class: 'advb' }, [window.RMA.cmdBox('curl -LO https://github.com/CallMeTechie/gatecontrol-linux-agent/releases/latest/download/gatecontrol-agent_$(dpkg --print-architecture).deb\nsudo apt install ./gatecontrol-agent_$(dpkg --print-architecture).deb'),
+        el('span', { class: 'rmx-small', text: T('ag.install_more') })])]));
+      // the device was made by hand already: better „Bearbeiten › Agent“ (one device instead of two)
+      var ssh = (o.devices || []).filter(function (d) { return d.kind === 'target' && d.protocol === 'ssh'; });
+      if (ssh.length) {
+        var sel = el('select', { class: 'form-select', id: 'rmx-adopt', 'aria-label': T('ag.adopt_pick') }, [el('option', { value: '', text: T('ag.adopt_pick') })].concat(ssh.map(function (d) { return el('option', { value: String(d.id), text: d.name + ' · ' + d.config.host, selected: S.adoptPick === String(d.id) }); })));
+        sel.addEventListener('change', function () { S.adoptPick = sel.value; });
+        body.appendChild(note('info', T('ag.exists_head'), T('ag.exists_text'), [sel, sbtn(T('ag.exists_go'), function () { if (S.adoptPick) finish({ open: parseInt(S.adoptPick, 10), section: 'agent' }); else sel.focus(); })]));
+      }
+    }
+    function appsPane() {
+      body.appendChild(el('div', { class: 'rmx-panehead' }, [el('span', { class: 'rmx-ico vpn' }, [svg('pc')]), el('b', { text: T('ag.apps_row') })]));
+      body.appendChild(note('info', T('wz.self_head'), T('wz.self_text')));
+      body.appendChild(note('info', T('ag.apps_phone_head'), T('ag.apps_phone_text')));
+      body.appendChild(el('p', { class: 'rmx-small', text: T('wz.self_more') }));
+    }
+    function stepAgent() {
+      var box = el('div', { class: 'rm-agbox' });
+      body.appendChild(box);
+      if (S.agentCtl && S.agent) { S.agentCtl = window.RMA.panel(box, { enrollment: S.agent, me: o.me, onRegistered: agentDone, onChange: function (e) { S.agent = e; } }); return; }
+      S.agentCtl = window.RMA.panel(box, { me: o.me, auto: false, onRegistered: agentDone, onChange: function (e) { S.agent = e; S.saved = S.saved || true; } });
+    }
+    function agentDone(e) {
+      S.agent = e;
+      if (S.agentCtl) S.agentCtl.stop();
+      go('AD');
+    }
+    function stepAgentDone() {
+      var e = S.agent;
+      var dv = e.device || {};
+      body.appendChild(el('div', { class: 'rmx-okbig' }, [el('span', { class: 'rmx-ico' }, [svg('ok', 18, 2.6)]), el('div', null, [
+        el('b', { text: T('ag.done_head', { name: e.name }) }), el('div', { class: 'rmx-small', text: T('ag.done_sub', { owner: e.ownerName || '' }) + ' · ' + T(e.options && e.options.open ? 'ag.open' : 'ag.code') })])]));
+      var kv = el('div', { class: 'rmx-kv rm-kv-left' });
+      var add = function (k, v) { if (v) { kv.appendChild(el('span', { text: k })); kv.appendChild(el('b', { text: v })); } };
+      add(T('ag.d_vpn'), dv.vpnIp || e.vpnIp);
+      add(T('ag.d_peer'), (e.peerName || e.name) + (dv.appVersion ? ' (Linux Agent ' + dv.appVersion + ')' : ''));
+      add(T('ag.d_ssh'), dv.ssh ? T('ag.d_ssh_v', { user: dv.ssh.user, tmux: dv.ssh.tmux ? 'tmux ' + dv.ssh.tmux : T('dev.linux_no_tmux') }) : null);
+      add(T('ag.d_hostkey'), dv.hostKey ? dv.hostKey.alg + ' SHA256:' + String(dv.hostKey.sha256).slice(0, 4) + '…' + String(dv.hostKey.sha256).slice(-4) : null);
+      add(T('ag.d_desktop'), dv.desktop ? String(dv.desktop.protocol || '').toUpperCase() + ' · ' + dv.desktop.kind : null);
+      add(T('ag.d_os'), dv.os);
+      body.appendChild(kv);
+      var edit = sbtn(T('dev.edit'), function () { finish({ open: e.deviceId, saved: true }); });
+      body.appendChild(el('div', { class: 'acts rmx-again' }, [edit]));
+    }
+
     document.body.appendChild(ov);
     render();
     P.api('GET', 'admin/candidates').then(function (c) {
       if (!c || !c.available) { S.candErr = T('wz.cand_unavailable'); S.cand = { gateways: [], homes: [], peers: [], routes: [], known: [] }; }
       else S.cand = c;
-      S.groups = model(S.cand);
-    }).catch(function (e) { S.candErr = P.errText(e); S.cand = { gateways: [], homes: [], peers: [], routes: [], known: [] }; S.groups = model(S.cand); }).then(render);
+      S.groups = model(S.cand, !retarget);
+    }).catch(function (e) { S.candErr = P.errText(e); S.cand = { gateways: [], homes: [], peers: [], routes: [], known: [] }; S.groups = model(S.cand, !retarget); }).then(render);
     return done;
   }
 

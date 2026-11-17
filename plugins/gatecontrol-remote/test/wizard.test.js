@@ -116,7 +116,7 @@ test('a new device from the wizard: port on the server automatic, browser on, ad
     assert.ok(d.config.gateway_listen_port >= 40000 && d.config.gateway_listen_port <= 40999, 'the port GateControl picked');
     assert.deepEqual(d.access.users, [ADMIN.id]);
     assert.equal(d.access.open, false);
-    assert.equal(d.way.kind, 'gateway');
+    assert.equal(d.wayDetail.kind, 'gateway');
     // saved again: the port stays
     const again = (await adminReq('PUT', 'devices/' + d.id, { name: 'wohnzimmer' })).device;
     assert.equal(again.config.gateway_listen_port, d.config.gateway_listen_port);
@@ -130,11 +130,11 @@ test('the editor: an old device with a LAN address under „Nur VPN“ gets the 
   const { host, adminReq } = await v7();
   try {
     const d = (await adminReq('POST', 'devices', rdpDevice({ config: { host: '192.168.178.34', access_mode: 'internal' } }))).device;
-    assert.equal(d.way.kind, 'server');
-    assert.deepEqual([d.way.hint.kind, d.way.hint.gateway.peerId], ['lan', 7]);
+    assert.equal(d.wayDetail.kind, 'server');
+    assert.deepEqual([d.wayDetail.hint.kind, d.wayDetail.hint.gateway.peerId], ['lan', 7]);
     const vpn = (await adminReq('POST', 'devices', rdpDevice({ config: { host: '10.8.0.30' }, top: { name: 'nas' } }))).device;
-    assert.deepEqual([vpn.way.kind, vpn.way.peer.name, vpn.way.hint], ['vpn', 'nas', null]);
+    assert.deepEqual([vpn.wayDetail.kind, vpn.wayDetail.peer.name, vpn.wayDetail.hint], ['vpn', 'nas', null]);
     const both = (await adminReq('POST', 'devices', rdpDevice({ config: { host: '10.8.0.30', access_mode: 'both', external_hostname: 'nas.example.org', external_port: 13389 } }))).device;
-    assert.deepEqual([both.way.kind, both.way.external.host], ['vpn', 'nas.example.org']);
+    assert.deepEqual([both.wayDetail.kind, both.wayDetail.external.host], ['vpn', 'nas.example.org']);
   } finally { await host.close(); }
 });

@@ -40,13 +40,24 @@ async function sideEffects(gc, ev, deviceId, now) {
     await log.write(gc, 'remote_host_key_changed', { device: d, userId: ev.userId || null }, now);
     return;
   }
-  // an administrator tried the terminal on a device that still uses Guacamole: it worked
-  if (ev.phase === 'start' && ev.engine === 'term' && deviceId) {
+  // 1.8: the login at the device was refused (the terminal): the card offers „Schlüssel automatisch einrichten“
+  if ((ev.phase === 'abort' || ev.phase === 'end') && ev.reason === 'auth_failed' && deviceId) {
     const d = await devices.get(gc, deviceId);
-    if (d && d.protocol === 'ssh' && d.config.ssh_engine === 'guac' && !d.config.term_tested_at) {
-      d.config.term_tested_at = new Date(now).toISOString();
+    if (d && d.protocol === 'ssh' && d.kind === 'target') {
+      d.config.last_auth_failed = { at: new Date(now).toISOString(), userId: ev.userId || null, username: typeof ev.username === 'string' ? ev.username.slice(0, 64) : null };
       await devices.write(gc, d, now);
     }
+    return;
+  }
+  if (ev.phase === 'start' && ev.engine === 'term' && deviceId) {
+    const d = await devices.get(gc, deviceId);
+    if (!d || d.protocol !== 'ssh') return;
+    let dirty = false;
+    // an administrator tried the terminal on a device that still uses Guacamole: it worked
+    if (d.config.ssh_engine === 'guac' && !d.config.term_tested_at) { d.config.term_tested_at = new Date(now).toISOString(); dirty = true; }
+    // 1.8: a login worked again — the hint of a refused one goes
+    if (d.config.last_auth_failed) { delete d.config.last_auth_failed; dirty = true; }
+    if (dirty) await devices.write(gc, d, now);
   }
 }
 

@@ -16,6 +16,9 @@
 //                                                (gc.remote version 2: GateControl after 1.283.0)
 //   SSH in GateControl's terminal with tmux,   — server/connect.js, server/recordings.js
 //   recordings (1.2, stage 3)                    (gc.remote version 3; older GateControl: SSH over Guacamole, no recordings)
+//   GateControl's SSH key set up with a        — server/keys.js, server/enroll.js, connect.js (tmux), hosts.js (adopt)
+//   password, closing tmux sessions, codes for   (gc.remote version 9; older GateControl: „SSH-Schlüssel erzeugen“, the way
+//   the Linux agent (1.8)                         through „Benutzer › Gerät hinzufügen“)
 //
 // Background (every 60 s): the device checks (every `checkMinutes`), sessions of
 // apps that stopped reporting, requests and firewall rules that ran out, the
@@ -34,6 +37,8 @@ const support = require('./support');
 const codes = require('./codes');
 const log = require('./log');
 const recordings = require('./recordings');
+const keys = require('./keys');
+const enroll = require('./enroll');
 const texts = require('./texts.json');
 const { STATUS, isKnown } = require('./util');
 
@@ -84,12 +89,15 @@ async function background(gc, now) {
     try { await log.purge(gc, cfg.historyDays, now); await codes.purge(gc, now); } catch (e) { gc.log.warn('purge failed', (e && e.code) || 'error'); }
     try { await recordings.purge(gc, cfg.recordingDays, now); } catch (e) { gc.log.warn('recording purge failed', (e && e.code) || 'error'); }
   }
+  // 1.8: codes for the agent that ran out, placeholders older than a day
+  try { await enroll.sweep(gc, now); } catch (e) { gc.log.debug('enrollment sweep failed', (e && e.code) || 'error'); }
 }
 
 module.exports = {
   async start(gc) {
     rights.reset();
     codes.reset();
+    keys.reset();
     state.lastCheck = 0;
     state.lastPurge = 0;
     state.lastReconcile = 0;
@@ -106,6 +114,7 @@ module.exports = {
     if (!(gc.remote.version >= 2)) gc.log.info('gc.remote version 1: Windows PCs of the app need a newer GateControl');
     if (!(gc.remote.version >= 3)) gc.log.info('gc.remote version ' + gc.remote.version + ': the SSH terminal and recordings need a newer GateControl');
     if (!(gc.remote.version >= 4)) gc.log.info('gc.remote version ' + gc.remote.version + ': the screen of phones needs a newer GateControl');
+    if (!(gc.remote.version >= 9)) gc.log.info('gc.remote version ' + gc.remote.version + ': setting up the SSH key, closing tmux sessions and agent codes need a newer GateControl');
     gc.log.info('remote started', gc.plugin.version);
   },
 

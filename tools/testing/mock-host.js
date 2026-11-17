@@ -4333,6 +4333,9 @@ async function createHost(pluginDir, opts = {}) {
     remoteScreenMode: (ref, reason) => rm.screenMode(ref, reason),
     remoteClose: (sessionId, reason) => rm.close(sessionId, reason),
     remoteVaultSeed: (entry, source) => rm.vaultSeed(entry, source),
+    /** gc.remote version 9: the Linux agent redeemed the code of an enrollment ticket / its first WireGuard handshake */
+    remoteEnrollRedeem: (ticket, x) => rm.enrollRedeem(ticket, x),
+    remoteEnrollHandshake: (ticket) => rm.enrollHandshake(ticket),
     remoteUnreadable: (handle) => rm.setUnreadable(handle),
     /** the old app API /api/v1/client/rdp* through the core's facade: { status, body } | { handled: false } */
     clientFacade: (op, x) => rm.facade(hook, op, x),

@@ -1,4 +1,4 @@
-<!-- version: 1.7.2 -->
+<!-- version: 1.8.0 -->
 # Remote access – Handbook
 
 ## What the plugin does {#was-das-plugin-kann}
@@ -9,6 +9,8 @@ Remote access is GateControl's former "Remote desktops" as a plugin of its own. 
 - **in the GateControl apps** (Android, Windows) with RDP as before. The apps do not notice the move.
 
 On top: wake-on-LAN, maintenance windows, a reminder to renew credentials, rights per person and group, and the history of every session.
+
+Since 1.8.0 the page **Devices shows cards or a table** with search, filters and icon buttons. **“Set up the key automatically”** puts GateControl's SSH key onto the device once with a user and a password – the password is not stored. For a **Linux computer with the agent** the page makes the code with the finished command itself and shows live how the device registers; a device made by hand can be switched to the agent this way. Before connecting, **tmux sessions and windows can be ended** (see [Set up the key automatically](#schluessel), [Linux device with agent](#agent-code) and [SSH in the terminal](#terminal)).
 
 Since 1.7.0 **“Add device” starts with the target**: GateControl lists the devices in the VPN, the devices behind each gateway and the shared services, checks the ports and picks the way itself (see [Add a device](#hinzufuegen)).
 
@@ -26,6 +28,7 @@ Passwords and SSH keys are not stored by the plugin but in GateControl's encrypt
 
 ## Requirements {#voraussetzungen}
 
+- For “Set up the key automatically”, ending tmux sessions and codes for the Linux agent on the admin page: GateControl with remote access interface **version 9** (GateControl **1.297.0** or newer). With an older GateControl these buttons are missing; “Generate SSH key” stays, and you make the code for the agent as before under Users › Add device.
 - To control a phone: GateControl with remote access interface **version 5** (GateControl 1.287.0 or newer) and the GateControl app for Android **from GitHub** with the accessibility service "GateControl remote control" switched on. With an older GateControl or the app from Google Play only viewing works.
 - For screen sharing from a phone: GateControl **1.286.0** or newer (remote access interface version 4, the relay of the picture) and the GateControl app for Android with "Share screen". An older GateControl refuses the phone's registration.
 - GateControl **1.285.0** or newer (remote access interface version 3: terminal in the core, tmux, host keys, recording; plus version 2: registration of the Windows PCs, firewall per session, silent signals to the PC).
@@ -63,13 +66,15 @@ Whoever could see an RDP or VNC target gets the right "Use remote desktops". Who
 
 ### Add a device {#hinzufuegen}
 
-“Add device” has three steps:
+“Add device” opens a large dialog. On wide screens the list is on the left and the check of the ports and the way of the choice right next to it; then only the sign-in follows. On narrow screens there are three steps:
 
 1. **Target:** you pick from a list. “In the VPN” shows the VPN devices with their name in the VPN, “Behind gateway …” the devices the gateway’s network watch sees in the home network (name, address, vendor and the open ports SSH, RDP, VNC). Devices without these ports are one line down under “show”. “Shared services” are L4 routes that look like SSH, RDP or VNC, and “Enter another target …” takes a name or an address outside your network. Search and the filters SSH, RDP, VNC help with long lists. Greyed out is what already is a device or registers itself (Windows PCs with the app, Linux computers with the agent).
 
    **Gateways in a pool:** the gateways of a failover pool see the same home network. They therefore share *one* section “Home network · pool …” with the state “Online (2 of 2)” or “1 of 2 online”, and each device is listed once – the same address in the same subnet is one device; the ports of all gateways are merged. A device from it goes through the pool: if one gateway fails, the other takes over. Checking and waking go through a gateway of the pool that is online right now. Gateways without a pool keep their own section “Behind gateway …”.
 2. **Connection:** protocol and port are filled in. On opening, GateControl checks the ports 22, 3389, 5900 and 23 of this one device – through the gateway or from the server – and shows the way as one line: **in the VPN**, **through gateway “…”** or **over the internet**. What used to be “Access” is under “Advanced”.
 3. **Login:** user name and password, for SSH by default a key made by GateControl (you copy its public part once into `~/.ssh/authorized_keys`). “Connect in the browser too” is on for new devices.
+
+At the very top of the list are **“Linux device with agent”** (see [Linux device with agent](#agent-code)) and **“Windows PC or Android phone”** – those come by themselves through the app.
 
 Afterwards you see what was set up with defaults. At first only administrators see the device – “Share with people” changes that. If the device has a second protocol open, GateControl offers “Add with VNC too?” (or SSH, RDP) with everything filled in; a device has one protocol.
 
@@ -87,9 +92,17 @@ Afterwards you see what was set up with defaults. At first only administrators s
 
 **The way:** a VPN address goes directly. An address in the home network of a gateway goes through the gateway – GateControl picks the port on the server itself (40000–40999, only reachable in the VPN). Everything else goes from the server.
 
-**Edit** shows everything on one page: target and login on top, below sections (“Who may use it”, “Wake & maintenance”, “Display, resources, performance”, “Browser & recording”, for SSH “Terminal & key”, “Advanced · way”, “Notes & tags”) with a summary in their head. “Change target” opens steps 1 and 2. Taken-over devices keep their data, the port on the server too. If the address of a device under “VPN only” lies in the home network of a gateway, GateControl suggests “Connect through the gateway” – before, such a device went nowhere.
+**Edit** opens the same large dialog: the sections on the left (“Target & way”, “Sign-in”, for SSH “Agent” and “Terminal & tmux”, “Who may use it”, “Wake & maintenance”, “Display & performance”, “Browser & recording”, “Notes & tags”) with a short summary, the chosen section on the right. An error when saving marks its section red and jumps there. “Sign-in” shows whether the last sign-in failed, the choice password / GateControl's key / own key and – for SSH – “Set up the key automatically” or the key set up with fingerprint, path, origin and “Remove key”. “Change target” (under “Target & way”) opens steps 1 and 2. Taken-over devices keep their data, the port on the server too. If the address of a device under “VPN only” lies in the home network of a gateway, GateControl suggests “Connect through the gateway” – before, such a device went nowhere.
 
 ### Devices {#geraete}
+
+**The list:** On top the figures (devices, online, offline, sign-in failed, active sessions, waiting agent codes). Below the search (name, address, owner, tag), the protocol chips, “State, way, sign-in” as a drop-down (filters set show as chips with ×; “Problems” means offline, sign-in failed, gateway port missing, credentials unreadable or due), the sorting and the switch **Cards | Table**. The browser remembers the choice; without one there are cards up to 12 devices, the table from 13. In the table every column head sorts.
+
+- **Way** of each device: via gateway “…” (house), in the VPN or app (shield), agent (chip), internet (globe), server's network.
+- **Sign-in:** password, key (GateControl's), own key, agent key, code + confirmation or without code – and in red **“Sign-in failed”** when the terminal was refused last time. The card then offers “Set up the key automatically” right away.
+- **Actions** are icon buttons with a hint on hover or keyboard focus: Connect (the only one with text), key, check or lock/allow “without code”, wake, edit, switch off/on, delete (red, always with a question). Rare ones are in the menu **⋮**: tmux sessions, connect with the agent, reset host key, history, duplicate, credentials renewed, switch to the terminal.
+- **Phone:** below about 700 px width a compact list with a round connect button and ⋮; the menu opens a sheet from below with every action as text.
+- **Placeholders:** an agent code not redeemed yet shows as a dashed card “waiting” in the list – with “Show command” and “Remove”. Expired it turns grey (“New code”), after 24 hours it goes.
 
 With a GateControl without remote access interface version 7 (and for devices that register themselves) a device has these tabs:
 
@@ -137,6 +150,50 @@ In the GateControl app for Windows, **Settings › Security** has the switch **�
 - **Without a code for permitted people** only spares the code for the screen: **the PC always asks.**
 - **Through the server:** picture and input run over your GateControl server as for phones. It only passes them on, stores nothing and logs no input – but it is not end-to-end encryption.
 - Sharing needs no open port and no VPN address on the PC; Remote Desktop still does.
+### Set up the key automatically {#schluessel}
+
+Instead of copying the public key into `~/.ssh/authorized_keys` yourself, GateControl signs in **once with a user and a password**, puts its own key in, tests it and switches the device to “sign in with the key”. Administrators only, only for SSH devices you made yourself.
+
+1. Choose **“Set up the key automatically”** on the card (after “Sign-in failed”), in the menu ⋮ or under Edit › Sign-in.
+2. Enter user and password and choose the account the key is for: **this account** (default) or **root through sudo** – the account must then be allowed sudo, and the terminal then signs in as root (only when `PermitRootLogin` allows keys, the Debian default `prohibit-password` does).
+3. When no host key is pinned yet, the process stops and shows the fingerprint – **before** the password is sent. Compare it on the device with `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` and confirm.
+4. GateControl puts the line in (folder 700, file 600), signs in again with the key only and shows account, fingerprint, path and origin.
+
+- **The password is not stored** – not in the vault, not in the plugin, not in a log. Under “Advanced” (on by default) a password stored in the vault is deleted too; a stale wrong password would otherwise be tried before the key.
+- **Valid only from GateControl** (default, can be switched off under “Advanced”): the line gets `from="…"` with the address the device sees (in the VPN the server's, through a gateway its home network address, with a pool all of them) and `no-agent-forwarding,no-X11-forwarding,no-port-forwarding`. Other lines stay untouched; its own line is found by the comment `gatecontrol:dev-<number>`.
+- **An existing key of GateControl** is used again. An own key pasted by hand is only replaced with the tick under “Advanced”.
+- **At most 5 attempts in 10 minutes** per device – that protects against a ban by fail2ban.
+- **Remove key** (Edit › Sign-in): GateControl signs in a last time with the key, deletes only its line and then the key in the vault. When the device cannot be reached, the line stays there – the message says so.
+- Switch password sign-in off on the device yourself afterwards (`PasswordAuthentication no` in `/etc/ssh/sshd_config`) – GateControl does not change the sshd configuration.
+
+| Message | What to do |
+|---|---|
+| Sign-in refused | User or password do not match; nothing was changed on the device. Enter the password again. |
+| Device does not allow signing in with a password | It only takes keys. Put the line in yourself (the dialog shows it to copy, “Put in, test the sign-in” checks it) or use the Linux agent. |
+| sudo asks for another password / account may not use sudo | Enter the sudo password (not stored either) or “Set it up for … instead” (the sign-in account itself). |
+| No Unix shell | Windows OpenSSH, for example: put the line in yourself, for administrators into `C:\ProgramData\ssh\administrators_authorized_keys`. |
+| File cannot be written | Read-only file system or `chattr +i`. |
+| Key not accepted | Another `AuthorizedKeysFile`, `PubkeyAuthentication no` or permissions. GateControl takes its line out again. |
+| The host key changed | Locked, no password sent. Use “Reset host key” only when the change was planned. |
+
+### Linux device with agent {#agent-code}
+
+With GateControl from remote access interface version 9 you make the code for the agent right here:
+
+1. **Add device › “Linux device with agent” › Next.**
+2. On the left choose name, **owner** (default: yourself; else a person with the right “Share own devices” – they then see the device in the portal), SSH with the account (not root), tmux, “install tmux when it is missing”, desktop and **who may connect**. The default is **“Without a code for people with access”** – on a server without a screen nobody would confirm otherwise; for another person's device with a desktop “Only with a code”.
+3. **“Make a code”**: on the right the code (10 minutes, once), the finished command to copy and the **live state** in four steps – code made, redeemed, VPN connected, registered in Remote access. Every change on the left builds the command again, the code stays. “New code” makes the old one invalid. You can close the dialog; the code stays a placeholder in the list.
+
+```
+sudo gatecontrol-agent enroll https://gate.example.org 4C2E-8A17-D3F0-5B96 --name nas-keller
+sudo gatecontrol-agent share ssh --as kim --tmux --install-tmux
+sudo gatecontrol-agent share open
+```
+
+The server address comes from GateControl's `GC_BASE_URL`. When it hangs: after 2 minutes without the VPN the state asks about `gatecontrol-agent.service` and the UDP port; when the VPN is up but the share is missing, it names the command `share ssh`.
+
+**Connect with the agent** (Edit › Agent or the menu ⋮ of an SSH device): switches a **device made by hand** to the agent. It stays **one** device – same number, name, rights, history, tmux name. Only when the agent registers do the way (the agent's own VPN) and the sign-in (the agent's key) change; until then the old way works. The password in the vault and the port through the gateway are removed, the old settings stay stored in the device. When the agent reports **another host key** than the pinned one (reinstalled, wrong computer), nothing is merged automatically: both devices stay until you choose **“Keep as a device of its own”** or **“Merge anyway”**.
+
 ### Linux devices {#linux}
 
 A Linux computer – with or without a desktop (Debian, Ubuntu, Raspberry Pi OS, CachyOS) – signs up through the service **gatecontrol-agent** (a package of its own, repository `gatecontrol-linux-agent`). The portal tab Remote access shows the same steps under **“Set up a Linux device”**.
@@ -145,7 +202,7 @@ A Linux computer – with or without a desktop (Debian, Ubuntu, Raspberry Pi OS,
    - Debian, Ubuntu, Raspberry Pi OS: `curl -LO https://github.com/CallMeTechie/gatecontrol-linux-agent/releases/latest/download/gatecontrol-agent_amd64.deb && sudo apt install ./gatecontrol-agent_amd64.deb` – instead of `amd64` use `arm64` or `armhf` depending on the computer (`dpkg --print-architecture` names it).
    - CachyOS, Arch: `curl -LO https://github.com/CallMeTechie/gatecontrol-linux-agent/releases/latest/download/gatecontrol-agent_x86_64.pkg.tar.zst && sudo pacman -U gatecontrol-agent_x86_64.pkg.tar.zst` (ARM: `aarch64`).
    - Fedora, openSUSE (no promise): `curl -LO https://github.com/CallMeTechie/gatecontrol-linux-agent/releases/latest/download/gatecontrol-agent_x86_64.rpm && sudo dnf install ./gatecontrol-agent_x86_64.rpm`.
-2. Create a code under **My devices › Add device** and sign in: `sudo gatecontrol-agent enroll https://<server> <code>`. The agent sets up WireGuard for the VPN network only (no default route, no DNS).
+2. Create a code – as an administrator under **Remote access › Devices › Add device › “Linux device with agent”** (GateControl with version 9, see [Linux device with agent](#agent-code)), else under **My devices › Add device** or **Users › Add device** (“App on a device”, rights “Everything for the app”, VPN peer “New peer (automatic)”) – and sign in: `sudo gatecontrol-agent enroll https://<server> <code>`. The agent sets up WireGuard for the VPN network only (no default route, no DNS).
 3. Share: `sudo gatecontrol-agent share ssh --as <account> --tmux` and – with a desktop – `sudo gatecontrol-agent share desktop`. `gatecontrol-agent code` shows the code for the helper, `gatecontrol-agent status` the state.
 
 - **SSH:** GateControl makes a key of its own for each Linux device in the vault; the agent adds the public half to the account's `authorized_keys`, valid only from the server. The computer's **host key** is pinned at sign-up – the first connection is checked too. With tmux the session keeps running when the connection drops.
@@ -182,10 +239,11 @@ With the GateControl app for Android **from GitHub** the helper may operate the 
 
 An SSH device connects either with **GateControl's terminal** or with **Guacamole** as before. New SSH devices get the terminal; existing and taken-over ones stay on Guacamole until you switch them.
 
-- **Switching:** open the device, tab **Terminal**, and click **"Try in the terminal"**. When the connection works, the device shows "Terminal tested". Then **"Switch to the terminal"** in the list – or **"Switch all SSH devices"** at the top. You go back in the Terminal tab under "Connect with".
+- **Switching:** open the device, tab **Terminal**, and click **"Try in the terminal"**. When the connection works, the device shows "Terminal tested". Then **"Switch to the terminal"** in the menu ⋮ of the list – or **"Switch all SSH devices"** at the top. You go back in the Terminal tab under "Connect with".
 - **tmux:** with "Resume the session with tmux" the session keeps running on the device when the connection drops or you move from the phone to the PC. The name is "gc-" and the short name of the device or one of your own (letters, digits, `_` and `-`). In the portal you choose "Resume" with the name of the session or "Start a new session" before connecting. Without tmux on the device there is a normal shell and a hint.
 - **Host key:** on the first connection the terminal shows the fingerprint of the device. Compare it (`ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`) and confirm. From then on GateControl only connects with exactly this key. If it changes, the connection is blocked. If the change was planned (a reinstalled device), reset the key in the Terminal tab with **"Reset host key"**.
-- **SSH key instead of a password:** **"Generate SSH key"** makes a key in GateControl. Add the public part on the device to `~/.ssh/authorized_keys`. The private key stays in the vault.
+- **SSH key instead of a password:** **“Set up the key automatically”** puts it in with a user and a password once (see [Set up the key automatically](#schluessel)). Without version 9 **"Generate SSH key"** makes a key in GateControl; add the public part on the device to `~/.ssh/authorized_keys`. The private key stays in the vault.
+- **Ending tmux sessions** (version 9): before connecting – in the portal, on the admin page and in the apps – every session can be expanded: windows with number, name, running command and “active”. **“End”** ends a session, **“Close”** a window (with the last one the session ends), **“End all detached sessions”** (from two) every session nobody is attached to – with a list to untick. Every question names what runs in it; when someone is connected, it says so in red. Everybody who may connect the device may do this. It concerns every session of the account GateControl signs in with (also ones that cannot be resumed, with a space in the name), not those of other accounts.
 
 ### Recording {#aufzeichnung}
 
@@ -257,6 +315,16 @@ The right is checked again on every connect.
 **"Too many wrong codes":** wait 15 minutes or let the PC show a new code.
 
 **In the browser Windows does not ask for the sign-in:** when the PC requires network level authentication (NLA), the session in the browser needs a user name and password that the session page does not ask for yet. Connect from the GateControl app then.
+
+## New in 1.8.0 {#neu-1-8-0}
+
+- **Devices as cards or a table** with search, protocol chips, filters “State, way, sign-in” and sorting; actions as icon buttons with hints, rare ones in the menu ⋮, on the phone a compact list with a sheet from below.
+- **Large dialog** for “Add device” (list on the left, check on the right) and “Edit” (sections on the left, new “Sign-in” and “Agent”).
+- **Set up the key automatically:** GateControl puts its SSH key in once with a user and a password – host key first, the password never stored, `from=` only from the server, also for root through sudo. “Remove key” deletes the line on the device again.
+- **“Sign-in failed”** on the card when the terminal was refused, with the fitting button.
+- **Linux device with agent:** code, finished command and live state right on the admin page; waiting codes as placeholders in the list. **Connect with the agent** switches a device made by hand to the agent – one device instead of two.
+- **tmux:** see the windows, end sessions, close windows, end all detached sessions – in the portal, on the admin page and in the apps.
+- Needs GateControl with remote access interface version 9 (GateControl 1.297.0 or newer); with an older GateControl everything stays as it was, the new buttons are missing.
 
 ## New in 1.7.2 {#neu-1-7-2}
 

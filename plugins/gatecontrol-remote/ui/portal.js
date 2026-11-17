@@ -9,7 +9,9 @@
    1.5: the screen of a Windows PC ("Bildschirm teilen", also Windows Home) like a phone — "Ansehen und steuern" / "Nur
    ansehen", always confirmed at the PC; a PC that also offers Remote Desktop lets the helper choose the kind.
    1.6: a Linux device of the agent — SSH (GateControl's terminal, tmux) and / or its desktop (RDP / VNC); with both the
-   helper chooses the kind; the set-up of an own Linux device for people who may share their devices. */
+   helper chooses the kind; the set-up of an own Linux device for people who may share their devices.
+   1.8: the tmux list before connecting shows the windows of each session; a session can be ended, a window closed, every
+   detached session ended at once (GateControl with gc.remote version 9; RM.tmuxDialog of ui/common.js). */
 (function () {
   'use strict';
   var P = window.RM;
@@ -218,8 +220,15 @@
       var screenKind = screenDev && d.platform === 'windows' ? 'screen' : null;
       var c = el('button', { class: 'btn btn-primary', type: 'button', text: screenDev ? T(screenControl ? 'portal.mode_control' : 'portal.view_screen') : T('dev.connect'), 'aria-label': T('portal.connect_to', { name: d.name }) });
       c.addEventListener('click', function () {
-        // a terminal with tmux, or a recording to ask for / to announce: the dialog first
-        if (!screenDev && (d.tmux || d.recording === 'optional' || d.recording === 'always')) { connectDialog(d); return; }
+        // a terminal with tmux: the sessions on the device first (1.8: with their windows, end and close)
+        if (!screenDev && d.tmux) {
+          P.tmuxDialog({ device: d, base: 'devices/' + d.id, sub: T('proto.ssh') + ' · ' + T('dev.engine_term'), connect: function (body, hostEl) {
+            return P.api('POST', 'devices/' + d.id + '/connect', body).then(function (r) { return P.openSession(r.session.ref, hostEl); });
+          } });
+          return;
+        }
+        // a recording to ask for / to announce: the dialog first
+        if (!screenDev && (d.recording === 'optional' || d.recording === 'always')) { connectDialog(d); return; }
         connectWith(c, screenDev ? (screenControl ? 'control' : 'view') : null, screenKind);
       });
       acts.appendChild(c);
