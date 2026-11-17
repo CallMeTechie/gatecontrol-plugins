@@ -40,6 +40,12 @@
 //                                       controlled, else mode view with modeReason (phone_view_only | server_view_only)
 //   POST host/requests/<id> allow       { decision: 'allow', mode: 'control' | 'view' } — control only when asked and chosen
 //   GET  devices                        a phone: screen: { view: true, control } (control: its app and GateControl can do it)
+//
+// Since 1.8 (gc.remote version 9) — closing tmux sessions and windows (the right of GET devices/<id>/tmux: whoever may connect):
+//   GET  devices/<id>/tmux?windows=1    sessions with id ('$3') and windowList [{ id: '@7', index, name, active, panes, command }];
+//                                       kill: true when GateControl can close them
+//   POST devices/<id>/tmux/kill         { session: { id, name, created }, window?: { id, index } } → { killed, sessions, tmux, hostKey, kill }
+//   POST devices/<id>/tmux/kill-detached { sessions: [{ id, name, created }] } → { killed: [ids], skipped: [{ id, reason }], sessions, … }
 
 const devices = require('./devices');
 const rights = require('./rights');
@@ -221,7 +227,15 @@ async function route(req, gc, seg, cfg) {
     const o = await overview(gc, user);
     return { devices: o.devices, rights: o.rights, codeEntry: o.codeEntry };
   }
-  if (seg[0] === 'devices' && seg.length === 3 && seg[2] === 'tmux' && m === 'GET') return connect.tmuxSessions(gc, user, seg[1]);
+  if (seg[0] === 'devices' && seg.length === 3 && seg[2] === 'tmux' && m === 'GET') {
+    const q = req.query || {};
+    return connect.tmuxSessions(gc, user, seg[1], { windows: q.windows === '1' || q.windows === 'true' || q.windows === true });
+  }
+  // 1.8: close a tmux session or window, or every detached session (gc.remote version 9)
+  if (seg[0] === 'devices' && seg.length === 4 && seg[2] === 'tmux' && m === 'POST') {
+    if (seg[3] === 'kill') return connect.tmuxKill(gc, user, seg[1], req.body);
+    if (seg[3] === 'kill-detached') return connect.tmuxKillDetached(gc, user, seg[1], req.body);
+  }
   if (seg[0] === 'devices' && seg.length === 3 && m === 'POST') {
     if (seg[2] === 'connect') {
       const d = await devices.need(gc, seg[1]);

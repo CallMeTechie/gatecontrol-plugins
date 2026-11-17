@@ -41,11 +41,16 @@
 // into the account's authorized_keys (valid only from the hub address); the host key the agent reports is pinned in GateControl
 // (gc.remote.hostKeys.pin), so the first connection is checked too. Codes and requests as for a PC (kind ssh | desktop).
 
+// 1.8 (gc.remote version 9): an administrator made the code on the admin page (server/enroll.js). With „Mit Agent verbinden“
+// the ticket names a device made by hand: the agent's first host/register takes it over — same id, name, rights, history
+// and tmux name; way and login change to the agent (adopt). Another host key than the one pinned for the old device: two
+// devices for now, the administrator decides (enroll.decide).
+
 const store = require('./store');
 const devices = require('./devices');
 const rights = require('./rights');
 const log = require('./log');
-const { fail, fromHost, clip, posInt } = require('./util');
+const { fail, fromHost, clip, posInt, iso } = require('./util');
 
 const EDITIONS = ['pro', 'enterprise', 'education', 'home'];
 const RDP_PORT = 3389;
@@ -220,9 +225,86 @@ async function registerLinux(gc, req, now = Date.now()) {
     await store.run(gc, "UPDATE devices SET share_mode = 'code' WHERE id = ?", [d.id]);
     d = await byToken(gc, dev.id);
   }
+  // 1.8: the code of an administrator — „Mit Agent verbinden“ takes the device made by hand over
+  if (!before) d = await afterEnroll(gc, d, dev, user, x, now);
   if (first) await log.write(gc, 'remote_host_registered', { device: d, userId: user.id, details: { platform: 'linux', ssh: x.offered, ...(x.desktop ? { desktop: x.desktop.kind } : {}) } }, now);
   await changed(gc, [d.id]);
   return { host: await linuxAnswer(gc, d), codeRequired: devices.connectMode(d) !== 'open' };
+}
+
+/** 1.8: the pinned host key of a device (GateControl's) → { alg, sha256 } | null */
+async function pinnedOf(gc, d) {
+  if (!gc.remote.hostKeys || typeof gc.remote.hostKeys.list !== 'function') return null;
+  try {
+    const p = ((await gc.remote.hostKeys.list()) || []).find((k) => k.targetId === 'dev-' + d.id);
+    return p ? { alg: p.alg, sha256: p.sha256 } : null;
+  } catch { return null; }
+}
+
+/** 1.8: a new Linux device of a ticket of the admin page → the device it is now (the old one when taken over). */
+async function afterEnroll(gc, d, dev, user, x, now) {
+  const enroll = require('./enroll');
+  let en = null;
+  try { en = await enroll.forToken(gc, dev.id, user.id, now); } catch (e) { gc.log.debug('enrollment lookup failed', (e && e.code) || 'error'); }
+  if (!en) return d;
+  const old = en.adopt_device_id ? await devices.get(gc, en.adopt_device_id) : null;
+  if (!old || old.kind !== 'target') { await enroll.settle(gc, en.ticket, d.id, null, now); return d; }
+  const pinned = await pinnedOf(gc, old);
+  if (pinned && x.hostKey && (pinned.sha256 !== x.hostKey.sha256 || pinned.alg !== x.hostKey.alg)) {
+    // another host key: not merged on its own (a reinstall, another computer with the same name, the wrong device)
+    await enroll.settle(gc, en.ticket, d.id, { pinned, agent: { alg: x.hostKey.alg, sha256: x.hostKey.sha256 } }, now);
+    return d;
+  }
+  await adopt(gc, old, d, user.id, now);
+  await enroll.settle(gc, en.ticket, old.id, null, now);
+  return devices.get(gc, old.id);
+}
+
+// the columns of a device of an app or the agent (migrations 002, 005–007)
+const HOST_COLS = ['kind', 'owner_user_id', 'token_device_id', 'platform', 'edition', 'rdp_available', 'rdp_enabled', 'share_mode', 'allow_open', 'registered', 'last_seen',
+  'os_user', 'app_version', 'screen_control', 'screen_view', 'rdp_offered', 'ssh_offered', 'ssh_user', 'tmux_version', 'host_key_alg', 'host_key_sha256',
+  'desktop_kind', 'desktop_protocol', 'desktop_port', 'desktop_ready', 'os_id'];
+
+/**
+ * 1.8: the Linux device `fresh` of the agent takes the device `old` made by hand over: one device with the old id, name,
+ * rights, history, tmux name and settings; the way (the agent's VPN address), the login (GateControl's key of the agent)
+ * and the host key are the agent's. The old password goes from the vault, the old listener of a gateway goes; the old
+ * settings stay in config.agent_previous.
+ */
+async function adopt(gc, old, fresh, userId, now = Date.now()) {
+  const nr = await store.one(gc, 'SELECT * FROM devices WHERE id = ?', [fresh.id]);
+  if (!nr) throw fail('not_found');
+  const prev = { ...old.config };
+  delete prev.agent_previous;
+  const config = { ...old.config, host: fresh.config.host, port: fresh.config.port, access_mode: 'internal', external_hostname: null, external_port: null,
+    gateway_peer_id: null, gateway_pool_id: null, gateway_listen_port: null, ssh_engine: 'term', tmux_enabled: !!fresh.config.tmux_enabled, health_check_enabled: false,
+    agent_previous: { at: iso(now), by: userId || null, protocol: old.protocol, config: prev } };
+  delete config.key;
+  delete config.last_auth_failed;
+  if (old.listener) { try { await gc.remote.listener.remove(old.listener); } catch (e) { gc.log.warn('listener not removed', (e && e.code) || 'error'); } }
+  if (old.credential && old.credential !== fresh.credential) { try { await gc.remote.vault.remove(old.credential); } catch (e) { gc.log.debug('vault entry not removed', (e && e.code) || 'error'); } }
+  const access = (await devices.accessLists(gc)).get(old.id) || devices.emptyAccess();
+  await store.tx(gc, async () => {
+    await store.run(gc, 'DELETE FROM device_access WHERE device_id = ?', [fresh.id]);
+    await store.run(gc, 'DELETE FROM codes WHERE device_id = ?', [fresh.id]);
+    await store.run(gc, 'DELETE FROM devices WHERE id = ?', [fresh.id]);
+    await store.run(gc, `UPDATE devices SET ${HOST_COLS.map((k) => k + ' = ?').join(', ')}, protocol = ?, config = ?, credential = ?, credential_unreadable = 0, listener = NULL,
+      listener_error = NULL, updated_at = ? WHERE id = ?`, [...HOST_COLS.map((k) => (nr[k] === undefined ? null : nr[k])), nr.protocol, JSON.stringify(config), nr.credential || null, now, old.id]);
+    await store.run(gc, 'UPDATE sessions SET device_id = ? WHERE device_id = ?', [old.id, fresh.id]);
+    // a device shared with some people: its new owner keeps seeing it
+    if ((access.users.length || access.groups.length) && !access.users.includes(nr.owner_user_id)) {
+      await store.run(gc, "INSERT OR IGNORE INTO device_access (device_id, kind, principal_id) VALUES (?, 'user', ?)", [old.id, nr.owner_user_id]);
+    }
+  });
+  if (gc.remote.hostKeys) {
+    const k = fresh.host && fresh.host.hostKey;
+    if (k) { try { await gc.remote.hostKeys.pin({ targetId: 'dev-' + old.id, alg: k.alg, sha256: k.sha256 }); } catch (e) { gc.log.warn('host key not pinned', (e && e.code) || 'error'); } }
+    try { await gc.remote.hostKeys.remove('dev-' + fresh.id); } catch { /* none */ }
+  }
+  const d = await devices.get(gc, old.id);
+  await log.write(gc, 'remote_agent_adopted', { device: d, userId, details: { from: fresh.id, protocol: old.protocol } }, now);
+  await changed(gc, [old.id, fresh.id]);
+  return d;
 }
 
 function bodyOf(req) { return req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {}; }
@@ -466,4 +548,4 @@ async function setAllowOpen(gc, id, allow, now = Date.now()) {
   await changed(gc, [d.id]);
 }
 
-module.exports = { appDevice, byToken, mine, register, registerLinux, linuxOf, heartbeat, share, unregister, retire, access, setAllowOpen, changed, stateOf, EDITIONS, RDP_PORT };
+module.exports = { adopt, pinnedOf, appDevice, byToken, mine, register, registerLinux, linuxOf, heartbeat, share, unregister, retire, access, setAllowOpen, changed, stateOf, EDITIONS, RDP_PORT };

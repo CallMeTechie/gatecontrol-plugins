@@ -1,4 +1,4 @@
-<!-- version: 1.7.2 -->
+<!-- version: 1.8.0 -->
 # Fernzugriff – Handbuch
 
 ## Was das Plugin kann {#was-das-plugin-kann}
@@ -9,6 +9,8 @@ Fernzugriff ist das frühere „Remote Desktops“ von GateControl als eigenes P
 - **in den GateControl-Apps** (Android, Windows) mit RDP wie bisher. Die Apps merken vom Umzug nichts.
 
 Dazu kommen Wake-on-LAN, Wartungsfenster, eine Erinnerung an das Erneuern der Zugangsdaten, Rechte je Person und Gruppe und der Verlauf aller Sitzungen.
+
+Seit 1.8.0 zeigt die Seite **Geräte als Karten oder Tabelle** mit Suche, Filtern und Icon-Knöpfen. **„Schlüssel automatisch einrichten“** trägt den SSH-Schlüssel von GateControl einmal mit Benutzer und Passwort auf dem Gerät ein – das Passwort wird nicht gespeichert. Für einen **Linux-Rechner mit Agent** erzeugt die Seite selbst den Code samt fertigem Befehl und zeigt live, wie sich das Gerät anmeldet; ein von Hand angelegtes Gerät lässt sich so auf den Agent umstellen. Vor dem Verbinden lassen sich **tmux-Sitzungen und Fenster beenden** (siehe [Schlüssel automatisch einrichten](#schluessel), [Linux-Gerät mit Agent](#agent-code) und [SSH im Terminal](#terminal)).
 
 Seit 1.7.0 beginnt **„Gerät hinzufügen“ mit dem Ziel**: GateControl zeigt die Geräte im VPN, die Geräte hinter jedem Gateway und die freigegebenen Dienste zur Auswahl, prüft die Ports und wählt den Weg selbst (siehe [Gerät hinzufügen](#hinzufuegen)).
 
@@ -26,6 +28,7 @@ Passwörter und SSH-Schlüssel speichert nicht das Plugin, sondern der verschlü
 
 ## Voraussetzungen {#voraussetzungen}
 
+- Für „Schlüssel automatisch einrichten“, das Beenden von tmux-Sitzungen und Codes für den Linux-Agent auf der Admin-Seite: GateControl mit der Fernzugriff-Schnittstelle **Version 9**. Mit einem älteren GateControl fehlen diese Knöpfe; „SSH-Schlüssel erzeugen“ bleibt, und den Code für den Agent erzeugst du wie bisher unter Benutzer › Gerät hinzufügen.
 - Für den neuen Dialog „Gerät hinzufügen“: GateControl mit der Fernzugriff-Schnittstelle **Version 7** (GateControl **1.292.0** oder neuer). Mit einem älteren GateControl bleibt das bisherige Formular mit Reitern.
 - Für Linux-Geräte: GateControl **1.289.0** oder neuer und auf dem Rechner der Agent **gatecontrol-agent** (siehe [Linux-Geräte](#linux)).
 - Für „Bildschirm teilen“ am Windows-PC: GateControl **1.287.0** oder neuer und die GateControl-App für Windows (Pro) mit „Bildschirm teilen“. Maus und Tastatur so, wie sie sind (auch Tastenkombinationen, mehrere Bildschirme), bringt GateControl mit der Fernzugriff-Schnittstelle **Version 6** (GateControl 1.288.0 oder neuer); mit Version 5 geht Steuern mit Klicken, Ziehen, Scrollen und Text.
@@ -63,13 +66,15 @@ Wer bisher ein RDP- oder VNC-Ziel sehen konnte, bekommt das Recht „Remote Desk
 
 ### Gerät hinzufügen {#hinzufuegen}
 
-„Gerät hinzufügen“ hat drei Schritte:
+„Gerät hinzufügen“ öffnet einen großen Dialog. Auf breiten Bildschirmen steht links die Liste und rechts gleich die Prüfung der Ports und der Weg zur Auswahl; dann folgt nur noch die Anmeldung. Auf schmalen Bildschirmen sind es drei Schritte:
 
 1. **Ziel:** Du wählst aus einer Liste. „Im VPN“ stehen die VPN-Geräte mit ihrem Namen im VPN, „Hinter Gateway …“ die Geräte, die der Netzwerk-Wächter des Gateways im Heimnetz sieht (Name, Adresse, Hersteller und die offenen Ports SSH, RDP, VNC). Geräte ohne diese Ports stehen eine Zeile tiefer unter „anzeigen“. „Freigegebene Dienste“ sind L4-Routen, die nach SSH, RDP oder VNC aussehen, und „Anderes Ziel eingeben …“ nimmt einen Namen oder eine Adresse außerhalb deines Netzes. Suche und die Filter SSH, RDP, VNC helfen bei langen Listen. Grau steht, was schon ein Gerät ist oder sich selbst anmeldet (Windows-PCs mit der App, Linux-Rechner mit dem Agenten).
 
    **Gateways in einem Pool:** Gateways eines Failover-Pools sehen dasselbe Heimnetz. Sie stehen deshalb in *einem* Abschnitt „Heimnetz · Pool …“ mit dem Zustand „Online (2 von 2)“ bzw. „1 von 2 online“, und jedes Gerät steht nur einmal darin – dieselbe Adresse im selben Subnetz ist ein Gerät; die Ports aller Gateways werden zusammengeführt. Ein Gerät daraus läuft über den Pool: fällt ein Gateway aus, übernimmt das andere. Prüfen und Wecken gehen über ein Gateway des Pools, das gerade online ist. Gateways ohne Pool haben weiter ihren eigenen Abschnitt „Hinter Gateway …“.
 2. **Verbindung:** Protokoll und Port stehen schon da. GateControl prüft beim Öffnen die Ports 22, 3389, 5900 und 23 dieses einen Geräts – über das Gateway oder vom Server aus – und zeigt den Weg als eine Zeile: **im VPN**, **über Gateway „…“** oder **übers Internet**. Was früher „Zugriff“ hieß, liegt unter „Erweitert“.
 3. **Anmeldung:** Benutzername und Passwort, bei SSH als Vorgabe ein Schlüssel von GateControl (den öffentlichen Teil kopierst du einmal in `~/.ssh/authorized_keys`). „Auch im Browser verbinden“ ist bei neuen Geräten an.
+
+Ganz oben in der Liste stehen **„Linux-Gerät mit Agent“** (siehe [Linux-Gerät mit Agent](#agent-code)) und **„Windows-PC oder Android-Handy“** – die kommen von selbst über die App.
 
 Danach siehst du, was mit Vorgaben eingerichtet wurde. Sehen darf das Gerät zuerst nur, wer Admin ist – „Personen freigeben“ ändert das. Hat das Gerät noch ein zweites Protokoll offen, bietet GateControl „Auch per VNC anlegen?“ (bzw. SSH, RDP) mit allem vorausgefüllt an; ein Gerät hat ein Protokoll.
 
@@ -87,9 +92,17 @@ Danach siehst du, was mit Vorgaben eingerichtet wurde. Sehen darf das Gerät zue
 
 **Der Weg:** Eine VPN-Adresse geht direkt. Eine Adresse im Heimnetz eines Gateways geht über das Gateway – den Port auf dem Server wählt GateControl selbst (40000–40999, nur im VPN erreichbar). Alles andere geht vom Server aus.
 
-**Bearbeiten** zeigt alles auf einer Seite: oben Ziel und Anmeldung, darunter Klappen („Wer darf es nutzen“, „Wecken & Wartung“, „Anzeige, Ressourcen, Leistung“, „Browser & Aufzeichnung“, bei SSH „Terminal & Schlüssel“, „Erweitert · Weg“, „Notizen & Schlagwörter“) mit einer Zusammenfassung im Kopf. „Ziel ändern“ öffnet Schritt 1 und 2. Übernommene Geräte behalten ihre Daten, auch den Port auf dem Server. Liegt die Adresse eines Geräts unter „Nur VPN“ im Heimnetz eines Gateways, schlägt GateControl „Über das Gateway verbinden“ vor – vorher lief so ein Gerät ins Leere.
+**Bearbeiten** öffnet denselben großen Dialog: links die Abschnitte („Ziel & Weg“, „Anmeldung“, bei SSH „Agent“ und „Terminal & tmux“, „Wer darf es nutzen“, „Wecken & Wartung“, „Anzeige & Leistung“, „Browser & Aufzeichnung“, „Notizen & Schlagwörter“) mit einer kurzen Zusammenfassung, rechts der gewählte Abschnitt. Ein Fehler beim Speichern färbt seinen Abschnitt rot und springt dorthin. „Anmeldung“ zeigt, ob die letzte Anmeldung fehlgeschlagen ist, die Wahl Passwort / Schlüssel von GateControl / eigener Schlüssel und – bei SSH – „Schlüssel automatisch einrichten“ bzw. den eingerichteten Schlüssel mit Fingerabdruck, Pfad, Herkunft und „Schlüssel entfernen“. „Ziel ändern“ (unter „Ziel & Weg“) öffnet Schritt 1 und 2. Übernommene Geräte behalten ihre Daten, auch den Port auf dem Server. Liegt die Adresse eines Geräts unter „Nur VPN“ im Heimnetz eines Gateways, schlägt GateControl „Über das Gateway verbinden“ vor – vorher lief so ein Gerät ins Leere.
 
 ### Geräte {#geraete}
+
+**Die Liste:** Oben stehen die Kennzahlen (Geräte, online, offline, Anmeldung fehlgeschlagen, aktive Sitzungen, wartende Agent-Codes). Darunter die Suche (Name, Adresse, Besitzer, Schlagwort), die Protokoll-Chips, „Status, Weg, Anmeldung“ als Klappmenü (gesetzte Filter erscheinen als Chips mit ×; „Probleme“ heißt offline, Anmeldung fehlgeschlagen, Gateway-Port fehlt, Zugangsdaten unlesbar oder fällig), die Sortierung und der Umschalter **Karten | Tabelle**. Die Wahl merkt sich der Browser; ohne Wahl gibt es bis 12 Geräte Karten, ab 13 die Tabelle. In der Tabelle sortiert jeder Spaltenkopf.
+
+- **Weg** je Gerät: über Gateway „…“ (Haus), im VPN bzw. App (Schild), Agent (Chip), Internet (Globus), Netz des Servers.
+- **Anmeldung:** Passwort, Schlüssel (von GateControl), eigener Schlüssel, Agent-Schlüssel, Code + Bestätigung bzw. ohne Code – und rot **„Anmeldung fehlgeschlagen“**, wenn das Terminal zuletzt abgewiesen wurde. Die Karte bietet dann gleich „Schlüssel automatisch einrichten“ an.
+- **Aktionen** sind Icon-Knöpfe mit Hinweis beim Zeigen oder mit der Tastatur: Verbinden (als einziger mit Text), Schlüssel, Prüfen bzw. „Ohne Code“ sperren/erlauben, Aufwecken, Bearbeiten, Aus-/Einschalten, Löschen (rot, immer mit Rückfrage). Seltenes steht im Menü **⋮**: tmux-Sitzungen, Mit Agent verbinden, Host-Schlüssel zurücksetzen, Verlauf, Duplizieren, Zugangsdaten erneuert, Auf Terminal umstellen.
+- **Handy:** Unter etwa 700 px Breite wird daraus eine kompakte Liste mit rundem Verbinden-Knopf und ⋮; das Menü öffnet ein Blatt von unten mit allen Aktionen als Text.
+- **Platzhalter:** Ein Agent-Code, der noch nicht eingelöst ist, steht als gestrichelte Karte „wartet“ in der Liste – mit „Befehl zeigen“ und „Entfernen“. Abgelaufen wird sie grau („Neuer Code“), nach 24 Stunden verschwindet sie.
 
 Mit einem GateControl ohne Fernzugriff-Schnittstelle Version 7 (und für Geräte, die sich selbst anmelden) hat ein Gerät diese Reiter:
 
@@ -137,6 +150,50 @@ In der GateControl-App für Windows steht unter **Einstellungen › Sicherheit**
 - **Über den Server:** Bild und Eingaben laufen über deinen GateControl-Server wie beim Handy. Er reicht sie nur weiter, speichert nichts und schreibt keine Eingabe ins Protokoll – es ist aber keine Ende-zu-Ende-Verschlüsselung.
 - Für das Teilen braucht der PC kein offenes Port und keine VPN-Adresse; Remote Desktop braucht sie weiter.
 
+### Schlüssel automatisch einrichten {#schluessel}
+
+Statt den öffentlichen Schlüssel selbst nach `~/.ssh/authorized_keys` zu kopieren, meldet sich GateControl **einmal mit Benutzer und Passwort** am Gerät an, trägt seinen eigenen Schlüssel ein, testet ihn und stellt das Gerät auf „Anmeldung mit Schlüssel“ um. Nur Administratoren, nur bei SSH-Geräten, die du selbst angelegt hast.
+
+1. Auf der Karte (nach „Anmeldung fehlgeschlagen“), im Menü ⋮ oder unter Bearbeiten › Anmeldung **„Schlüssel automatisch einrichten“** wählen.
+2. Benutzer und Passwort eingeben und wählen, für welches Konto der Schlüssel gilt: **dieses Konto** (Vorgabe) oder **root über sudo** – dann muss das Konto sudo dürfen, und das Terminal meldet sich danach als root an (nur wenn `PermitRootLogin` Schlüssel zulässt, Debian-Vorgabe `prohibit-password`).
+3. Ist noch kein Host-Schlüssel angeheftet, hält der Ablauf an und zeigt den Fingerabdruck – **bevor** das Passwort gesendet wird. Vergleiche ihn auf dem Gerät mit `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` und bestätige.
+4. GateControl trägt die Zeile ein (Ordner 700, Datei 600), meldet sich neu nur mit dem Schlüssel an und zeigt Konto, Fingerabdruck, Pfad und Herkunft.
+
+- **Das Passwort wird nicht gespeichert** – nicht im Tresor, nicht im Plugin, nicht im Protokoll. Unter „Erweitert“ (Vorgabe an) wird zusätzlich ein gespeichertes Passwort im Tresor gelöscht; ein liegengebliebenes falsches Passwort würde sonst vor dem Schlüssel probiert.
+- **Nur von GateControl aus gültig** (Vorgabe, abschaltbar unter „Erweitert“): Die Zeile bekommt `from="…"` mit der Adresse, die das Gerät sieht (im VPN die des Servers, über ein Gateway dessen Heimnetz-Adresse, bei einem Pool alle), und `no-agent-forwarding,no-X11-forwarding,no-port-forwarding`. Fremde Zeilen bleiben unberührt; erkannt wird die eigene am Kommentar `gatecontrol:dev-<Nummer>`.
+- **Ein vorhandener Schlüssel von GateControl** wird weiterverwendet. Einen von Hand eingefügten eigenen Schlüssel ersetzt nur das Häkchen unter „Erweitert“.
+- **Höchstens 5 Versuche in 10 Minuten** je Gerät – das schützt vor einer Sperre durch fail2ban.
+- **Schlüssel entfernen** (Bearbeiten › Anmeldung): GateControl meldet sich ein letztes Mal mit dem Schlüssel an, löscht nur seine Zeile und dann den Schlüssel im Tresor. Ist das Gerät nicht erreichbar, bleibt die Zeile dort stehen – die Meldung sagt es.
+- Passwort-Anmeldung am Gerät danach selbst abschalten (`PasswordAuthentication no` in `/etc/ssh/sshd_config`) – GateControl ändert die sshd-Konfiguration nicht.
+
+| Meldung | Was zu tun ist |
+|---|---|
+| Anmeldung abgelehnt | Benutzer oder Passwort stimmen nicht; am Gerät wurde nichts geändert. Passwort erneut eingeben. |
+| Gerät erlaubt keine Anmeldung mit Passwort | Es nimmt nur Schlüssel. Die Zeile selbst eintragen (der Dialog zeigt sie zum Kopieren, „Eingetragen, Anmeldung testen“ prüft sie) oder den Linux-Agent nehmen. |
+| sudo verlangt ein anderes Passwort / Konto darf sudo nicht | Das sudo-Passwort eingeben (wird ebenfalls nicht gespeichert) oder „Stattdessen für … einrichten“ (das Anmeldekonto selbst). |
+| Keine Unix-Shell | Etwa Windows-OpenSSH: Zeile selbst eintragen, für Administratoren in `C:\ProgramData\ssh\administrators_authorized_keys`. |
+| Datei nicht beschreibbar | Nur lesbares Dateisystem oder `chattr +i`. |
+| Schlüssel wird nicht angenommen | Anderes `AuthorizedKeysFile`, `PubkeyAuthentication no` oder Rechte. GateControl nimmt seine Zeile wieder heraus. |
+| Host-Schlüssel hat sich geändert | Gesperrt, kein Passwort gesendet. Erst „Host-Schlüssel zurücksetzen“, wenn die Änderung geplant war. |
+
+### Linux-Gerät mit Agent {#agent-code}
+
+Mit GateControl ab Fernzugriff-Schnittstelle Version 9 erzeugst du den Code für den Agent direkt hier:
+
+1. **Gerät hinzufügen › „Linux-Gerät mit Agent“ › Weiter.**
+2. Links Name, **Besitzer** (Vorgabe: du selbst; sonst eine Person mit dem Recht „Eigene Geräte freigeben“ – sie sieht das Gerät dann im Portal), SSH mit Konto (nicht root), tmux, „tmux installieren, falls es fehlt“, Desktop und **wer verbinden darf** wählen. Vorgabe ist **„Ohne Code für Berechtigte“** – an einem Server ohne Bildschirm bestätigt sonst niemand; beim Gerät einer anderen Person mit Desktop „Nur mit Code“.
+3. **„Code erzeugen“**: rechts stehen der Code (10 Minuten, einmal), der fertige Befehl zum Kopieren und der **Live-Status** in vier Schritten – Code erzeugt, eingelöst, VPN verbunden, im Fernzugriff angemeldet. Jede Änderung links baut den Befehl neu, der Code bleibt. „Neuer Code“ macht den alten ungültig. Du kannst den Dialog schließen; der Code bleibt als Platzhalter in der Liste.
+
+```
+sudo gatecontrol-agent enroll https://gate.example.org 4C2E-8A17-D3F0-5B96 --name nas-keller
+sudo gatecontrol-agent share ssh --as kim --tmux --install-tmux
+sudo gatecontrol-agent share open
+```
+
+Die Server-Adresse kommt aus `GC_BASE_URL` von GateControl. Hängt es: Nach 2 Minuten ohne VPN fragt der Status nach `gatecontrol-agent.service` und dem UDP-Port; steht das VPN, aber fehlt die Freigabe, nennt er den Befehl `share ssh`.
+
+**Mit Agent verbinden** (Bearbeiten › Agent oder Menü ⋮ eines SSH-Geräts): stellt ein **von Hand angelegtes Gerät** auf den Agent um. Es bleibt **ein** Gerät – gleiche Nummer, Name, Rechte, Verlauf, tmux-Name. Erst wenn sich der Agent anmeldet, wechseln Weg (eigenes VPN des Agents) und Anmeldung (Schlüssel des Agents); bis dahin geht der alte Weg. Das Passwort im Tresor und der Port über das Gateway werden entfernt, die alte Einstellung bleibt im Gerät gespeichert. Meldet der Agent **einen anderen Host-Schlüssel** als den angehefteten (neu installiert, falscher Rechner), wird nicht automatisch zusammengeführt: beide Geräte bleiben, bis du **„Als eigenes Gerät behalten“** oder **„Trotzdem zusammenführen“** wählst.
+
 ### Linux-Geräte {#linux}
 
 Ein Linux-Rechner – mit oder ohne Desktop (Debian, Ubuntu, Raspberry Pi OS, CachyOS) – meldet sich über den Dienst **gatecontrol-agent** an (eigenes Paket, Repository `gatecontrol-linux-agent`). Im Portal steht im Tab Fernzugriff unter **„Linux-Gerät einrichten“** dieselbe Anleitung.
@@ -145,7 +202,7 @@ Ein Linux-Rechner – mit oder ohne Desktop (Debian, Ubuntu, Raspberry Pi OS, Ca
    - Debian, Ubuntu, Raspberry Pi OS: `curl -LO https://github.com/CallMeTechie/gatecontrol-linux-agent/releases/latest/download/gatecontrol-agent_amd64.deb && sudo apt install ./gatecontrol-agent_amd64.deb` – statt `amd64` je nach Rechner `arm64` oder `armhf` (`dpkg --print-architecture` nennt sie).
    - CachyOS, Arch: `curl -LO https://github.com/CallMeTechie/gatecontrol-linux-agent/releases/latest/download/gatecontrol-agent_x86_64.pkg.tar.zst && sudo pacman -U gatecontrol-agent_x86_64.pkg.tar.zst` (ARM: `aarch64`).
    - Fedora, openSUSE (ohne Zusage): `curl -LO https://github.com/CallMeTechie/gatecontrol-linux-agent/releases/latest/download/gatecontrol-agent_x86_64.rpm && sudo dnf install ./gatecontrol-agent_x86_64.rpm`.
-2. Unter **Meine Geräte › Gerät hinzufügen** einen Code erzeugen und anmelden: `sudo gatecontrol-agent enroll https://<server> <code>`. Der Agent baut WireGuard nur für das VPN-Netz auf (keine Standardroute, kein DNS).
+2. Einen Code erzeugen – als Administrator unter **Fernzugriff › Geräte › Gerät hinzufügen › „Linux-Gerät mit Agent“** (GateControl mit Version 9, siehe [Linux-Gerät mit Agent](#agent-code)), sonst unter **Meine Geräte › Gerät hinzufügen** bzw. **Benutzer › Gerät hinzufügen** („App auf einem Gerät“, Rechte „Alles für die App“, VPN-Peer „Neuer Peer (automatisch)“) – und anmelden: `sudo gatecontrol-agent enroll https://<server> <code>`. Der Agent baut WireGuard nur für das VPN-Netz auf (keine Standardroute, kein DNS).
 3. Freigeben: `sudo gatecontrol-agent share ssh --as <konto> --tmux` und – mit Desktop – `sudo gatecontrol-agent share desktop`. `gatecontrol-agent code` zeigt den Code für die helfende Person, `gatecontrol-agent status` den Zustand.
 
 - **SSH:** GateControl erzeugt für jedes Linux-Gerät einen eigenen Schlüssel im Tresor; der Agent trägt den öffentlichen Teil in `authorized_keys` des Kontos ein, gültig nur vom Server aus. Der **Host-Schlüssel** des Rechners wird bei der Anmeldung angeheftet – schon die erste Verbindung wird geprüft. Ist tmux da, läuft die Sitzung in tmux weiter, wenn die Verbindung abreißt.
@@ -182,10 +239,11 @@ Mit der GateControl-App für Android **aus GitHub** darf die helfende Person das
 
 Ein SSH-Gerät verbindet sich entweder mit dem **Terminal von GateControl** oder wie bisher mit **Guacamole**. Neue SSH-Geräte bekommen das Terminal, vorhandene und übernommene bleiben bei Guacamole, bis du sie umstellst.
 
-- **Umstellen:** Öffne das Gerät, Reiter **Terminal**, und klicke **„Im Terminal testen“**. Klappt die Verbindung, zeigt das Gerät „Terminal getestet“. Dann **„Auf Terminal umstellen“** in der Liste – oder **„Alle SSH-Geräte umstellen“** oben. Zurück geht es im Reiter Terminal unter „Verbinden mit“.
+- **Umstellen:** Öffne das Gerät, Reiter **Terminal**, und klicke **„Im Terminal testen“**. Klappt die Verbindung, zeigt das Gerät „Terminal getestet“. Dann **„Auf Terminal umstellen“** im Menü ⋮ der Liste – oder **„Alle SSH-Geräte umstellen“** oben. Zurück geht es im Reiter Terminal unter „Verbinden mit“.
 - **tmux:** Mit „Sitzung mit tmux fortsetzen“ läuft die Sitzung auf dem Gerät weiter, wenn die Verbindung abreißt oder du vom Handy zum PC wechselst. Der Name ist „gc-“ und der Kurzname des Geräts oder frei wählbar (Buchstaben, Ziffern, `_` und `-`). Im Portal wählst du vor dem Verbinden „Fortsetzen“ mit dem Namen der Sitzung oder „Neue Sitzung starten“. Fehlt tmux auf dem Gerät, gibt es eine normale Shell und einen Hinweis.
 - **Host-Schlüssel:** Bei der ersten Verbindung zeigt das Terminal den Fingerabdruck des Geräts. Vergleiche ihn (`ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`) und bestätige. Danach verbindet GateControl nur noch mit genau diesem Schlüssel. Ändert er sich, ist die Verbindung gesperrt. War die Änderung geplant (neu installiertes Gerät), setzt du den Schlüssel im Reiter Terminal mit **„Host-Schlüssel zurücksetzen“** zurück.
-- **SSH-Schlüssel statt Passwort:** **„SSH-Schlüssel erzeugen“** legt einen Schlüssel in GateControl an. Den öffentlichen Teil trägst du auf dem Gerät in `~/.ssh/authorized_keys` ein. Der private Schlüssel bleibt im Tresor.
+- **SSH-Schlüssel statt Passwort:** **„Schlüssel automatisch einrichten“** trägt ihn mit einmal Benutzer und Passwort selbst ein (siehe [Schlüssel automatisch einrichten](#schluessel)). Ohne Version 9 legt **„SSH-Schlüssel erzeugen“** einen Schlüssel in GateControl an; den öffentlichen Teil trägst du auf dem Gerät in `~/.ssh/authorized_keys` ein. Der private Schlüssel bleibt im Tresor.
+- **tmux-Sitzungen beenden** (Version 9): Vor dem Verbinden – im Portal, auf der Admin-Seite und in den Apps – lässt sich jede Sitzung aufklappen: Fenster mit Nummer, Name, laufendem Befehl und „aktiv“. **„Beenden“** beendet eine Sitzung, **„Schließen“** ein Fenster (beim letzten endet die Sitzung), **„Alle getrennten Sitzungen beenden“** (ab zwei) alle, an denen gerade niemand hängt – mit einer Liste zum Abwählen. Jede Rückfrage nennt, was darin läuft; ist jemand verbunden, steht das rot dabei. Das darf jede Person, die das Gerät verbinden darf. Es betrifft alle Sitzungen des Kontos, mit dem GateControl sich anmeldet (auch nicht fortsetzbare mit Leerzeichen im Namen), nicht die anderer Konten.
 
 ### Aufzeichnung {#aufzeichnung}
 
@@ -257,6 +315,16 @@ Das Recht wird bei jedem Verbinden neu geprüft.
 **„Zu viele falsche Codes“:** Warte 15 Minuten oder lass dir am PC einen neuen Code zeigen.
 
 **Im Browser fragt Windows nach der Anmeldung nicht:** Verlangt der PC die Anmeldung auf Netzwerkebene (NLA), braucht die Sitzung im Browser Benutzername und Passwort, die die Sitzungsseite noch nicht abfragt. Verbinde dich dann aus der GateControl-App.
+
+## Neu in 1.8.0 {#neu-1-8-0}
+
+- **Geräte als Karten oder Tabelle** mit Suche, Protokoll-Chips, Filtern „Status, Weg, Anmeldung“ und Sortierung; Aktionen als Icon-Knöpfe mit Hinweis, Seltenes im Menü ⋮, auf dem Handy eine kompakte Liste mit Blatt von unten.
+- **Großer Dialog** für „Gerät hinzufügen“ (Liste links, Prüfung rechts) und „Bearbeiten“ (Abschnitte links, neu „Anmeldung“ und „Agent“).
+- **Schlüssel automatisch einrichten:** GateControl trägt seinen SSH-Schlüssel einmal mit Benutzer und Passwort ein – Host-Schlüssel zuerst, Passwort nie gespeichert, `from=` nur vom Server aus, auch für root über sudo. „Schlüssel entfernen“ löscht die Zeile auf dem Gerät wieder.
+- **„Anmeldung fehlgeschlagen“** auf der Karte, wenn das Terminal abgewiesen wurde, mit dem passenden Knopf.
+- **Linux-Gerät mit Agent:** Code, fertiger Befehl und Live-Status direkt auf der Admin-Seite; wartende Codes als Platzhalter in der Liste. **Mit Agent verbinden** stellt ein von Hand angelegtes Gerät auf den Agent um – ein Gerät statt zwei.
+- **tmux:** Fenster ansehen, Sitzungen beenden, Fenster schließen, alle getrennten Sitzungen beenden – im Portal, auf der Admin-Seite und in den Apps.
+- Braucht GateControl mit der Fernzugriff-Schnittstelle Version 9; mit einem älteren GateControl bleibt alles wie bisher, die neuen Knöpfe fehlen.
 
 ## Neu in 1.7.2 {#neu-1-7-2}
 

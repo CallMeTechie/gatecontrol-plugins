@@ -16,7 +16,9 @@ const TYPES = ['remote_code_redeemed', 'remote_code_failed', 'remote_share_chang
   // 1.3: the screen of a phone
   'remote_screen_started', 'remote_screen_ended',
   // 1.4: the phone went down from "Ansehen und steuern" to "Nur ansehen"
-  'remote_screen_mode'];
+  'remote_screen_mode',
+  // 1.8: GateControl's SSH key set up with a password / removed, tmux sessions closed, codes for the agent, a device taken over
+  'remote_key_installed', 'remote_key_install_failed', 'remote_key_removed', 'remote_tmux_killed', 'remote_enroll_created', 'remote_agent_adopted'];
 
 /** One entry: write(gc, 'remote_code_redeemed', { device, userId, details }) — best-effort, never throws. */
 async function write(gc, type, { device = null, userId = null, details = null } = {}, now = Date.now()) {

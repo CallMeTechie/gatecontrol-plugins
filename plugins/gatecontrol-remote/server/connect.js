@@ -130,25 +130,128 @@ async function open(gc, user, deviceId, cfg, { admin = false, mode = 'control', 
   } catch (e) { throw fromHost(e); }
 }
 
-/** GET devices/<id>/tmux — the tmux sessions of an SSH device in the terminal → { sessions, tmux, hostKey: 'pinned' | 'unpinned' } */
-async function tmuxSessions(gc, user, deviceId, { admin = false } = {}) {
+/** 1.8: GateControl can list the windows and close sessions and windows (gc.remote version 9). */
+const tmuxV9 = (gc) => !!(gc.remote && gc.remote.version >= 9 && gc.remote.tmux && typeof gc.remote.tmux.kill === 'function');
+
+/** The device of a tmux call: enabled, the right (administrators always), GateControl's terminal. */
+async function tmuxDevice(gc, user, deviceId, admin) {
   if (!gc.remote || !(gc.remote.version >= 3)) throw fail('offline');
   const d = await devices.need(gc, deviceId);
   const access = (await devices.accessLists(gc)).get(d.id) || devices.emptyAccess();
   if (!d.enabled) throw fail('disabled');
   if (!admin && !(await rights.mayUse(gc, user, d, access))) throw fail('no_right');
   if (devices.engineOf(d, gc) !== 'term') throw fail('invalid', { field: 'ssh_engine' });
+  return d;
+}
+
+/** One session of gc.remote.tmux.list for the pages and apps (1.8: id and windows with { windows: true }). */
+function tmuxView(s) {
+  const v = { ...s };
+  if (Array.isArray(s.windows)) {
+    v.windowList = s.windows.slice(0, 100).map((w) => ({ id: w.id, index: w.index, name: w.name == null ? null : String(w.name).slice(0, 100), active: !!w.active,
+      panes: Number.isInteger(w.panes) ? w.panes : null, command: w.command == null ? null : String(w.command).slice(0, 100) }));
+    v.windows = Number.isInteger(s.windowCount) ? s.windowCount : v.windowList.length;
+    delete v.windowCount;
+  }
+  return v;
+}
+
+/**
+ * GET devices/<id>/tmux — the tmux sessions of an SSH device in the terminal → { sessions, tmux, hostKey: 'pinned' | 'unpinned', kill }.
+ * 1.8: windows → each session with `id` ('$3') and `windowList` [{ id: '@7', index, name, active, panes, command }] (`windows`
+ * stays the number); kill: closing sessions and windows is possible (gc.remote version 9).
+ */
+async function tmuxSessions(gc, user, deviceId, { admin = false, windows = false } = {}) {
+  const d = await tmuxDevice(gc, user, deviceId, admin);
   const own = devices.tmuxOf(d);
-  if (!own) return { sessions: [], tmux: null, hostKey: null };
+  const kill = tmuxV9(gc);
+  if (!own) return { sessions: [], tmux: null, hostKey: null, kill: false };
   if (!d.credential) throw fail('credential_required');
   try {
-    const list = (await gc.remote.tmux.list(devices.targetOf(d), { credential: d.credential })) || [];
-    return { sessions: list.slice(0, 200), tmux: own, hostKey: 'pinned' };
+    const list = (await gc.remote.tmux.list(devices.targetOf(d), { credential: d.credential, ...(kill && windows ? { windows: true } : {}) })) || [];
+    return { sessions: list.slice(0, 200).map(tmuxView), tmux: own, hostKey: 'pinned', kill };
   } catch (e) {
     // the first connection pins the host key in the terminal; until then there is nothing to list
-    if (e && e.code === 'ERR_REMOTE_HOST_KEY_UNPINNED') return { sessions: [], tmux: own, hostKey: 'unpinned' };
+    if (e && e.code === 'ERR_REMOTE_HOST_KEY_UNPINNED') return { sessions: [], tmux: own, hostKey: 'unpinned', kill: false };
     throw fromHost(e);
   }
+}
+
+const SESSION_ID_RE = /^\$\d{1,6}$/;
+const WINDOW_ID_RE = /^@\d{1,6}$/;
+
+/** { id, name, created } of a caller, checked (the name and the time only compare: GateControl closes by the number). */
+function sessionRef(x, field) {
+  if (!x || typeof x !== 'object' || typeof x.id !== 'string' || !SESSION_ID_RE.test(x.id)) throw fail('invalid', { field });
+  if (x.name != null && (typeof x.name !== 'string' || x.name.length > 256)) throw fail('invalid', { field });
+  if (x.created != null && typeof x.created !== 'string' && typeof x.created !== 'number') throw fail('invalid', { field });
+  return { id: x.id, ...(x.name != null ? { name: x.name } : {}), ...(x.created != null ? { created: x.created } : {}) };
+}
+
+async function killOne(gc, user, d, ref, win, current, admin, now) {
+  const log = require('./log');
+  const s = current.find((x) => x.id === ref.id) || null;
+  let r;
+  try {
+    r = await gc.remote.tmux.kill(devices.targetOf(d), { credential: d.credential, session: ref, ...(win ? { window: win } : {}) });
+  } catch (e) { throw fromHost(e); }
+  const w = win && s && Array.isArray(s.windows) ? s.windows.find((x) => x.id === win.id) : null;
+  await log.write(gc, 'remote_tmux_killed', { device: d, userId: user.id, details: { session: s ? String(s.name).slice(0, 64) : ref.name || ref.id, window: win ? (w ? w.index + ':' + String(w.name || '').slice(0, 40) : win.id) : null,
+    attached: !!(s && s.attached), admin } }, now);
+  return r && typeof r.killed === 'string' ? r.killed : (win ? 'window' : 'session');
+}
+
+/**
+ * POST devices/<id>/tmux/kill { session: { id, name, created }, window?: { id, index } } → { killed: 'session' | 'window', sessions, … }
+ * — the same right as listing; GateControl lists again and checks number, name and time before it closes by number.
+ */
+async function tmuxKill(gc, user, deviceId, body, { admin = false } = {}, now = Date.now()) {
+  if (!tmuxV9(gc)) throw fail('offline');
+  const d = await tmuxDevice(gc, user, deviceId, admin);
+  if (!devices.tmuxOf(d)) throw fail('invalid', { field: 'tmux' });
+  if (!d.credential) throw fail('credential_required');
+  const b = body && typeof body === 'object' ? body : {};
+  const ref = sessionRef(b.session, 'session');
+  let win = null;
+  if (b.window != null) {
+    if (typeof b.window !== 'object' || typeof b.window.id !== 'string' || !WINDOW_ID_RE.test(b.window.id)) throw fail('invalid', { field: 'window' });
+    win = { id: b.window.id, ...(Number.isInteger(b.window.index) ? { index: b.window.index } : {}) };
+  }
+  let current = [];
+  try { current = (await gc.remote.tmux.list(devices.targetOf(d), { credential: d.credential, windows: true })) || []; } catch (e) { throw fromHost(e); }
+  const killed = await killOne(gc, user, d, ref, win, current, admin, now);
+  return { killed, ...(await tmuxSessions(gc, user, d.id, { admin, windows: true })) };
+}
+
+/**
+ * POST devices/<id>/tmux/kill-detached { sessions: [{ id, name, created }] } → { killed: [ids], skipped: [{ id, reason }], sessions, … }
+ * — only sessions nobody is attached to now (checked again here; an attached one is skipped, never closed).
+ */
+async function tmuxKillDetached(gc, user, deviceId, body, { admin = false } = {}, now = Date.now()) {
+  if (!tmuxV9(gc)) throw fail('offline');
+  const d = await tmuxDevice(gc, user, deviceId, admin);
+  if (!devices.tmuxOf(d)) throw fail('invalid', { field: 'tmux' });
+  if (!d.credential) throw fail('credential_required');
+  const b = body && typeof body === 'object' ? body : {};
+  if (!Array.isArray(b.sessions) || !b.sessions.length || b.sessions.length > 50) throw fail('invalid', { field: 'sessions' });
+  const refs = b.sessions.map((x) => sessionRef(x, 'sessions'));
+  let current = [];
+  try { current = (await gc.remote.tmux.list(devices.targetOf(d), { credential: d.credential, windows: true })) || []; } catch (e) { throw fromHost(e); }
+  const killed = [];
+  const skipped = [];
+  for (const ref of refs) {
+    const s = current.find((x) => x.id === ref.id);
+    if (!s) { skipped.push({ id: ref.id, reason: 'tmux_gone' }); continue; }
+    if (s.attached) { skipped.push({ id: ref.id, reason: 'attached' }); continue; }
+    try {
+      await killOne(gc, user, d, ref, null, current, admin, now);
+      killed.push(ref.id);
+    } catch (e) {
+      if (e && (e.code === 'tmux_gone' || e.code === 'tmux_changed')) { skipped.push({ id: ref.id, reason: e.code }); continue; }
+      throw e;
+    }
+  }
+  return { killed, skipped, ...(await tmuxSessions(gc, user, d.id, { admin, windows: true })) };
 }
 
 /** Wake-on-LAN for a person who may use the device (administrators always). */
@@ -182,4 +285,4 @@ async function probeAll(gc, now = Date.now()) {
   return changed;
 }
 
-module.exports = { optionsOf, admit, open, wake, probe, probeAll, tmuxSessions, decideRecording, recordingsAvailable, tmuxFor };
+module.exports = { optionsOf, admit, open, wake, probe, probeAll, tmuxSessions, tmuxKill, tmuxKillDetached, tmuxV9, decideRecording, recordingsAvailable, tmuxFor };

@@ -131,8 +131,8 @@ test('the list of the wizard carries the home networks; a device of the pool goe
     assert.deepEqual([r.device.config.gateway_pool_id, r.device.config.gateway_peer_id], [5, null]);
     const l = [...host.remote.listeners.values()].find((x) => x.lanHost === '192.168.77.10');
     assert.deepEqual(l.gateway, { poolId: 5 }, 'the listener goes to the pool (failover), not to one gateway');
-    assert.equal(r.device.way.kind, 'gateway');
-    assert.equal(r.device.way.pool.poolId, 5);
+    assert.equal(r.device.wayDetail.kind, 'gateway');
+    assert.equal(r.device.wayDetail.pool.poolId, 5);
     // compared with the list again: known in the pool's section
     const again = await adminReq('GET', 'candidates');
     assert.deepEqual(again.known.map((k) => [k.host, k.gatewayPoolId]), [['192.168.77.10', 5]]);

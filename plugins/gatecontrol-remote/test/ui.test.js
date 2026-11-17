@@ -83,9 +83,27 @@ describe('pages and texts', () => {
     assert.match(texts.en['linux.step1'], /gatecontrol-linux-agent\/releases/);
   });
 
+  it('1.8: the device page carries the key set-up, the agent codes and the tmux list; icon buttons have a label', async () => {
+    const { html } = await plugin.render({ view: 'page', page: 'devices', lang: 'de' });
+    assert.match(html, /window\.RMK = \{ open: open \}/);
+    assert.match(html, /window\.RMA = \{ panel: panel/);
+    assert.match(html, /tmuxDialog: tmuxDialog/);
+    const common = fs.readFileSync(path.join(UI, 'common.js'), 'utf8');
+    assert.match(common, /'aria-label': o\.label, 'data-tip': o\.tip \|\| o\.label/);
+    // the view is remembered in the frame's browser storage, always in try/catch
+    const dev = fs.readFileSync(path.join(UI, 'devices.js'), 'utf8');
+    assert.match(dev, /try \{ saved = window\.localStorage\.getItem\('rm\.devices\.view'\); \} catch/);
+    assert.match(dev, /try \{ window\.localStorage\.setItem\('rm\.devices\.view', v\); \} catch/);
+    // the password of the key set-up goes only with the request
+    const keys = fs.readFileSync(path.join(UI, 'keys.js'), 'utf8');
+    assert.doesNotMatch(keys, /localStorage|sessionStorage/);
+    assert.match((await plugin.render({ view: 'portal', lang: 'en' })).html, /tmuxDialog/);
+  });
+
   it('plugin.json: the permissions of the contract, an own licence, the profile section', () => {
     const m = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'plugin.json'), 'utf8'));
     assert.equal(m.id, 'gatecontrol-remote');
+    assert.equal(m.version, '1.8.0');
     assert.equal(m.name.de, 'Fernzugriff');
     assert.equal(m.permissions.remote, true);
     assert.equal(m.license.required, true);

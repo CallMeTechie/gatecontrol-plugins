@@ -56,6 +56,24 @@ const STATUS = {
   key_unavailable: 409,
   // 1.7: the new „Gerät hinzufügen“ (gc.remote version 7)
   gateway_offline: 409,
+  // 1.8: the SSH key set up once with a password, closing tmux sessions, enrollment codes for the agent (gc.remote version 9)
+  password_auth_off: 409,
+  host_key_rejected: 409,
+  sudo_password: 409,
+  sudo_denied: 409,
+  not_posix: 409,
+  write_failed: 409,
+  key_test_failed: 409,
+  timeout: 504,
+  tmux_gone: 404,
+  tmux_changed: 409,
+  user_disabled: 409,
+  no_valid_scopes: 409,
+  no_client_access: 409,
+  own_key: 409,
+  limit_reached: 409,
+  enroll_unavailable: 409,
+  key_missing: 409,
 };
 
 /** An API error: throw fail('limit', { max: 2 }). */
@@ -131,7 +149,13 @@ const HOST = {
 
 function fromHost(e, dflt = 'internal') {
   if (isKnown(e)) return e;
-  const code = e && HOST[e.code];
+  let code = e && HOST[e.code];
+  // 1.8: the codes of gc.remote version 9 (ERR_REMOTE_TMUX_GONE → tmux_gone, ERR_FORBIDDEN → forbidden, …)
+  if (!code && e && typeof e.code === 'string') {
+    const m = /^ERR_(?:REMOTE_)?([A-Z_]{2,40})$/.exec(e.code);
+    const c = m ? m[1].toLowerCase() : null;
+    if (c && STATUS[c] && c !== 'internal') code = c;
+  }
   return fail(code || dflt, { message: e && e.message ? String(e.message).slice(0, 200) : null });
 }
 

@@ -332,10 +332,47 @@ function rotationDue(d, now = Date.now()) {
   return now - last >= c.credential_rotation_days * 86400000;
 }
 
-/** A device for the admin page: every setting, never a secret. */
-function adminView(d, access, vault, now = Date.now()) {
+/**
+ * 1.8: how the device is reached, in one word for the cards, the table and the filter: home (through a home gateway), vpn
+ * (a VPN address or a PC / phone of the app), agent (a Linux device of the agent), net (a public port forward or the
+ * internet), server (the server's own network). `net` = { subnet, peers } of gc.remote.candidates when known.
+ */
+function wayKind(d, net) {
+  if (d.host) return d.host.platform === 'linux' ? 'agent' : 'vpn';
+  const c = d.config;
+  if (c.access_mode === 'gateway') return 'home';
+  if (c.access_mode === 'external' || c.access_mode === 'both') return 'net';
+  const way = require('./way');
+  const h = String(c.host || '');
+  if (net && ((net.peers && net.peers.has(h)) || (net.subnet && way.inCidr(h, net.subnet)))) return 'vpn';
+  if (!net && /^10\.8\.\d{1,3}\.\d{1,3}$/.test(h)) return 'vpn';
+  return way.isPrivate(h) ? 'server' : 'net';
+}
+
+/**
+ * 1.8: how GateControl signs in: password | gc_key (GateControl's key, made here or set up with the password) | own_key
+ * (a private key pasted) | agent (a Linux device: the agent's key) | code (a PC or phone: only with code or „ohne Code“) |
+ * failed (the last terminal login was refused, after the key was set up) | null (nothing stored).
+ */
+function authKind(d, vault) {
+  if (d.host) return d.host.platform === 'linux' ? 'agent' : 'code';
+  const f = d.config.last_auth_failed;
+  const keyAt = d.config.key && Date.parse(d.config.key.installedAt || '');
+  if (f && f.at && !(keyAt && keyAt >= Date.parse(f.at))) return 'failed';
+  const v = d.credential && vault ? vault.get(d.credential) : null;
+  if (!v) return null;
+  if (v.has && v.has.privateKey) return v.publicKey ? 'gc_key' : 'own_key';
+  if (v.has && v.has.password) return 'password';
+  return null;
+}
+
+/** A device for the admin page: every setting, never a secret. 1.8: way, auth, the last refused login, GateControl's key set up. */
+function adminView(d, access, vault, now = Date.now(), net = null) {
   const a = access || emptyAccess();
+  const f = d.config.last_auth_failed;
   return {
+    way: wayKind(d, net), auth: authKind(d, vault), lastAuthFailed: f && f.at ? { at: f.at, userId: f.userId || null, username: f.username || null } : null,
+    key: d.config.key ? { ...d.config.key } : null,
     id: d.id, name: d.name, protocol: d.protocol, enabled: d.enabled, source: d.source, config: d.config,
     credential: credentialView(d, vault), access: { users: a.users, groups: a.groups, tokens: a.tokens, open: !a.users.length && !a.groups.length && !a.tokens.length },
     listener: d.listener, listenerError: d.listenerError, status: { ...d.status, lastCheck: iso(d.status.lastCheck) },
@@ -512,6 +549,6 @@ async function setStatus(gc, id, s, now = Date.now()) {
 module.exports = {
   PROTOCOLS, DEFAULT_PORT, ACCESS_MODES, FIELDS, KEPT, BOOLS, DEFAULTS, FIRST_OWN_ID, HOST_OFFLINE_MS, TMUX_RE, RECORDING, engineOf, tmuxOf,
   hostOf, hostView, connectMode, hostReady, isPhone, isLinux, sshOffered, desktopOffered, phoneCanControl, screenOffered, rdpOffered, screenCanControl, PHONE_OFFLINE_MS,
-  get, need, all, accessLists, emptyAccess, targetOf, listenerKey, vaultInfo, credentialView, adminView, rotationDue,
+  get, need, all, accessLists, emptyAccess, targetOf, listenerKey, vaultInfo, credentialView, adminView, rotationDue, wayKind, authKind,
   applyPatch, checkField, save, remove, rotated, setStatus, setAccess, write, fromRow, nextId,
 };

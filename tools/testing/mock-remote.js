@@ -78,6 +78,31 @@
 //     ERR_REMOTE_GATEWAY_OFFLINE
 //   listener({ …, listenPort: 'auto' }) → the first free port from 40000 (the same key and target keep theirs), auto: true
 //   wake(target with watch: 'nw-<id>', { user }) → the MAC of that device of opts.remote.candidates (administrator in a request)
+// GateControl with gc.remote version 9 (versions 8 and 9 in one step: the SSH key set up once with a password, closing
+// tmux sessions and windows, enrollment codes for the Linux agent; opt-in opts.remote.v9 — implies v7):
+//   hostKeys.scan(target) → { alg, sha256, pinned, matches? } without a login (opts.remote.hostKeyOf(target) → { alg, sha256 }
+//     or { error: 'ERR_REMOTE_UNREACHABLE' }; default a fixed ssh-ed25519 key per target id)
+//   installKey(target, { credential, login: { username, password }, account: 'self' | 'root', sudoPassword?, hostKey?: { confirm },
+//     restrictFrom, replaceOwnKey?, keepPassword? }) → { ok, steps: [{ id, state, ms, detail }], account, user, path, from, fingerprint,
+//     hostKey, publicKey, line, credential, attemptsLeft, error?: { code, step } } — host key first (pinned and different: host_key_mismatch; not pinned without
+//     confirm: host_key_unpinned; confirm of another key: host_key_rejected), then opts.remote.installKey(target, x) → an error
+//     code (auth_failed, password_auth_off, sudo_password, …) or nothing; at most 5 attempts per target in 10 minutes
+//     (rate_limited, also counted by testKey). The password is never recorded (state.calls has no login). Success:
+//     GateControl's key in the credential (generated, or the one it made before; an own key only with replaceOwnKey, else
+//     the error own_key), the password cleared unless keepPassword: true, the host key pinned (source confirmed).
+//   testKey(target, { credential }) → { ok, steps, attemptsLeft, error? } (opts.remote.testKey(target) → an error code or nothing)
+//   removeKey(target, { credential }) → { removedRemote: true, found, path } | { removedRemote: false, reason }
+//     (opts.remote.removeKeyOffline: true → reason unreachable)
+//   tmux.list(target, { credential, windows: true }) → each session with id '$n' and windows: [{ id, index, name, active,
+//     panes, command }] and windowCount (the fixture's `win`, default one bash window); tmux.kill(target, { credential, session:
+//     { id, name, created }, window?: { id, index } }) → { killed: 'session' | 'window', session, window, sessionEnded }
+//     (ERR_REMOTE_TMUX_GONE, ERR_REMOTE_TMUX_CHANGED;
+//     ids only ^\$\d{1,6}$ / ^@\d{1,6}$)
+//   enrollment.create({ actorId, userId?, name? }) → { ticket: 'ce_<32 hex>', code, expiresAt, url } (actor an administrator:
+//     else ERR_REMOTE_FORBIDDEN; a disabled person ERR_REMOTE_USER_DISABLED; opts.users[].noClient ERR_REMOTE_NO_CLIENT_ACCESS),
+//     status(ticket) → { state, peerId, peerName, vpnIp, handshakeAt, tokenDeviceId, platform, expiresAt }, revoke(ticket) →
+//     { revoked, state }; host.remoteEnrollRedeem(ticket, { tokenDeviceId, peerId,
+//     peerName, vpnIp, platform }) and host.remoteEnrollHandshake(ticket) for tests
 // The session page and the old app API for tests:
 //   host.remoteOpen(ref)                    the person opens the page: a tunnel opens → { sessionId }, event phase start
 //   host.remoteClose(sessionId, reason)     the tunnel ends (normal → end, heartbeat … → abort)
@@ -123,12 +148,13 @@ function install({ opts, perms, atLeast, enabledUser, hostError, license, person
   const next = !!(o && (o.gateways || o.pools || o.connectHost)) || atLeast(283);
   const v2 = !!(o && o.v2) || atLeast(284);
   const v3 = !!(o && o.v3) || atLeast(285);
-  const v7 = !!(o && o.v7);
+  const v9 = !!(o && o.v9);
+  const v7 = v9 || !!(o && o.v7);
   const v6 = v7 || !!(o && o.v6) || atLeast(288);
   const v5 = v6 || !!(o && o.v5) || atLeast(287);
   const v4 = v5 || !!(o && o.v4) || atLeast(286);
   const state = { tickets: new Map(), live: new Map(), rows: [], vault: new Map(), listeners: new Map(), wakes: new Map(), calls: [], handlers: [], seq: 0, routeSeq: 500,
-    hostKeys: new Map(), recordings: [], plays: new Map(), senderRefs: new Map() };
+    hostKeys: new Map(), recordings: [], plays: new Map(), senderRefs: new Map(), installs: new Map(), tmux: new Map(), enrollments: new Map() };
   const recAvail = () => (v3 ? { available: true, reason: null, engines: { term: true, guac: true }, usedBytes: 0, maxBytes: 10 * 1024 ** 3, days: 30, ...((o && o.recordings) || {}) }
     : { available: false, reason: 'not_yet' });
   const cfg = { gateways: (o && o.gateways) || [], pools: (o && o.pools) || [], l4: (o && o.l4) || [], limits: { global: 10, perUser: 2, perTarget: 2, ...((o && o.limits) || {}) } };
@@ -424,7 +450,8 @@ function install({ opts, perms, atLeast, enabledUser, hostError, license, person
       if (a.kind != null && a.kind !== 'ed25519') throw hostError('ERR_INVALID', 'kind: ed25519');
       const m = vaultPut({ privateKey: '-----BEGIN OPENSSH PRIVATE KEY-----\nmock\n-----END OPENSSH PRIVATE KEY-----\n', passphrase: null, ...(a.username ? { username: a.username } : {}), ...(a.label !== undefined ? { label: a.label } : {}), ...(a.handle != null ? { handle: a.handle } : {}) }, null);
       const e = state.vault.get(m.handle);
-      e.publicKey = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI' + crypto.randomBytes(24).toString('base64').replace(/=/g, '') + ' ' + (a.label || 'gatecontrol');
+      if (a.comment != null && (typeof a.comment !== 'string' || a.comment.length > 80 || !/^[\x20-\x7e]+$/.test(a.comment))) throw hostError('ERR_INVALID', 'comment: printable ASCII, at most 80');
+      e.publicKey = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI' + crypto.randomBytes(24).toString('base64').replace(/=/g, '') + ' ' + (v9 && a.comment ? a.comment : (a.label || 'gatecontrol'));
       return { ...meta(e), fingerprint: { alg: 'ssh-ed25519', sha256: crypto.randomBytes(32).toString('base64').replace(/=+$/, '') } };
     },
     'remote.tmux.list': async (a) => {
@@ -438,6 +465,7 @@ function install({ opts, perms, atLeast, enabledUser, hostError, license, person
       if (v === 'unavailable') throw hostError('ERR_REMOTE_TMUX_UNAVAILABLE', 'tmux is not installed');
       if (v === 'unpinned') throw hostError('ERR_REMOTE_HOST_KEY_UNPINNED', 'no host key pinned');
       if (v === 'mismatch') throw hostError('ERR_REMOTE_HOST_KEY_MISMATCH', 'the host key changed');
+      if (v9) return tmuxOf(t.id).map((x) => tmuxView(x, a.windows === true));
       return (Array.isArray(v) ? v : []).map((x) => ({ attachable: TMUX_RE.test(x.name), windows: 1, attached: 0, created: null, activity: null, ...x }));
     },
     'remote.hostKeys.pin': async (a) => {
@@ -529,8 +557,202 @@ function install({ opts, perms, atLeast, enabledUser, hostError, license, person
         return { via: t.gatewayPeerId ? 'gateway' : 'direct', address, results };
       },
     } : {}),
+    ...(v9 ? {
+      'remote.hostKeys.scan': async (a) => {
+        need();
+        const t = normalise(a.target);
+        endpoint(t);
+        const k = hostKeyOf(t);
+        const p = state.hostKeys.get(t.id);
+        state.calls.push({ op: 'hostKeys.scan', target: t });
+        return { alg: k.alg, sha256: k.sha256, pinned: !!p, ...(p ? { matches: p.sha256 === k.sha256 && p.alg === k.alg } : {}) };
+      },
+      'remote.installKey': async (a) => {
+        need();
+        const t = normalise(a.target);
+        endpoint(t);
+        const x = a && typeof a === 'object' ? a : {};
+        const login = x.login && typeof x.login === 'object' ? x.login : {};
+        if (typeof login.username !== 'string' || !login.username || login.username.length > 256 || typeof login.password !== 'string' || !login.password || login.password.length > 1024) throw hostError('ERR_INVALID', 'login: { username, password }');
+        if (x.account != null && x.account !== 'self' && x.account !== 'root') throw hostError('ERR_INVALID', 'account: self or root');
+        if (x.sudoPassword != null && (typeof x.sudoPassword !== 'string' || x.sudoPassword.length > 1024)) throw hostError('ERR_INVALID', 'sudoPassword');
+        for (const k of ['restrictFrom', 'replaceOwnKey', 'keepPassword']) if (x[k] != null && typeof x[k] !== 'boolean') throw hostError('ERR_INVALID', k + ': true or false');
+        let e = null;
+        if (x.credential != null) {
+          e = HANDLE_RE.test(String(x.credential)) ? state.vault.get(String(x.credential)) : null;
+          if (!e) throw hostError('ERR_REMOTE_CREDENTIAL_NOT_FOUND', 'no such vault entry of this plugin');
+        }
+        const account = x.account === 'root' ? 'root' : 'self';
+        state.calls.push({ op: 'installKey', target: t, account, restrictFrom: x.restrictFrom !== false, keepPassword: x.keepPassword === true, sudo: x.sudoPassword != null, confirm: !!(x.hostKey && x.hostKey.confirm) });
+        const steps = [];
+        const fail2 = (code, step) => {
+          for (const id of ['connect', 'hostkey', 'install', 'test']) if (!steps.some((s) => s.id === id)) steps.push({ id, state: id === step ? 'fail' : 'skip', ms: 0, detail: null });
+          return { ok: false, steps, account: account === 'root' ? 'root' : login.username, path: null, from: [], fingerprint: null, attemptsLeft: left, error: { code, step } };
+        };
+        const left0 = rateTake(t.id);
+        if (left0 < 0) { const left = 0; steps.length = 0; for (const id of ['connect', 'hostkey', 'install', 'test']) steps.push({ id, state: 'skip', ms: 0, detail: null }); return { ok: false, steps, attemptsLeft: left, error: { code: 'rate_limited', step: null } }; }
+        const left = left0;
+        const now = Date.now();
+        const k = hostKeyOf(t);
+        const pin = state.hostKeys.get(t.id);
+        steps.push({ id: 'connect', state: 'done', ms: 400, detail: 'OpenSSH 9.6' });
+        if (pin && (pin.sha256 !== k.sha256 || pin.alg !== k.alg)) return fail2('host_key_mismatch', 'hostkey');
+        if (!pin) {
+          const c = x.hostKey && typeof x.hostKey === 'object' ? String(x.hostKey.confirm || '').replace(/^SHA256:/, '') : '';
+          if (!c) return fail2('host_key_unpinned', 'hostkey');
+          if (c !== k.sha256) return fail2('host_key_rejected', 'hostkey');
+        }
+        const scripted = o && typeof o.installKey === 'function' ? await o.installKey(t, { account, username: login.username, sudo: x.sudoPassword != null, restrictFrom: x.restrictFrom }) : null;
+        // the copy way: GateControl's key goes into the vault, the line comes back (the password stays)
+        const copyWay = (code, step) => {
+          const h0 = e ? e.handle : vaultPut({ username: login.username, label: t.name || t.id }, null).handle;
+          const ent = state.vault.get(h0);
+          if (!ent.publicKey) { ent.secret.privateKey = '-----BEGIN OPENSSH PRIVATE KEY-----\nmock\n-----END OPENSSH PRIVATE KEY-----\n'; ent.publicKey = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI' + crypto.randomBytes(24).toString('base64').replace(/=/g, '') + ' gatecontrol:' + t.id; }
+          const r0 = fail2(code, step);
+          return { ...r0, publicKey: ent.publicKey, line: 'from="' + (t.listener ? '192.168.2.10' : HUB) + '",no-agent-forwarding,no-X11-forwarding,no-port-forwarding ' + ent.publicKey, credential: h0, fromGuessed: true };
+        };
+        if (scripted === 'password_auth_off') { steps.length = 0; return copyWay(scripted, 'connect'); }
+        if (scripted && ['auth_failed', 'unreachable', 'timeout'].includes(scripted)) { steps.length = 0; return fail2(scripted, 'connect'); }
+        steps.push({ id: 'hostkey', state: 'done', ms: 10, detail: pin ? 'pinned' : 'confirmed' });
+        if (scripted === 'not_posix') return copyWay(scripted, 'install');
+        if (scripted && ['sudo_password', 'sudo_denied', 'write_failed'].includes(scripted)) return fail2(scripted, 'install');
+        if (e && e.secret.privateKey && !e.publicKey && x.replaceOwnKey !== true) return fail2('own_key', 'install');
+        steps.push({ id: 'install', state: 'done', ms: 200, detail: null });
+        if (scripted === 'key_test_failed') return fail2('key_test_failed', 'test');
+        steps.push({ id: 'test', state: 'done', ms: 500, detail: null });
+        const user = account === 'root' ? 'root' : login.username;
+        let handle = e ? e.handle : null;
+        if (!e || !e.publicKey) {
+          const m = vaultPut({ privateKey: '-----BEGIN OPENSSH PRIVATE KEY-----\nmock\n-----END OPENSSH PRIVATE KEY-----\n', passphrase: null, username: user, label: 'gatecontrol:' + t.id, ...(handle ? { handle } : {}) }, null);
+          handle = m.handle;
+          state.vault.get(handle).publicKey = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI' + crypto.randomBytes(24).toString('base64').replace(/=/g, '') + ' gatecontrol:' + t.id;
+          state.vault.get(handle).keyFp = crypto.randomBytes(32).toString('base64').replace(/=+$/, '');
+        } else vaultPut({ handle, username: user }, null);
+        if (x.keepPassword !== true) vaultPut({ handle, password: null }, null);
+        if (!pin) state.hostKeys.set(t.id, { targetId: t.id, alg: k.alg, sha256: k.sha256, source: 'confirmed', pinnedBy: null, pinnedAt: iso(now) });
+        const from = x.restrictFrom !== false ? (t.listener ? ['192.168.2.10'] : [HUB]) : [];
+        const pub = state.vault.get(handle).publicKey;
+        return { ok: true, steps, account, user, path: user === 'root' ? '/root/.ssh/authorized_keys' : '/home/' + user + '/.ssh/authorized_keys', from,
+          fingerprint: { alg: 'ssh-ed25519', sha256: state.vault.get(handle).keyFp || 'K'.repeat(43) }, hostKey: { alg: k.alg, sha256: k.sha256 }, publicKey: pub,
+          line: (from.length ? 'from="' + from.join(',') + '",' : '') + 'no-agent-forwarding,no-X11-forwarding,no-port-forwarding ' + pub, credential: handle, attemptsLeft: left };
+      },
+      'remote.testKey': async (a) => {
+        need();
+        const t = normalise(a.target);
+        endpoint(t);
+        const e = a.credential == null ? null : state.vault.get(String(a.credential));
+        if (!e || !e.secret.privateKey) throw hostError('ERR_REMOTE_CREDENTIAL_REQUIRED', 'a vault entry with a key');
+        const left = rateTake(t.id);
+        if (left < 0) return { ok: false, steps: [], attemptsLeft: 0, error: { code: 'rate_limited', step: null } };
+        state.calls.push({ op: 'testKey', target: t });
+        const code = o && typeof o.testKey === 'function' ? await o.testKey(t) : null;
+        const steps = [{ id: 'connect', state: code ? 'fail' : 'done', ms: 300, detail: null }, { id: 'hostkey', state: code ? 'skip' : 'done', ms: 5, detail: null }];
+        return code ? { ok: false, steps, attemptsLeft: left, error: { code, step: 'connect' } } : { ok: true, steps, attemptsLeft: left };
+      },
+      'remote.removeKey': async (a) => {
+        need();
+        const t = normalise(a.target);
+        endpoint(t);
+        const e = a.credential == null ? null : state.vault.get(String(a.credential));
+        if (!e || !e.secret.privateKey) throw hostError('ERR_REMOTE_CREDENTIAL_REQUIRED', 'a vault entry with a key');
+        state.calls.push({ op: 'removeKey', target: t });
+        if (o && o.removeKeyOffline) return { removedRemote: false, reason: 'unreachable' };
+        return { removedRemote: true, found: true, path: '/home/' + (e.secret.username || 'user') + '/.ssh/authorized_keys' };
+      },
+      'remote.tmux.kill': async (a) => {
+        need();
+        const t = normalise(a.target);
+        endpoint(t);
+        const e = a.credential == null ? null : state.vault.get(String(a.credential));
+        if (!e || !e.secret.username) throw hostError('ERR_REMOTE_CREDENTIAL_REQUIRED', 'a vault entry with the username');
+        const v = o && o.tmux ? o.tmux[t.id] : undefined;
+        if (v === 'unpinned') throw hostError('ERR_REMOTE_HOST_KEY_UNPINNED', 'no host key pinned');
+        if (v === 'mismatch') throw hostError('ERR_REMOTE_HOST_KEY_MISMATCH', 'the host key changed');
+        const sx = a.session && typeof a.session === 'object' ? a.session : {};
+        if (typeof sx.id !== 'string' || !/^\$\d{1,6}$/.test(sx.id)) throw hostError('ERR_INVALID', 'session.id: $<n>');
+        const wx = a.window == null ? null : a.window;
+        if (wx && (typeof wx.id !== 'string' || !/^@\d{1,6}$/.test(wx.id))) throw hostError('ERR_INVALID', 'window.id: @<n>');
+        const list = tmuxOf(t.id);
+        const i = list.findIndex((x) => x.id === sx.id);
+        if (i < 0) throw hostError('ERR_REMOTE_TMUX_GONE', 'no such session');
+        if ((sx.name != null && list[i].name !== sx.name) || (sx.created != null && list[i].created !== sx.created)) throw hostError('ERR_REMOTE_TMUX_CHANGED', 'another session has this id now');
+        state.calls.push({ op: 'tmux.kill', target: t, session: sx.id, window: wx ? wx.id : null });
+        if (wx) {
+          const w = list[i].win.findIndex((y) => y.id === wx.id);
+          if (w < 0) throw hostError('ERR_REMOTE_TMUX_GONE', 'no such window');
+          list[i].win.splice(w, 1);
+          if (list[i].win.length) return { killed: 'window', session: sx.id, window: wx.id, sessionEnded: false };
+        }
+        list.splice(i, 1);
+        return { killed: wx ? 'window' : 'session', session: sx.id, window: wx ? wx.id : null, sessionEnded: true };
+      },
+      'remote.enrollment.create': async (a) => {
+        need();
+        const actor = (Array.isArray(opts.users) ? opts.users : []).find((u) => u.id === Number(a.actorId));
+        if (!actor || actor.role !== 'admin' || actor.enabled === false || !personCtx || !personCtx.has(actor.id)) throw hostError('ERR_REMOTE_FORBIDDEN', 'only an administrator, in a request of his');
+        const uid = a.userId == null ? actor.id : Number(a.userId);
+        const u = (Array.isArray(opts.users) ? opts.users : []).find((x) => x.id === uid);
+        if (!u) throw hostError('ERR_NOT_FOUND', 'no such person');
+        if (u.enabled === false) throw hostError('ERR_REMOTE_USER_DISABLED', 'the account is disabled');
+        if (u.noClient) throw hostError('ERR_REMOTE_NO_CLIENT_ACCESS', 'the role has no client access');
+        if (a.name != null && (typeof a.name !== 'string' || a.name.length > 100)) throw hostError('ERR_INVALID', 'name: at most 100 characters');
+        const name = typeof a.name === 'string' ? a.name.trim() : '';
+        const ticket = 'ce_' + crypto.randomBytes(16).toString('hex');
+        const hex = crypto.randomBytes(8).toString('hex').toUpperCase();
+        const code = [0, 4, 8, 12].map((i) => hex.slice(i, i + 4)).join('-');
+        const expiresAt = iso(Date.now() + 600000);
+        state.enrollments.set(ticket, { ticket, code, userId: uid, name, expiresAt, state: 'waiting', peerId: null, peerName: null, vpnIp: null, handshakeAt: null, tokenDeviceId: null, platform: null });
+        state.calls.push({ op: 'enrollment.create', actor: actor.id, user: uid, name });
+        return { ticket, code, expiresAt, url: (o && o.serverUrl) || 'https://gate.example.test' };
+      },
+      'remote.enrollment.status': async (a) => {
+        need();
+        const e = state.enrollments.get(String(a.ticket));
+        if (!e) throw hostError('ERR_NOT_FOUND', 'no such ticket');
+        if (e.state === 'waiting' && Date.parse(e.expiresAt) < Date.now()) e.state = 'expired';
+        const { ticket: _t, code: _c, userId: _u, name: _n, ...v } = e;
+        return { ...v };
+      },
+      'remote.enrollment.revoke': async (a) => {
+        need();
+        const e = state.enrollments.get(String(a.ticket));
+        if (!e) throw hostError('ERR_NOT_FOUND', 'no such ticket');
+        if (e.state === 'waiting') e.state = 'revoked';
+        return { revoked: e.state === 'revoked', state: e.state };
+      },
+    } : {}),
     'remote.gateways': async () => { need(); return { gateways: cfg.gateways.map((g) => ({ peerId: g.peerId, name: g.name, online: g.online !== false })), pools: cfg.pools.map((p) => ({ poolId: p.poolId, name: p.name })) }; },
   };
+
+  /** v9: the host key of a target as a scan would see it */
+  function hostKeyOf(t) {
+    const x = o && typeof o.hostKeyOf === 'function' ? o.hostKeyOf(t) : null;
+    if (x && x.error) throw hostError(x.error, 'scan failed');
+    if (x) return { alg: x.alg || 'ssh-ed25519', sha256: String(x.sha256).replace(/^SHA256:/, '') };
+    return { alg: 'ssh-ed25519', sha256: crypto.createHash('sha256').update('hostkey:' + t.id).digest('base64').replace(/=+$/, '') };
+  }
+  /** v9: the tmux sessions of a target (a copy of opts.remote.tmux that tmux.kill changes) */
+  function tmuxOf(id) {
+    if (!state.tmux.has(id)) {
+      const v = o && o.tmux ? o.tmux[id] : undefined;
+      state.tmux.set(id, (Array.isArray(v) ? v : []).map((x, i) => ({ attached: 0, created: null, activity: null, id: '$' + (i + 1), ...x,
+        win: (x.win || [{ name: 'bash', command: 'bash' }]).map((w, j) => ({ id: '@' + (i * 10 + j + 1), index: j, active: j === 0, panes: 1, ...w })) })));
+    }
+    return state.tmux.get(id);
+  }
+  function tmuxView(x, windows) {
+    const { win, ...v } = x;
+    return windows ? { attachable: TMUX_RE.test(x.name), ...v, windows: win.map((w) => ({ ...w })), windowCount: win.length } : { attachable: TMUX_RE.test(x.name), ...v, windows: win.length };
+  }
+  /** v9: an attempt of installKey / testKey for a target → the attempts left after it, -1 when none is left (5 in 10 minutes) */
+  function rateTake(id) {
+    const now = Date.now();
+    const tries = (state.installs.get(id) || []).filter((ts) => now - ts < 600000);
+    if (tries.length >= 5) { state.installs.set(id, tries); return -1; }
+    tries.push(now);
+    state.installs.set(id, tries);
+    return 5 - tries.length;
+  }
 
   async function closeRow(r, reason) {
     const now = Date.now();
@@ -551,7 +773,7 @@ function install({ opts, perms, atLeast, enabledUser, hostError, license, person
     listener.remove = (key) => call('remote.listener.remove', { key });
     const ob = (x) => (x && typeof x === 'object' ? x : {});
     return Object.freeze({
-      version: v7 ? 7 : v6 ? 6 : (v5 ? 5 : (v4 ? 4 : (v3 ? 3 : (v2 ? 2 : 1)))),
+      version: v9 ? 9 : v7 ? 7 : v6 ? 6 : (v5 ? 5 : (v4 ? 4 : (v3 ? 3 : (v2 ? 2 : 1)))),
       ...(v4 ? { screen: (x) => call('remote.screen', ob(x)) } : {}),
       session: (x) => call('remote.session', ob(x)),
       end: (x) => call('remote.end', ob(x)),
@@ -564,8 +786,20 @@ function install({ opts, perms, atLeast, enabledUser, hostError, license, person
         ...(v3 ? { generate: (x) => call('remote.vault.generate', ob(x)) } : {}),
       }),
       ...(v3 ? {
-        tmux: Object.freeze({ list: (target, x) => call('remote.tmux.list', { ...ob(x), target: ob(target) }) }),
-        hostKeys: Object.freeze({ pin: (x) => call('remote.hostKeys.pin', ob(x)), list: () => call('remote.hostKeys.list', {}), remove: (targetId) => call('remote.hostKeys.remove', { targetId }) }),
+        tmux: Object.freeze({ list: (target, x) => call('remote.tmux.list', { ...ob(x), target: ob(target) }),
+          ...(v9 ? { kill: (target, x) => call('remote.tmux.kill', { ...ob(x), target: ob(target) }) } : {}) }),
+        hostKeys: Object.freeze({ pin: (x) => call('remote.hostKeys.pin', ob(x)), list: () => call('remote.hostKeys.list', {}), remove: (targetId) => call('remote.hostKeys.remove', { targetId }),
+          ...(v9 ? { scan: (target) => call('remote.hostKeys.scan', { target: ob(target) }) } : {}) }),
+      } : {}),
+      ...(v9 ? {
+        installKey: (target, x) => call('remote.installKey', { ...ob(x), target: ob(target) }),
+        testKey: (target, x) => call('remote.testKey', { ...ob(x), target: ob(target) }),
+        removeKey: (target, x) => call('remote.removeKey', { ...ob(x), target: ob(target) }),
+        enrollment: Object.freeze({
+          create: (x) => call('remote.enrollment.create', ob(x)),
+          status: (ticket) => call('remote.enrollment.status', { ticket }),
+          revoke: (ticket) => call('remote.enrollment.revoke', { ticket }),
+        }),
       } : {}),
       probe: (target) => call('remote.probe', { target: ob(target) }),
       wake: (target, x) => call('remote.wake', { target: ob(target), ...(v7 && x && x.user != null ? { user: x.user } : {}) }),
@@ -691,7 +925,19 @@ function install({ opts, perms, atLeast, enabledUser, hostError, license, person
     return { status, body };
   }
 
-  return { on, v2, v3, v4, v5, api, gcPart, state, open, close, view, abortTerm, screenStart, screenEnd, screenMode, facade, vaultSeed: (entry, source) => vaultPut(entry, source), setUnreadable: (h) => { const e = state.vault.get(h); if (e) e.readable = false; } };
+  /** v9: the agent redeemed the code of a ticket / its first WireGuard handshake */
+  function enrollRedeem(ticket, x = {}) {
+    const e = state.enrollments.get(ticket);
+    if (!e) throw new Error('mock host: no such ticket');
+    Object.assign(e, { state: 'redeemed', tokenDeviceId: String(x.tokenDeviceId || '999'), peerId: x.peerId || 55, peerName: x.peerName || e.name, vpnIp: x.vpnIp || '10.8.0.53', platform: x.platform || 'linux' });
+  }
+  function enrollHandshake(ticket) {
+    const e = state.enrollments.get(ticket);
+    if (!e) throw new Error('mock host: no such ticket');
+    e.handshakeAt = iso(Date.now());
+  }
+
+  return { on, v2, v3, v4, v5, v9, api, gcPart, enrollRedeem, enrollHandshake, state, open, close, view, abortTerm, screenStart, screenEnd, screenMode, facade, vaultSeed: (entry, source) => vaultPut(entry, source), setUnreadable: (h) => { const e = state.vault.get(h); if (e) e.readable = false; } };
 }
 
 module.exports = { install };
