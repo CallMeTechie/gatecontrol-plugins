@@ -4,9 +4,8 @@ Chats zwischen den GateControl-Konten – in der GateControl-App (eigener Tab �
 Windows-Client und im Portal (eigener Tab „Chats“). Alles bleibt auf dem eigenen Server.
 
 ## 1.27.0
-**Versandweg, Standort über Brücken, Ortsnachrichten.** Der Standort über eine Brücke braucht GateControl mit
-`gc.bridges` Version 14 (Mindestversion wird mit dem Server-Release gesetzt); alles andere läuft mit jedem GateControl,
-das 1.26.0 trägt.
+**Versandweg, Standort über Brücken, Ortsnachrichten.** Braucht GateControl ≥ 1.296.0 (`gc.bridges` Version 14 für
+den Standort über eine Brücke).
 - **„Nachrichten senden über“ pro Person:** `person.replyPref` (`auto` | `gatecontrol` | Netz) in jeder Personen-Antwort,
   `PUT persons/:id { replyPref }` (nur eigene Person; ein Weg, den die Person nicht hat → `400 bad_request`).
   `person.reply` folgt der Wahl; kann der gewählte Weg gerade nicht senden, geht es über GateControl

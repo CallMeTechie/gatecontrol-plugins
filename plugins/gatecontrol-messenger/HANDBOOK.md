@@ -81,6 +81,7 @@ The administrator set a retention, or the chat is a disappearing chat.
 - **Full plus menu:** even when your text goes via WhatsApp, the plus menu offers polls, events and home actions. They carry the GateControl logo and go to the person's GateControl chat (only when they have a GateControl account).
 - **Location via WhatsApp and Telegram:** a location goes out as a real location message when the chat runs via WhatsApp or Telegram. Via Signal it goes, with the GateControl logo, to the GateControl chat (Signal has no location message). A location someone sends you via WhatsApp or Telegram shows as a map. Needs GateControl with the new bridge version.
 - **Place messages:** in the Android app a message can be sent automatically when you reach or leave a place (“Send on arrival”). The phone watches the place itself; the server never learns where you are. At most 10 active ones, each at most once an hour; without network it is sent up to 30 minutes later. Your own message shows a small “Place message · Home”; the recipients see only the text.
+- Needs GateControl 1.296.0 or newer.
 
 ## New in 1.26.0
 

@@ -81,6 +81,7 @@ Der Administrator hat eine Aufbewahrung eingestellt, oder der Chat ist selbstlö
 - **Volles Plus-Menü:** Auch wenn dein Text über WhatsApp geht, bietet das Plus-Menü Abstimmung, Termin und Haus-Aktionen an. Diese Einträge tragen das GateControl-Logo und gehen an den GateControl-Chat der Person (nur, wenn sie ein GateControl-Konto hat).
 - **Standort über WhatsApp und Telegram:** Ein Standort geht als echte Standortnachricht hinaus, wenn der Chat über WhatsApp oder Telegram läuft. Über Signal geht er mit GateControl-Logo an den GateControl-Chat (Signal kennt keine Standortnachricht). Ein Standort, den dir jemand über WhatsApp oder Telegram schickt, erscheint als Karte. Braucht GateControl mit der neuen Brücken-Version.
 - **Ortsnachrichten:** In der Android-App kannst du eine Nachricht automatisch senden lassen, wenn du einen Ort erreichst oder verlässt („Beim Ankommen senden“). Das Handy überwacht den Ort selbst, der Server erfährt nie, wo du bist. Höchstens 10 aktive, jede höchstens einmal pro Stunde; ohne Netz wird bis 30 Minuten nachgesendet. An deiner eigenen Nachricht steht klein „Ortsnachricht · Zuhause“, die Empfänger sehen nur den Text.
+- Braucht GateControl 1.296.0 oder neuer.
 
 ## Neu in 1.26.0
 
