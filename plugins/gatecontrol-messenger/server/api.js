@@ -106,6 +106,9 @@ async function me(ctx) {
       // carries `bridged` (the contacts' WhatsApp status updates), POST status/bridged/:id/seen and …/reply,
       // prefs.privacy.bridgedStatusSeen (README "App-API", since 1.25.0)
       ...(bridgeStatus ? { bridge_status: true } : {}),
+      // 1.27.0: place messages („Beim Ankommen senden“ — GET/POST/PUT/DELETE place-messages, POST place-messages/:id/fire;
+      // placemsgs.js), persons' replyPref (PUT persons/:id { replyPref }), README "App-API", since 1.27.0
+      placeMessages: true,
     },
     // 1.4.0: what the Familie plugin offers here (gc.services.available) — "Zur Liste", "In Kalender", places;
     // 1.10.0: drive — Drive takes files (save_file): "In Drive speichern" (POST messages/:id/to-drive)
@@ -197,6 +200,9 @@ async function route(ctx, req, seg) {
     });
     return json(200, { people: list });
   }
+
+  // 1.27.0: place messages (placemsgs.js)
+  if (a === 'place-messages') return json(200, await require('./placemsgs').route(ctx, req, seg, tx, route));
 
   // 1.21.0: persons — one chat per human over several ways (persons.js; ?people=1 with ?bridged=1)
   if (a === 'persons') {
@@ -294,7 +300,7 @@ async function route(ctx, req, seg) {
         const pre = await conversations.access(ctx, b);
         if (pre.conv.bridge_net) {
           bridgechats.writable(pre.conv);
-          await bridgechats.checkBody(ctx, req.body);
+          await bridgechats.checkBody(ctx, req.body, pre.conv);
           await bridgechats.gate(ctx, pre.conv);
           ctx.bridgeOut = pre.conv.id;
           const stored = await tx(async () => {

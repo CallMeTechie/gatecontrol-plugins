@@ -4,8 +4,9 @@
    „Zu einer Person zusammenführen?“ with the choice of the name (the account's by default), „Nicht jetzt“ and „Nicht mehr
    vorschlagen“; „Mit Person zusammenführen …“ in the chat info (an account or another chat — never guessed by name);
    „Wege von …“ with „Trennen“ (nothing is lost); the source chips of the shared history and the line under the composer
-   when the answer goes over WhatsApp. The way of an answer is never chosen here: the server takes the way of the newest
-   incoming message. Built from elements and text nodes only. */
+   when the answer goes over WhatsApp. The way of an answer is never chosen in the composer: the server takes the way of
+   the newest incoming message — 1.27.0: unless „Nachrichten senden über“ in the chat info holds one (replySection: PUT
+   persons/:id { replyPref }). Built from elements and text nodes only. */
 (function () {
   'use strict';
   var M = window.MS;
@@ -181,6 +182,40 @@
     return sec;
   }
 
+  /**
+   * 1.27.0: „Nachrichten senden über“ in the chat info — Automatisch (· gerade <Weg>), Immer GateControl, Immer <Netz>:
+   * only the ways the person has. An answer to a message still goes back over that message's way.
+   */
+  function replySection(c, host) {
+    var p = c.person;
+    var pref = p.replyPref || 'auto';
+    var hasGc = p.ways.some(function (w) { return w.way === 'gatecontrol'; });
+    var name = 'ms-rp-' + Math.random().toString(36).slice(2, 8);
+    var sec = el('div', { class: 'ms-info-sec ms-reply-sec', role: 'radiogroup', 'aria-label': T('reply.title') }, [el('div', { class: 'ms-sec', text: T('reply.title') })]);
+    var opts = [{ value: 'auto', label: T('reply.auto'), sub: pref === 'auto' && p.reply ? T('reply.auto_sub', { name: p.name || c.title, way: p.reply.label }) : T('reply.auto_sub_plain', { name: p.name || c.title }) }];
+    var seen = {};
+    p.ways.forEach(function (w) {
+      if (seen[w.way]) return;
+      seen[w.way] = true;
+      opts.push({ value: w.way, way: w.way, label: T('reply.always', { way: w.label }), sub: w.way === 'gatecontrol' ? T('reply.gc_sub') : (hasGc ? T('reply.net_sub', { network: w.label }) : null) });
+    });
+    opts.forEach(function (o) {
+      var r = el('input', { type: 'radio', name: name, value: o.value, checked: o.value === pref });
+      r.addEventListener('change', function () {
+        if (!r.checked) return;
+        host.api('PUT', 'persons/' + p.id, { replyPref: o.value }).then(function (res) { host.merged(res.conversation, true); }).catch(M.warn);
+      });
+      sec.appendChild(el('label', { class: 'ms-rp-opt' }, [r, o.way ? mark(o.way, null, 14) : null, el('span', { class: 'ms-rp-tx' }, [el('b', { text: o.label }), o.sub ? el('small', { text: o.sub }) : null])]));
+    });
+    sec.appendChild(el('p', { class: 'ms-note', text: T('reply.note') }));
+    return sec;
+  }
+
+  /** 1.27.0: under the composer when „Immer <Netz>“ cannot send right now and GateControl took over. */
+  function fallbackHint(network) {
+    return el('div', { class: 'ms-wayhint is-fallback' }, [M.icon('info', 13), el('span', { text: T('reply.fallback', { network: network }) })]);
+  }
+
   /** The source chips of the shared history: Alle · GateControl · WhatsApp (later Signal, Telegram). */
   function srcChips(c, current, onPick) {
     var box = el('div', { class: 'ms-chips ms-srcchips', role: 'group', 'aria-label': T('person.src') });
@@ -200,5 +235,5 @@
     return el('div', { class: 'ms-wayhint' }, [M.icon('info', 13), el('span', { text: T('person.wa_hint', { network: label }) })]);
   }
 
-  window.MSPersons = { mark: mark, marks: marks, labelOf: labelOf, card: card, mergeDialog: mergeDialog, pickDialog: pickDialog, waysSection: waysSection, srcChips: srcChips, wayHint: wayHint };
+  window.MSPersons = { mark: mark, marks: marks, labelOf: labelOf, card: card, mergeDialog: mergeDialog, pickDialog: pickDialog, waysSection: waysSection, srcChips: srcChips, wayHint: wayHint, replySection: replySection, fallbackHint: fallbackHint };
 }());

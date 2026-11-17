@@ -1292,6 +1292,74 @@ Medien vom Handy nachladen“ with „Einmal am Tag (empfohlen)“ / „Sofort�
 bridges' nightly backup (`dailyAt`) — the pinned bridge knows no time zone of a login, so it cannot be set to a time of
 night (GateControl's docs/feature-messenger-bridges.md, "Old media from the phone").
 
+## Versandweg, location over a bridge, place messages (since 1.27.0)
+
+`features.placeMessages: true` (GET me). `server/persons.js` (`replyPref`), `server/bridgechats.js` (location),
+`server/placemsgs.js`, migration 016. Tests: `test/versandweg.test.js` against the mock host's `gc.bridges` version 14.
+A location over a bridge needs GateControl with `gc.bridges` version 14; with an older one it stays refused as before
+(`bridge_text_only`), everything else works with any GateControl that runs 1.26.0.
+
+**„Nachrichten senden über“ (replyPref).** Every `person` (list entry, `GET persons/:id`, answers of changes) carries
+`replyPref`: `"auto"` (default) | `"gatecontrol"` | a network (`"whatsapp"`, `"signal"`, `"telegram"`) and `reply`
+`{ way, label, conversationId, fallback? }`.
+
+| Route | Answer |
+|---|---|
+| `PUT persons/:id { replyPref }` (also `PATCH`; `null` = `"auto"`) | `{ conversation, person }` — only one's own person (`404` otherwise); `400 bad_request` when the person has no such way, `400 invalid` when it is no word; `conversation.update { reason: "person", personId }` to the own devices |
+
+`person.reply`: `replyPref` ≠ `auto` and that way can send → that way; it cannot send (bridge away, logged out) → the
+chat inside GateControl with `fallback: true` (only when the person has one; else as `auto`); `auto` (or a way the
+person no longer has) → as before (the way of the newest incoming message, a tie and none: GateControl). `POST
+persons/:id/messages` without `replyTo` goes over `person.reply`; with `replyTo` still over the way of that message.
+
+**Location over a bridge.** With `gc.bridges` version 14 a bridged conversation's `bridge.supports` contains
+`"location"` when its network's bridge sends one (`status().networks[].location` — WhatsApp and Telegram; never
+Signal). Then `POST conversations/:id/messages { clientId, kind: "location", location: { lat, lon, label?, accuracy? },
+replyTo? }` (or `POST persons/:id/messages`) goes out as a real location (`gc.bridges.send(…, { txnId, location: { lat,
+lon, label }, replyTo })`, m.location); no `text`, no file. Without it: `409 bridge_text_only` (`reason: "kind"`).
+An incoming location (GateControl's media `{ kind: "location", geo }`) is a normal message of **kind `location`**:
+`location: { lat, lon, label }` (label = the caption without the bridge's „Location:“; a bare geo URI or link is no name →
+`null`), `text: null`, `bridge: { sender, …, placeholder: null }`; the push says „Standort: <label>“. A location without
+valid geo stays the placeholder of before. Live locations are not followed (only the first point).
+
+**Place messages** („Beim Ankommen senden“). A rule of one person, watched by one phone (`deviceId`); the server never
+learns where the person is — the place is stored sealed for the phone, and only the finished text goes out.
+
+| Route | Answer |
+|---|---|
+| `GET place-messages` | `{ placeMessages: [placeMessage] (newest first), limits: { activeMax: 10, textMax: 1000, nameMax: 80, radiusMinM: 100, radiusMaxM: 2000, radiusDefaultM: 150, everyS: 3600, lateS: 1800 }, serverTime }` |
+| `POST place-messages` | body below → `{ placeMessage }`; `409 limit` with 10 active (enabled, not done) |
+| `PUT place-messages/:id` (also `PATCH`) | any field of the body → `{ placeMessage }`; `enabled: true` starts it afresh (`doneAt: null`, `limit` counts) |
+| `DELETE place-messages/:id` | `{ deleted: true, id }` |
+| `POST place-messages/:id/fire { at, deviceId }` | `{ placeMessage, message, duplicate, way, conversationId }` — the text goes out now like a message from the composer, marked `meta.placeMessage { name, trigger }` (never coordinates) |
+
+Body: `{ deviceId: "[A-Za-z0-9._:-]{1,128}", trigger: "enter" | "exit", place: { familieId?, name (1–80), lat, lon,
+radiusM? (100–2000, default 150) }, text (1–1000), conversationId, way?: "auto" (default) | "gatecontrol" | network,
+repeat?: "once" (default) | "always", window?: { days: [1–7 (Mo = 1)], from: "HH:MM", to: "HH:MM" } | null, ask?:
+true (default), enabled?: true (default) }`. `conversationId`: a chat the person may write into (`403 readonly` for a
+channel, a read-only group, a notice channel; `404` for a chat that is not theirs) or any way of a person (stored as the
+person's lead) — then `way` is `auto` or one of the person's ways, for a chat that is no person `auto` or its own way
+(`400 bad_request` otherwise). `familieId`: the id from `GET familie/places` (a number or a short word), kept for the
+picker only. The phone checks `window` and `ask`; the server does not know the phone's time zone.
+
+`placeMessage`: `{ id, deviceId, trigger, place: { familieId, name, lat, lon, radiusM }, text, conversationId, way,
+repeat, window, ask, enabled, lastFiredAt, doneAt, createdAt, updatedAt, target: { title, personId, reply } }`
+(`target.reply` = the person's current `reply` while `way` is `auto`).
+
+`fire`: `at` (ISO) is when the phone reached / left the place. Where it goes: a person with `way: "auto"` → `person.reply`;
+a fixed way → that way while it can send, else the chat inside GateControl; a chat → that chat. Refusals: `403
+not_allowed` (another `deviceId` than the stored one — change it with PUT when the phone changes), `409 closed`
+(switched off, or `once` and done), `409 expired` (`at` more than 30 minutes ago), `409 too_soon` (less than an hour
+after the last firing), `400 invalid` (`at` missing or more than 5 minutes ahead), and those of sending a message
+(`readonly`, `blocked`, `bridge_*` …). The same `at` again → `duplicate: true`, the same message, nothing changes
+(`clientId` `place-<id>-<at ms>`). Afterwards `lastFiredAt = at`; `once` → `doneAt`, `enabled: false`.
+
+A message sent this way has `placeMessage: { name, trigger }` in the **sender's** view only (`null` for everybody else;
+over a bridge only the text crosses). „Zurücknehmen“ is `DELETE messages/:id?for=all` as for any own message.
+
+Live event `place_messages.changed { id, reason: "created" | "updated" | "deleted" | "fired" }` to the person's own
+devices (GateControl takes lower-case event types only). A place message whose chat went is deleted by the clean-up.
+
 ## Persons — one chat per human over several ways (since 1.21.0)
 
 `features.chat_people` (for the same people as `bridge_chats`; `server/persons.js`, migration 013). A client that knows
@@ -1309,7 +1377,7 @@ conversation, so „Trennen“ loses nothing. Groups and channels are never merg
 | `POST persons/:id/messages` | body as for a conversation → `{ message, duplicate, way, conversationId }` — the way of the newest incoming message (a tie and none: GateControl; a bridged way that cannot send gives way to GateControl); with `replyTo` the way of that message |
 | `POST persons/:id/read { upTo? }` | `{ unread, ways: [{ conversationId, way, lastReadId, unread }] }` — every way up to the time of `upTo` (without: all) |
 | `GET persons/:id/search?q=&way=` | `{ results (newest first), scanned, truncated }` over the ways |
-| `PATCH persons/:id { name?: "account" \| <conversationId>, notify?, mutedUntil? }` | `{ conversation, person }` — the name, mute and notifications for every way |
+| `PATCH persons/:id { name?: "account" \| <conversationId>, notify?, mutedUntil?, replyPref? }` | `{ conversation, person }` — the name, mute and notifications for every way; since 1.27.0 `replyPref` („Nachrichten senden über“) |
 | `POST persons/:id/archive { archived }` | `{ conversation, person }` |
 | `POST persons { conversationIds: [id…], userId?, name? }` | `{ conversation, person }` — merges (chats that belong to a person bring it along; the chat with the account is made when there is none, without a message). `409 cannot_merge` with `reason` `group` \| `channel` \| `not_direct` \| `two_accounts` \| `one_way` |
 | `DELETE persons/:id/ways/:conversationId` / `DELETE persons/:id` | `{ person \| null, conversations }` — „Trennen“ (a person with one way left is dissolved); that account and way are not suggested again |

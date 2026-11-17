@@ -578,3 +578,14 @@ button.ms-loc:hover .ms-locmap{filter:brightness(1.05)}
 .ms-story-note:empty{display:none}
 .ms-note-blue{background:color-mix(in srgb,#1d5fd1 8%,transparent);border-radius:10px;padding:8px 10px}
 .ms-note-blue svg{color:#3b82f6}
+/* 1.27.0: „Nachrichten senden über“, the plus menu's GateControl logo, the line of a place message */
+.ms-rp-opt{display:flex;align-items:flex-start;gap:8px;padding:6px 0;cursor:pointer}
+.ms-rp-opt input{width:18px;height:18px;min-height:0;margin:2px 0 0;flex:none}
+.ms-rp-opt .ms-way{flex:none;margin-top:1px}
+.ms-rp-tx{display:flex;flex-direction:column;min-width:0;font-size:14px}
+.ms-rp-tx small{color:var(--muted);font-size:12px;line-height:1.35}
+.ms-wayhint.is-fallback{color:var(--warn,var(--muted))}
+.ms-menu-lb{flex:1}
+.ms-menu-item .ms-way{flex:none;margin-left:8px}
+.ms-pmline{display:flex;align-items:center;gap:4px;margin-top:4px;font-size:11px;color:var(--muted)}
+.ms-pmline svg{flex:none}
