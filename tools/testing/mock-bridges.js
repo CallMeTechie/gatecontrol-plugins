@@ -102,7 +102,7 @@
 //   the test writes them (host.bridges.deliver).
 // Version 14 (a location over the bridge; createHost(dir, { bridges: { …, version: 14 } })): status().networks[].location
 //   (whatsapp, telegram: true; signal: false) and send(…, { txnId, location: { lat, lon, label? }, replyTo? }) — m.location
-//   at the bridge; to a network without location ERR_BRIDGE / unsupported. Sent rows: { op: 'send', …, text: null,
+//   at the bridge; to a network without location ERR_INVALID / unsupported; with text, media or edit ERR_INVALID. Sent rows: { op: 'send', …, text: null,
 //   location: { lat, lon, label }, replyTo }.
 // events.pull / events.ack need no person; chats() a request of that person; send / react / redact / read / typing a
 // changing request of that person, their own chat (else ERR_INVALID 'unknown chat'), a bridge that runs.
@@ -425,9 +425,9 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
         const l = m.location && typeof m.location === 'object' && !Array.isArray(m.location) ? m.location : null;
         const ok = l && typeof l.lat === 'number' && Number.isFinite(l.lat) && Math.abs(l.lat) <= 90 && typeof l.lon === 'number' && Number.isFinite(l.lon) && Math.abs(l.lon) <= 180
           && (l.label == null || (typeof l.label === 'string' && l.label.length <= 200));
-        if (!ok || m.edit != null || m.media != null || !TXN_RE.test(String(m.txnId || ''))) throw hostError('ERR_INVALID', 'location: { lat, lon, label? }');
+        if (!ok || m.edit != null || m.media != null || (typeof m.text === 'string' && m.text.trim()) || !TXN_RE.test(String(m.txnId || ''))) throw hostError('ERR_INVALID', 'location: { lat, lon, label? }');
         if (m.replyTo != null && !EVENT_RE.test(String(m.replyTo))) throw hostError('ERR_INVALID', 'replyTo: a message id');
-        if (network === 'signal') throw refuse('unsupported');
+        if (network === 'signal') throw err('ERR_INVALID', 'this network sends no location', 'unsupported');
         const key = `${userId}|${m.txnId}`;
         if (c.txns.has(key)) return { id: c.txns.get(key) };
         const id = `$out${++st.seq}`;

@@ -118,9 +118,6 @@ function oldPlaceholder(o) {
 const via = (net) => `bridge:${net}`;
 const isBridged = (conv) => !!(conv && conv.bridge_net);
 
-// 1.27.0: the networks whose bridge sends a location, when status() does not say (gc.bridges version 14)
-const LOCATION_NETS = ['whatsapp', 'telegram'];
-
 /** gc.bridges with the message part (version ≥ 3), else null. */
 function api(gc) {
   const b = gc && gc.bridges;
@@ -175,7 +172,8 @@ async function takesLocation(ctx, net) {
   const h = await hostOf(ctx);
   const n = (Array.isArray(h.networks) ? h.networks : []).find((x) => x && x.id === net);
   if (!n) return false;
-  return typeof n.location === 'boolean' ? n.location : LOCATION_NETS.includes(net);
+  // what the server says per network (WhatsApp, Telegram: true; Signal: false) — never guessed from the name
+  return n.location === true;
 }
 
 /**
