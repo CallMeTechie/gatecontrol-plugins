@@ -65,7 +65,10 @@ test('photos: pictures and videos newest first by takenAt, the areas one reads, 
     assert.deepEqual(all.json.items.map((x) => x.name), ['d.jpg', 'burst3.jpg', 'burst2.jpg', 'burst1.jpg', 'burst0.jpg', 'b.mp4', 'a.jpg']);
     assert.equal(all.json.next, null);
     const item = all.json.items.find((x) => x.id === a.id);
-    assert.deepEqual(Object.keys(item).sort(), ['areaId', 'id', 'largeUrl', 'mediaId', 'mime', 'name', 'parentId', 'preview', 'previewUrl', 'size', 'takenAt', 'review', 'work', 'labeled', 'geo', 'located'].sort());
+    assert.deepEqual(Object.keys(item).sort(), ['areaId', 'id', 'largeUrl', 'mediaId', 'mime', 'name', 'parentId', 'preview', 'previewUrl', 'size', 'takenAt', 'review', 'work', 'labeled', 'geo', 'located', 'sha256'].sort());
+    // since 1.30.1: the content's SHA-256, the same as the node's
+    assert.match(item.sha256, /^[0-9a-f]{64}$/);
+    assert.equal(item.sha256, a.sha256);
     // since 1.13.0: the review mark and the work bag (since 1.14.0: labeled — a phone recognised what is on it)
     assert.deepEqual([item.review, item.work], [null, false]);
     assert.equal(item.takenAt, iso(base));

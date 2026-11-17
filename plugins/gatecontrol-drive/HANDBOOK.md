@@ -1,4 +1,4 @@
-<!-- version: 1.30.0 -->
+<!-- version: 1.30.1 -->
 # Drive
 
 ## What the plugin does
@@ -120,6 +120,11 @@ Full screen in the portal needs GateControl 1.244.0. Older versions show the vid
 
 **At home the photos do not show up faster.**
 The previews reach the gateway bit by bit (a few hundred per run, every 15 minutes). Check at the gateway under **Gateways › Home cache** that it is “on” and that “Photos” or “Drive” are switched on. Previews from the home network need GateControl 1.249.0 and a current app.
+
+## New in 1.30.1
+
+- **“Clean up” in the Android app stops asking again:** The photo list now tells the app which content a photo is. A photo you already sorted as a work or a private photo while cleaning up is recognised again – also after it was moved, renamed or uploaded once more – and is not suggested again (with the next update of the Android app).
+- **Nothing else changes for you:** The portal looks and works as before.
 
 ## New in 1.30.0
 
