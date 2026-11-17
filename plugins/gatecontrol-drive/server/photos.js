@@ -208,6 +208,9 @@ async function itemsOf(ctx, rows) {
     return {
       id: r.id, name: r.name, mime: r.mime || null, size: r.size, takenAt: iso(nodes.takenOf(r)), areaId: r.area_id, parentId: r.parent_id,
       preview: !!p, mediaId: r.media_id || null, previewUrl: p ? p.url : null, largeUrl: p ? p.largeUrl : null,
+      // since 1.30.1: the content's SHA-256 (as on the node) — a device knows the same photo again after a move, a rename or
+      // a new upload of the same bytes (the app's „Aufräumen“ keeps what the person decided by it)
+      sha256: r.sha256 || null,
       // since 1.13.0: the review mark, and below my work folder (not marked)
       review, work: !review && !!tree && tree.has(r.parent_id),
       // since 1.14.0: a phone recognised its labels (also: none found)

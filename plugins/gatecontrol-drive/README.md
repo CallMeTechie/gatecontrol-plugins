@@ -438,7 +438,9 @@ failed).
 
 **Photos and albums** (since 1.7.0, `server/photos.js`, `server/albums.js`):
 
-- A photo item: `{ id, name, mime, size, takenAt, areaId, parentId, preview, mediaId, previewUrl, largeUrl }` —
+- A photo item: `{ id, name, mime, size, takenAt, areaId, parentId, preview, mediaId, previewUrl, largeUrl, sha256 }` —
+  `sha256` (since 1.30.1) the content's SHA-256 as on the node (`null` when unknown): a device knows the same photo
+  again after a move, a rename or a new upload of the same bytes;
   `preview` is `true` when there is a preview; `previewUrl` / `largeUrl` the same URLs as a node's `preview` (app:
   the endpoint with the device token; portal: signed). Pictures and videos by their type, newest first by `takenAt`,
   the areas the person reads (`area` narrows it, `404` for an area they do not read), never the trash. `next` is the

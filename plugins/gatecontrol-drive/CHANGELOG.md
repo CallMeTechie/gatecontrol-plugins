@@ -2,6 +2,17 @@
 
 Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3.
 
+## 1.30.1
+
+„Aufräumen“ der Android-App: entschiedene Fotos bleiben entschieden.
+
+- **`GET photos` (und jede Liste mit Foto-Einträgen: Alben, Erinnerungen, Orte, Personen) trägt `sha256`** – die
+  SHA-256 des Inhalts wie am Knoten (`null`, wenn unbekannt). Die Android-App merkt sich ihre Aufräum-Entscheidungen
+  (Arbeit / privat) künftig am Inhalt und schlägt ein Foto nach Verschieben, Umbenennen oder erneutem Hochladen
+  derselben Bytes (neue Knoten-ID) nicht wieder vor. Bisher kannte die Fotoliste nur die Knoten-ID.
+- Keine Migration, kein neues Feature-Wort: Ältere Apps ignorieren das Feld, eine App ohne es fällt auf Knoten-ID und
+  Größe mit Aufnahmezeit zurück.
+
 ## 1.30.0
 
 „Aufgaben und Erinnerungen“, Stufe 5 – an Fristen kann „Notizen & Aufgaben“ erinnern.
