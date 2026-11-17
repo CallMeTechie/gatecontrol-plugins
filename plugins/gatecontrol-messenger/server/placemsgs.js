@@ -11,7 +11,8 @@
 //            way 'auto' follows person.reply, 'gatecontrol' / a network that way (while it cannot send: GateControl)
 //   limits   10 active ones per person (limit), once an hour each (too_soon), at most 30 minutes late (expired)
 //   places   Familie's places come from the existing GET familie/places — the app copies name and coordinates, the
-//            Familie id stays for its picker (familieId); without Familie a place on the map
+//            Familie id stays for its picker (familieId); without Familie a place on the map. 1.27.1: Familie's ids are
+//            'home' and 'place:<id>' (gatecontrol-familie services places()), so the text id takes ':' and '.' too
 //   event    place_messages.changed { id, reason: created | updated | deleted | fired } to the person's own devices
 
 const store = require('./store');
@@ -31,6 +32,7 @@ const AHEAD_MS = 5 * 60000;
 const DEVICE_RE = /^[A-Za-z0-9._:-]{1,128}$/;
 const WAY_RE = /^[a-z]{2,20}$/;
 const HHMM_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+const FAMILIE_ID_RE = /^[A-Za-z0-9_:.-]{1,64}$/;
 const KEYS = ['deviceId', 'trigger', 'place', 'text', 'conversationId', 'way', 'repeat', 'window', 'ask', 'enabled', 'bridged', 'channels', 'people'];
 
 const LIMITS = { activeMax: ACTIVE_MAX, textMax: TEXT_MAX, nameMax: NAME_MAX, radiusMinM: RADIUS_MIN, radiusMaxM: RADIUS_MAX, radiusDefaultM: RADIUS_DEFAULT, everyS: EVERY_MS / 1000, lateS: LATE_MS / 1000 };
@@ -48,7 +50,7 @@ function cleanPlace(v) {
   let familieId = null;
   if (p.familieId != null) {
     if (typeof p.familieId === 'number' && posInt(p.familieId)) familieId = p.familieId;
-    else if (typeof p.familieId === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(p.familieId)) familieId = p.familieId;
+    else if (typeof p.familieId === 'string' && FAMILIE_ID_RE.test(p.familieId)) familieId = p.familieId;
     else throw fail('invalid');
   }
   return { familieId, name, lat: num(p.lat, 90), lon: num(p.lon, 180), radiusM: radius };

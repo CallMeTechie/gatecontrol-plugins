@@ -1339,8 +1339,8 @@ repeat?: "once" (default) | "always", window?: { days: [1–7 (Mo = 1)], from: "
 true (default), enabled?: true (default) }`. `conversationId`: a chat the person may write into (`403 readonly` for a
 channel, a read-only group, a notice channel; `404` for a chat that is not theirs) or any way of a person (stored as the
 person's lead) — then `way` is `auto` or one of the person's ways, for a chat that is no person `auto` or its own way
-(`400 bad_request` otherwise). `familieId`: the id from `GET familie/places` (a number or a short word), kept for the
-picker only. The phone checks `window` and `ask`; the server does not know the phone's time zone.
+(`400 bad_request` otherwise). `familieId`: the id from `GET familie/places` (a number, `home` or `place:<id>`; text `[A-Za-z0-9_:.-]{1,64}`, since
+1.27.1), kept for the picker only. The phone checks `window` and `ask`; the server does not know the phone's time zone.
 
 `placeMessage`: `{ id, deviceId, trigger, place: { familieId, name, lat, lon, radiusM }, text, conversationId, way,
 repeat, window, ask, enabled, lastFiredAt, doneAt, createdAt, updatedAt, target: { title, personId, reply } }`

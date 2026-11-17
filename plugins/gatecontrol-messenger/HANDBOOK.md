@@ -1,4 +1,4 @@
-<!-- version: 1.27.0 -->
+<!-- version: 1.27.1 -->
 # Messenger
 
 ## What the plugin does
@@ -73,6 +73,10 @@ It only comes when linking and appears at night. When “Load older history” i
 
 **Old messages are gone.**
 The administrator set a retention, or the chat is a disappearing chat.
+
+## New in 1.27.1
+
+- **Place messages with every Familie place:** a place message with a place from “Familie” other than “Home” (for example “School”) could not be saved. Now it works with all Familie places.
 
 ## New in 1.27.0
 

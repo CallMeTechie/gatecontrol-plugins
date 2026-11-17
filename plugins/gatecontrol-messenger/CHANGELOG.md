@@ -3,6 +3,17 @@
 Chats zwischen den GateControl-Konten – in der GateControl-App (eigener Tab „Chats“), im
 Windows-Client und im Portal (eigener Tab „Chats“). Alles bleibt auf dem eigenen Server.
 
+## 1.27.1
+**Fix: Ortsnachrichten mit einem Familie-Ort außer „Zuhause“ ließen sich nicht speichern.** Familie liefert die Orte mit
+den Ids `home` und `place:<id>` (gatecontrol-familie `services.places()`). `placemsgs.cleanPlace` ließ als Text-Id nur
+`[A-Za-z0-9_-]{1,64}` zu, `place:3` scheiterte daran, und `POST`/`PUT place-messages` antworteten `400 invalid`.
+- **`place.familieId`:** eine positive Zahl oder Text `[A-Za-z0-9_:.-]{1,64}` (also auch `place:<id>`). Leerzeichen,
+  andere Zeichen, mehr als 64 Zeichen, 0, Bruchzahlen und andere Typen bleiben `400 invalid`.
+- Die Id wird nur gespeichert und zurückgegeben (für die Auswahl in der App); der Server löst sie nirgends auf
+  Koordinaten auf, und `fire` braucht sie nicht. Sonst keine Stelle im Plugin, die sie prüft.
+- Weiterhin GateControl ≥ 1.296.0. Tests in `test/versandweg.test.js` (`home` und `place:3` bei `POST` und `PUT`,
+  ungültige Ids).
+
 ## 1.27.0
 **Versandweg, Standort über Brücken, Ortsnachrichten.** Braucht GateControl ≥ 1.296.0 (`gc.bridges` Version 14 für
 den Standort über eine Brücke).
