@@ -93,6 +93,7 @@ const dates = require('./dates');
 const locate = require('./locate');
 const safety = require('./safety');
 const places = require('./places');
+const ruleplaces = require('./ruleplaces');
 const rides = require('./rides');
 const notices = require('./notices');
 const kiosk = require('./kiosk');
@@ -208,6 +209,8 @@ async function background(gc, now) {
       await safety.purge(gc, now);
       await shopping.purge(gc, now);
       await places.purge(gc, now);
+      // 1.30.0: linked rule places („Meine Orte“) no rule uses any more
+      await ruleplaces.tidy(gc);
       await tasks.purge(gc, cfg, now);
       await dates.purge(gc, cfg, now);
       await rides.purge(gc, cfg, now);
@@ -400,6 +403,19 @@ module.exports = {
     const userId = arg && Number.isSafeInteger(arg.userId) ? arg.userId : null;
     const fields = arg && Array.isArray(arg.fields) ? arg.fields : [];
     if (userId && fields.includes('birthday')) profile.forget(userId);
+  },
+
+  /**
+   * 1.30.0 (GateControl ≥ 1.298.0, permissions.places): „Meine Orte“ changed — { userId, ids, deleted }, never a value.
+   * Place reminders and linked rule places at those profile places take the new point (server/profileplaces.js); the
+   * hub learns moved reminders. Never throws.
+   */
+  async placesChanged(arg, gc) {
+    try {
+      const r = await require('./profileplaces').changed(gc, arg);
+      if (r.reminders) tasksync.soon(gc, famNow(gc));
+      return r;
+    } catch (e) { gc.log.warn('placesChanged failed', (e && (e.code || e.message)) || 'error'); return null; }
   },
 
   /**

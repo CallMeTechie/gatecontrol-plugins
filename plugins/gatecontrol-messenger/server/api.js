@@ -109,6 +109,9 @@ async function me(ctx) {
       // 1.27.0: place messages („Beim Ankommen senden“ — GET/POST/PUT/DELETE place-messages, POST place-messages/:id/fire;
       // placemsgs.js), persons' replyPref (PUT persons/:id { replyPref }), README "App-API", since 1.27.0
       placeMessages: true,
+      // 1.28.0 (GateControl ≥ 1.298.0 with gc.places): „Meine Orte“ — GET places, place.ref / dest.ref 'profile:<id>'
+      // (profileplaces.js, README "App-API", since 1.28.0)
+      ...(require('./profileplaces').api(ctx.gc) ? { profilePlaces: true } : {}),
     },
     // 1.4.0: what the Familie plugin offers here (gc.services.available) — "Zur Liste", "In Kalender", places;
     // 1.10.0: drive — Drive takes files (save_file): "In Drive speichern" (POST messages/:id/to-drive)

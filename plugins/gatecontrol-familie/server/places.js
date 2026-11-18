@@ -14,11 +14,18 @@
 //
 // At most 50 active places per target person (Android allows 100 geofences
 // per app). Transitions are logged 90 days (no coordinates).
+//
+// 1.30.0 — „Meine Orte“ (server/profileplaces.js): `ref: 'profile:<id>'` makes a place of a person's profile the
+// reminder's place, as its owner may see it: lat / lon / radius are taken over (radius into 50–2000) and the title
+// defaults to the place's name. The reference and the copy are kept; the hook placesChanged moves the copy along (the
+// target's phone watches the new point), a place that went or is not visible any more keeps the copy (missing: true).
+// A PATCH with lat / lon and without ref drops the link (`ref: null` too). „Genutzt von“: reportUsage kind reminder.
 
 const store = require('./store');
 const push = require('./push');
 const shoppingIds = require('./shopping').ID_RE;
 const hubmark = require('./hubmark');
+const pp = require('./profileplaces');
 const { fail, posInt, text, multiline, bool, intIn, numIn, iso, parseIso, userIds, parseJson } = require('./util');
 
 const TITLE_MAX = 60;
@@ -39,6 +46,8 @@ function rowToPlace(r) {
     trigger: r.trigger_on, action: r.action_kind, listId: r.list_id || null, tellUserIds: parseJson(r.tell_json, []), repeat: r.repeat,
     active: !!r.active, consent: CONSENTS.includes(r.consent) ? r.consent : 'pending',
     createdAt: iso(r.created_at), updatedAt: iso(r.updated_at), lastTriggeredAt: iso(r.last_triggered_at),
+    // 1.30.0: a place of a person's profile, and whether it went (the copy above still holds)
+    ref: r.place_ref || null, missing: !!r.place_missing,
   };
 }
 
@@ -71,9 +80,22 @@ async function list(gc, r) {
 }
 
 async function fields(gc, body, existing, r) {
-  const b = body || {};
+  const b = { ...(body || {}) };
   const cur = existing || {};
   const out = {};
+  // 1.30.0: a profile place → its point and radius (and, without a title, its name)
+  out.ref = existing ? cur.ref : null;
+  if (b.ref !== undefined) {
+    out.ref = pp.cleanRef(b.ref);
+    if (out.ref) {
+      const p = await pp.resolve(gc, out.ref, r.me.userId);
+      if (!p) throw fail('invalid', { field: 'ref' });
+      b.lat = p.lat;
+      b.lon = p.lon;
+      b.radius = Math.min(2000, Math.max(50, Math.round(Number(p.radiusM) || 150)));
+      if (b.title === undefined && !existing) b.title = String(p.name || '').slice(0, TITLE_MAX);
+    }
+  } else if (existing && (b.lat !== undefined || b.lon !== undefined)) out.ref = null; // a point set by hand drops the link
   out.title = b.title !== undefined || !existing ? text(b.title, TITLE_MAX) : cur.title;
   if (b.note !== undefined) {
     const n = b.note == null ? '' : multiline(b.note);
@@ -140,11 +162,12 @@ async function create(gc, r) {
   const f = await fields(gc, r.body, null, r);
   if (f.active && await activeCount(gc, f.targetUserId) >= MAX_ACTIVE) throw fail('too_many_places');
   const consent = f.targetUserId === r.me.userId ? 'accepted' : 'pending';
-  const res = await store.run(gc, `INSERT INTO places (owner_id, target_user_id, title, note, lat, lon, radius, trigger_on, action_kind, list_id, tell_json, repeat, active, consent, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  [r.me.userId, f.targetUserId, f.title, f.note, f.lat, f.lon, f.radius, f.trigger, f.action, f.listId, JSON.stringify(f.tellUserIds), f.repeat, f.active ? 1 : 0, consent, r.now, r.now]);
+  const res = await store.run(gc, `INSERT INTO places (owner_id, target_user_id, title, note, lat, lon, radius, trigger_on, action_kind, list_id, tell_json, repeat, active, consent, created_at, updated_at, place_ref, place_missing)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+  [r.me.userId, f.targetUserId, f.title, f.note, f.lat, f.lon, f.radius, f.trigger, f.action, f.listId, JSON.stringify(f.tellUserIds), f.repeat, f.active ? 1 : 0, consent, r.now, r.now, f.ref]);
   const id = res.lastInsertRowid;
   await toHub(gc, id);
+  if (f.ref) await used(gc, r.me.userId, f.ref, [f.ref]);
   // 1.24.0: a reminder that lives in the hub is asked about there — unless that person's phone still listens to Familie
   if (consent === 'pending') consentPush(r, id, f.targetUserId, f.title);
   return { place: view(await getPlace(gc, id), r.fam) };
@@ -158,14 +181,17 @@ async function update(gc, r, rawId) {
   if (p.ownerId !== r.me.userId) throw fail('forbidden');
   const f = await fields(gc, r.body, p, r);
   if (f.active && (!p.active || f.targetUserId !== p.targetUserId) && await activeCount(gc, f.targetUserId, id) >= MAX_ACTIVE) throw fail('too_many_places');
-  const changed = ['title', 'note', 'lat', 'lon', 'radius', 'trigger', 'action', 'repeat', 'targetUserId', 'listId'].some((k) => f[k] !== p[k])
+  const changed = ['title', 'note', 'lat', 'lon', 'radius', 'trigger', 'action', 'repeat', 'targetUserId', 'listId', 'ref'].some((k) => f[k] !== p[k])
     || JSON.stringify(f.tellUserIds) !== JSON.stringify(p.tellUserIds) || (f.active && !p.active);
   let consent = p.consent;
   if (f.targetUserId === r.me.userId) consent = 'accepted';
   else if (changed) consent = 'pending';
-  await store.run(gc, `UPDATE places SET target_user_id = ?, title = ?, note = ?, lat = ?, lon = ?, radius = ?, trigger_on = ?, action_kind = ?, list_id = ?, tell_json = ?, repeat = ?, active = ?, consent = ?, updated_at = ? WHERE id = ?`,
-    [f.targetUserId, f.title, f.note, f.lat, f.lon, f.radius, f.trigger, f.action, f.listId, JSON.stringify(f.tellUserIds), f.repeat, f.active ? 1 : 0, consent, r.now, id]);
+  await store.run(gc, `UPDATE places SET target_user_id = ?, title = ?, note = ?, lat = ?, lon = ?, radius = ?, trigger_on = ?, action_kind = ?, list_id = ?, tell_json = ?, repeat = ?, active = ?, consent = ?, updated_at = ?,
+    place_ref = ?, place_missing = ? WHERE id = ?`,
+    [f.targetUserId, f.title, f.note, f.lat, f.lon, f.radius, f.trigger, f.action, f.listId, JSON.stringify(f.tellUserIds), f.repeat, f.active ? 1 : 0, consent, r.now,
+      f.ref, f.ref && (!r.body || r.body.ref === undefined) && p.missing ? 1 : 0, id]);
   await toHub(gc, id);
+  if (f.ref || p.ref) await used(gc, r.me.userId, r.body && r.body.ref ? f.ref : null, [f.ref, p.ref]);
   if (consent === 'pending' && changed) consentPush(r, id, f.targetUserId, f.title);
   return { place: view(await getPlace(gc, id), r.fam) };
 }
@@ -179,6 +205,7 @@ async function remove(gc, r, rawId) {
   const x = await store.one(gc, 'SELECT in_hub FROM places WHERE id = ?', [id]);
   if (hubmark.state.on && x && x.in_hub === 1) await store.run(gc, 'UPDATE places SET gone_at = ?, dirty = dirty + 1 WHERE id = ?', [r.now, id]);
   else await store.run(gc, 'DELETE FROM places WHERE id = ?', [id]);
+  if (p.ref) await used(gc, r.me.userId, null, [p.ref]);
   return {};
 }
 
@@ -229,9 +256,42 @@ async function triggered(gc, r, rawId) {
   return { place: view(await getPlace(gc, id), r.fam), told, repeated: repeat };
 }
 
+/** 1.30.0: „zuletzt genutzt“ of the chosen profile place (own only) and „Genutzt von“ of the touched ones. Never throws. */
+async function used(gc, userId, ref, refs) {
+  if (ref) await pp.markUsed(gc, userId, ref);
+  await pp.report(gc, userId, refs.filter(Boolean));
+}
+
+/**
+ * 1.30.0 — the hook placesChanged: reminders at these profile refs take the place's point and radius as their owner may
+ * see it (the hub learns it: dirty); a place that went or is not visible to the owner keeps the copy, missing. The
+ * consent stays (the person agreed to the place). → how many changed.
+ */
+async function placesChanged(gc, refs, deleted, now = Date.now()) {
+  const rows = await store.all(gc, `SELECT id, owner_id, lat, lon, radius, place_ref, place_missing FROM places WHERE gone_at IS NULL AND place_ref IN (${refs.map(() => '?').join(',')})`, refs);
+  const plan = [];
+  for (const x of rows) {
+    let p = null;
+    if (!deleted) { try { p = await pp.resolve(gc, x.place_ref, x.owner_id); } catch { continue; } }
+    if (p) {
+      const radius = Math.min(2000, Math.max(50, Math.round(Number(p.radiusM) || 150)));
+      if (p.lat === x.lat && p.lon === x.lon && radius === x.radius && !x.place_missing) continue;
+      plan.push([p.lat, p.lon, radius, 0, now, x.id]);
+    } else if (!x.place_missing) plan.push([x.lat, x.lon, x.radius, 1, now, x.id]);
+  }
+  if (!plan.length) return 0;
+  await store.tx(gc, async () => {
+    for (const v of plan) {
+      await store.run(gc, 'UPDATE places SET lat = ?, lon = ?, radius = ?, place_missing = ?, updated_at = ? WHERE id = ?', v);
+      await hubmark.place(gc, v[5]);
+    }
+  });
+  return plan.length;
+}
+
 async function purge(gc, now) {
   await store.run(gc, 'DELETE FROM place_events WHERE at < ?', [now - EVENT_DAYS * DAY]);
   await store.run(gc, 'DELETE FROM places WHERE gone_at IS NOT NULL AND gone_at < ? AND dirty = 0', [now - GONE_KEEP_DAYS * DAY]);
 }
 
-module.exports = { MAX_ACTIVE, list, create, update, remove, consent, triggered, purge, view, rowToPlace };
+module.exports = { MAX_ACTIVE, list, create, update, remove, consent, triggered, purge, placesChanged, view, rowToPlace };

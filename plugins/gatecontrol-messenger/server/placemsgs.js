@@ -14,10 +14,16 @@
 //            Familie id stays for its picker (familieId); without Familie a place on the map. 1.27.1: Familie's ids are
 //            'home' and 'place:<id>' (gatecontrol-familie services places()), so the text id takes ':' and '.' too
 //   event    place_messages.changed { id, reason: created | updated | deleted | fired } to the person's own devices
+//   1.28.0   „Meine Orte“ (profileplaces.js): place.ref 'profile:<id>' | 'home' | 'place:<id>' next to the old familieId.
+//            A profile place is resolved on the server (gc.places, as the person may see it): its name, point and radius
+//            are kept as a copy (the fallback); the column place_ref finds the place messages of a place when the hook
+//            placesChanged says it changed — then the copy follows (reason 'updated', place: true), a place gone or no longer visible
+//            keeps the copy and answers place.missing: true. „Genutzt von“: gc.places.reportUsage location_message.
 
 const store = require('./store');
 const seal = require('./seal');
 const live = require('./live');
+const pp = require('./profileplaces');
 const { fail, posInt, line, iso, parseIso } = require('./util');
 
 const ACTIVE_MAX = 10;
@@ -39,21 +45,48 @@ const LIMITS = { activeMax: ACTIVE_MAX, textMax: TEXT_MAX, nameMax: NAME_MAX, ra
 
 const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : null);
 
-function cleanPlace(v) {
+const clampRadius = (r) => Math.min(RADIUS_MAX, Math.max(RADIUS_MIN, Math.round(Number(r) || RADIUS_DEFAULT)));
+
+/** The copy of a profile place (gc.places answer) → { name, lat, lon, radiusM } (radius into 100…2000). */
+function copyOf(p) {
+  return { name: (line(p.name) || '').slice(0, NAME_MAX) || null, lat: p.lat, lon: p.lon, radiusM: clampRadius(p.radiusM) };
+}
+
+/**
+ * The place of a body → { ref, familieId, name, lat, lon, radiusM }. 1.28.0: `ref` 'profile:<id>' is resolved as the
+ * viewer may see it (invalid when unknown or not visible): name, point and radius come from the profile, the app's copy
+ * is not needed. Familie's refs ('home', 'place:<id>') and a bare point keep the app's copy as before. An older app that
+ * sends the ref as familieId is understood too.
+ */
+async function cleanPlace(ctx, v) {
   const p = obj(v);
   if (!p) throw fail('invalid');
-  const name = line(p.name);
-  if (!name || name.length > NAME_MAX) throw fail('invalid');
-  const num = (x, max) => { if (typeof x !== 'number' || !Number.isFinite(x) || Math.abs(x) > max) throw fail('invalid'); return x; };
-  const radius = p.radiusM == null ? RADIUS_DEFAULT : p.radiusM;
-  if (!Number.isInteger(radius) || radius < RADIUS_MIN || radius > RADIUS_MAX) throw fail('invalid');
   let familieId = null;
   if (p.familieId != null) {
     if (typeof p.familieId === 'number' && posInt(p.familieId)) familieId = p.familieId;
     else if (typeof p.familieId === 'string' && FAMILIE_ID_RE.test(p.familieId)) familieId = p.familieId;
     else throw fail('invalid');
   }
-  return { familieId, name, lat: num(p.lat, 90), lon: num(p.lon, 180), radiusM: radius };
+  let ref = pp.cleanRef(p.ref);
+  if (ref == null && typeof familieId === 'string' && pp.REF_RE.test(familieId)) ref = familieId;
+  if (ref != null && familieId == null && !pp.profileId(ref)) familieId = ref;
+  if (ref != null && pp.profileId(ref)) {
+    const found = await pp.resolve(ctx.gc, ref, ctx.viewer);
+    if (found === null) throw fail('invalid');
+    if (found) {
+      const c = copyOf(found);
+      const name = p.name == null ? c.name : line(p.name);
+      if (!name || name.length > NAME_MAX) throw fail('invalid');
+      return { ref, familieId, name, lat: c.lat, lon: c.lon, radiusM: c.radiusM };
+    }
+    // an older GateControl without gc.places: the app's copy, as for any other place
+  }
+  const name = line(p.name);
+  if (!name || name.length > NAME_MAX) throw fail('invalid');
+  const num = (x, max) => { if (typeof x !== 'number' || !Number.isFinite(x) || Math.abs(x) > max) throw fail('invalid'); return x; };
+  const radius = p.radiusM == null ? RADIUS_DEFAULT : p.radiusM;
+  if (!Number.isInteger(radius) || radius < RADIUS_MIN || radius > RADIUS_MAX) throw fail('invalid');
+  return { ref, familieId, name, lat: num(p.lat, 90), lon: num(p.lon, 180), radiusM: radius };
 }
 
 function cleanText(v) {
@@ -136,7 +169,12 @@ async function view(ctx, r) {
   const info = await targetInfo(ctx, r.conv_id);
   return {
     id: r.id, deviceId: r.device_id, trigger: r.trig,
-    place: { familieId: place.familieId != null ? place.familieId : null, name: place.name || null, lat: place.lat, lon: place.lon, radiusM: place.radiusM || RADIUS_DEFAULT },
+    place: {
+      ref: place.ref || r.place_ref || null, source: pp.sourceOf(place.ref || r.place_ref || null),
+      familieId: place.familieId != null ? place.familieId : null, name: place.name || null, lat: place.lat, lon: place.lon, radiusM: place.radiusM || RADIUS_DEFAULT,
+      // 1.28.0: the profile place went or is not visible any more — the copy still holds, the app offers to choose again
+      missing: !!r.place_missing,
+    },
     text: typeof t === 'string' ? t : null,
     conversationId: r.conv_id, way: r.way, repeat: r.repeat, window: win, ask: !!r.ask, enabled: !!r.enabled,
     lastFiredAt: iso(r.last_fired_at), doneAt: iso(r.done_at), createdAt: iso(r.created_at), updatedAt: iso(r.updated_at),
@@ -164,7 +202,7 @@ async function create(ctx, body) {
   for (const k of Object.keys(b)) if (!KEYS.includes(k)) throw fail('invalid');
   if (typeof b.deviceId !== 'string' || !DEVICE_RE.test(b.deviceId)) throw fail('invalid');
   if (b.trigger !== 'enter' && b.trigger !== 'exit') throw fail('invalid');
-  const place = cleanPlace(b.place);
+  const place = await cleanPlace(ctx, b.place);
   const text = cleanText(b.text);
   const tg = await target(ctx, b.conversationId, b.way);
   const repeat = b.repeat == null ? 'once' : b.repeat;
@@ -174,10 +212,12 @@ async function create(ctx, body) {
   if (b.enabled != null && typeof b.enabled !== 'boolean') throw fail('invalid');
   const enabled = b.enabled !== false;
   if (enabled && (await activeCount(ctx)) >= ACTIVE_MAX) throw fail('limit');
-  const r = await store.run(ctx.gc, `INSERT INTO place_messages (user_id, device_id, trig, place_enc, text_enc, conv_id, way, repeat, window_json, ask, enabled, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  [ctx.viewer, b.deviceId, b.trigger, seal.sealJson(place), seal.seal(text), tg.conv.id, tg.way, repeat, win ? JSON.stringify(win) : null, b.ask === false ? 0 : 1, enabled ? 1 : 0, ctx.now, ctx.now]);
+  const r = await store.run(ctx.gc, `INSERT INTO place_messages (user_id, device_id, trig, place_enc, text_enc, conv_id, way, repeat, window_json, ask, enabled, created_at, updated_at, place_ref, place_missing)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+  [ctx.viewer, b.deviceId, b.trigger, seal.sealJson(place), seal.seal(text), tg.conv.id, tg.way, repeat, win ? JSON.stringify(win) : null, b.ask === false ? 0 : 1, enabled ? 1 : 0, ctx.now, ctx.now, place.ref]);
   changed(ctx, r.lastInsertRowid, 'created');
+  await pp.used(ctx, place.ref);
+  pp.afterSave(ctx, { used: place.ref });
   return { placeMessage: await view(ctx, await rowOf(ctx, r.lastInsertRowid)) };
 }
 
@@ -190,7 +230,13 @@ async function update(ctx, idRaw, body) {
   const set = {};
   if (b.deviceId !== undefined) { if (typeof b.deviceId !== 'string' || !DEVICE_RE.test(b.deviceId)) throw fail('invalid'); set.device_id = b.deviceId; }
   if (b.trigger !== undefined) { if (b.trigger !== 'enter' && b.trigger !== 'exit') throw fail('invalid'); set.trig = b.trigger; }
-  if (b.place !== undefined) set.place_enc = seal.sealJson(cleanPlace(b.place));
+  let place = null;
+  if (b.place !== undefined) {
+    place = await cleanPlace(ctx, b.place);
+    set.place_enc = seal.sealJson(place);
+    set.place_ref = place.ref;
+    set.place_missing = 0;
+  }
   if (b.text !== undefined) set.text_enc = seal.seal(cleanText(b.text));
   if (b.conversationId !== undefined || b.way !== undefined) {
     const tg = await target(ctx, b.conversationId !== undefined ? b.conversationId : row.conv_id, b.way !== undefined ? b.way : row.way);
@@ -213,6 +259,10 @@ async function update(ctx, idRaw, body) {
     await store.run(ctx.gc, `UPDATE place_messages SET ${keys.map((k) => `${k} = ?`).join(', ')}, updated_at = ? WHERE id = ?`, [...keys.map((k) => set[k]), ctx.now, row.id]);
     changed(ctx, row.id, 'updated');
   }
+  if (place) {
+    await pp.used(ctx, place.ref);
+    pp.afterSave(ctx, { used: place.ref, refs: [row.place_ref] });
+  }
   return { placeMessage: await view(ctx, await rowOf(ctx, row.id)) };
 }
 
@@ -221,6 +271,7 @@ async function remove(ctx, idRaw) {
   const row = await rowOf(ctx, idRaw);
   await store.run(ctx.gc, 'DELETE FROM place_messages WHERE id = ?', [row.id]);
   changed(ctx, row.id, 'deleted');
+  pp.afterSave(ctx, { refs: [row.place_ref] });
   return { deleted: true, id: row.id };
 }
 
@@ -294,9 +345,51 @@ async function route(ctx, req, seg, tx, apiRoute) {
   throw fail('not_found');
 }
 
-/** Place messages whose chat went (the plugin's clean-up). */
+/** Place messages whose chat went (the plugin's clean-up) → the profile refs they had (for „Genutzt von“). */
 async function tidy(gc) {
+  const gone = await store.all(gc, 'SELECT DISTINCT user_id, place_ref FROM place_messages WHERE place_ref IS NOT NULL AND conv_id NOT IN (SELECT id FROM conversations)');
   await store.run(gc, 'DELETE FROM place_messages WHERE conv_id NOT IN (SELECT id FROM conversations)');
+  return gone.filter((r) => pp.profileId(r.place_ref));
 }
 
-module.exports = { route, list, create, update, remove, fire, tidy, LIMITS, ACTIVE_MAX };
+/**
+ * 1.28.0 — the hook placesChanged: the place messages at these profile refs take the place's new name, point and radius
+ * as the owner of each place message may see it; a place that went (deleted) or is not visible to them any more keeps
+ * the copy and is marked missing. → how many changed (event place_messages.changed { id, reason: 'updated', place: true }).
+ */
+async function placesChanged(ctx, refs, deleted) {
+  const gc = ctx.gc;
+  const rows = await store.all(gc, `SELECT id, user_id, place_enc, place_ref, place_missing FROM place_messages WHERE place_ref IN (${refs.map(() => '?').join(',')})`, refs);
+  const looked = new Map();
+  const plan = [];
+  for (const r of rows) {
+    const key = `${r.user_id}|${r.place_ref}`;
+    if (!looked.has(key)) {
+      let found = null;
+      if (!deleted) { try { found = await pp.resolve(gc, r.place_ref, r.user_id); } catch { found = undefined; } }
+      looked.set(key, found);
+    }
+    const found = looked.get(key);
+    if (found === undefined) continue; // the host did not answer — keep everything as it is
+    const old = seal.openJson(r.place_enc) || {};
+    if (found) {
+      const c = copyOf(found);
+      const next = { ...old, ref: r.place_ref, name: c.name || old.name, lat: c.lat, lon: c.lon, radiusM: c.radiusM };
+      const same = next.name === old.name && next.lat === old.lat && next.lon === old.lon && next.radiusM === old.radiusM;
+      if (same && !r.place_missing) continue;
+      plan.push({ r, enc: seal.sealJson(next), missing: 0 });
+    } else if (!r.place_missing) {
+      plan.push({ r, enc: r.place_enc, missing: 1 });
+    }
+  }
+  if (!plan.length) return 0;
+  await store.tx(gc, async () => {
+    for (const x of plan) {
+      await store.run(gc, 'UPDATE place_messages SET place_enc = ?, place_missing = ?, updated_at = ? WHERE id = ?', [x.enc, x.missing, ctx.now, x.r.id]);
+      live.queue(ctx.box, [x.r.user_id], 'place_messages.changed', { id: x.r.id, reason: 'updated', place: true });
+    }
+  });
+  return plan.length;
+}
+
+module.exports = { route, list, create, update, remove, fire, tidy, placesChanged, LIMITS, ACTIVE_MAX };

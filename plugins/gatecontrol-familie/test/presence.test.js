@@ -100,7 +100,7 @@ test('rules: parents only; validation; shape, owner, the quick actions of the ca
   }
   const rule = (await as(ANNA)('POST', '/presence/rules', { name: 'Sparen', trigger: 'all_away', actions: [QA('scene:away', 'Heizung 17 °C'), { type: 'notify', to: 'parents' }] })).json.rule;
   assert.deepEqual({ ...rule, id: 0 }, {
-    id: 0, name: 'Sparen', trigger: 'all_away', userId: null, placeId: null, placeName: null, graceMinutes: 10, conditions: { time: null, afterSunset: false },
+    id: 0, name: 'Sparen', trigger: 'all_away', userId: null, placeId: null, placeName: null, placeRef: null, placeMissing: false, graceMinutes: 10, conditions: { time: null, afterSunset: false },
     actions: [
       { type: 'quick_action', plugin: SH, id: 'scene:away', title: 'Heizung 17 °C', state: null, kind: 'button', verb: null, available: true, needsTarget: false },
       { type: 'notify', to: 'parents', text: null },

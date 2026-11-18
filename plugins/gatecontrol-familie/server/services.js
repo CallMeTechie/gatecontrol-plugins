@@ -28,7 +28,11 @@
 //                   Familien-Chat“. userIds: the date's members (non-members dropped; none = the
 //                   whole family). Codes: invalid, module_off.
 //   calendar_remove { sourceRef } → { ok: true, removed: true | false }   idempotent
-//   places          { userId } → [{ id, name, lat, lon, radiusM }]
+//   places          { userId, includeProfile? } → [{ id, name, lat, lon, radiusM }]
+//                   1.30.0: includeProfile: true — every entry also has ref ('home' | 'place:<id>' | 'profile:<id>') and
+//                   source ('familie' | 'profile'); the person's own profile places shown to the family (visibility
+//                   family or all) come last ({ id: ref, ref, source: 'profile', name, icon, lat, lon, radiusM,
+//                   visibility }). Without it: as before.
 //                   the family's places for that member: 'home' („Zuhause“, the settings lat / lon,
 //                   150 m) and, with the module presence on, the rule places ('place:<id>').
 //                   Not a member (or a wall tablet) → [].
@@ -77,6 +81,7 @@ const members = require('./members');
 const shopping = require('./shopping');
 const dates = require('./dates');
 const ruleplaces = require('./ruleplaces');
+const profileplaces = require('./profileplaces');
 const school = require('./school');
 const hubmark = require('./hubmark');
 const schoolend = require('./schoolend');
@@ -277,11 +282,23 @@ async function calendarRemove(gc, payload) {
 
 async function places(gc, cfg, payload, user) {
   const fam = await family(gc, cfg);
-  try { memberOf(fam, payload, user); } catch { return []; }
+  let m;
+  try { m = memberOf(fam, payload, user); } catch { return []; }
+  // 1.30.0: { includeProfile: true } — also the person's own profile places shown to the family (visibility family or
+  // all), with ref / source; without it the answer is the same as before (older callers)
+  const withProfile = payload.includeProfile === true;
+  const tag = (x, ref) => (withProfile ? { ...x, ref, source: 'familie' } : x);
   const out = [];
-  if (cfg.location) out.push({ id: 'home', name: say(cfg.lang, 'services.home'), lat: cfg.location.lat, lon: cfg.location.lon, radiusM: HOME_RADIUS });
+  if (cfg.location) out.push(tag({ id: 'home', name: say(cfg.lang, 'services.home'), lat: cfg.location.lat, lon: cfg.location.lon, radiusM: HOME_RADIUS }, 'home'));
   if (cfg.modules.presence) {
-    for (const p of (await ruleplaces.all(gc)).values()) out.push({ id: `place:${p.id}`, name: p.name, lat: p.lat, lon: p.lon, radiusM: p.radius });
+    // linked rule places (1.30.0) are profile places — they come below with includeProfile, never as Familie's
+    for (const p of (await ruleplaces.all(gc)).values()) if (!p.ref) out.push(tag({ id: `place:${p.id}`, name: p.name, lat: p.lat, lon: p.lon, radiusM: p.radius }, `place:${p.id}`));
+  }
+  if (withProfile) {
+    for (const p of await profileplaces.forFamily(gc, fam, m.userId)) {
+      if (!p.own) continue;
+      out.push({ id: p.ref, ref: p.ref, source: 'profile', name: p.name, icon: p.icon, lat: p.lat, lon: p.lon, radiusM: p.radiusM, visibility: p.visibility });
+    }
   }
   return out;
 }

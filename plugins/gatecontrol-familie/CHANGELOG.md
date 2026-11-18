@@ -3,6 +3,35 @@
 Die Familie in der GateControl-App (eigener Tab), im Portal (eigener Tab „Familie“) und auf
 drei Admin-Seiten. Alles bleibt auf dem eigenen Server.
 
+## 1.30.0
+
+„Meine Orte“ aus dem Profil für Orts-Erinnerungen und Regeln. Braucht GateControl ≥ 1.298.0 (`gc.places` Version 1,
+Permission `places`, Hook `placesChanged`); ohne `gc.places` werden keine Profil-Orte angeboten, sonst bleibt alles wie
+bisher.
+
+- **`services.places()`** (`server/services.js`): mit `{ userId, includeProfile: true }` zusätzlich die eigenen
+  Profil-Orte der Person, die für die Familie sichtbar sind (`visibility` `family` oder `all`) —
+  `{ id: 'profile:<id>', ref, source: 'profile', name, icon, lat, lon, radiusM, visibility }`; dann tragen auch
+  „Zuhause“ und die Regel-Orte `ref` (`home`, `place:<id>`) und `source: 'familie'`. Ohne die Option die Antwort wie bisher.
+- **Orts-Erinnerungen** (`server/places.js`): `ref: 'profile:<id>'` bei `POST`/`PATCH places` — Punkt, Radius (50–2000 m)
+  und ohne Titel der Name kommen aus dem Profil, so wie die anlegende Person den Ort sehen darf (sonst `400 invalid`).
+  Gespeichert werden Verweis (`place_ref`) und Kopie. `ref: null` oder ein Punkt von Hand löst die Verbindung. Antwort:
+  `ref`, `missing`.
+- **Regeln** (`server/ruleplaces.js`, `presence.js`, `rules.js`): `placeId: 'profile:<id>'` (in `presence/rules` und
+  `rules`) wählt einen Profil-Ort, den die Besitzerin für die Familie freigibt (`family`/`all`, Besitzer ein Mitglied).
+  Familie legt dafür einen **verknüpften Regel-Ort** an (`rule_places.profile_ref`): die Kopie, die die Handys über
+  `presence/watch` überwachen, nicht unter den 20 Orten der Eltern, nicht in deren Liste und dort nicht änderbar; er
+  verschwindet mit der letzten Regel (auch beim Aufräumen). Regeln antworten `placeRef` und `placeMissing`;
+  `presence/places`, `admin/presence` und `rules/options` liefern `profilePlaces` (was gewählt werden kann).
+- **Hook `placesChanged`:** Erinnerungen und verknüpfte Regel-Orte übernehmen Punkt und Radius (Regel-Orte auch den Namen);
+  die Notizen-Zentrale erfährt geänderte Erinnerungen. Gelöscht oder nicht mehr freigegeben: die Kopie bleibt,
+  `missing` / `placeMissing: true`. Die Zustimmung einer anderen Person bleibt.
+- **„Genutzt von“:** `gc.places.markUsed` beim Wählen (eigene Orte), `gc.places.reportUsage` mit den Arten `reminder`
+  und `rule` (Familie-Summen je Ort) nach Anlegen, Ändern und Löschen.
+- **Portal/Admin-Seite:** die Ortsauswahl im Regel-Editor (`ui/rules.js`) zeigt „Familie-Orte“ und „Meine Orte (Profil)“;
+  ein nicht mehr freigegebener Ort steht mit Hinweis da. (Orts-Erinnerungen legt nur die App an.)
+- Migration 017. Tests in `test/profileplaces.test.js` gegen `gc.places` des Mock-Hosts (`tools/testing/mock-places.js`).
+
 ## 1.29.0
 
 Telegram in der Karte „Andere Messenger“ (Plugin Messenger ab 1.24.0 auf einem GateControl-Server mit der Telegram-Brücke).

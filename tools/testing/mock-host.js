@@ -438,12 +438,12 @@
 // GateControl 1.280.0 (opt-in: opts.gatecontrol: '1.280.0' or opts.profile) — gc.profile, the user profile (the fields of
 // permissions.profile, only what the viewer may see) and the hooks profileChanged / myData: see tools/testing/mock-profile.js.
 //
-// GateControl 1.298.0 (opt-in: opts.gatecontrol: '1.298.0' or opts.places) — gc.places, "Meine Orte" of the user profile
-// (only with permissions.places), the hook placesChanged and host.places (what the person does in "Mein Profil"): see
-// tools/testing/mock-places.js.
-//
 // GateControl 1.289.0 (opt-in: opts.gatecontrol: '1.289.0' or opts.avatarVisibility) — „Wer sieht dein Bild?“: gc.users with
 // a viewer / unmasked and avatarVisibility, gc.users.setAvatarVisibility / adoptAvatarVisibility: see tools/testing/mock-avatars.js.
+//
+// GateControl 1.298.0 (opt-in: opts.gatecontrol: '1.298.0' or opts.places) — „Meine Orte“: gc.places (only with
+// permissions.places: list / get / resolve / markUsed / reportUsage / importFor) and the hook placesChanged: see
+// tools/testing/mock-places.js.
 
 const fs = require('node:fs');
 const os = require('node:os');
@@ -3310,13 +3310,13 @@ async function createHost(pluginDir, opts = {}) {
   // ─── the user profile (GateControl ≥ 1.280.0, src/services/profile.js; tools/testing/mock-profile.js) ───
   const pf = mockProfile.install({ opts, perms, atLeast, enabledUser, hostError, personCtx, wire });
   Object.assign(api, pf.api);
-  // ─── „Meine Orte“ (GateControl ≥ 1.298.0, src/services/places.js; tools/testing/mock-places.js) ───
-  const pl = mockPlaces.install({ opts, perms, atLeast, enabledUser, hostError, pluginId: manifest.id,
-    pluginName: manifest.name && typeof manifest.name === 'object' ? manifest.name.de || manifest.name.en : manifest.name });
-  Object.assign(api, pl.api);
   // ─── „Wer sieht dein Bild?“ (GateControl ≥ 1.289.0, src/services/avatars.js; tools/testing/mock-avatars.js) ───
   const av = mockAvatars.install({ opts, perms, atLeast, hostError, personCtx });
   if (av.on) Object.assign(api, av.api);
+  // ─── „Meine Orte“ (GateControl ≥ 1.298.0, src/services/places.js; tools/testing/mock-places.js) ───
+  const pl = mockPlaces.install({ opts, perms, atLeast, enabledUser, userById: (id) => allUsers.find((u) => u.id === id) || null, hostError, wire,
+    pluginId: manifest.id, pluginName: (manifest.name && typeof manifest.name === 'object' ? manifest.name.de || manifest.name.en : manifest.name) || manifest.id });
+  Object.assign(api, pl.api);
   // ─── Messenger-Brücken (GateControl preview, src/services/bridges; tools/testing/mock-bridges.js) ───
   const br = mockBridges.install({ opts, perms, enabledUser, hostError, personCtx,
     // gc.bridges version 4: a file of a bridged chat into the plugin's media, a file of the plugin to be sent
@@ -4357,10 +4357,10 @@ async function createHost(pluginDir, opts = {}) {
     bridges: br.control,
     /** GateControl ≥ 1.280.0 (opts.profile): { set, changed, myData, calls } — see tools/testing/mock-profile.js */
     profile: pf.control,
-    /** GateControl ≥ 1.298.0 (opts.places): „Meine Orte“ { add, update, remove, all, usage, calls, settle, failNext } — see tools/testing/mock-places.js */
-    places: pl.control,
     /** GateControl ≥ 1.289.0 (opts.avatarVisibility): „Wer sieht dein Bild?“ { level, set, calls } — see tools/testing/mock-avatars.js */
     avatarVisibility: av.control,
+    /** GateControl ≥ 1.298.0 (opts.places): „Meine Orte“ { add, update, remove, seed, changed, usage, all, calls } — see tools/testing/mock-places.js */
+    places: pl.control,
     vpnDnsSet: (x) => vd.hostSet(x || {}),
     vpnDnsEvent: (ev) => vd.hostEvent(ev),
     vpnDnsExpire: (now) => vd.hostExpire(now),

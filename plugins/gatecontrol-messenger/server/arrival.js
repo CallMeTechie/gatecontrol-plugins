@@ -7,11 +7,15 @@
 // "X ist angekommen", a push to the others, the optional onArrive action is run as the sender, a status
 // auto_place shows the destination. POST …/arrival/stop → stopped; after 3 h it stops by itself.
 // Changes → event arrival.update { conversationId, messageId, state, updatedAt }.
+// 1.28.0: dest.ref 'profile:<id>' | 'home' | 'place:<id>' (profileplaces.js) next to the old familiePlaceId. A profile
+// place is resolved as the sender may see it (label, point, radius from the profile; the copy in the message is the
+// fallback); while the arrival is live, the hook placesChanged moves the copy along (dest.missing when the place went).
 
 const store = require('./store');
 const seal = require('./seal');
 const live = require('./live');
 const messages = require('./messages');
+const pp = require('./profileplaces');
 const { fail, posInt, text, numIn, intIn, iso } = require('./util');
 
 const RADIUS_DEFAULT = 150;
@@ -38,7 +42,13 @@ function clean(v) {
   if (!v || typeof v !== 'object' || Array.isArray(v)) throw fail('invalid');
   const d = v.dest;
   if (!d || typeof d !== 'object' || Array.isArray(d)) throw fail('invalid');
-  const dest = { label: text(d.label, 120), lat: numIn(d.lat, -90, 90), lon: numIn(d.lon, -180, 180), radiusM: d.radiusM == null ? RADIUS_DEFAULT : intIn(d.radiusM, RADIUS_MIN, RADIUS_MAX) };
+  const ref = pp.cleanRef(d.ref);
+  // 1.28.0: a profile place brings label, point and radius (resolve() fills them in); the app's copy is then optional
+  const fromProfile = ref != null && pp.profileId(ref) != null && (d.lat == null || d.lon == null);
+  const dest = fromProfile
+    ? { label: d.label == null ? null : text(d.label, 120), lat: null, lon: null, radiusM: d.radiusM == null ? null : intIn(d.radiusM, RADIUS_MIN, RADIUS_MAX) }
+    : { label: text(d.label, 120), lat: numIn(d.lat, -90, 90), lon: numIn(d.lon, -180, 180), radiusM: d.radiusM == null ? (ref != null && pp.profileId(ref) != null ? null : RADIUS_DEFAULT) : intIn(d.radiusM, RADIUS_MIN, RADIUS_MAX) };
+  if (ref != null) dest.ref = ref;
   if (d.familiePlaceId != null) {
     if (!(typeof d.familiePlaceId === 'string' || Number.isSafeInteger(d.familiePlaceId)) || String(d.familiePlaceId).length > 64) throw fail('invalid');
     dest.familiePlaceId = d.familiePlaceId;
@@ -53,11 +63,69 @@ function clean(v) {
   return { dest, onArrive };
 }
 
+const clampRadius = (r) => Math.min(RADIUS_MAX, Math.max(RADIUS_MIN, Math.round(Number(r) || RADIUS_DEFAULT)));
+
+/**
+ * 1.28.0: a profile place of `clean` → the point, radius and (without the app's) label from GateControl's profile, as
+ * the sender may see it (invalid when unknown or not visible). Without gc.places the app's copy is needed (invalid).
+ */
+async function resolve(ctx, a) {
+  const ref = a.dest.ref;
+  if (!ref || pp.profileId(ref) == null) return a;
+  const found = await pp.resolve(ctx.gc, ref, ctx.viewer);
+  if (found === null) throw fail('invalid');
+  if (found === undefined) {
+    if (a.dest.lat == null || a.dest.lon == null || !a.dest.label) throw fail('invalid');
+    if (a.dest.radiusM == null) a.dest.radiusM = RADIUS_DEFAULT;
+    return a;
+  }
+  a.dest.lat = found.lat;
+  a.dest.lon = found.lon;
+  a.dest.radiusM = a.dest.radiusM == null ? clampRadius(found.radiusM) : a.dest.radiusM;
+  if (!a.dest.label) a.dest.label = (typeof found.name === 'string' && found.name.slice(0, 120)) || 'Ort';
+  return a;
+}
+
 async function create(ctx, conv, msgId, a) {
   // one live arrival per person and chat: an older one stops
   const old = await store.all(ctx.gc, "SELECT msg_id FROM arrivals WHERE conv_id = ? AND sender_id = ? AND state = 'live'", [conv.id, ctx.viewer]);
   for (const o of old) await store.run(ctx.gc, "UPDATE arrivals SET state = 'stopped', pos_enc = NULL, ended_at = ? WHERE msg_id = ?", [ctx.now, o.msg_id]);
-  await store.run(ctx.gc, "INSERT INTO arrivals (msg_id, conv_id, sender_id, state, radius_m, started_at) VALUES (?, ?, ?, 'live', ?, ?)", [msgId, conv.id, ctx.viewer, a.dest.radiusM, ctx.now]);
+  await store.run(ctx.gc, "INSERT INTO arrivals (msg_id, conv_id, sender_id, state, radius_m, started_at, dest_ref) VALUES (?, ?, ?, 'live', ?, ?, ?)", [msgId, conv.id, ctx.viewer, a.dest.radiusM, ctx.now, a.dest.ref || null]);
+  const ref = a.dest.ref || pp.familieRef(a.dest.familiePlaceId);
+  await pp.used(ctx, ref);
+  pp.afterSave(ctx, { used: ref });
+}
+
+/**
+ * 1.28.0 — the hook placesChanged: live arrivals to these profile refs take the place's new point and radius (the
+ * label the sender chose stays); a place that went or is not visible to the sender keeps the copy, dest.missing.
+ * → how many changed (arrival.update to the chat's members).
+ */
+async function placesChanged(ctx, refs, deleted) {
+  const gc = ctx.gc;
+  const rows = await store.all(gc, `SELECT a.msg_id, a.conv_id, a.sender_id, a.dest_ref, m.meta_enc FROM arrivals a JOIN messages m ON m.id = a.msg_id
+    WHERE a.state = 'live' AND a.dest_ref IN (${refs.map(() => '?').join(',')})`, refs);
+  let n = 0;
+  for (const r of rows) {
+    let found = null;
+    if (!deleted) { try { found = await pp.resolve(gc, r.dest_ref, r.sender_id); } catch { continue; } }
+    if (found === undefined) continue;
+    const meta = seal.openJson(r.meta_enc) || {};
+    const dest = meta.arrival && meta.arrival.dest;
+    if (!dest) continue;
+    const next = found ? { ...dest, lat: found.lat, lon: found.lon, radiusM: clampRadius(found.radiusM) } : { ...dest, missing: true };
+    if (found) delete next.missing;
+    if (JSON.stringify(next) === JSON.stringify(dest)) continue;
+    meta.arrival = { ...meta.arrival, dest: next };
+    await store.tx(gc, async () => {
+      await store.run(gc, 'UPDATE messages SET meta_enc = ?, updated_at = ? WHERE id = ?', [seal.sealJson(meta), ctx.now, r.msg_id]);
+      await store.run(gc, 'UPDATE arrivals SET radius_m = ? WHERE msg_id = ?', [next.radiusM, r.msg_id]);
+    });
+    const members = await store.all(gc, 'SELECT user_id FROM members WHERE conv_id = ? AND left_at IS NULL', [r.conv_id]);
+    queueUpdate(ctx, r.conv_id, members.map((m) => m.user_id), r.msg_id, 'live');
+    n++;
+  }
+  return n;
 }
 
 /** The arrival objects of these rows → Map msgId → arrival (members only — every viewer here is one). */
@@ -175,4 +243,4 @@ async function autoStop(ctx) {
   return rows.length;
 }
 
-module.exports = { clean, create, decorate, position, stop, autoStop, distance, RADIUS_DEFAULT, FALLBACK_MPS, MAX_LIVE_MS, MIN_EVERY_MS };
+module.exports = { clean, resolve, placesChanged, create, decorate, position, stop, autoStop, distance, RADIUS_DEFAULT, FALLBACK_MPS, MAX_LIVE_MS, MIN_EVERY_MS };
