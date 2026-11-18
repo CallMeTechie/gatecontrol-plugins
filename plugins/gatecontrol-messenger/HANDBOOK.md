@@ -80,6 +80,7 @@ The administrator set a retention, or the chat is a disappearing chat.
 - **One place, the same everywhere:** when you move a place in your profile or change its radius, your place messages follow at once. The phone then watches the new point.
 - **Deleted place:** when you delete a place that still has a place message, the place message stays at the old point. The app tells you, and you can choose another place.
 - The profile shows for each place how many place messages use it (“Used by”).
+- **Event from a message:** “30.11 um 08:00” is now read as 30 November (before: today 08:00), also without a dot after the month. The suggested title no longer holds the date or “um” / “Uhr”.
 - Needs GateControl 1.298.0 or newer.
 
 ## New in 1.27.1

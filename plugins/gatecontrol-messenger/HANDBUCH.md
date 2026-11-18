@@ -80,6 +80,7 @@ Der Administrator hat eine Aufbewahrung eingestellt, oder der Chat ist selbstlö
 - **Ein Ort, überall gleich:** Verschiebst du einen Ort im Profil oder änderst den Radius, gilt das sofort für deine Ortsnachrichten. Das Handy überwacht dann den neuen Punkt.
 - **Gelöschter Ort:** Löschst du einen Ort, der noch eine Ortsnachricht hat, bleibt die Ortsnachricht am alten Punkt. Die App weist darauf hin, und du kannst einen anderen Ort wählen.
 - Im Profil steht bei jedem Ort, wie viele Ortsnachrichten ihn nutzen („Genutzt von“).
+- **Termin aus einer Nachricht:** „30.11 um 08:00“ wird jetzt als 30. November erkannt (vorher: heute 08:00), auch ohne Punkt nach dem Monat. Der vorgeschlagene Titel enthält kein Datum und kein „um“ oder „Uhr“ mehr.
 - Braucht GateControl 1.298.0 oder neuer.
 
 ## Neu in 1.27.1
