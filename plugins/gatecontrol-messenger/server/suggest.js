@@ -4,7 +4,8 @@
 //   items  — things to buy or bring: bullet lines, and comma / "und" lists next to kaufen, besorgen,
 //            mitbringen (also "bring … mit"), mitnehmen, holen, brauchen, Einkaufsliste:
 //   dates  — heute, morgen, übermorgen, weekdays ("am Samstag", "nächsten Montag"), 18.10., 18.10.2026,
-//            "18. Oktober", times "um 15 Uhr", "15:30", "15.30 Uhr", "halb 4" (relative to when the message was sent,
+//            "18. Oktober", times "um 15 Uhr", "15:30", "15.30 Uhr", "halb 4"; 1.28.0: 30.11 without the last dot,
+//            30.11.26, "um 8" (relative to when the message was sent,
 //            in the server's time zone)
 // → { items: [string], dates: [{ startsAt, label, title, allDay }] }. English texts give fewer hits.
 
@@ -97,6 +98,9 @@ function timeOf(s) {
   if (m) return { h: Number(m[1]), m: Number(m[2]), match: m[0] };
   m = /\b(?:um|ab|gegen)?\s*([01]?\d|2[0-3])\s*uhr\b/i.exec(s);
   if (m) return { h: Number(m[1]), m: 0, match: m[0] };
+  // 1.28.0: „um 8“ (a whole hour after um / gegen, not „um 8.30“ — that is above)
+  m = /\b(?:um|gegen|at)\s+([01]?\d|2[0-3])\b(?![.:]\d)(?!\s*(?:pm|am)\b)/i.exec(s);
+  if (m) return { h: Number(m[1]), m: 0, match: m[0] };
   m = /\bhalb\s+([1-9]|1[0-2])\b/i.exec(s);
   if (m) { let h = Number(m[1]) - 1; if (h < 7) h += 12; return { h, m: 30, match: m[0] }; }
   m = /\b(?:um|at)\s+([1-9]|1[0-2])\s*(pm|am)\b/i.exec(s);
@@ -114,17 +118,20 @@ function dayOf(s, base) {
   if (m) return { date: plus(1), match: m[0] };
   m = /\b(?:heute|today)\b/i.exec(s);
   if (m) return { date: plus(0), match: m[0] };
-  m = /\b(\d{1,2})\.(\d{1,2})\.(\d{2,4})?(?!\d)/.exec(s);
-  if (m) {
-    const d = Number(m[1]);
-    const mo = Number(m[2]) - 1;
-    let y = m[3] ? Number(m[3]) : day0.getFullYear();
+  // 30.11 / 30.11. / 30.11.2026 / 30.11.26 (1.28.0: the dot after the month is optional) — never part of a longer
+  // number and never a time: not „10.15 Uhr“, not right after „um“ / „gegen“ („um 10.15“). „am“ / „den“ before it go
+  // with it (out of the title). A day without a year that already passed is next year's.
+  const num = /(?:\b(?:am|den|ab|vom|bis)\s+)?(?<![\d.:])(\d{1,2})\.(\d{1,2})(?:\.(\d{4}|\d{2})(?!\d)|\.)?(?![\d:])(?!\s*(?:uhr|h)\b)/gi;
+  for (const x of s.matchAll(num)) {
+    if (/\b(?:um|gegen)\s+$/i.test(s.slice(0, x.index))) continue;
+    const d = Number(x[1]);
+    const mo = Number(x[2]) - 1;
+    let y = x[3] ? Number(x[3]) : day0.getFullYear();
     if (y < 100) y += 2000;
-    if (d >= 1 && d <= 31 && mo >= 0 && mo <= 11) {
-      let date = new Date(y, mo, d);
-      if (!m[3] && date < day0) date = new Date(y + 1, mo, d);
-      if (date.getDate() === d) return { date, match: m[0] };
-    }
+    if (d < 1 || d > 31 || mo < 0 || mo > 11) continue;
+    let date = new Date(y, mo, d);
+    if (!x[3] && date < day0) date = new Date(y + 1, mo, d);
+    if (date.getDate() === d) return { date, match: x[0] };
   }
   m = new RegExp('\\b(\\d{1,2})\\.?\\s*(' + MONTHS.join('|') + '|' + MONTHS_SHORT.join('|') + ')\\.?(?:\\s+(\\d{4}))?\\b', 'i').exec(s);
   if (m) {
@@ -153,7 +160,9 @@ function dayOf(s, base) {
 function titleFrom(sentence, parts) {
   let t = sentence;
   for (const p of parts) if (p) t = t.replace(p, ' ');
-  t = t.replace(/\b(?:um|am|ab|gegen|bis|wir|ich|treffen uns|lass uns|lasst uns)\b/gi, ' ').replace(/[?!.,;:]+/g, ' ').replace(/\s+/g, ' ').trim();
+  // 1.28.0: no leftovers of a date or a time („30 11“, „8:00“) and no „Uhr“
+  t = t.replace(/(?<![\d.:])\d{1,2}\.\d{1,2}(?:\.(?:\d{4}|\d{2}))?\.?(?![\d:])/g, ' ').replace(/\b\d{1,2}:\d{2}\b/g, ' ');
+  t = t.replace(/\b(?:um|am|ab|gegen|bis|uhr|wir|ich|treffen uns|lass uns|lasst uns)\b/gi, ' ').replace(/[?!.,;:]+/g, ' ').replace(/\s+/g, ' ').trim();
   t = t.replace(/^(?:und|aber|also|dann|ok|okay|and)\s+/i, '');
   if (t.length > 60) t = t.slice(0, 59).replace(/\s+\S*$/, '') + '…';
   return t ? t.charAt(0).toUpperCase() + t.slice(1) : null;

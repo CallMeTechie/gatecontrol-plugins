@@ -79,8 +79,8 @@ test('texts: every key used by the pages exists in de and en; both languages hav
 
 test('plugin.json: licence, GateControl 1.294.0, permissions, pages, app and portal tab "Chats"', () => {
   assert.equal(manifest.id, 'gatecontrol-messenger');
-  assert.equal(manifest.version, '1.27.1');
-  assert.equal(manifest.gatecontrol, '>=1.296.0', '1.27.0: gc.bridges version 14 (location over a bridge) — the release of GateControl with bridge locations');
+  assert.equal(manifest.version, '1.28.0');
+  assert.equal(manifest.gatecontrol, '>=1.298.0', '1.28.0: gc.places („Meine Orte“ in the profile) — the release of GateControl with places');
   assert.equal(manifest.media.handOverMaxBytes, 2147483648, '1.8.0: GateDrop hands over files up to 2 GB; own uploads stay at 25 MB');
   assert.equal(manifest.permissions.notifySink, true);
   assert.deepEqual(manifest.license, { required: true });
@@ -90,6 +90,8 @@ test('plugin.json: licence, GateControl 1.294.0, permissions, pages, app and por
   assert.deepEqual(p.actions, { interactive: true });
   // 1.9.0: group chats for GateControl groups — gc.groups (GateControl ≥ 1.200.0) is feature-detected, the requirement stays
   assert.equal(p.groups, 'read');
+  // 1.28.0: „Meine Orte“ of the profile (gc.places, the hook placesChanged)
+  assert.equal(p.places, true);
   // 1.5.0: family_roles (who approves requests, who is a child)
   // 1.10.0: "In Drive speichern" (hand-over and save_file of gatecontrol-drive)
   // 1.18.0: „Neuer Chat“ with the address book of Mail (contacts_phones)

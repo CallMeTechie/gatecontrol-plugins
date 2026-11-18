@@ -597,7 +597,7 @@ only in the direct chat with its owner). The message then carries
 | `GET messages/:id/suggest` | | `{ items: [string], dates: [ { startsAt, label, title, allDay } ] }` |
 | `POST messages/:id/to-list` | `{ items: [string] (1…50, ≤ 120), list? ("shopping" default, or a Familie list id) }` | `{ listId, listName, added, skipped }` — `unavailable` without Familie |
 | `POST messages/:id/to-calendar` | `{ title (≤ 80), startsAt, endsAt?, allDay?, place? }` | `{ eventId }` — `unavailable` without Familie |
-| `GET familie/places` | | `{ places: [ { id, name, lat, lon, radiusM } ] }` (for the event place and the arrival destination) — `unavailable` without Familie |
+| `GET familie/places` | | `{ places: [ { id, name, lat, lon, radiusM } ] }` (for the event place and the arrival destination) — `unavailable` without Familie. Kept for older apps; since 1.28.0 `GET places` has the profile places too |
 
 * **Conversation** gains `archived` (bool, the caller's), `pinned` ([message
   ids] the caller sees), `nextEvent` (`{ messageId, title, startsAt, yesCount }`
@@ -725,9 +725,12 @@ after each change Familie's `calendar_upsert { sourceRef:
 #### Live arrival (`kind: "arrival"`)
 
 Send: `{ clientId, kind: "arrival", arrival: { dest: { label (≤ 120), lat,
-lon, radiusM? (30…5000, default 150), familiePlaceId? }, onArrive?: {
+lon, radiusM? (30…5000, default 150), familiePlaceId?, ref? }, onArrive?: {
 actionId, plugin? } } }` — an older live arrival of the same person in that
-chat stops. Message `arrival`:
+chat stops. Since 1.28.0 `ref` (`profile:<id>` | `home` | `place:<id>`): with a
+profile place `label`, `lat` and `lon` may be left out — the server takes the
+point, the radius and (without `label`) the name from the profile (see „Meine
+Orte“, since 1.28.0). Message `arrival`:
 
 ```json
 { "dest": { "label": "Zuhause", "lat": 50.0, "lon": 7.0, "radiusM": 150 }, "onArrive": null,
@@ -1333,16 +1336,18 @@ learns where the person is — the place is stored sealed for the phone, and onl
 | `DELETE place-messages/:id` | `{ deleted: true, id }` |
 | `POST place-messages/:id/fire { at, deviceId }` | `{ placeMessage, message, duplicate, way, conversationId }` — the text goes out now like a message from the composer, marked `meta.placeMessage { name, trigger }` (never coordinates) |
 
-Body: `{ deviceId: "[A-Za-z0-9._:-]{1,128}", trigger: "enter" | "exit", place: { familieId?, name (1–80), lat, lon,
+Body: `{ deviceId: "[A-Za-z0-9._:-]{1,128}", trigger: "enter" | "exit", place: { ref?, familieId?, name (1–80), lat, lon,
 radiusM? (100–2000, default 150) }, text (1–1000), conversationId, way?: "auto" (default) | "gatecontrol" | network,
 repeat?: "once" (default) | "always", window?: { days: [1–7 (Mo = 1)], from: "HH:MM", to: "HH:MM" } | null, ask?:
 true (default), enabled?: true (default) }`. `conversationId`: a chat the person may write into (`403 readonly` for a
 channel, a read-only group, a notice channel; `404` for a chat that is not theirs) or any way of a person (stored as the
 person's lead) — then `way` is `auto` or one of the person's ways, for a chat that is no person `auto` or its own way
 (`400 bad_request` otherwise). `familieId`: the id from `GET familie/places` (a number, `home` or `place:<id>`; text `[A-Za-z0-9_:.-]{1,64}`, since
-1.27.1), kept for the picker only. The phone checks `window` and `ask`; the server does not know the phone's time zone.
+1.27.1), kept for the picker only. Since 1.28.0 `ref` (`profile:<id>` | `home` | `place:<id>`, see „Meine Orte“ below);
+with `profile:<id>` name, `lat`, `lon` and `radiusM` may be left out. The phone checks `window` and `ask`; the server does
+not know the phone's time zone.
 
-`placeMessage`: `{ id, deviceId, trigger, place: { familieId, name, lat, lon, radiusM }, text, conversationId, way,
+`placeMessage`: `{ id, deviceId, trigger, place: { ref, source, familieId, name, lat, lon, radiusM, missing }, text, conversationId, way,
 repeat, window, ask, enabled, lastFiredAt, doneAt, createdAt, updatedAt, target: { title, personId, reply } }`
 (`target.reply` = the person's current `reply` while `way` is `auto`).
 
@@ -1358,7 +1363,45 @@ A message sent this way has `placeMessage: { name, trigger }` in the **sender's*
 over a bridge only the text crosses). „Zurücknehmen“ is `DELETE messages/:id?for=all` as for any own message.
 
 Live event `place_messages.changed { id, reason: "created" | "updated" | "deleted" | "fired" }` to the person's own
-devices (GateControl takes lower-case event types only). A place message whose chat went is deleted by the clean-up.
+devices (GateControl takes lower-case event types only; since 1.28.0 `place: true` when a profile place moved it). A
+place message whose chat went is deleted by the clean-up.
+
+## „Meine Orte“ from the profile (since 1.28.0)
+
+GateControl ≥ 1.298.0: `permissions.places` (`gc.places` version 1) and the hook `placesChanged`.
+`features.profilePlaces: true` (GET me) while `gc.places` is there. `server/profileplaces.js`, migration 017. Tests:
+`test/profileplaces.test.js` against the mock host's `gc.places` (`tools/testing/mock-places.js`).
+
+**References.** A place is named by `ref`: `profile:<id>` (a place of „Mein Profil › Meine Orte“), `home` or
+`place:<id>` (Familie's places, `gatecontrol-familie` service `places`). Pattern
+`^(profile:[1-9][0-9]{0,15}|home|place:[1-9][0-9]{0,15})$` — anything else (`profile:0`, `Profile:1`, `profile: 1`,
+`profile:1:2`, a number) is `400 invalid`. The old ids stay: `place.familieId` (place messages), `dest.familiePlaceId`
+(arrival).
+
+| Route | Answer |
+|---|---|
+| `GET places` | `{ places: [place], sources: { profile, familie } }` — the person's own profile places and Familie's places (when Familie offers `places`); a source that is missing or refuses is left out, never `unavailable` |
+
+`place`: `{ ref, source: "profile" | "familie", id (profile: the number; Familie: its id), name, icon (`home` | `work` |
+`school` | `gym` | `shop` | `family` | `pin`), lat, lon, radiusM, address (profile only, else null), visibility (profile
+only: `self` | `family` | `all`), lastUsedAt (ISO or null), usageCount }`. **Order — the help for the chips:**
+`usageCount` (uses here in the last 90 days: place messages saved, arrivals sent) descending, then `lastUsedAt` (the
+later of the use here and GateControl's „zuletzt genutzt“ of the own place), then name. The app shows the chosen place,
+the first ones of this order and fills up with the nearest (the server never knows where the phone is). At most 200.
+
+**Saving a place message or an arrival with `profile:<id>`.** The server resolves it as the person may see it
+(`gc.places.resolve({ ref, userId })`: own places, others' with visibility `all` and, in one family, `family`) —
+unknown or not visible → `400 invalid`. Point and radius come from the profile (place messages: radius into 100–2000;
+arrival: 30–5000, a `radiusM` of the app wins), the name when the body has none. Stored: the reference and a copy (the
+fallback). Afterwards `gc.places.markUsed` (own places only) and `gc.places.reportUsage { kind: "location_message",
+count }` — the number of all place messages of the plugin at that place (also after a change, a delete and the
+clean-up; „Genutzt von“ in the profile).
+
+**When a profile place changes** (hook `placesChanged { userId, ids, deleted }`): every place message at it takes the
+new name, point and radius as its owner may see the place — `place_messages.changed { id, reason: "updated", place: true }`
+to the owner's devices, so the phone registers the geofence again. Gone (`deleted`) or no longer visible: the copy stays,
+`place.missing: true` (also in `GET place-messages`); choosing a place again clears it. A live arrival to it takes the
+new point and radius (`arrival.update`; gone → `dest.missing: true`). Nothing else changes; no coordinates in events.
 
 ## Persons — one chat per human over several ways (since 1.21.0)
 
@@ -1510,7 +1553,8 @@ code }` become `unavailable` for the client): `list_add { userId, list, items }`
 `calendar_add { userId, title, startsAt, endsAt?, allDay?, place? }`,
 `calendar_upsert { sourceRef: "messenger:<messageId>", title, startsAt,
 endsAt?, allDay?, place?, userIds? }`, `calendar_remove { sourceRef }`,
-`places { userId }` (a bare array), since 1.5.0 `family_roles {}` →
+`places { userId }` (a bare array; since 1.28.0 entries with `source: "profile"` are skipped — those come from
+`gc.places`), since 1.5.0 `family_roles {}` →
 `{ parents: [ids], children: [ids] }` (cached 10 minutes; missing → requests
 use `rights`, nobody counts as a child). Dates are ISO with a time, or
 `YYYY-MM-DD` for all-day; `place` is the label.

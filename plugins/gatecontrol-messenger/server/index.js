@@ -154,6 +154,18 @@ module.exports = {
   },
 
   /**
+   * 1.28.0 (GateControl ≥ 1.298.0, permissions.places): „Meine Orte“ changed — { userId, ids, deleted }, never a value.
+   * Place messages and live arrivals at those profile places take the new point (profileplaces.js); events
+   * place_messages.changed / arrival.update. Never throws.
+   */
+  async placesChanged(arg, gc) {
+    try {
+      await ensureKey(gc);
+      return await require('./profileplaces').changed(gc, arg, async () => { const c = await context(gc, null, Date.now(), 'de'); c.portal = false; return c; }, (c) => api.flush(c));
+    } catch (e) { gc.log.warn('placesChanged failed', (e && (e.code || e.message)) || 'error'); return null; }
+  },
+
+  /**
    * 1.14.0 (GateControl with gc.bridges version ≥ 3): the bridges delivered something — { pending, ephemeral: [typing,
    * read receipts] }. Fetched, filed into the chats of the people it belongs to, acknowledged (bridgechats.js). Never throws.
    */
@@ -367,8 +379,11 @@ module.exports = {
     }
     // 1.21.0: persons whose ways went (a conversation deleted) — nothing else is kept of them
     try { await store.tx(gc, () => require('./persons').tidy(gc)); } catch (e) { gc.log.warn('persons tidy failed', (e && (e.code || e.message)) || 'error'); }
-    // 1.27.0: place messages whose chat went
-    try { await store.tx(gc, () => require('./placemsgs').tidy(gc)); } catch (e) { gc.log.warn('place messages tidy failed', (e && (e.code || e.message)) || 'error'); }
+    // 1.27.0: place messages whose chat went (1.28.0: „Genutzt von“ of their profile places follows; uses older than 90 days go)
+    try {
+      const gone = await store.tx(gc, async () => { await require('./profileplaces').tidy(gc); return require('./placemsgs').tidy(gc); });
+      for (const g of gone || []) await require('./profileplaces').report(gc, g.user_id, [g.place_ref]);
+    } catch (e) { gc.log.warn('place messages tidy failed', (e && (e.code || e.message)) || 'error'); }
     // 1.9.0: the group chats of GateControl groups — after a start and every 6 hours
     try { await groupchats.tick(gc, Date.now()); } catch (e) { gc.log.warn('group chats tick failed', (e && (e.code || e.message)) || 'error'); }
     return out;

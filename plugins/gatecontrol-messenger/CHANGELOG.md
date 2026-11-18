@@ -3,6 +3,42 @@
 Chats zwischen den GateControl-Konten – in der GateControl-App (eigener Tab „Chats“), im
 Windows-Client und im Portal (eigener Tab „Chats“). Alles bleibt auf dem eigenen Server.
 
+## 1.28.0
+**„Meine Orte“ aus dem Profil.** Braucht GateControl ≥ 1.298.0 (`gc.places` Version 1, Permission `places`, Hook
+`placesChanged`). Ortsnachrichten und die Live-Ankunft können einen eigenen Ort aus „Mein Profil › Meine Orte“ nutzen;
+die Familie-Orte bleiben daneben wählbar.
+- **`GET places`** (neu, `server/profileplaces.js`): die eigenen Profil-Orte (`gc.places.list({ userId, owner })`) und
+  die Familie-Orte (Dienst `places` von Familie) in einer Liste. Jeder Ort hat `ref` (`profile:<id>` | `home` |
+  `place:<id>`), `source` (`profile` | `familie`), `id`, `name`, `icon`, `lat`, `lon`, `radiusM`, `address`,
+  `visibility`, `lastUsedAt` und `usageCount`. Die Reihenfolge ist die Sortierhilfe für die Chips: am häufigsten in den
+  letzten 90 Tagen hier genutzt, dann zuletzt genutzt, dann Name. `sources { profile, familie }` sagt, welche Quelle
+  geantwortet hat; ohne Quelle bleibt die Liste leer, nie `unavailable`. `GET familie/places` bleibt unverändert.
+- **Ortsnachrichten:** `place.ref` neben `familieId` (bleibt). Bei `profile:<id>` holt der Server Punkt, Radius (auf
+  100–2000 m) und ohne mitgeschickten Namen auch den Namen aus dem Profil, so wie die Person den Ort sehen darf; ein
+  unbekannter oder nicht sichtbarer Ort → `400 invalid`. Gespeichert werden der Verweis (Spalte `place_ref`) und die
+  Kopie (versiegelt, Rückfall). Familie-Verweise (`home`, `place:<id>`) setzen `familieId`, eine ältere App, die den
+  Verweis als `familieId` schickt, wird verstanden. Antwort: `place { ref, source, familieId, name, lat, lon, radiusM,
+  missing }`.
+- **Hook `placesChanged`:** Ortsnachrichten an den geänderten Orten übernehmen Name, Punkt und Radius, Event
+  `place_messages.changed { id, reason: 'updated', place: true }` an die eigenen Geräte (die Handys melden die
+  Geofences neu an). Ist der Ort gelöscht oder für die Person nicht mehr sichtbar, bleibt die Kopie und
+  `place.missing: true`; eine neue Ortswahl hebt das auf.
+- **Live-Ankunft:** `arrival.dest.ref` (`profile:<id>` | `home` | `place:<id>`) neben `familiePlaceId`. Mit Profil-Ort
+  kommen Punkt, Radius und ohne `label` auch die Bezeichnung aus dem Profil. Während die Ankunft läuft, zieht
+  `placesChanged` den Punkt nach (`arrival.update`), ein gelöschter Ort setzt `dest.missing: true`.
+- **„Genutzt von“:** `gc.places.markUsed` beim Speichern (nur eigene Orte), `gc.places.reportUsage { kind:
+  'location_message', count }` mit der Zahl aller Ortsnachrichten des Plugins an dem Ort (nach Anlegen, Ändern,
+  Löschen und dem Aufräumen).
+- **Fix „Termin vorschlagen“** (`server/suggest.js`, `GET messages/:id/suggest`): ein Tag ohne Punkt nach dem Monat
+  („30.11 um 08:00“) wurde nicht erkannt und landete bei heute 08:00. `dayOf` liest jetzt 30.11, 30.11., 30.11.2026 und
+  30.11.26, nie als Teil einer längeren Zahl, nie als Uhrzeit („10.15 Uhr“, „um 10.15“); ein vergangener Tag ohne Jahr
+  ist der im nächsten Jahr. „um 8“ ist 08:00. `titleFrom` lässt keine Reste („30 11“, „8:00“) und keine Füllwörter (am,
+  um, gegen, Uhr) mehr stehen. Dieselben Fälle wie die Android-App (`chat/ChatDateHint.kt`), Tests in
+  `test/suggest_dates.test.js`.
+- Migration 017 (`place_messages.place_ref`, `place_messages.place_missing`, `arrivals.dest_ref`, Tabelle
+  `place_uses`). `features.profilePlaces: true` in `GET me`, wenn `gc.places` da ist. Tests in
+  `test/profileplaces.test.js` gegen `gc.places` des Mock-Hosts (`tools/testing/mock-places.js`).
+
 ## 1.27.1
 **Fix: Ortsnachrichten mit einem Familie-Ort außer „Zuhause“ ließen sich nicht speichern.** Familie liefert die Orte mit
 den Ids `home` und `place:<id>` (gatecontrol-familie `services.places()`). `placemsgs.cleanPlace` ließ als Text-Id nur
