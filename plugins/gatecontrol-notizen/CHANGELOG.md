@@ -2,11 +2,12 @@
 
 ## 1.8.0
 
-„Meine Orte“ ziehen ins Profil von GateControl (braucht GateControl 1.298.0).
+„Meine Orte“ ziehen ins Profil von GateControl (braucht GateControl 1.299.0).
 
 - **Ein Ort, überall:** Die gemerkten Orte („Oma“, „Büro“, „mein Baumarkt“) stehen jetzt in „Mein Profil › Meine Orte“
-  (Portal, Android, Windows) und gelten für alle Plugins. Hier liest das Plugin sie über `gc.places` (neue Berechtigung
-  `permissions.places`), Mindestversion GateControl 1.298.0 (`server/profileplaces.js`, `migrations/010_profile_places.sql`).
+  (Portal, Android, Windows) und gelten für alle Plugins. Das Plugin liest und ändert sie über `gc.places` Version 2
+  (neue Berechtigung `permissions.places`), Mindestversion GateControl 1.299.0 (`server/profileplaces.js`,
+  `migrations/010_profile_places.sql`).
 - **Einmaliger Umzug beim ersten Start** (und im Hintergrund, bis er durch ist): je Person
   `gc.places.importFor({ source: 'notizen' })`, `sourceRef` = alte ID, nur die Felder, die das Profil kennt.
   Zuordnung alt → neu in `place_moves`. Läuft er zweimal, entsteht nichts doppelt. Orte des Familien-Plugins
@@ -15,13 +16,23 @@
   das Profil schon hat, bekommt eine Nummer („Büro 2“).
 - **Aufgaben** speichern den Verweis `profile:<id>` und eine Kopie des Orts. Ändert sich der Ort im Profil, zieht die
   Aufgabe nach (Hook `placesChanged`); wird er dort gelöscht, behält die Aufgabe die Kopie und erinnert weiter.
-- **„Genutzt von“:** Das Profil zeigt, wie viele offene Aufgaben an einem Ort hängen (`gc.places.reportUsage`).
-- **API (kompatibel, Feature-Wort `profilePlaces`):** Orts-IDs sind die des Profils, dazu `ref`. `POST places` legt im
-  Profil an (`409 duplicate` bei gleichem Namen). `PATCH`/`DELETE places/<id>` ändern nichts mehr, sondern antworten
-  `409 profile_only` – geändert und gelöscht wird im Profil. „Als meinen Ort merken“ macht aus einem Treffer einen
-  Ort des Profils. Die Ortssuche bleibt die des Plugins.
-- Portal: „Einstellungen › Orte“ zeigt die Orte des Profils mit Verweis auf „Mein Profil › Meine Orte“; Bearbeiten und
-  Löschen gibt es dort.
+- **„Genutzt von“:** Das Profil zeigt, wie viele offene Aufgaben an einem Ort hängen (`gc.places.reportUsage`, gemeldet
+  für die Person der Aufgabe; eine 0 nimmt das Profil seit Version 2 auch für einen Ort an, den sie nicht mehr sieht).
+- **API (kompatibel zu 1.7, Feature-Wort `profilePlaces`):** Orts-IDs sind die des Profils, dazu `ref`.
+  - `POST places` legt im Profil an (`gc.places.create`; `409 duplicate { field: 'name', placeId }` bei gleichem Namen,
+    `409 too_many` ab 100 Orten).
+  - `PATCH places/<id>` ändert im Profil (`gc.places.update`, nur eigene Orte – fremde `404`): nur, was sich
+    unterscheidet; `lat` oder `lon` allein behält die andere Achse, ein Umkreis außerhalb 50–2000 m wird wie bisher
+    angepasst; `named` wird übergangen.
+  - `DELETE places/<id>` löscht im Profil (`gc.places.remove`, nur eigene Orte): Wie in 1.7 behalten Aufgaben ihren Ort
+    (Kopie) und das „gemerkt für“ geht. Vorher meldet das Plugin seine eigene Nutzung mit 0. Nutzt ein anderes Plugin
+    den Ort noch (Messenger, Familie), kommt `409 in_use { usedBy, ref }`; mit `?force=1` wird trotzdem gelöscht.
+  - „Als meinen Ort merken“ legt den Treffer mit `gc.places.create` an (ein belegter Name bekommt eine Nummer).
+  - `POST places/search` mit einer Adresse sucht über die Adresssuche von GateControl (`gc.places.search`: dessen
+    Admin-Einstellung, 30 Suchen je Person und Stunde gemeinsam mit den Apps; `429 busy`, `403 module_off`,
+    `503 unavailable` wie bisher). Arten und Namen („Baumarkt“, „Lidl“) sucht weiter das Plugin selbst.
+- Portal: „Einstellungen › Orte“ zeigt die Orte des Profils mit Bearbeiten und Löschen (Rückfrage, wenn ein anderes
+  Plugin den Ort noch nutzt) und einem Verweis auf „Mein Profil › Meine Orte“.
 
 ## 1.7.0
 

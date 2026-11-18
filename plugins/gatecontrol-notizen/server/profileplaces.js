@@ -1,6 +1,6 @@
 'use strict';
 
-// 1.8.0: „Meine Orte“ live in the user profile of GateControl (1.298.0: gc.places version 1, permissions.places).
+// 1.8.0: „Meine Orte“ live in the user profile of GateControl (1.299.0: gc.places version 2, permissions.places).
 //
 //   The profile keeps the places; Notizen keeps a reference ('profile:<id>') and a copy of each place a task hangs on
 //   or that is remembered for a kind („mein Baumarkt“): a row of `places` with profile_id (migrations/010). Tasks,
@@ -16,10 +16,10 @@
 //   changed()  the hook placesChanged { userId, ids, deleted }
 //   usage()    „Genutzt von“: gc.places.reportUsage({ kind: 'task', count }) — the open tasks at each place, sent
 //              when it changed (after a task's place changed, and in the background run for done / deleted ones)
-//
-// gc.places v1 can read, import and report; changing or deleting a place is done in „Mein Profil › Meine Orte“.
+//   createOne / updateOne / removeOne   POST / PATCH / DELETE places: gc.places.create / update / remove (version 2,
+//              only the owner — another's place or an unknown id is ERR_NOT_FOUND)
+//   searchAddress   the address search of POST places/search: gc.places.search (the server's search, its limits)
 
-const crypto = require('node:crypto');
 const store = require('./store');
 const events = require('./events');
 const { fail, line, posInt } = require('./util');
@@ -42,13 +42,20 @@ const VISIBILITY = ['self', 'family', 'all'];
 const state = { moved: false, running: null, failed: null };
 function reset() { state.moved = false; state.failed = null; }
 
-const has = (gc) => !!(gc.places && Number(gc.places.version) >= 1);
+// plugin.json asks for GateControl ≥ 1.299.0: gc.places version 2 (without the permission confirmed: no gc.places)
+const has = (gc) => !!(gc.places && Number(gc.places.version) >= 2);
 function need(gc) { if (!has(gc)) throw fail('unavailable', { reason: 'places' }); return gc.places; }
 
-/** A gc.places error → the plugin's refusal (not_found, invalid with the field) — anything else is thrown on. */
+/**
+ * A gc.places error → the plugin's refusal, with the codes Notizen 1.7 answered (not_found, invalid with the field,
+ * too_many) and of 1.8.0 (duplicate, in_use) — anything else is thrown on.
+ */
 function mapped(e, field) {
   if (e && e.code === 'ERR_NOT_FOUND') return fail('not_found', { field: field || 'place' });
   if (e && e.code === 'ERR_INVALID') return fail('invalid', { field: (e.field === 'radiusM' ? 'radius' : e.field) || field || 'place' });
+  if (e && e.code === 'ERR_DUPLICATE') return fail('duplicate', { field: 'name' });
+  if (e && e.code === 'ERR_LIMIT') return fail('too_many');
+  if (e && e.code === 'ERR_IN_USE') return fail('in_use', { usedBy: (Array.isArray(e.usedBy) ? e.usedBy : []).map((x) => ({ plugin: x.plugin, pluginName: x.pluginName, kind: x.kind, count: x.count })) });
   return e;
 }
 
@@ -73,8 +80,7 @@ const ownBy = (p, userId) => p.own !== false && (p.ownerId == null || p.ownerId 
 /** Is the copy `row` what the profile place `p` says? */
 function same(row, p, userId) {
   const c = copyOf(p);
-  return row.name === c.name && row.address === c.address && row.lat === c.lat && row.lon === c.lon && row.radius === c.radius && !!row.named === ownBy(p, userId)
-    && row.owner_id === (Number.isSafeInteger(p.ownerId) ? p.ownerId : userId);
+  return row.name === c.name && row.address === c.address && row.lat === c.lat && row.lon === c.lon && row.radius === c.radius && !!row.named === ownBy(p, userId);
 }
 
 /** The copy of a profile place in `places`. */
@@ -144,28 +150,27 @@ async function mirror(gc, userId, p, now, adopt = null) {
   const c = copyOf(p);
   // named: one of the person's own „Meine Orte“ (0: another person's place shared with „Familie“ / „Alle“)
   const named = ownBy(p, userId) ? 1 : 0;
-  const owner = Number.isSafeInteger(p.ownerId) ? p.ownerId : userId;
   const have = await store.one(gc, 'SELECT * FROM places WHERE user_id = ? AND profile_id = ? AND deleted_at IS NULL', [userId, p.id]);
   if (have) {
     if (!same(have, p, userId)) {
-      await store.run(gc, 'UPDATE places SET name = ?, address = ?, lat = ?, lon = ?, radius = ?, named = ?, owner_id = ?, updated_at = ? WHERE id = ?', [c.name, c.address, c.lat, c.lon, c.radius, named, owner, now, have.id]);
+      await store.run(gc, 'UPDATE places SET name = ?, address = ?, lat = ?, lon = ?, radius = ?, named = ?, updated_at = ? WHERE id = ?', [c.name, c.address, c.lat, c.lon, c.radius, named, now, have.id]);
     }
     if (adopt && adopt !== have.id) await merge(gc, adopt, have.id, now);
     return have.id;
   }
   if (adopt) {
-    await store.run(gc, 'UPDATE places SET profile_id = ?, owner_id = ?, name = ?, address = ?, lat = ?, lon = ?, radius = ?, named = ?, updated_at = ? WHERE id = ?', [p.id, owner, c.name, c.address, c.lat, c.lon, c.radius, named, now, adopt]);
+    await store.run(gc, 'UPDATE places SET profile_id = ?, name = ?, address = ?, lat = ?, lon = ?, radius = ?, named = ?, updated_at = ? WHERE id = ?', [p.id, c.name, c.address, c.lat, c.lon, c.radius, named, now, adopt]);
     return adopt;
   }
-  const r = await store.run(gc, 'INSERT INTO places (user_id, name, address, lat, lon, radius, named, ref, profile_id, owner_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)',
-    [userId, c.name, c.address, c.lat, c.lon, c.radius, named, p.id, owner, now, now]);
+  const r = await store.run(gc, 'INSERT INTO places (user_id, name, address, lat, lon, radius, named, ref, profile_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)',
+    [userId, c.name, c.address, c.lat, c.lon, c.radius, named, p.id, now, now]);
   return Number(r.lastInsertRowid);
 }
 
 
 /** The place of the profile is gone (or no longer visible): the row stays a plain copy, the tasks keep it. */
 async function fallback(gc, row, now) {
-  await store.run(gc, 'UPDATE places SET profile_id = NULL, owner_id = NULL, named = 0, updated_at = ? WHERE id = ?', [now, row.id]);
+  await store.run(gc, 'UPDATE places SET profile_id = NULL, named = 0, updated_at = ? WHERE id = ?', [now, row.id]);
   await store.run(gc, 'DELETE FROM place_picks INDEXED BY idx_place_picks_place WHERE place_id = ?', [row.id]);
   const tasks = await retag(gc, row.id, null, jsonCopy(row), { was: refOf(row.profile_id) });
   // no task hangs on it: nothing to keep (the hourly purge takes it)
@@ -174,7 +179,11 @@ async function fallback(gc, row, now) {
 
 /** What gc.places.importFor gets for a place: only the fields the profile knows (unknown keys are refused). */
 function item(sourceRef, f) {
-  const out = { sourceRef: String(sourceRef), name: cut(line(f.name, NAME_MAX * 2), NAME_MAX), lat: f.lat, lon: f.lon, radiusM: clamp(f.radius) };
+  return { sourceRef: String(sourceRef), ...fieldsOf(f) };
+}
+/** A place of the plugin (name, address, lat, lon, radius, icon?, visibility?) → the profile's fields (gc.places.create). */
+function fieldsOf(f) {
+  const out = { name: cut(line(f.name, NAME_MAX * 2), NAME_MAX), lat: f.lat, lon: f.lon, radiusM: clamp(f.radius) };
   const address = cut(line(f.address || '', ADDRESS_MAX * 2), ADDRESS_MAX);
   if (address) out.address = address;
   if (ICONS.includes(f.icon)) out.icon = f.icon;
@@ -182,21 +191,57 @@ function item(sourceRef, f) {
   return out;
 }
 
-/** Import one place for a person (POST places, „Als meinen Ort merken“) → the profile's place; refusals as the API's. */
-async function importOne(gc, userId, sourceRef, f) {
-  let res;
-  try { res = await need(gc).importFor({ userId, source: SOURCE, places: [item(sourceRef, f)] }); } catch (e) { throw mapped(e); }
-  const hit = res && res.map && res.map[String(sourceRef)];
-  if (!hit) {
-    const s = (res && Array.isArray(res.skipped) && res.skipped[0]) || {};
-    if (s.reason === 'limit') throw fail('too_many');
-    throw fail('invalid', { field: s.field === 'radiusM' ? 'radius' : s.field || 'place' });
+/**
+ * A new place of the profile (POST places: gc.places.create) → the profile's place. `free`: a name in use becomes
+ * „Name 2“, „Name 3“ … (a hit remembered as „mein Baumarkt“) — else it is refused (409 duplicate).
+ */
+async function createOne(gc, userId, f, { free = false } = {}) {
+  const base = fieldsOf(f);
+  for (let i = 1; ; i++) {
+    const suffix = i === 1 ? '' : ' ' + i;
+    const place = { ...base, name: i === 1 ? base.name : cut(base.name, NAME_MAX - suffix.length) + suffix };
+    try { return await need(gc).create({ userId, place }); } catch (e) {
+      if (free && e && e.code === 'ERR_DUPLICATE' && i < 20) continue;
+      throw mapped(e);
+    }
   }
-  const p = await get(gc, userId, hit.id);
-  if (!p) throw fail('not_found', { field: 'place' });
-  return { place: p, created: !!hit.created };
 }
-const newRef = (clientId) => (clientId ? 'client:' + clientId : 'new:' + crypto.randomUUID());
+
+/** PATCH places/<id>: gc.places.update (only the person's own; `patch` in the profile's fields) → the profile's place. */
+async function updateOne(gc, userId, id, patch) {
+  try { return await need(gc).update({ userId, id, patch }); } catch (e) { throw mapped(e); }
+}
+
+/**
+ * DELETE places/<id>: first this plugin's own „Genutzt von“ goes to 0 (the tasks keep their copy of the place), then
+ * gc.places.remove. Another plugin still uses the place → in_use { usedBy } (unless `force`); the count of the tasks
+ * is told again then (the place stays).
+ */
+async function removeOne(gc, userId, id, { force = false, now } = {}) {
+  const g = need(gc);
+  try { await g.reportUsage({ userId, id, kind: KIND, count: 0 }); } catch (e) { throw mapped(e); }
+  await store.run(gc, 'DELETE FROM place_usage WHERE profile_id = ?', [id]);
+  try { return await g.remove({ userId, id, force: force === true }); } catch (e) {
+    await usage(gc, now).catch(() => {});
+    throw mapped(e);
+  }
+}
+
+/**
+ * The address search (POST places/search with an address): gc.places.search — the server's search with the
+ * administrator's setting, the rounding of `near`, the cache and 30 searches per person and hour (shared with the
+ * person's apps). → { results: [{ name, address, lat, lon, distanceM }], attribution }
+ */
+async function searchAddress(gc, userId, q, near, lang) {
+  try {
+    return await need(gc).search({ userId, q, ...(near ? { near: { lat: near.lat, lon: near.lon } } : {}), lang: lang === 'en' ? 'en' : 'de' });
+  } catch (e) {
+    if (e && e.code === 'ERR_SEARCH_OFF') throw fail('module_off', { reason: 'admin' });
+    if (e && e.code === 'ERR_RATE_LIMIT') throw fail('busy', { reason: 'limit', retryAfter: Math.max(1, Number(e.retryAfterS) || 60) });
+    if (e && e.code === 'ERR_UNAVAILABLE') throw fail('unavailable', { reason: 'service' });
+    throw mapped(e, 'q');
+  }
+}
 
 // ─── the one-time move ──────────────────────────
 
@@ -355,9 +400,9 @@ async function refresh(gc, now) {
 /** gc.places.reportUsage for every place whose number of open tasks changed since it was told last. */
 async function usage(gc, now) {
   if (!has(gc)) return 0;
-  // told as the owner of the place: they always see it (another person's place may no longer be visible to the one
-  // whose task hangs on it — and its count must still go back to 0)
-  const counts = await store.all(gc, `SELECT p.profile_id AS pid, MIN(COALESCE(p.owner_id, p.user_id)) AS uid,
+  // told for a person with a copy of the place (their own copy first: the owner always sees it). A count of 0 is
+  // taken for any place (gc.places version 2) — also one that person may no longer see, or one that is gone
+  const counts = await store.all(gc, `SELECT p.profile_id AS pid, COALESCE(MIN(CASE WHEN p.named = 1 THEN p.user_id END), MIN(p.user_id)) AS uid,
       (SELECT COUNT(*) FROM tasks t INDEXED BY idx_tasks_place_id WHERE t.place_id IN (SELECT q.id FROM places q INDEXED BY idx_places_pid WHERE q.profile_id = p.profile_id AND q.deleted_at IS NULL)
         AND t.done_at IS NULL AND t.deleted_at IS NULL) AS n
     FROM places p INDEXED BY idx_places_pid WHERE p.profile_id IS NOT NULL AND p.deleted_at IS NULL GROUP BY p.profile_id LIMIT 20000`);
@@ -371,7 +416,8 @@ async function usage(gc, now) {
     try {
       await gc.places.reportUsage({ userId: x.uid, id: x.pid, kind: KIND, count: x.n });
     } catch (e) {
-      // the host did not answer: next time. Unknown to it (the place is gone, the hook comes): kept as told
+      // the host did not answer: next time. A count > 0 for a place gone or no longer visible: the hook comes — and
+      // a 0 is always taken (version 2), so nothing stays behind
       if (!e || (e.code !== 'ERR_NOT_FOUND' && e.code !== 'ERR_INVALID')) continue;
     }
     n++;
@@ -381,5 +427,5 @@ async function usage(gc, now) {
   return n;
 }
 
-module.exports = { has, need, reset, state, view, own, get, mine, mirror, merge, fallback, retag, importOne, newRef, parseRef, refOf, msOf, jsonCopy, move, notMoved, summary, changed, refresh, usage,
+module.exports = { has, need, reset, state, view, own, get, mine, mirror, merge, fallback, retag, createOne, updateOne, removeOne, searchAddress, fieldsOf, parseRef, refOf, msOf, jsonCopy, move, notMoved, summary, changed, refresh, usage,
   SOURCE, KIND, NAME_MAX, ADDRESS_MAX };

@@ -24,10 +24,12 @@
 //
 //   GET    places                 → { places: [Place], family: [FamilyPlace], favs: [{ key, label, placeId, ref }], notMoved, profile: true }
 //   POST   places { name, lat, lon, address?, radius?, icon?, visibility?, ref?, clientId? } → { place }   a new place of the profile
-//   PATCH  places/<id> { … }      → { place } without a change; a change → 409 profile_only (done in „Mein Profil“)
-//   DELETE places/<id>            → 409 profile_only (deleted in „Mein Profil“; tasks keep the place)
+//   PATCH  places/<id> { name?, address?, lat?, lon?, radius?, icon?, visibility? } → { place }   (gc.places.update, own only)
+//   DELETE places/<id> [?force=1] → { ok }   (gc.places.remove, own only; tasks keep the place) — another plugin still
+//                                   uses it: 409 in_use { usedBy, ref } unless force
 //   PUT    places/favs { key, placeId | familyId | null } → { favs }
 //   POST   places/search { key | q, address?, near: { lat, lon } | nearPlaceId | nearFamilyId } → { results, … }
+//          (1.8.0: an address through the server's search, gc.places.search; a kind or a name as before, placesearch.js)
 //   POST   places/watch { near?, budget? } → { fences, … }
 //   POST   places/fired { taskId, fence, transition } → { notify, reason? }
 //   POST   tasks/<id>/place/skip { fence }   „Nicht hier“      POST tasks/<id>/place/later { until? }   „Später“
@@ -167,7 +169,7 @@ function iso(ctx, ms) {
   return `${tz.dateStr(p.y, p.m, p.d)}T${tz.pad(p.hh)}:${tz.pad(p.mm)}:${tz.pad(p.ss)}${off < 0 ? '-' : '+'}${tz.pad(Math.floor(a / 60))}:${tz.pad(a % 60)}`;
 }
 
-/** POST places — a new place of the profile (gc.places.importFor, source 'notizen'); a hit of the search keeps its tasks. */
+/** POST places — a new place of the profile (gc.places.create); a hit of the search keeps its tasks. */
 async function create(gc, ctx, b) {
   const cid = clientIds.arg(b.clientId);
   if (cid) {
@@ -182,10 +184,8 @@ async function create(gc, ctx, b) {
   if (b.visibility !== undefined) { if (typeof b.visibility !== 'string' || !VISIBILITY.includes(b.visibility)) throw fail('invalid', { field: 'visibility' }); f.visibility = b.visibility; }
   const ref = b.ref == null ? null : (typeof b.ref === 'string' && REF_RE.test(b.ref) ? b.ref : undefined);
   if (ref === undefined) throw fail('invalid', { field: 'ref' });
-  // the profile wants every name once (without upper / lower case)
-  const same = (await pp.own(gc, ctx.userId)).find((p) => p.name.toLowerCase() === name.toLowerCase());
-  if (same) throw fail('duplicate', { field: 'name', placeId: same.id });
-  const { place } = await pp.importOne(gc, ctx.userId, pp.newRef(cid), f);
+  let place;
+  try { place = await pp.createOne(gc, ctx.userId, f); } catch (e) { throw await duplicate(gc, ctx, e, name); }
   await store.tx(gc, async () => {
     // a hit taken once before („Baumarkt Nord“ of a task) becomes the copy of the new place: its tasks follow it
     const was = ref ? await store.one(gc, 'SELECT id FROM places WHERE user_id = ? AND ref = ? AND deleted_at IS NULL AND profile_id IS NULL', [ctx.userId, ref]) : null;
@@ -197,31 +197,61 @@ async function create(gc, ctx, b) {
   return { place: pp.view(place), ...(cid ? { clientId: cid } : {}) };
 }
 
+/** 409 duplicate of the profile (a name once, without upper / lower case) → with the id of the place that has it. */
+async function duplicate(gc, ctx, e, name) {
+  if (!e || e.code !== 'duplicate') return e;
+  const same = (await pp.own(gc, ctx.userId).catch(() => [])).find((p) => p.name.toLowerCase() === String(name).toLowerCase());
+  return fail('duplicate', { field: 'name', ...(same ? { placeId: same.id } : {}) });
+}
+
 /**
- * PATCH places/<id> — gc.places (version 1) cannot change a place of the profile: that is done in „Mein Profil ›
- * Meine Orte“ (the portal, the apps). The same values again (or only `named`) answer the place; a change is refused
- * with 409 profile_only { ref } so an older app can say where.
+ * PATCH places/<id> { name?, address?, lat?, lon?, radius?, icon?, visibility? } — one of the person's own places of
+ * the profile (gc.places.update; another's or an unknown one: 404). Only what differs goes to the profile; lat or lon
+ * alone keeps the other; `named` (1.7) is left alone — a place of the profile stays one (DELETE takes it away).
  */
 async function update(gc, ctx, id, b) {
   const p = await pp.mine(gc, ctx.userId, id);
-  const same = (k, v) => {
-    if (v === undefined || k === 'named' || k === 'clientId') return true;
-    if (k === 'name') return line(v, pp.NAME_MAX) === p.name;
-    if (k === 'address') return line(v, pp.ADDRESS_MAX) === (p.address || '');
-    if (k === 'lat' || k === 'lon') return typeof v === 'number' && Math.round(v * 1e6) / 1e6 === p[k];
-    if (k === 'radius') return clampRadius(v) === p.radiusM;
-    if (k === 'icon') return v === (p.icon || 'pin');
-    if (k === 'visibility') return v === (p.visibility || 'self');
-    return false;
-  };
-  if (Object.entries(b || {}).every(([k, v]) => same(k, v))) return { place: pp.view(p) };
-  throw fail('profile_only', { ref: pp.refOf(p.id) });
+  const patch = {};
+  if (b.name !== undefined) { const name = line(b.name, pp.NAME_MAX); if (!name) throw fail('invalid', { field: 'name' }); if (name !== p.name) patch.name = name; }
+  if (b.address !== undefined) { const a = line(b.address, pp.ADDRESS_MAX); if (a !== (p.address || '')) patch.address = a || null; }
+  if (b.lat !== undefined || b.lon !== undefined) {
+    const lat = b.lat === undefined ? p.lat : coord(b.lat, 90, 'lat');
+    const lon = b.lon === undefined ? p.lon : coord(b.lon, 180, 'lon');
+    if (lat === 0 && lon === 0) throw fail('invalid', { field: 'lat' });
+    if (lat !== p.lat || lon !== p.lon) { patch.lat = lat; patch.lon = lon; }
+  }
+  if (b.radius !== undefined) { const r = clampRadius(b.radius); if (r !== p.radiusM) patch.radiusM = r; }
+  if (b.icon !== undefined) { if (typeof b.icon !== 'string' || !ICONS.includes(b.icon)) throw fail('invalid', { field: 'icon' }); if (b.icon !== (p.icon || 'pin')) patch.icon = b.icon; }
+  if (b.visibility !== undefined) {
+    if (typeof b.visibility !== 'string' || !VISIBILITY.includes(b.visibility)) throw fail('invalid', { field: 'visibility' });
+    if (b.visibility !== (p.visibility || 'self')) patch.visibility = b.visibility;
+  }
+  if (!Object.keys(patch).length) return { place: pp.view(p) };
+  let place;
+  try { place = await pp.updateOne(gc, ctx.userId, p.id, patch); } catch (e) { throw await duplicate(gc, ctx, e, patch.name || ''); }
+  // the copies follow at once (the hook placesChanged comes as well and then finds nothing to do)
+  await pp.changed(gc, { userId: ctx.userId, ids: [p.id], deleted: false }, ctx.now);
+  told(gc, [ctx.userId]);
+  return { place: pp.view(place) };
 }
 
-/** DELETE places/<id> — deleted in „Mein Profil › Meine Orte“ (409 profile_only); tasks keep their place even then. */
-async function remove(gc, ctx, id) {
+/**
+ * DELETE places/<id> [?force=1] — one of the person's own places of the profile (gc.places.remove; another's or an
+ * unknown one: 404). As in 1.7 a task that hangs on it keeps it (its copy, place_json) and what is remembered for it
+ * goes. Notizen's own „Genutzt von“ goes to 0 first; another plugin that still uses the place (Messenger, Familie) →
+ * 409 in_use { usedBy: [{ plugin, pluginName, kind, count }], ref } — with force=1 it is deleted all the same.
+ */
+async function remove(gc, ctx, id, q = {}, b = {}) {
   const p = await pp.mine(gc, ctx.userId, id);
-  throw fail('profile_only', { ref: pp.refOf(p.id) });
+  const force = q.force === '1' || q.force === 'true' || (b && b.force === true);
+  try { await pp.removeOne(gc, ctx.userId, p.id, { force, now: ctx.now }); } catch (e) {
+    if (e && e.code === 'in_use') throw fail('in_use', { ...e.extra, ref: pp.refOf(p.id) });
+    throw e;
+  }
+  // the tasks keep their copy (the hook placesChanged comes as well and then finds nothing to do)
+  await pp.changed(gc, { userId: ctx.userId, ids: [p.id], deleted: true }, ctx.now);
+  told(gc, [ctx.userId]);
+  return { ok: true };
 }
 
 /** PUT places/favs { key, placeId | null } — „mein Baumarkt“: one place per kind or name. */
@@ -373,12 +403,13 @@ async function picked(gc, ctx, pick) {
   });
 }
 
-/** The row `rowId` (a hit, a point) becomes a place of the profile: imported once (sourceRef its ref or its id), the row its copy. */
+/** The row `rowId` (a hit, a point) becomes a place of the profile (gc.places.create), the row its copy. */
 async function promote(gc, ctx, rowId) {
   const r = await store.one(gc, 'SELECT * FROM places WHERE id = ? AND deleted_at IS NULL', [rowId]);
   if (!r || r.profile_id || r.user_id !== ctx.userId || (r.ref && r.ref.startsWith('familie:')) || !pp.has(gc)) return;
   let place;
-  try { place = (await pp.importOne(gc, ctx.userId, r.ref || 'place:' + r.id, r)).place; } catch (e) { gc.log.warn('place not taken into the profile', (e && e.code) || 'error'); return; }
+  // a name in use becomes „Name 2“ (it was chosen as a kind, not typed as a name)
+  try { place = await pp.createOne(gc, ctx.userId, r, { free: true }); } catch (e) { gc.log.warn('place not taken into the profile', (e && e.code) || 'error'); return; }
   await store.tx(gc, async () => {
     const id = await pp.mirror(gc, ctx.userId, place, ctx.now, r.id);
     const row = await store.one(gc, 'SELECT * FROM places WHERE id = ?', [id]);
@@ -564,9 +595,6 @@ const argOf = (s) => (!s || !s.place || !s.certain ? null : s.place.familyId ? {
 async function find(gc, ctx, b) {
   const cfg = await config.get(gc);
   const p = await prefs.get(gc, ctx.userId);
-  const st = await searchState(gc, cfg, p);
-  if (st === 'off') throw fail('module_off', { reason: search.modeOf(cfg) === 'off' ? 'admin' : 'self' });
-  if (st !== 'on') throw fail('unavailable', { reason: 'service' });
   let key = null;
   let address = null;
   if (b.key != null) { if (!words.validKey(b.key)) throw fail('invalid', { field: 'key' }); key = b.key; }
@@ -587,6 +615,16 @@ async function find(gc, ctx, b) {
   const cell = search.cellOf(near);
   // an address may be searched without a place to search near (the first place a person saves in the portal)
   if (!cell && !(address && near == null)) throw fail('invalid', { field: 'near' });
+  // 1.8.0: an address through the server's search (gc.places.search: the administrator's setting of GateControl, its
+  // limits) — the person's own switch still counts; a kind or a name through the plugin's search (map tags, OSM ids
+  // for the phones' fences, the cache of POST places/watch)
+  if (address) {
+    if (p.places.search === false) throw fail('module_off', { reason: 'self' });
+    return addressHits(gc, ctx, address, cell);
+  }
+  const st = await searchState(gc, cfg, p);
+  if (st === 'off') throw fail('module_off', { reason: search.modeOf(cfg) === 'off' ? 'admin' : 'self' });
+  if (st !== 'on') throw fail('unavailable', { reason: 'service' });
   const hits = await search.find(gc, cfg, { key, address, cell, lang: ctx.lang, userId: ctx.userId });
   // what the person chose before comes first: the remembered one, then the often used ones, then by distance
   const before = key ? await chosen(gc, ctx.userId, key) : [];
@@ -601,6 +639,18 @@ async function find(gc, ctx, b) {
   results.sort((x, y) => (y.fav - x.fav) || ((y.uses > 0) - (x.uses > 0)) || (x.distanceM - y.distanceM));
   return { key, label: key ? words.labelOf(key, ctx.lang, typeof b.label === 'string' ? line(b.label, 40) : line(b.q, 40)) : address, kind: address ? 'address' : key.startsWith('kind:') ? 'kind' : 'name', radiusKm: search.RADIUS_KM, cell,
     results: results.slice(0, search.RESULTS_MAX), any: !!key && results.length > 0, approx: true, attribution: { text: search.ATTRIBUTION, url: search.ATTRIBUTION_URL } };
+}
+
+/** POST places/search with an address: the server's search (gc.places.search) → the answer of find(). */
+async function addressHits(gc, ctx, address, cell) {
+  const r = await pp.searchAddress(gc, ctx.userId, Array.from(address).slice(0, 120).join(''), cell, ctx.lang);
+  const results = (r && Array.isArray(r.results) ? r.results : []).slice(0, search.RESULTS_MAX).map((h) => {
+    const dist = Number.isFinite(h.distanceM) ? h.distanceM : cell ? search.distance(cell, h) : null;
+    return { ref: null, name: line(h.name, NAME_MAX) || line(h.address, NAME_MAX), address: line(h.address, ADDRESS_MAX), lat: h.lat, lon: h.lon, distanceM: dist,
+      minutes: dist == null ? null : search.minutes(dist), placeId: null, fav: false, uses: 0 };
+  });
+  const a = r && r.attribution && typeof r.attribution.text === 'string' ? r.attribution : { text: search.ATTRIBUTION, url: search.ATTRIBUTION_URL };
+  return { key: null, label: address, kind: 'address', radiusKm: search.RADIUS_KM, cell, results, any: false, approx: true, attribution: { text: a.text, url: a.url }, via: 'gatecontrol' };
 }
 
 // ─── what a phone watches ───────────────────────
@@ -702,13 +752,15 @@ async function meInfo(gc, ctx, cfg, p) {
   const st = await searchState(gc, cfg, p);
   return {
     search: { state: st, enabled: search.modeOf(cfg) !== 'off', mine: p.places.search !== false, service: search.modeOf(cfg), radiusKm: search.RADIUS_KM, decimals: search.DECIMALS,
-      attribution: { text: search.ATTRIBUTION, url: search.ATTRIBUTION_URL } },
+      attribution: { text: search.ATTRIBUTION, url: search.ATTRIBUTION_URL },
+      // 1.8.0: an address is searched by GateControl (gc.places.search — its administrator's setting and limits)
+      address: 'gatecontrol' },
     nearby: p.places.nearby !== false, quiet: p.places.quiet || null, perTask: PER_TASK, radius: { min: RADIUS_MIN, max: RADIUS_MAX, default: RADIUS_DEFAULT },
     // Familie 1.22.0 lets the hub read its places (older ones offer the service, but not to the hub)
     family: await offered(gc, 'geofences'),
-    // 1.8.0: „Meine Orte“ are the places of the user profile (changed and deleted there; the server's own search for
-    // the apps: GET /api/v1/client/me/places/search)
-    profile: { places: true, edit: 'profile' },
+    // 1.8.0: „Meine Orte“ are the places of the user profile — POST / PATCH / DELETE places change them there
+    // (gc.places version 2); the server's own search for the apps: GET /api/v1/client/me/places/search
+    profile: { places: true, edit: 'plugin' },
   };
 }
 

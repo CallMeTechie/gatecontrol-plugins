@@ -3,7 +3,8 @@
 // The mock host's mirror of GateControl 1.298.0 gc.places („Meine Orte“, src/services/places.js, hostApi.js placesCall,
 // the child bootstrap makePlaces): only with permissions.places === true, what the person may see (own, others' "all",
 // in one family "family"), resolve with and without a person, markUsed only own, reportUsage absolute per place /
-// plugin / kind, importFor idempotent, the hook placesChanged after a change of the test's side.
+// plugin / kind, importFor idempotent, the hook placesChanged after a change of the test's side. GateControl 1.299.0
+// (version 2): create / update / remove for the owner, search, reportUsage with count 0 for any place id.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -29,7 +30,7 @@ module.exports = {
   async request(req, gc) {
     const b = req.body || {};
     if (req.path === '/has') return { json: { places: !!gc.places, version: gc.places ? gc.places.version : null, seen } };
-    try { return { json: { ok: true, result: await gc.places[b.op](b.arg) } }; } catch (e) { return { json: { ok: false, code: e.code } }; }
+    try { return { json: { ok: true, result: await gc.places[b.op](b.arg) } }; } catch (e) { return { json: { ok: false, code: e.code, field: e.field, usedBy: e.usedBy, retryAfterS: e.retryAfterS } }; }
   },
   async placesChanged(arg) { seen.push(arg); },
 };`;
@@ -105,4 +106,69 @@ test('markUsed own only; reportUsage absolute, 0 removes; importFor idempotent; 
   await host.places.remove(placed.id);
   r = (await host.request({ path: '/has' })).json.seen;
   assert.deepEqual(r, [{ userId: 2, ids: [r[0].ids[0]], deleted: false }, { userId: 2, ids: [placed.id], deleted: false }, { userId: 2, ids: [placed.id], deleted: false }, { userId: 2, ids: [placed.id], deleted: true }]);
+}));
+
+test('version 2 (GateControl 1.299.0): create / update / remove only for the owner, the codes with their fields, the hook', async () => {
+  await withHost({ places: true }, { gatecontrol: '1.298.0' }, async (host) => {
+    assert.equal((await host.request({ path: '/has' })).json.version, 1);
+    assert.equal((await op(host, 'create', { userId: 2, place: { name: 'x', lat: 1, lon: 1 } })).ok, false, 'version 1 has no create');
+  });
+  await withHost({ places: true }, { gatecontrol: '1.299.0', places: PLACES }, async (host) => {
+    assert.equal((await host.request({ path: '/has' })).json.version, 2);
+    const made = (await op(host, 'create', { userId: 2, place: { name: 'Studio', lat: 50.12, lon: 8.69, icon: 'gym' } })).result;
+    assert.deepEqual([made.name, made.icon, made.radiusM, made.visibility, made.source, made.own, made.ownerId, made.ref], ['Studio', 'gym', 150, 'self', 'manual', true, 2, 'profile:' + made.id]);
+    for (const [place, code, field] of [[{ name: 'arbeit', lat: 1, lon: 1 }, 'ERR_DUPLICATE', 'name'], [{ name: 'Y', lat: 1, lon: 1, source: 'notizen' }, 'ERR_INVALID', 'source'],
+      [{ name: 'Y', lat: 0, lon: 0 }, 'ERR_INVALID', 'lat'], [{ name: 'Y', lat: 1, lon: 1, radiusM: 20 }, 'ERR_INVALID', 'radiusM']]) {
+      const r = await op(host, 'create', { userId: 2, place });
+      assert.deepEqual([r.code, r.field], [code, field], JSON.stringify(place));
+    }
+    assert.equal((await op(host, 'create', { userId: 99, place: { name: 'Y', lat: 1, lon: 1 } })).code, 'ERR_NOT_FOUND');
+    // update: own only (Marc's place Anna may see is not hers), lat and lon together, {} changes nothing
+    const up = (await op(host, 'update', { userId: 2, id: made.id, patch: { name: 'Atelier', lat: 50.2, lon: 8.7, address: 'Hof 1' } })).result;
+    assert.deepEqual([up.name, up.lat, up.lon, up.address], ['Atelier', 50.2, 8.7, 'Hof 1']);
+    assert.equal((await op(host, 'update', { userId: 2, id: made.id, patch: { address: null } })).result.address, null);
+    assert.deepEqual([(await op(host, 'update', { userId: 2, id: made.id, patch: { lat: 50.3 } })).field], ['lon']);
+    assert.equal((await op(host, 'update', { userId: 2, id: 14, patch: { name: 'x' } })).code, 'ERR_NOT_FOUND', 'visible, but Marc\'s');
+    assert.equal((await op(host, 'update', { userId: 2, id: made.id, patch: { name: 'ARBEIT' } })).code, 'ERR_DUPLICATE');
+    const seen = (await host.request({ path: '/has' })).json.seen.length;
+    await op(host, 'update', { userId: 2, id: made.id, patch: {} });
+    assert.equal((await host.request({ path: '/has' })).json.seen.length, seen, 'an empty patch: no hook');
+    // remove: in use (by any plugin) only with force
+    host.places.setUsage(made.id, 'gatecontrol-messenger', 'location_message', 2);
+    const busy = await op(host, 'remove', { userId: 2, id: made.id });
+    assert.deepEqual([busy.code, busy.usedBy], ['ERR_IN_USE', [{ plugin: 'gatecontrol-messenger', pluginName: 'gatecontrol-messenger', kind: 'location_message', count: 2 }]]);
+    assert.equal((await op(host, 'remove', { userId: 3, id: made.id, force: true })).code, 'ERR_NOT_FOUND', 'not Marc\'s');
+    assert.deepEqual((await op(host, 'remove', { userId: 2, id: made.id, force: true })).result, { deleted: true, id: made.id });
+    assert.deepEqual(host.places.usage(made.id), []);
+    const hooks = (await host.request({ path: '/has' })).json.seen;
+    assert.deepEqual(hooks.map((x) => [x.userId, x.ids, x.deleted]), [[2, [made.id], false], [2, [made.id], false], [2, [made.id], false], [2, [made.id], true]]);
+    // reportUsage 0 for a place Anna does not see (Marc's „Geheim“) or one that is gone: taken, only her own row
+    host.places.setUsage(15, 'pl-test', 'task', 4);
+    host.places.setUsage(15, 'other', 'task', 1);
+    assert.deepEqual((await op(host, 'reportUsage', { userId: 2, id: 15, kind: 'task', count: 0 })).result, { usedBy: [] });
+    assert.deepEqual(host.places.usage(15), [{ plugin: 'other', kind: 'task', count: 1 }]);
+    assert.deepEqual((await op(host, 'reportUsage', { userId: 2, id: 9999, kind: 'task', count: 0 })).result, { usedBy: [] });
+    assert.equal((await op(host, 'reportUsage', { userId: 2, id: 15, kind: 'task', count: 1 })).code, 'ERR_NOT_FOUND');
+  });
+});
+
+test('version 2: search — the cell rounded, at most 8 hits, a cache, 30 per person and hour, the switch', () => withHost({ places: true }, { gatecontrol: '1.299.0', places: PLACES }, async (host) => {
+  host.places.searchWith(({ q }) => Array.from({ length: 10 }, (_, i) => ({ name: `${q} ${i + 1}`, address: 'Frankfurt', lat: 50.1 + i / 100, lon: 8.68 })));
+  const r = (await op(host, 'search', { userId: 2, q: 'Hauptstraße', near: '50.1109,8.6821' })).result;
+  assert.equal(r.results.length, 8);
+  assert.deepEqual(Object.keys(r.results[0]).sort(), ['address', 'distanceM', 'lat', 'lon', 'name', 'source']);
+  assert.deepEqual(r.attribution, { text: '© OpenStreetMap', url: 'https://www.openstreetmap.org/copyright' });
+  assert.deepEqual(host.places.searches, [{ userId: 2, q: 'Hauptstraße', near: { lat: 50.11, lon: 8.68 }, lang: 'de' }]);
+  await op(host, 'search', { userId: 2, q: 'Hauptstraße', near: { lat: 50.112, lon: 8.679 } });
+  assert.equal(host.places.searches.length, 1, 'the same cell: from the cache');
+  assert.equal((await op(host, 'search', { userId: 2, q: 'ab' })).field, 'q');
+  assert.equal((await op(host, 'search', { userId: 2, q: 'abc', near: 'hier' })).field, 'near');
+  assert.equal((await op(host, 'search', { userId: 99, q: 'abc' })).code, 'ERR_NOT_FOUND');
+  for (let i = 0; i < 29; i++) await op(host, 'search', { userId: 2, q: 'Weg ' + i });
+  const lim = await op(host, 'search', { userId: 2, q: 'Weg 99' });
+  assert.equal(lim.code, 'ERR_RATE_LIMIT');
+  assert.ok(lim.retryAfterS > 0);
+  assert.equal((await op(host, 'search', { userId: 3, q: 'Weg 99' })).ok, true, 'per person');
+  host.places.searchOff(true);
+  assert.equal((await op(host, 'search', { userId: 3, q: 'Weg 98' })).code, 'ERR_SEARCH_OFF');
 }));

@@ -3,15 +3,16 @@
 
 ## Neu in 1.8.0
 
-- **Meine Orte stehen jetzt in deinem Profil:** „Oma“, „Büro“, „mein Baumarkt“ findest du unter **„Mein Profil › Meine Orte“** – im Portal und in der App. Dort legst du Orte an, änderst und löschst sie; die anderen Plugins kennen sie auch.
+- **Meine Orte stehen jetzt in deinem Profil:** „Oma“, „Büro“, „mein Baumarkt“ findest du unter **„Mein Profil › Meine Orte“** – im Portal und in der App. Anlegen, ändern und löschen kannst du sie dort und weiterhin hier unter **Einstellungen › Orte**; die anderen Plugins kennen sie auch.
 - **Der Umzug passiert von selbst** beim ersten Start nach dem Update. Deine Aufgaben behalten ihren Ort und erinnern weiter. Gibt es einen Namen schon im Profil, bekommt der umgezogene Ort eine Nummer („Büro 2“).
 - **„Zuhause“ und die Orte der Familie** bleiben beim Familien-Plugin und ziehen nicht ins Profil.
 - **Was das Profil nicht annimmt** (ein Ort ohne gültigen Punkt, mehr als 100 Orte), bleibt der Ort seiner Aufgaben. Unter **Einstellungen › Orte** steht dann, welche Orte das sind.
 - **Gelöscht im Profil:** Die Aufgabe behält den Ort trotzdem und erinnert weiter. Ändert sich der Ort im Profil (Name, Punkt, Umkreis), zieht die Aufgabe mit.
 - **„Als meinen Ort merken“** legt den Ort in deinem Profil an.
 - **„Genutzt von“:** Im Profil siehst du an jedem Ort, wie viele offene Aufgaben daran hängen.
-- **Apps:** Ältere App-Versionen können Orte hier nicht mehr ändern oder löschen; sie bekommen dann den Hinweis, das im Profil zu tun.
-- Voraussetzung: GateControl 1.298.0 oder neuer. Beim Update fragt GateControl einmal nach der Berechtigung „Meine Orte“.
+- **Löschen:** Aufgaben an dem Ort behalten ihn und erinnern weiter. Nutzt ein anderes Plugin den Ort noch (z. B. eine Ortsnachricht im Messenger), fragt das Portal vorher nach.
+- **Adresssuche:** Eine Adresse sucht jetzt GateControl selbst (wie in „Mein Profil“) – dafür zählt dessen Einstellung, nicht die Ortssuche dieses Plugins. „Baumarkt“, „Lidl“ & Co. sucht weiter das Plugin.
+- Voraussetzung: GateControl 1.299.0 oder neuer. Beim Update fragt GateControl einmal nach der Berechtigung „Meine Orte“.
 
 ## Neu in 1.7.0
 
@@ -105,7 +106,7 @@ Das Plugin ist neu: eigene Aufgaben und Notizen plus alles, was die anderen Plug
 
 ## Voraussetzungen
 
-- GateControl **1.298.0** oder neuer (für „Meine Orte“ im Profil).
+- GateControl **1.299.0** oder neuer (für „Meine Orte“ im Profil).
 - Damit Familie, Mail, Drive, Schule und Alltag hier erscheinen: ihre Versionen mit „Zu tun für Notizen & Aufgaben“. Fehlt eine Quelle, steht das unter „Einstellungen“ (Zahnrad unten links).
 - Für den Umzug von Microsoft To Do: das Plugin **Mail 1.12.0** oder neuer mit deinem Microsoft-Konto.
 - Für Tresor-Notizbücher im Portal: ein aktueller Browser (Chrome, Edge, Firefox, Safari der letzten Jahre).
@@ -148,7 +149,7 @@ Nach dem Umzug (Einstellungen › Plugins › Familie › Funktionen › „Aufg
 
 - **Ort setzen:** In der Aufgabe die Zeile **„Ort“** öffnen. Du wählst einen deiner Orte, einen Treffer der Suche, **„Jeder Lidl“** (erinnert an der ersten Filiale, an der du ankommst) oder setzt einen **Punkt auf der Karte** und gibst ihm einen Namen. Darunter legst du fest: **Beim Ankommen** oder **Beim Verlassen**. „Ohne Ort“ nimmt ihn wieder weg.
 - **Aus dem Text:** Die Schnell-Eingabe erkennt eine Art von Ort („beim Baumarkt“, „an der Apotheke“, „Tankstelle“), einen Namen („bei Lidl“), eine Adresse („Ringstraße 21“) und deine eigenen Orte („bei Oma“, „zu Hause“). Ein eigener oder gemerkter Ort wird direkt eingesetzt; sonst öffnet ein Tipp auf den Baustein „Ort: Baumarkt …“ die Auswahl. Der Baustein lässt sich wegnehmen.
-- **Meine Orte** stehen in deinem Profil (**„Mein Profil › Meine Orte“**, im Portal und in der App): dort legst du Orte an (Name, Punkt auf der Karte oder Adresse, Umkreis 50–2000 m), änderst und löschst sie. Unter **Einstellungen** (Zahnrad unten links) **› Orte** siehst du sie, legst neue an und nimmst „gemerkt für Baumarkt“ wieder weg. Eine Aufgabe behält ihren Ort, auch wenn du ihn im Profil löschst.
+- **Meine Orte** stehen in deinem Profil (**„Mein Profil › Meine Orte“**, im Portal und in der App): dort und unter **Einstellungen** (Zahnrad unten links) **› Orte** legst du Orte an (Name, Punkt auf der Karte oder Adresse, Umkreis 50–2000 m), änderst und löschst sie und nimmst „gemerkt für Baumarkt“ wieder weg. Eine Aufgabe behält ihren Ort, auch wenn du ihn löschst.
 - **Ortssuche:** Im Portal wird in der Nähe eines deiner Orte gesucht („in der Nähe von Zuhause“), auf dem Handy in der Nähe deines Standorts. Die Treffer stehen nach Entfernung, früher gewählte zuerst; die Minuten sind aus der Entfernung geschätzt. Gesucht wird erst, wenn du „Suchen“ drückst oder die Auswahl öffnest – nie beim Tippen.
 - **Was dabei deinen Server verlässt:** nur das Suchwort und deine **auf etwa einen Kilometer gerundete** Position – an einen Kartendienst von OpenStreetMap. Dein Name, dein Gerät und dein genauer Standort gehen nicht mit. Gespeichert oder protokolliert wird die Position nicht.
 - **Ohne Ortssuche** (Voreinstellung) funktionieren deine gemerkten Orte und die Karte. Es verlässt dann keine Suchanfrage deinen Server.

@@ -113,7 +113,7 @@ test('the move: named and remembered places into the profile (sourceRef = old id
     assert.equal((await h.ok(ANNA, 'POST', 'parse', { text: 'bei Oma Kuchen essen' })).place.place.id, id('Oma'));
     assert.equal((await h.ok(ANNA, 'POST', 'parse', { text: 'beim Baumarkt Dübel holen' })).place.place.id, id('Baumarkt Nord'));
     // „Genutzt von“: the open tasks per place
-    assert.deepEqual(h.host.places.usage(id('Büro 2')), [{ plugin: 'gatecontrol-notizen', pluginName: 'Notizen & Aufgaben', kind: 'task', count: 1 }]);
+    assert.deepEqual(h.host.places.usage(id('Büro 2')), [{ plugin: 'gatecontrol-notizen', kind: 'task', count: 1 }]);
     assert.deepEqual(h.host.places.usage(id('Oma')), [], 'no task: nothing told');
     // reported: the log and the status line of the settings
     assert.ok(h.host.logs.some((l) => /place not moved to the profile/.test(l.message) && /Nirgendwo/.test(JSON.stringify(l))));
@@ -169,9 +169,9 @@ test('the move: the profile full (100 places) — the rest stays the tasks\' pla
 test('placesChanged: the copies follow the profile (name, point, radius); deleted or no longer visible → the tasks keep the copy', async () => {
   const h = await host();
   try {
-    const arbeit = h.host.places.add(ANNA.id, { name: 'Arbeit', icon: 'work', lat: 52.6, lon: 13.5, radiusM: 200, address: 'Hafenstraße 4' });
+    const arbeit = await h.host.places.add(ANNA.id, { name: 'Arbeit', icon: 'work', lat: 52.6, lon: 13.5, radiusM: 200, address: 'Hafenstraße 4' });
     // Marc's place „Sportverein“ for the family: Anna may hang a task on it (it is not one of her „Meine Orte“)
-    const verein = h.host.places.add(MARC.id, { name: 'Sportverein', lat: 52.55, lon: 13.45, visibility: 'family' });
+    const verein = await h.host.places.add(MARC.id, { name: 'Sportverein', lat: 52.55, lon: 13.45, visibility: 'family' });
     await h.host.places.settle();
     const a = (await h.ok(ANNA, 'POST', 'tasks', { title: 'Schlüssel abgeben', place: { placeId: arbeit.id } })).task;
     const b = (await h.ok(ANNA, 'POST', 'tasks', { title: 'Trikot holen', place: { ref: 'profile:' + verein.id } })).task;
@@ -179,7 +179,7 @@ test('placesChanged: the copies follow the profile (name, point, radius); delete
     assert.deepEqual([b.place.id, b.place.name, b.place.own], [verein.id, 'Sportverein', false]);
     assert.equal((await h.call(BOB, 'POST', 'tasks', { title: 'x', place: { placeId: verein.id } })).status, 404, 'Bob is not of the family');
     assert.deepEqual((await h.ok(ANNA, 'GET', 'places')).places.map((p) => p.name), ['Arbeit'], 'another person\'s place is no place of „Meine Orte“');
-    assert.deepEqual(h.host.places.usage(verein.id), [{ plugin: 'gatecontrol-notizen', pluginName: 'Notizen & Aufgaben', kind: 'task', count: 1 }]);
+    assert.deepEqual(h.host.places.usage(verein.id), [{ plugin: 'gatecontrol-notizen', kind: 'task', count: 1 }]);
     // changed in the profile → the hook; the task shows it, the phones are told
     h.host.events.length = 0;
     await h.host.places.update(arbeit.id, { name: 'Büro', lat: 52.61, lon: 13.51, radiusM: 300 });
@@ -199,13 +199,15 @@ test('placesChanged: the copies follow the profile (name, point, radius); delete
     assert.deepEqual([vb.ref, vb.name, vb.lat, vb.own], [null, 'Sportverein', 52.55, false]);
     assert.equal((await json(h, b.id)).was, 'profile:' + verein.id);
     assert.deepEqual(h.host.places.usage(verein.id), [], '„Genutzt von“ goes with it');
+    // told for Anna herself — a 0 is taken for a place she no longer sees (gc.places version 2), no detour over Marc
+    assert.deepEqual(h.host.places.calls.filter((x) => x.method === 'reportUsage' && x.args.id === verein.id).map((x) => [x.args.userId, x.args.count]), [[ANNA.id, 1], [ANNA.id, 0]]);
     // Anna deletes „Büro“ in her profile: the task keeps the place, the reminder at the place goes on
     await h.host.places.remove(arbeit.id);
     const va = (await task(h, ANNA, a.id)).place;
     assert.deepEqual([va.ref, va.name, va.radius, va.watch], [null, 'Büro', 300, true]);
     assert.ok((await h.ok(ANNA, 'POST', 'places/watch', {})).fences.some((f) => f.name === 'Büro' && f.tasks[0].taskId === a.id));
     // the hourly run finds a change the hook missed (the plugin was stopped)
-    const c = (await h.ok(LENA, 'POST', 'tasks', { title: 'Bücher', place: { placeId: h.host.places.add(LENA.id, { name: 'Bücherei', lat: 52.52, lon: 13.42 }).id } })).task;
+    const c = (await h.ok(LENA, 'POST', 'tasks', { title: 'Bücher', place: { placeId: (await h.host.places.add(LENA.id, { name: 'Bücherei', lat: 52.52, lon: 13.42 })).id } })).task;
     const lib = h.host.places.all().find((p) => p.name === 'Bücherei');
     await h.host.places.settle();
     // the copy is behind the profile (a change while the plugin was stopped): the hourly run brings it up to date

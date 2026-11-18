@@ -5,16 +5,14 @@
 --                    when the place is deleted in the profile: profile_id goes back to NULL, the task keeps the copy).
 --                    One row per person and profile place; the profile's place is the truth, the hook placesChanged
 --                    brings the copy up to date.
--- places.owner_id    whose place of the profile it is (another person's, shared with „Familie“ / „Alle“, can be a task's place)
 -- place_moves        the move of the old „Meine Orte“ into the profile (once, at the first start of 1.8.0, idempotent
 --                    over gc.places.importFor's source 'notizen' + sourceRef = the old places.id): old id → profile id,
 --                    or why not — 'family' (a place of Familie: it stays a reference to Familie), 'invalid' (the
 --                    profile refused it, `field` says why — tasks keep it as their place), 'limit' (100 places).
--- place_usage        what was told to the profile last („Genutzt von“: gc.places.reportUsage, kind 'task') per place —
---                    told as the owner of the place (user_id), who always sees it.
--- Adding the columns and the tables writes no row.
+-- place_usage        what was told to the profile last („Genutzt von“: gc.places.reportUsage, kind 'task') per place and
+--                    for whom (user_id: a person with a copy of it; a 0 is taken for any place, gc.places version 2).
+-- Adding the column and the tables writes no row.
 ALTER TABLE places ADD COLUMN profile_id INTEGER;
-ALTER TABLE places ADD COLUMN owner_id INTEGER;
 CREATE UNIQUE INDEX idx_places_profile ON places(user_id, profile_id) WHERE profile_id IS NOT NULL AND deleted_at IS NULL;
 CREATE INDEX idx_places_pid ON places(profile_id) WHERE profile_id IS NOT NULL;
 

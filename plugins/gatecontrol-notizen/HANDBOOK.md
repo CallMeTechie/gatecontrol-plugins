@@ -3,15 +3,16 @@
 
 ## New in 1.8.0
 
-- **My places are in your profile now:** “Grandma”, “Office”, “my DIY store” are under **“My profile › My places”** – in the portal and in the app. There you add, change and delete places; the other plugins know them too.
+- **My places are in your profile now:** “Grandma”, “Office”, “my DIY store” are under **“My profile › My places”** – in the portal and in the app. You add, change and delete them there and still here under **Settings › Places**; the other plugins know them too.
 - **The move happens by itself** at the first start after the update. Your tasks keep their place and go on reminding. When the profile has a name already, the moved place gets a number (“Office 2”).
 - **“Home” and the places of the family** stay with the Family plugin and do not move into the profile.
 - **What the profile does not take** (a place without a valid point, more than 100 places) stays the place of its tasks. **Settings › Places** then says which places these are.
 - **Deleted in the profile:** the task keeps the place all the same and goes on reminding. When the place changes in the profile (name, point, radius), the task follows.
 - **“Remember as my place”** adds the place to your profile.
 - **“Used by”:** in the profile you see at each place how many open tasks hang on it.
-- **Apps:** older app versions can no longer change or delete places here; they are told to do it in the profile.
-- Requires GateControl 1.298.0 or later. On the update GateControl asks once for the permission “My places”.
+- **Deleting:** tasks at the place keep it and go on reminding. When another plugin still uses the place (e.g. a location message in Messenger), the portal asks first.
+- **Address search:** an address is now looked up by GateControl itself (as in “My profile”) – its setting counts, not this plugin’s place search. “DIY store”, “Lidl” and the like are still searched by the plugin.
+- Requires GateControl 1.299.0 or later. On the update GateControl asks once for the permission “My places”.
 
 ## New in 1.7.0
 
@@ -105,7 +106,7 @@ The plugin is new: your own tasks and notes plus everything the other plugins ha
 
 ## Requirements
 
-- GateControl **1.298.0** or newer (for “My places” in the profile).
+- GateControl **1.299.0** or newer (for “My places” in the profile).
 - For Family, Mail, Drive, School and Everyday to show up here: their versions with "To-dos for Notes & Tasks". A missing source is shown under "Settings" (gear at the bottom left).
 - For moving over from Microsoft To Do: the **Mail 1.12.0** plugin or newer with your Microsoft account.
 - For vault notebooks in the portal: a current browser (Chrome, Edge, Firefox, Safari of the last years).
@@ -148,7 +149,7 @@ After the move (Settings › Plugins › Family › Functions › “Tasks and p
 
 - **Setting a place:** Open the row **“Place”** in the task. You choose one of your places, a hit of the search, **“Any Lidl”** (reminds at the first branch you arrive at) or set a **point on the map** and give it a name. Below you decide: **On arriving** or **On leaving**. “No place” takes it away again.
 - **From the text:** The quick entry finds a kind of place (“at the DIY store”, “at the pharmacy”, “petrol station”), a name (“at Lidl”), an address (“21 Ring Street”) and your own places (“at grandma’s”, “at home”). An own or remembered place is taken directly; otherwise a tap on the chip “Place: DIY store …” opens the choice. The chip can be taken away.
-- **My places** are in your profile (**“My profile › My places”**, in the portal and in the app): there you add places (name, a point on the map or an address, radius 50–2000 m), change and delete them. Under **Settings** (gear at the bottom left) **› Places** you see them, add new ones and take “remembered for DIY store” away again. A task keeps its place even when you delete it in the profile.
+- **My places** are in your profile (**“My profile › My places”**, in the portal and in the app): there and under **Settings** (gear at the bottom left) **› Places** you add places (name, a point on the map or an address, radius 50–2000 m), change and delete them and take “remembered for DIY store” away again. A task keeps its place even when you delete it.
 - **Place search:** In the portal the search looks near one of your places (“near Home”), on the phone near where you are. The hits are sorted by distance, the ones chosen before first; the minutes are estimated from the distance. A search only runs when you press “Search” or open the choice – never while typing.
 - **What leaves your server for it:** only the search word and your position **rounded to about one kilometre** – to a map service of OpenStreetMap. Your name, your device and your exact location are not sent. The position is not stored or logged.
 - **Without the place search** (the default) your remembered places and the map work. No search leaves your server then.
