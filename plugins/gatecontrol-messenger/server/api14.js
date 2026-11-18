@@ -5,6 +5,7 @@
 // actions, the Familie proxies. api.js calls route14() before answering not_found.
 // 1.5.0: GET actions/requestable (homeactions.requestable).
 // 1.10.0: POST messages/:id/to-drive (drive.js).
+// 1.28.0: GET places (profileplaces.js) — „Meine Orte“ and Familie's places for the place picker.
 
 const store = require('./store');
 const conversations = require('./conversations');
@@ -84,6 +85,9 @@ async function route14(ctx, req, seg) {
   }
   // 1.5.0: what the caller may ask for (a request's approvers' actions)
   if (a === 'actions' && seg.length === 2 && b === 'requestable' && m === 'GET') return json(200, await homeactions.requestable(ctx, req.query));
+  // 1.28.0: the place picker — „Meine Orte“ of the profile and Familie's places, with ref, source and the chips' order
+  if (a === 'places' && seg.length === 1 && m === 'GET') return json(200, await require('./profileplaces').list(ctx));
+  // 1.4.0, kept for older apps (1.28.0: GET places has the profile places too)
   if (a === 'familie' && seg.length === 2 && b === 'places' && m === 'GET') {
     const r = await familie.call(gc, 'places', { userId: ctx.viewer }, ctx.viewer, ctx.now);
     const list = Array.isArray(r) ? r : (r && Array.isArray(r.places) ? r.places : []);

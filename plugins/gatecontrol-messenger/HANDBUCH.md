@@ -1,4 +1,4 @@
-<!-- version: 1.27.1 -->
+<!-- version: 1.28.0 -->
 # Messenger
 
 ## Was das Plugin kann
@@ -73,6 +73,14 @@ Er kommt nur beim Verknüpfen und erscheint nachts. Steht „Älteren Verlauf la
 
 **Alte Nachrichten sind weg.**
 Der Administrator hat eine Aufbewahrung eingestellt, oder der Chat ist selbstlöschend.
+
+## Neu in 1.28.0
+
+- **Meine Orte:** Für Ortsnachrichten und „Live-Ankunft“ wählst du jetzt auch deine eigenen Orte aus „Mein Profil › Meine Orte“, neben den Familie-Orten. Oben stehen die Orte, die du hier am häufigsten nutzt.
+- **Ein Ort, überall gleich:** Verschiebst du einen Ort im Profil oder änderst den Radius, gilt das sofort für deine Ortsnachrichten. Das Handy überwacht dann den neuen Punkt.
+- **Gelöschter Ort:** Löschst du einen Ort, der noch eine Ortsnachricht hat, bleibt die Ortsnachricht am alten Punkt. Die App weist darauf hin, und du kannst einen anderen Ort wählen.
+- Im Profil steht bei jedem Ort, wie viele Ortsnachrichten ihn nutzen („Genutzt von“).
+- Braucht GateControl 1.298.0 oder neuer.
 
 ## Neu in 1.27.1
 

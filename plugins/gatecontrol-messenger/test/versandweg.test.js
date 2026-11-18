@@ -189,7 +189,7 @@ test('place messages: the feature word, create / list / change / delete with pla
     assert.equal(r.status, 200, JSON.stringify(r.json));
     const p = r.json.placeMessage;
     assert.deepEqual([p.trigger, p.place, p.text, p.conversationId, p.way, p.repeat, p.window, p.ask, p.enabled, p.lastFiredAt, p.doneAt, p.deviceId],
-      ['enter', HOME, 'Bin da, Tür ist offen.', gcId, 'auto', 'always', { days: [1, 2, 3, 4, 5], from: '16:00', to: '20:00' }, true, true, null, null, DEV]);
+      ['enter', { ref: null, source: null, ...HOME, missing: false }, 'Bin da, Tür ist offen.', gcId, 'auto', 'always', { days: [1, 2, 3, 4, 5], from: '16:00', to: '20:00' }, true, true, null, null, DEV]);
     assert.deepEqual([p.target.title, p.target.personId, p.target.reply.way], ['Marc', person.id, 'whatsapp']);
     assert.deepEqual(c.events('place_messages.changed').map((e) => [e.data.id, e.data.reason, e.users]), [[p.id, 'created', [ANNA.id]]]);
     // defaults: radius 150, once, ask

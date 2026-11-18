@@ -29,7 +29,7 @@ async function prepare(ctx, conv, members, kind, b) {
     return { meta: { event: e.meta }, create: (id) => eventmsg.create(ctx, conv, id, e) };
   }
   if (kind === 'arrival') {
-    const a = arrival.clean(b.arrival);
+    const a = await arrival.resolve(ctx, arrival.clean(b.arrival));
     return { meta: { arrival: a }, create: (id) => arrival.create(ctx, conv, id, a) };
   }
   if (kind === 'action') {

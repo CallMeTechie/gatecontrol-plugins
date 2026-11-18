@@ -440,6 +440,10 @@
 //
 // GateControl 1.289.0 (opt-in: opts.gatecontrol: '1.289.0' or opts.avatarVisibility) — „Wer sieht dein Bild?“: gc.users with
 // a viewer / unmasked and avatarVisibility, gc.users.setAvatarVisibility / adoptAvatarVisibility: see tools/testing/mock-avatars.js.
+//
+// GateControl 1.298.0 (opt-in: opts.gatecontrol: '1.298.0' or opts.places) — „Meine Orte“: gc.places (only with
+// permissions.places: list / get / resolve / markUsed / reportUsage / importFor) and the hook placesChanged: see
+// tools/testing/mock-places.js.
 
 const fs = require('node:fs');
 const os = require('node:os');
@@ -454,6 +458,7 @@ const mockCameras = require('./mock-cameras');
 const mockBridges = require('./mock-bridges');
 const mockProfile = require('./mock-profile');
 const mockAvatars = require('./mock-avatars');
+const mockPlaces = require('./mock-places');
 
 // GateControl's favourite colour palette (services/avatars.js PALETTE, GateControl ≥ 1.168.0)
 const PALETTE = Object.freeze([
@@ -3308,6 +3313,10 @@ async function createHost(pluginDir, opts = {}) {
   // ─── „Wer sieht dein Bild?“ (GateControl ≥ 1.289.0, src/services/avatars.js; tools/testing/mock-avatars.js) ───
   const av = mockAvatars.install({ opts, perms, atLeast, hostError, personCtx });
   if (av.on) Object.assign(api, av.api);
+  // ─── „Meine Orte“ (GateControl ≥ 1.298.0, src/services/places.js; tools/testing/mock-places.js) ───
+  const pl = mockPlaces.install({ opts, perms, atLeast, enabledUser, userById: (id) => allUsers.find((u) => u.id === id) || null, hostError, wire,
+    pluginId: manifest.id, pluginName: (manifest.name && typeof manifest.name === 'object' ? manifest.name.de || manifest.name.en : manifest.name) || manifest.id });
+  Object.assign(api, pl.api);
   // ─── Messenger-Brücken (GateControl preview, src/services/bridges; tools/testing/mock-bridges.js) ───
   const br = mockBridges.install({ opts, perms, enabledUser, hostError, personCtx,
     // gc.bridges version 4: a file of a bridged chat into the plugin's media, a file of the plugin to be sent
@@ -3650,6 +3659,8 @@ async function createHost(pluginDir, opts = {}) {
     ...(br.on ? { bridges: br.gcPart(call) } : {}),
     // GateControl ≥ 1.280.0: gc.profile for every plugin (the host refuses it without permissions.profile)
     ...(pf.on ? { profile: pf.gcPart(call) } : {}),
+    // GateControl ≥ 1.298.0: gc.places only with permissions.places (like the child bootstrap)
+    ...(pl.on ? { places: pl.gcPart(call) } : {}),
     // GateControl ≥ 1.231.0: gc.homeCache only with permissions.homeCache (like the child bootstrap)
     ...(radioOn ? { radio: Object.freeze({ sensors: () => call('radio.sensors', {}),
       ...(zigbeeOn ? { zigbee: () => call('radio.zigbee', {}), command: (id, set) => call('radio.command', { id, set }) } : {}) }) } : {}),
@@ -3692,6 +3703,7 @@ async function createHost(pluginDir, opts = {}) {
   const plugin = require(entry);
   const hook = async (name, ...a) => (typeof plugin[name] === 'function' ? wire(await plugin[name](...a.map(wire), gc)) : undefined);
   pf.control.bind(plugin, hook);
+  pl.control.bind(plugin, hook);
   // gc.bridges version 3: the bridges delivered something → the hook bridgeEvents (fire and forget in the host; awaited here so a test sees the result)
   br.control.onWake(async (payload) => { try { await hook('bridgeEvents', payload); } catch { /* like the host: the answer is ignored */ } });
 
@@ -4347,6 +4359,8 @@ async function createHost(pluginDir, opts = {}) {
     profile: pf.control,
     /** GateControl ≥ 1.289.0 (opts.avatarVisibility): „Wer sieht dein Bild?“ { level, set, calls } — see tools/testing/mock-avatars.js */
     avatarVisibility: av.control,
+    /** GateControl ≥ 1.298.0 (opts.places): „Meine Orte“ { add, update, remove, seed, changed, usage, all, calls } — see tools/testing/mock-places.js */
+    places: pl.control,
     vpnDnsSet: (x) => vd.hostSet(x || {}),
     vpnDnsEvent: (ev) => vd.hostEvent(ev),
     vpnDnsExpire: (now) => vd.hostExpire(now),

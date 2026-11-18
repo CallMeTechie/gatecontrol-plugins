@@ -1,4 +1,4 @@
-<!-- version: 1.27.1 -->
+<!-- version: 1.28.0 -->
 # Messenger
 
 ## What the plugin does
@@ -73,6 +73,14 @@ It only comes when linking and appears at night. When “Load older history” i
 
 **Old messages are gone.**
 The administrator set a retention, or the chat is a disappearing chat.
+
+## New in 1.28.0
+
+- **My places:** for place messages and “live arrival” you can now also choose your own places from “My profile › My places”, next to the Familie places. The places you use most here come first.
+- **One place, the same everywhere:** when you move a place in your profile or change its radius, your place messages follow at once. The phone then watches the new point.
+- **Deleted place:** when you delete a place that still has a place message, the place message stays at the old point. The app tells you, and you can choose another place.
+- The profile shows for each place how many place messages use it (“Used by”).
+- Needs GateControl 1.298.0 or newer.
 
 ## New in 1.27.1
 
