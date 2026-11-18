@@ -333,7 +333,7 @@ function dispatch(gc, r, seg, method) {
       if (n === 2 && GET) return () => presence.listRules(gc, ctx());
       if (n === 2 && POST) return () => presence.createRule(gc, ctx(), r.body);
       if (n === 3 && PATCH) return () => presence.updateRule(gc, ctx(), c, r.body);
-      if (n === 3 && DELETE) return () => presence.removeRule(gc, c);
+      if (n === 3 && DELETE) return () => presence.removeRule(gc, c, ctx());
     }
   }
   if (a === 'internet') {

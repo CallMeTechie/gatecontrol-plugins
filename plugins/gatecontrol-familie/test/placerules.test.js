@@ -48,7 +48,7 @@ async function rule(as, body) {
 test('rule places: parents only, validation, unique names, default radius, at most 20, in use, the admin page', () => withFamily(ON([], { lat: '52.52', lon: '13.405' }), async (host, { as, admin, clock }) => {
   assert.equal((await as(TIM)('GET', '/presence/places')).json.code, 'parents_only');
   assert.equal((await as(LENA)('POST', '/presence/places', SCHULE)).json.code, 'parents_only');
-  assert.deepEqual((await as(MARC)('GET', '/presence/places')).json, { ok: true, places: [], home: { lat: 52.52, lon: 13.405 } });
+  assert.deepEqual((await as(MARC)('GET', '/presence/places')).json, { ok: true, places: [], home: { lat: 52.52, lon: 13.405 }, profilePlaces: [] });
   for (const [bad, field] of [
     [{ ...SCHULE, name: '' }, 'name'], [{ ...SCHULE, name: '   ' }, 'name'], [{ ...SCHULE, name: 'x'.repeat(41) }, 'name'], [{ ...SCHULE, name: 7 }, 'name'],
     [{ ...SCHULE, lat: 91 }, 'lat'], [{ ...SCHULE, lat: '52.5' }, 'lat'], [{ ...SCHULE, lon: -180.5 }, 'lon'], [{ name: 'Schule', lat: 52 }, 'lon'],

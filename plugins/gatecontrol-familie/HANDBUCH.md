@@ -1,5 +1,13 @@
-<!-- version: 1.29.0 -->
+<!-- version: 1.30.0 -->
 # Familie
+
+## Neu in 1.30.0
+
+- **Meine Orte:** Bei einer Orts-Erinnerung kannst du einen Ort aus „Mein Profil › Meine Orte“ wählen. Punkt und Radius kommen aus dem Profil. Verschiebst du den Ort dort, folgt die Erinnerung.
+- **Regeln mit eigenen Orten:** Für eine Regel „kommt an“ oder „verlässt“ stehen im Portal neben den Familie-Orten auch die Orte, die ihr im Profil für die Familie freigegeben habt („Sichtbar für Familie“ oder „Alle“). Ein Ort mit „Nur ich“ erscheint nicht.
+- **Gelöscht oder nicht mehr freigegeben:** Die Erinnerung oder Regel bleibt am letzten Punkt. In der Regel steht „nicht mehr freigegeben“, du kannst einen anderen Ort wählen.
+- Im Profil steht bei jedem Ort, wie viele Erinnerungen und Regeln ihn nutzen.
+- Braucht GateControl 1.298.0 oder neuer.
 
 ## Neu in 1.29.0
 

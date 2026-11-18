@@ -103,6 +103,7 @@ const crypto = require('node:crypto');
 const store = require('./store');
 const members = require('./members');
 const ruleplaces = require('./ruleplaces');
+const pp = require('./profileplaces');
 const rulerow = require('./rulerow');
 const conditions = require('./conditions');
 const reminders = require('./reminders');
@@ -554,7 +555,7 @@ async function watch(gc, userId) {
  */
 async function placeEvent(gc, r, raw) {
   if (!(await placesConsent(gc, r.me.userId))) throw fail('no_consent');
-  const place = await ruleplaces.byId(gc, raw);
+  const place = await ruleplaces.byId(gc, raw, { linked: true });
   if (!place) throw fail('not_found');
   const b = r.body || {};
   if (!TRANSITIONS.includes(b.transition)) throw fail('invalid', { field: 'transition' });
@@ -664,12 +665,48 @@ function ruleFields(body, cur, fam) {
   return f;
 }
 
-/** A place rule needs an existing rule place (400 invalid { field: 'placeId' }); f.placeId becomes its id. */
-async function checkPlace(gc, f) {
+/**
+ * A place rule needs an existing rule place (400 invalid { field: 'placeId' }); f.placeId becomes its id.
+ * 1.30.0: or 'profile:<id>' — a profile place shown to the family, as `who.userId` may see it: linked (made or brought up
+ * to date, ruleplaces.link), f.placeRef = the ref. who.dry (the dry run, outside a transaction): only checked, nothing
+ * written — f.placeId is the linked place when there is one already.
+ */
+async function checkPlace(gc, f, who = {}) {
+  f.placeRef = null;
   if (!PLACE_TRIGGERS[f.trigger]) return;
-  const p = f.placeId == null ? null : await ruleplaces.byId(gc, f.placeId);
+  if (pp.isRef(f.placeId)) {
+    const ref = f.placeId;
+    if (who.dry) {
+      const p = await pp.resolve(gc, ref, who.userId);
+      if (!p || !pp.FAMILY.includes(p.visibility)) throw fail('invalid', { field: 'placeId' });
+      const row = await store.one(gc, 'SELECT id FROM rule_places WHERE profile_ref = ?', [ref]);
+      f.placeId = row ? row.id : null;
+    } else f.placeId = await ruleplaces.link(gc, ref, who.userId, who.fam, who.now);
+    f.placeRef = ref;
+    return;
+  }
+  const p = f.placeId == null ? null : await ruleplaces.byId(gc, f.placeId, { linked: true });
   if (!p) throw fail('invalid', { field: 'placeId' });
   f.placeId = p.id;
+  f.placeRef = p.ref;
+}
+
+/** The profile ref of a rule place id (a linked place), or null. */
+async function refOfPlace(gc, placeId) {
+  if (placeId == null) return null;
+  const row = await store.one(gc, 'SELECT profile_ref FROM rule_places WHERE id = ?', [placeId]);
+  return row ? row.profile_ref || null : null;
+}
+
+/**
+ * 1.30.0: after rules changed — linked rule places no rule uses any more go (ruleplaces.tidy) and „Genutzt von“ of the
+ * touched profile places follows (gc.places.reportUsage, as `userId`). Never throws.
+ */
+async function placeUsage(gc, userId, refs) {
+  try {
+    const gone = await ruleplaces.tidy(gc);
+    await pp.report(gc, userId, [...(refs || []), ...gone.map((x) => x.profile_ref)]);
+  } catch (e) { gc.log.warn('place usage failed', (e && (e.code || e.message)) || 'error'); }
 }
 
 /** The quick actions `owner` has right now: Map 'plugin|id' → listed action, or null when unknown. */
@@ -727,6 +764,8 @@ function ruleView(rule, fam, avail, last, places) {
   const place = rule.placeId != null && PLACE_TRIGGERS[rule.trigger] ? places.get(rule.placeId) : null;
   return {
     id: rule.id, name: rule.name, trigger: rule.trigger, userId: rule.userId, placeId: place ? place.id : null, placeName: place ? place.name : null,
+    // 1.30.0: a profile place ('profile:<id>', a linked rule place); missing: it went or is not shown to the family any more
+    placeRef: place ? place.ref : null, placeMissing: place ? place.missing : false,
     graceMinutes: rule.graceMinutes, conditions: { time: rule.conditions.time, afterSunset: rule.conditions.afterSunset },
     actions: rule.actions.map((a) => (a.type === 'quick_action' ? actionView(a, listed) : a)),
     active: rule.active, ownerId: rule.ownerId, ownerName: owner ? owner.name : null, lastRunAt: iso(rule.lastRunAt),
@@ -769,10 +808,11 @@ async function listRules(gc, ctx) {
 async function createRule(gc, ctx, body) {
   if ((await store.one(gc, "SELECT COUNT(*) AS n FROM presence_rules WHERE scope = 'house'")).n >= MAX_RULES) throw fail('too_many');
   const f = ruleFields(body, null, ctx.fam);
-  await checkPlace(gc, f);
+  await checkPlace(gc, f, { userId: ctx.ownerId, fam: ctx.fam, now: ctx.now });
   f.actions = await checkTargets(gc, f.actions, ctx.ownerId, ctx.lang);
   const res = await store.run(gc, `INSERT INTO presence_rules (name, title, scope, trigger_type, user_id, place_id, grace_minutes, conditions_json, actions_json, active, owner_id, created_at, updated_at)
     VALUES (?, ?, 'house', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [f.name, f.name, f.trigger, f.userId, f.placeId, f.graceMinutes, JSON.stringify(f.conditions), JSON.stringify(f.actions), f.active ? 1 : 0, ctx.ownerId, ctx.now, ctx.now]);
+  if (f.placeRef) await placeUsage(gc, ctx.ownerId, [f.placeRef]);
   return { rule: (await rulesView(gc, ctx.fam, ctx.lang, [res.lastInsertRowid]))[0] };
 }
 
@@ -793,7 +833,8 @@ function keepExtras(actions, cur) {
 async function updateRule(gc, ctx, raw, body) {
   const cur = await ruleRow(gc, raw);
   const f = ruleFields(body, cur, ctx.fam);
-  await checkPlace(gc, f);
+  const oldRef = await refOfPlace(gc, cur.placeId);
+  await checkPlace(gc, f, { userId: ctx.ownerId, fam: ctx.fam, now: ctx.now });
   // whoever sets the actions owns them: the quick actions run as that person (and are checked against what they have)
   const owner = body && body.actions !== undefined ? ctx.ownerId : cur.ownerId;
   if (body && body.actions !== undefined) f.actions = keepExtras(await checkTargets(gc, f.actions, owner, ctx.lang), cur);
@@ -803,12 +844,15 @@ async function updateRule(gc, ctx, raw, body) {
   const title = body && body.name !== undefined ? f.name : cur.title;
   await store.run(gc, `UPDATE presence_rules SET name = ?, title = ?, trigger_type = ?, user_id = ?, place_id = ?, grace_minutes = ?, conditions_json = ?, actions_json = ?, active = ?, owner_id = ?,
     last_key = ?, updated_at = ? WHERE id = ?`, [f.name, title, f.trigger, f.userId, f.placeId, f.graceMinutes, JSON.stringify(f.conditions), JSON.stringify(f.actions), f.active ? 1 : 0, owner, lastKey, ctx.now, cur.id]);
+  if (oldRef || f.placeRef) await placeUsage(gc, ctx.ownerId, [oldRef, f.placeRef].filter(Boolean));
   return { rule: (await rulesView(gc, ctx.fam, ctx.lang, [cur.id]))[0] };
 }
 
-async function removeRule(gc, raw) {
+async function removeRule(gc, raw, ctx) {
   const cur = await ruleRow(gc, raw);
+  const oldRef = await refOfPlace(gc, cur.placeId);
   await store.run(gc, 'DELETE FROM presence_rules WHERE id = ?', [cur.id]);
+  if (oldRef) await placeUsage(gc, ctx && ctx.ownerId, [oldRef]);
   return {};
 }
 
@@ -845,7 +889,7 @@ function wifiAvailable(gc) {
 
 module.exports = {
   SOURCES, combine, settle, wifiAvailable,
-  STATES, MAX_ACTIONS, NAME_MAX, TEXT_MAX, PLUGIN_ID_RE, ACTION_ID_RE, GRACE_DEFAULT, legacy, actionView, availability, ownerActions, checkPlace, checkTargets, parseConditions, logView, hostCode, recipients,
+  STATES, MAX_ACTIONS, NAME_MAX, TEXT_MAX, PLUGIN_ID_RE, ACTION_ID_RE, GRACE_DEFAULT, legacy, actionView, availability, ownerActions, checkPlace, refOfPlace, placeUsage, checkTargets, parseConditions, logView, hostCode, recipients,
   TRIGGERS, PLACE_TRIGGERS, THROTTLE_MS, REPORT_GAP_MS, EVENT_DEDUPE_MS, EVENT_LATE_MS, load, stateOf, ringOf, rings, membersView, get, consent, report, transitionEvents,
   inWindow, conditionsHold, fire, checkAllAway, tick, execute, listRules, createRule, updateRule, removeRule, actions, log, purge, overview, watch, placeEvent,
 };

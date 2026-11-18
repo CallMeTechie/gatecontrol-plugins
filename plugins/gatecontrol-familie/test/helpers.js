@@ -60,6 +60,7 @@ const kioskViewer = (u, loggedIn = true) => ({ ...u, portal: true, loggedIn, kio
  * o.homeInternet: GateControl's „Internet zu Hause“ of gc.homeNetwork.internet (GateControl ≥ 1.231.0, 1.18.0) —
  * o.profile: the user profile of gc.profile (GateControl ≥ 1.280.0, 1.26.0) —
  * o.avatarVisibility: „Wer sieht dein Bild?“ of gc.users (GateControl's profile, 1.27.0) —
+ * o.places: „Meine Orte“ of gc.places (GateControl ≥ 1.298.0, 1.30.0) —
  * see tools/testing/mock-host.js);
  * family: true adds the family through the admin API.
  * fn(host, ctx) with ctx = { clock, call(user, method, path, body, query), admin(method, path, body, query) }
@@ -69,7 +70,9 @@ async function withFamily(opts, fn) {
   const clock = startClock(o.at || T0);
   const host = await createHost(DIR, { users: o.users || USERS, settings: { timezone: BERLIN, ...(o.settings || {}) }, notifyFail: o.notifyFail, kiosk: o.kiosk, actions: o.actions, services: o.services, gatecontrol: o.gatecontrol, groups: o.groups, homeNetwork: o.homeNetwork, homeInternet: o.homeInternet, profile: o.profile,
     // 1.27.0: „Wer sieht dein Bild?“ (GateControl's profile; tools/testing/mock-avatars.js)
-    ...(o.avatarVisibility ? { avatarVisibility: o.avatarVisibility } : {}) });
+    ...(o.avatarVisibility ? { avatarVisibility: o.avatarVisibility } : {}),
+    // 1.30.0: „Meine Orte“ (GateControl's profile; tools/testing/mock-places.js)
+    ...(o.places ? { places: o.places } : {}) });
   await host.start();
   const call = (user, method, p, body, query) => host.request({ method, path: p, body: body === undefined ? null : body, query: query || {}, user, lang: o.lang || 'de' });
   const admin = (method, p, body, query) => call(ADMIN, method, '/admin/' + p.replace(/^\//, ''), body, query);

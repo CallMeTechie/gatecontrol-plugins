@@ -174,7 +174,7 @@ async function presenceRoute(req, gc, seg, cfg, now, m, body) {
   if (b === 'rules') {
     if (seg.length === 3 && m === 'POST') return store.tx(gc, () => presence.createRule(gc, ctx, body));
     if (seg.length === 4 && (m === 'PATCH' || m === 'PUT')) return store.tx(gc, () => presence.updateRule(gc, ctx, c, body));
-    if (seg.length === 4 && m === 'DELETE') return store.tx(gc, () => presence.removeRule(gc, c));
+    if (seg.length === 4 && m === 'DELETE') return store.tx(gc, () => presence.removeRule(gc, c, ctx));
   }
   if (b === 'places') {
     if (seg.length === 3 && m === 'GET') return ruleplaces.list(gc, ctx);

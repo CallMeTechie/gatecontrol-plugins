@@ -142,7 +142,7 @@ test('Leaflet: one constant (server/ui.js), nowhere else', () => {
 
 test('plugin.json: permissions (kiosk, actions), app tab, maps, the twelve topics with SOS allowed critical', () => {
   assert.equal(manifest.id, 'gatecontrol-familie');
-  assert.equal(manifest.version, '1.29.0');
+  assert.equal(manifest.version, '1.30.0');
   // 1.6.0 stays on 1.173.0: the messenger services (GateControl ≥ 1.177.0) are optional — an older host ignores
   // permissions.services and has no gc.services, so the group and the rule action stay hidden there.
   // 1.14.2 too: GC.viewport (GateControl ≥ 1.199.0) is optional — without it the wall keeps its 640 px
@@ -155,13 +155,16 @@ test('plugin.json: permissions (kiosk, actions), app tab, maps, the twelve topic
   // key, the card „Internet zu Hause“ stays hidden
   // 1.26.0 stays too: permissions.profile (gc.profile, GateControl ≥ 1.280.0) — an older host ignores the key and has no
   // gc.profile, the birthdays stay Familie's own
-  assert.equal(manifest.gatecontrol, '>=1.216.0', 'maxPerHour of calendar_range needs GateControl 1.216.0');
+  // 1.30.0: GateControl ≥ 1.298.0 — „Meine Orte“ (gc.places, permissions.places, the hook placesChanged); the code still
+  // asks for gc.places (without it no profile places are offered)
+  assert.equal(manifest.gatecontrol, '>=1.298.0', '„Meine Orte“ (gc.places) needs GateControl 1.298.0');
   const p = manifest.permissions;
   assert.deepEqual([p.storage, p.portal, p.users, p.app, p.notify, p.background, p.kiosk, p.actions], [true, true, true, true, { perHour: 120 }, { intervalSeconds: 60 }, true, true]);
   assert.equal(p.groups, 'manage', '1.15.0: the family as a GateControl group of the plugin (gc.groups.ensure)');
   assert.equal(p.homePresence, true, '1.17.0: presence over the home network (gc.homeNetwork.presence)');
   assert.equal(p.homeInternet, true, '1.18.0: „Internet zu Hause“ (gc.homeNetwork.internet)');
   assert.deepEqual(p.profile, ['birthday'], '1.26.0: the birthday from the user profile only — no names, no telephone numbers');
+  assert.equal(p.places, true, '1.30.0: „Meine Orte“ of the profile (gc.places) for reminders and rules');
   assert.deepEqual(p.services, ['gatecontrol-messenger:sync_group', 'gatecontrol-messenger:send_message', 'gatecontrol-messenger:release_group',
     'gatecontrol-messenger:set_place_status', 'gatecontrol-messenger:bridge_children', 'gatecontrol-messenger:bridge_child_set', 'gatecontrol-alltag:calendar_query', 'gatecontrol-alltag:calendar_list', 'gatecontrol-schule:school_students',
     'gatecontrol-schule:school_day', 'gatecontrol-notizen:todo_changed', 'gatecontrol-notizen:notes_bind', 'gatecontrol-notizen:notes_list',
@@ -184,8 +187,8 @@ test('plugin.json: permissions (kiosk, actions), app tab, maps, the twelve topic
   assert.deepEqual(manifest.ui.settings.slice(4).map((x) => x.default), [false, 'direct', 'family', true]);
   assert.deepEqual(manifest.ui.settings[5].options.map((o) => o.value), ['direct', 'family', 'push']);
   assert.deepEqual(manifest.ui.settings[6].options.map((o) => o.value), ['family', 'off']);
-  // 1.9.0: device values and buttons need GateControl 1.181.0 — feature-detected (the requirement is 1.216.0 since 1.16.0)
-  assert.equal(manifest.gatecontrol, '>=1.216.0');
+  // 1.9.0: device values and buttons need GateControl 1.181.0 — feature-detected (the requirement is 1.298.0 since 1.30.0)
+  assert.equal(manifest.gatecontrol, '>=1.298.0');
   assert.equal(manifest.ui.maps, true);
   const ICON = /^[MmLlHhVvCcSsQqTtAaZz0-9 .,-]{1,600}$/;
   for (const k of ['nav', 'portal', 'app']) {
