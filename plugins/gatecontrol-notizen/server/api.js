@@ -56,7 +56,11 @@ const FEATURES = ['tasks', 'notes', 'sources', 'vault', 'mstodo', 'dsnote', 'sea
   'taskTurns', 'taskStars', 'familyTasks', 'doneFeedback', 'placeMine',
   // 1.7.0 (README "1.7.0"): `driveDeadlines` — the reminders of Drive's deadlines ring from here: Task.deadline, the
   // reminder of such a task (`deadline`, the button open_file) in the push and in GET reminders, me.driveDeadlines
-  'driveDeadlines'];
+  'driveDeadlines',
+  // 1.8.0 (README "1.8.0"): `profilePlaces` — „Meine Orte“ are the places of the user profile: every place id is the
+  // profile's ('profile:<id>' in `ref`), POST places makes one there, PATCH / DELETE places → 409 profile_only (changed
+  // and deleted in „Mein Profil › Meine Orte“), GET places notMoved, me.places.profile
+  'profilePlaces'];
 
 const ok = (json) => ({ status: 200, json: { ok: true, ...json } });
 

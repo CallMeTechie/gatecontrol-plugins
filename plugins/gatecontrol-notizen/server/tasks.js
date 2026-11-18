@@ -415,7 +415,7 @@ async function create(gc, ctx, b0, opts = {}) {
   if (parent && twoWay) await store.run(gc, 'UPDATE tasks SET ext_dirty = 1 WHERE id = ? AND ext_id IS NOT NULL', [parent.id]);
   const members = await lists.memberIds(gc, listId);
   events.changed(gc, members, 'tasks');
-  if (place && place.change) { await places.picked(gc, ctx, place.pick); await places.sync(gc, ctx, id); events.changed(gc, members, 'places'); }
+  if (place && place.change) { await places.picked(gc, ctx, place.pick); await places.sync(gc, ctx, id); events.changed(gc, members, 'places'); await places.counted(gc, ctx); }
   if (assignee && assignee !== ctx.userId) await notifyAssigned(gc, ctx, assignee, title, id);
   // 1.6.0: „wer zuerst“ goes to everybody; Familie hears of a task of the family list
   if (turn.turn === 'first') for (const u of turn.people) if (u !== ctx.userId) await notifyAssigned(gc, ctx, u, title, id);
@@ -565,6 +565,8 @@ async function update(gc, ctx, id, b0) {
   // 1.5.0: whose phone watches the place follows the task (another person, another list); the phones fetch their places again
   if (placed) await places.picked(gc, ctx, place.pick);
   if (placed || (r.place_json && set.length)) { await places.sync(gc, ctx, r.id); events.changed(gc, [...new Set([...before, ...after])], 'places'); if (placed) await famtasks.changed(gc, r); }
+  // 1.8.0: „Genutzt von“ in the profile (the open tasks at a place; done and deleted ones follow in the background run)
+  if (placed) await places.counted(gc, ctx);
   if (!sub && (next.title !== undefined || next.due !== undefined || set.some((c) => c.startsWith('assignee_id') || c.startsWith('list_id')))) await calsync.now(gc, ctx, r.id);
   return get(gc, ctx, r.id);
 }

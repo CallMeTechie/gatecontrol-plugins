@@ -438,6 +438,10 @@
 // GateControl 1.280.0 (opt-in: opts.gatecontrol: '1.280.0' or opts.profile) — gc.profile, the user profile (the fields of
 // permissions.profile, only what the viewer may see) and the hooks profileChanged / myData: see tools/testing/mock-profile.js.
 //
+// GateControl 1.298.0 (opt-in: opts.gatecontrol: '1.298.0' or opts.places) — gc.places, "Meine Orte" of the user profile
+// (only with permissions.places), the hook placesChanged and host.places (what the person does in "Mein Profil"): see
+// tools/testing/mock-places.js.
+//
 // GateControl 1.289.0 (opt-in: opts.gatecontrol: '1.289.0' or opts.avatarVisibility) — „Wer sieht dein Bild?“: gc.users with
 // a viewer / unmasked and avatarVisibility, gc.users.setAvatarVisibility / adoptAvatarVisibility: see tools/testing/mock-avatars.js.
 
@@ -454,6 +458,7 @@ const mockCameras = require('./mock-cameras');
 const mockBridges = require('./mock-bridges');
 const mockProfile = require('./mock-profile');
 const mockAvatars = require('./mock-avatars');
+const mockPlaces = require('./mock-places');
 
 // GateControl's favourite colour palette (services/avatars.js PALETTE, GateControl ≥ 1.168.0)
 const PALETTE = Object.freeze([
@@ -3305,6 +3310,10 @@ async function createHost(pluginDir, opts = {}) {
   // ─── the user profile (GateControl ≥ 1.280.0, src/services/profile.js; tools/testing/mock-profile.js) ───
   const pf = mockProfile.install({ opts, perms, atLeast, enabledUser, hostError, personCtx, wire });
   Object.assign(api, pf.api);
+  // ─── „Meine Orte“ (GateControl ≥ 1.298.0, src/services/places.js; tools/testing/mock-places.js) ───
+  const pl = mockPlaces.install({ opts, perms, atLeast, enabledUser, hostError, pluginId: manifest.id,
+    pluginName: manifest.name && typeof manifest.name === 'object' ? manifest.name.de || manifest.name.en : manifest.name });
+  Object.assign(api, pl.api);
   // ─── „Wer sieht dein Bild?“ (GateControl ≥ 1.289.0, src/services/avatars.js; tools/testing/mock-avatars.js) ───
   const av = mockAvatars.install({ opts, perms, atLeast, hostError, personCtx });
   if (av.on) Object.assign(api, av.api);
@@ -3650,6 +3659,8 @@ async function createHost(pluginDir, opts = {}) {
     ...(br.on ? { bridges: br.gcPart(call) } : {}),
     // GateControl ≥ 1.280.0: gc.profile for every plugin (the host refuses it without permissions.profile)
     ...(pf.on ? { profile: pf.gcPart(call) } : {}),
+    // GateControl ≥ 1.298.0: gc.places only with permissions.places (like the child bootstrap)
+    ...(pl.on ? { places: pl.gcPart(call) } : {}),
     // GateControl ≥ 1.231.0: gc.homeCache only with permissions.homeCache (like the child bootstrap)
     ...(radioOn ? { radio: Object.freeze({ sensors: () => call('radio.sensors', {}),
       ...(zigbeeOn ? { zigbee: () => call('radio.zigbee', {}), command: (id, set) => call('radio.command', { id, set }) } : {}) }) } : {}),
@@ -3692,6 +3703,7 @@ async function createHost(pluginDir, opts = {}) {
   const plugin = require(entry);
   const hook = async (name, ...a) => (typeof plugin[name] === 'function' ? wire(await plugin[name](...a.map(wire), gc)) : undefined);
   pf.control.bind(plugin, hook);
+  pl.control.bind(plugin, hook);
   // gc.bridges version 3: the bridges delivered something → the hook bridgeEvents (fire and forget in the host; awaited here so a test sees the result)
   br.control.onWake(async (payload) => { try { await hook('bridgeEvents', payload); } catch { /* like the host: the answer is ignored */ } });
 
@@ -4345,6 +4357,8 @@ async function createHost(pluginDir, opts = {}) {
     bridges: br.control,
     /** GateControl ≥ 1.280.0 (opts.profile): { set, changed, myData, calls } — see tools/testing/mock-profile.js */
     profile: pf.control,
+    /** GateControl ≥ 1.298.0 (opts.places): „Meine Orte“ { add, update, remove, all, usage, calls, settle, failNext } — see tools/testing/mock-places.js */
+    places: pl.control,
     /** GateControl ≥ 1.289.0 (opts.avatarVisibility): „Wer sieht dein Bild?“ { level, set, calls } — see tools/testing/mock-avatars.js */
     avatarVisibility: av.control,
     vpnDnsSet: (x) => vd.hostSet(x || {}),

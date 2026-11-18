@@ -1,7 +1,7 @@
 'use strict';
 
 // Test helpers: the mock host (tools/testing/mock-host.js) as GateControl 1.216.0 (services with maxPerHour, events,
-// media), a household (Anna and Marc parents, Lena a child, Bob from elsewhere), the clock pinned to Sunday
+// media) with gc.places of 1.298.0 („Meine Orte“ of the profile), a household (Anna and Marc parents, Lena a child, Bob from elsewhere), the clock pinned to Sunday
 // 2026-11-08 10:00 in Berlin (the mockups' day), and fake sources (Familie, Mail, Drive, Schule, Alltag) that speak
 // docs/notes-sources-contract.md: each keeps its items, answers todo_items in pages and todo_complete.
 
@@ -61,6 +61,8 @@ async function withHost(opts = {}) {
     gatecontrol: '1.216.0', users: USERS, license: { required: true, licensed: true, state: 'valid', expiresAt: null },
     settings: opts.settings || {}, services: sources.map((s) => { s.entry = { plugin: s.plugin, provides: s.provides, service: s.service }; return s.entry; }),
     fetch: opts.fetch, mediaFetch: opts.mediaFetch,
+    // 1.8.0: „Meine Orte“ of the user profile (GateControl 1.298.0, tools/testing/mock-places.js) — Anna, Marc and Lena are one family
+    places: { families: [[ANNA.id, MARC.id, LENA.id]], ...(opts.places || {}) },
     ...(opts.host || {}),
   });
   await host.start();

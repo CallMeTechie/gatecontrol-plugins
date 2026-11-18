@@ -18,6 +18,7 @@ const yesterday = require('./yesterday');
 const shopping = require('./shopping');
 const places = require('./places');
 const placesearch = require('./placesearch');
+const profileplaces = require('./profileplaces');
 const famtasks = require('./famtasks');
 const drivedue = require('./drivedue');
 const { t } = require('./text');
@@ -48,6 +49,9 @@ module.exports = {
     famtasks.reset();
     drivedue.reset();
     placesearch.state.version = require('../plugin.json').version;
+    profileplaces.reset();
+    // 1.8.0: „Meine Orte“ move into the user profile (once; until it is done the background run tries again)
+    try { await profileplaces.move(gc, clock.now()); } catch (e) { gc.log.warn('places move failed', (e && (e.code || e.message)) || 'error'); }
     gc.log.info('Notizen & Aufgaben started');
   },
 
@@ -60,6 +64,11 @@ module.exports = {
     places.reset();
     // 1.3.0: „Aufgaben mit Uhrzeit in den Kalender eintragen“ switched: the events come or go with the next runs
     try { calsync.reset(); const ctx = await context(gc, null, 'de'); await calsync.touchAll(gc, ctx.today); } catch (e) { gc.log.warn('calendar marks failed', (e && (e.code || e.message)) || 'error'); }
+  },
+
+  /** 1.8.0 (permissions.places): a person's places of the profile changed — the copies follow, a deleted one stays the tasks' copy. */
+  async placesChanged(payload, gc) {
+    try { return await profileplaces.changed(gc, payload || {}, clock.now()); } catch (e) { gc.log.warn('places changed failed', (e && (e.code || e.message)) || 'error'); return null; }
   },
 
   async settingsStatus({ lang }, gc) {
@@ -81,6 +90,12 @@ module.exports = {
     const mode = placesearch.modeOf(cfg);
     const target = mode === 'own' && await placesearch.targetAssigned(gc);
     out.push({ group: 'places', tone: mode === 'off' ? 'info' : mode === 'own' && !target ? 'warn' : 'ok', text: t(l, mode === 'off' ? 'st.place_off' : mode === 'osm' ? 'st.place_osm' : target ? 'st.place_own' : 'st.place_own_missing') });
+    // 1.8.0: the move of „Meine Orte“ into the profile — how many, and what the profile refused (the tasks keep it)
+    const mv = await profileplaces.summary(gc);
+    if (mv.moved || mv.family || mv.invalid || mv.limit || mv.failed) {
+      const bad = mv.invalid + mv.limit;
+      out.push({ group: 'places', tone: bad || mv.failed ? 'warn' : 'ok', text: t(l, mv.failed && !mv.done ? 'st.place_move_failed' : bad ? 'st.place_moved_some' : 'st.place_moved', { n: mv.moved, bad, family: mv.family }) });
+    }
     return out;
   },
 

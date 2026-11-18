@@ -20,6 +20,8 @@ const store = require('../server/store');
 
 const done = async (h) => { search.state.pauseMs = search.PAUSE_MS; await h.close(); clock.set(T0); };
 const task = async (h, user, id) => (await h.ok(user, 'GET', 'tasks/' + id)).task;
+// the fence of a task's own place: 'p:' + the plugin's copy of it (1.8.0: Task.place.id is the profile's id, or null)
+const fenceOf = async (h, t) => 'p:' + (await store.one(h.host.gc, 'SELECT place_id FROM tasks WHERE id = ?', [t.id])).place_id;
 const parse = async (h, user, text) => (await h.ok(user, 'POST', 'parse', { text }));
 
 test('the parser and its vectors are as they were (Android and Windows carry the same vectors)', () => {
@@ -213,63 +215,91 @@ test('the switches: the administrator\'s (off, the public service, an own one), 
   } finally { await done(o); }
 });
 
-test('„Meine Orte“: add, change, delete; the remembered place of a kind comes first and without asking', async () => {
+test('„Meine Orte“ are the profile\'s (1.8.0): a new one goes there, changing and deleting is done there; the remembered place of a kind comes first and without asking', async () => {
   const h = await host();
   try {
     const oma = (await h.ok(ANNA, 'POST', 'places', { name: 'Oma', address: 'Gartenweg 5', lat: 52.4, lon: 13.2, clientId: 'place-oma-0001' })).place;
-    assert.deepEqual([oma.name, oma.radius, oma.named, oma.ref, oma.family], ['Oma', 150, true, null, false]);
+    assert.deepEqual([oma.name, oma.radius, oma.named, oma.ref, oma.family, oma.icon, oma.visibility, oma.own], ['Oma', 150, true, 'profile:' + oma.id, false, 'pin', 'self', true]);
+    // made in the profile — with only what the profile knows, from Notizen
+    assert.deepEqual(h.host.places.all().map((p) => [p.id, p.userId, p.name, p.address, p.radiusM, p.source]), [[oma.id, ANNA.id, 'Oma', 'Gartenweg 5', 150, 'notizen']]);
     assert.equal((await h.ok(ANNA, 'POST', 'places', { name: 'Oma', lat: 52.4, lon: 13.2, clientId: 'place-oma-0001' })).replayed, true);
-    assert.equal((await h.ok(ANNA, 'PATCH', 'places/' + oma.id, { name: 'Oma Inge', radius: 20 })).place.radius, 50, 'the radius stays between 50 and 2000 m');
-    for (const [body, field] of [[{ lat: 1, lon: 1 }, 'name'], [{ name: 'x', lat: 91, lon: 1 }, 'lat'], [{ name: 'x', lat: 1, lon: '2' }, 'lon'], [{ name: 'x', lat: 1, lon: 2, ref: 'http://x' }, 'ref']]) {
+    assert.equal(h.host.places.all().length, 1, 'sent again: the same place');
+    const dup = await h.call(ANNA, 'POST', 'places', { name: 'oma', lat: 52.41, lon: 13.21 });
+    assert.deepEqual([dup.status, dup.json.code, dup.json.field, dup.json.placeId], [409, 'duplicate', 'name', oma.id], 'the profile has every name once');
+    for (const [body, field] of [[{ lat: 1, lon: 1 }, 'name'], [{ name: 'x', lat: 91, lon: 1 }, 'lat'], [{ name: 'x', lat: 1, lon: '2' }, 'lon'], [{ name: 'x', lat: 1, lon: 2, ref: 'http://x' }, 'ref'],
+      [{ name: 'x', lat: 0, lon: 0 }, 'lat'], [{ name: 'x', lat: 1, lon: 2, icon: 'castle' }, 'icon'], [{ name: 'x', lat: 1, lon: 2, visibility: 'world' }, 'visibility']]) {
       const bad = await h.call(ANNA, 'POST', 'places', body);
-      assert.deepEqual([bad.status, bad.json.field], [400, field]);
+      assert.deepEqual([bad.status, bad.json.field], [400, field], JSON.stringify(body));
     }
+    // changing is done in „Mein Profil“: the same values again are fine, a change says where
+    assert.equal((await h.ok(ANNA, 'PATCH', 'places/' + oma.id, { name: 'Oma', address: 'Gartenweg 5', lat: 52.4, lon: 13.2, radius: 150, named: true })).place.id, oma.id);
+    const ch = await h.call(ANNA, 'PATCH', 'places/' + oma.id, { name: 'Oma Inge' });
+    assert.deepEqual([ch.status, ch.json], [409, { ok: false, code: 'profile_only', ref: 'profile:' + oma.id }]);
     assert.equal((await h.call(MARC, 'PATCH', 'places/' + oma.id, { name: 'x' })).status, 404, 'another person\'s place');
-    // a task at a search hit, remembered as „mein Baumarkt“
+    await h.host.places.update(oma.id, { name: 'Oma Inge', radiusM: 50 });
+    // a task at a search hit, remembered as „mein Baumarkt“: the hit becomes one of „Meine Orte“ in the profile
     const hit = (await h.ok(ANNA, 'POST', 'places/search', { key: 'kind:diy', near: HOME })).results[1];
     const t1 = (await h.ok(ANNA, 'POST', 'tasks', { text: 'beim Baumarkt Schrauben kaufen', place: { ref: hit.ref, name: hit.name, address: hit.address, lat: hit.lat, lon: hit.lon, key: 'kind:diy', remember: true } })).task;
     assert.equal(t1.title, 'Schrauben kaufen', 'the place\'s words leave the title');
-    assert.deepEqual([t1.place.mode, t1.place.name, t1.place.address, t1.place.ref, t1.place.trigger, t1.place.key, t1.place.label, t1.place.own, t1.place.consent, t1.place.watch, t1.place.nearby],
-      ['place', 'Baumarkt am Ring', 'Ringstraße 21, Berlin', 'osm:W102', 'enter', 'kind:diy', 'Baumarkt', false, 'accepted', true, true]);
+    const ring = h.host.places.all().find((p) => p.name === 'Baumarkt am Ring');
+    assert.deepEqual([ring.source, ring.sourceRef, ring.address], ['notizen', 'osm:W102', 'Ringstraße 21, Berlin']);
+    const t1v = await task(h, ANNA, t1.id);
+    assert.deepEqual([t1v.place.mode, t1v.place.id, t1v.place.name, t1v.place.address, t1v.place.ref, t1v.place.trigger, t1v.place.key, t1v.place.label, t1v.place.own, t1v.place.consent, t1v.place.watch, t1v.place.nearby],
+      ['place', ring.id, 'Baumarkt am Ring', 'Ringstraße 21, Berlin', 'profile:' + ring.id, 'enter', 'kind:diy', 'Baumarkt', true, 'accepted', true, true]);
     const all = await h.ok(ANNA, 'GET', 'places');
-    assert.deepEqual(all.places.map((p) => [p.name, p.named, p.favFor.map((f) => f.label)]), [['Oma Inge', true, []], ['Baumarkt am Ring', false, ['Baumarkt']]]);
-    assert.deepEqual(all.favs.map((f) => [f.key, f.label, f.uses]), [['kind:diy', 'Baumarkt', 1]]);
+    assert.deepEqual(all.places.map((p) => [p.id, p.name, p.radius, p.named, p.ref, p.favFor.map((f) => f.label)]), [[ring.id, 'Baumarkt am Ring', 150, true, 'profile:' + ring.id, ['Baumarkt']], [oma.id, 'Oma Inge', 50, true, 'profile:' + oma.id, []]]);
+    assert.deepEqual(all.favs.map((f) => [f.key, f.label, f.placeId, f.ref, f.uses]), [['kind:diy', 'Baumarkt', ring.id, 'profile:' + ring.id, 1]]);
     assert.deepEqual(all.family.map((f) => [f.familyId, f.name]), [['home', 'Zuhause'], ['place:3', 'Schule']]);
+    assert.deepEqual([all.profile, all.notMoved], [true, []]);
+    // „Genutzt von“: the open tasks at the place
+    assert.deepEqual(h.host.places.usage(ring.id), [{ plugin: 'gatecontrol-notizen', pluginName: 'Notizen & Aufgaben', kind: 'task', count: 1 }]);
     // next time: the remembered one is there without a search, and first in the list of the search
     const calls = h.net.calls.length;
     const p = (await parse(h, ANNA, 'beim Baumarkt Dübel holen')).place;
-    assert.deepEqual([p.place.name, p.uses, p.options.length], ['Baumarkt am Ring', 1, 1]);
+    assert.deepEqual([p.place.name, p.place.id, p.uses, p.options.length], ['Baumarkt am Ring', ring.id, 1, 1]);
     assert.equal(h.net.calls.length, calls);
     const auto = await h.ok(ANNA, 'POST', 'tasks', { text: 'beim Baumarkt Dübel holen', place: 'auto' });
-    assert.deepEqual([auto.task.title, auto.task.place.name, auto.place.place.name], ['Dübel holen', 'Baumarkt am Ring', 'Baumarkt am Ring']);
+    assert.deepEqual([auto.task.title, auto.task.place.name, auto.task.place.id, auto.place.place.name], ['Dübel holen', 'Baumarkt am Ring', ring.id, 'Baumarkt am Ring']);
     assert.equal((await h.ok(ANNA, 'GET', 'places')).favs[0].uses, 2, '„zuletzt zweimal gewählt“');
+    assert.equal(h.host.places.usage(ring.id)[0].count, 2);
     const list = (await h.ok(ANNA, 'POST', 'places/search', { key: 'kind:diy', near: HOME })).results;
-    assert.deepEqual(list.map((x) => [x.name, x.fav, x.uses, x.placeId != null]), [['Baumarkt am Ring', true, 2, true], ['Baumarkt Nord', false, 0, false], ['Baumarkt Süd', false, 0, false]]);
+    assert.deepEqual(list.map((x) => [x.name, x.fav, x.uses, x.placeId]), [['Baumarkt am Ring', true, 2, ring.id], ['Baumarkt Nord', false, 0, null], ['Baumarkt Süd', false, 0, null]]);
     // 'auto' takes only what is decided and surely meant: no remembered Lidl → no place; a bare kind word → no place
     const no = await h.ok(ANNA, 'POST', 'tasks', { text: 'bei Lidl Pfand wegbringen', place: 'auto' });
     assert.deepEqual([no.task.place, no.task.title, no.place.via], [null, 'bei Lidl Pfand wegbringen', 'name']);
     assert.equal((await h.ok(ANNA, 'POST', 'tasks', { text: 'Baumarkt anrufen wegen Lieferung', place: 'auto' })).task.place, null);
     assert.equal((await h.ok(ANNA, 'POST', 'tasks', { text: 'beim Baumarkt Schrauben kaufen' })).task.place, null, 'without `place` nothing is hung on (older apps)');
-    // another one for this once; remembering another one; forgetting
+    // another one for this once (not in the profile: no id); remembering it later makes it one; forgetting
     const nord = list[1];
     const t2 = (await h.ok(ANNA, 'POST', 'tasks', { title: 'Farbe', place: { ref: nord.ref, name: nord.name, address: nord.address, lat: nord.lat, lon: nord.lon, key: 'kind:diy' } })).task;
-    assert.equal((await h.ok(ANNA, 'GET', 'places')).favs[0].placeId, t1.place.id, 'still the remembered one');
-    assert.equal((await h.ok(ANNA, 'PUT', 'places/favs', { key: 'kind:diy', placeId: t2.place.id })).favs[0].placeId, t2.place.id);
+    assert.deepEqual([t2.place.ref, t2.place.own], ['osm:W101', false], 'its id is the plugin\'s, as before');
+    assert.equal((await h.ok(ANNA, 'GET', 'places')).favs[0].placeId, ring.id, 'still the remembered one');
+    const t2r = (await h.ok(ANNA, 'PATCH', 'tasks/' + t2.id, { place: { key: 'kind:diy', remember: true } })).task;
+    const nordP = h.host.places.all().find((x) => x.name === 'Baumarkt Nord');
+    assert.deepEqual([t2r.place.id, t2r.place.ref, nordP.sourceRef], [nordP.id, 'profile:' + nordP.id, 'osm:W101']);
+    assert.equal((await h.ok(ANNA, 'PUT', 'places/favs', { key: 'kind:diy', placeId: ring.id })).favs[0].placeId, ring.id);
     assert.deepEqual((await h.ok(ANNA, 'PUT', 'places/favs', { key: 'kind:diy', placeId: null })).favs, []);
+    assert.equal((await h.call(ANNA, 'PUT', 'places/favs', { key: 'kind:diy', placeId: 999 })).status, 404);
     assert.equal((await parse(h, ANNA, 'beim Baumarkt Dübel holen')).place.place, null);
     assert.equal((await parse(h, ANNA, 'beim Baumarkt Dübel holen')).place.options.length, 2, 'the ones chosen before are still offered first');
     // an own place: by name, no search, no hint at other places
     const t3 = (await h.ok(ANNA, 'POST', 'tasks', { text: 'bei Oma Inge Leiter zurückgeben', place: 'auto' })).task;
-    assert.deepEqual([t3.title, t3.place.name, t3.place.own, t3.place.key, t3.place.nearby], ['Leiter zurückgeben', 'Oma Inge', true, null, false]);
+    assert.deepEqual([t3.title, t3.place.name, t3.place.id, t3.place.radius, t3.place.own, t3.place.key, t3.place.nearby], ['Leiter zurückgeben', 'Oma Inge', oma.id, 50, true, null, false]);
     // the family's home
     const t4 = (await h.ok(ANNA, 'POST', 'tasks', { text: 'zu Hause Blumen gießen', place: 'auto' })).task;
     assert.deepEqual([t4.title, t4.place.name, t4.place.ref, t4.place.lat], ['Blumen gießen', 'Zuhause', 'familie:home', 52.5203]);
-    // deleted: gone from „Meine Orte“; the task keeps its place
-    assert.deepEqual(await h.ok(ANNA, 'DELETE', 'places/' + oma.id), { ok: true });
-    assert.deepEqual(await h.ok(ANNA, 'DELETE', 'places/' + oma.id), { ok: true, gone: true });
+    // deleting is done in „Mein Profil“; deleted there: gone from „Meine Orte“, the task keeps its copy
+    const del = await h.call(ANNA, 'DELETE', 'places/' + oma.id);
+    assert.deepEqual([del.status, del.json.code, del.json.ref], [409, 'profile_only', 'profile:' + oma.id]);
+    await h.host.places.remove(oma.id);
     assert.ok(!(await h.ok(ANNA, 'GET', 'places')).places.some((x) => x.id === oma.id));
-    assert.equal((await task(h, ANNA, t3.id)).place.name, 'Oma Inge');
+    const kept = (await task(h, ANNA, t3.id)).place;
+    assert.deepEqual([kept.name, kept.lat, kept.lon, kept.radius, kept.ref, kept.own], ['Oma Inge', 52.4, 13.2, 50, null, false]);
+    assert.equal('p:' + kept.id, await fenceOf(h, t3), 'the id is the plugin\'s copy now');
+    const j = JSON.parse((await store.one(h.host.gc, 'SELECT place_json FROM tasks WHERE id = ?', [t3.id])).place_json);
+    assert.deepEqual([j.ref, j.was, j.copy], [undefined, 'profile:' + oma.id, { name: 'Oma Inge', address: 'Gartenweg 5', lat: 52.4, lon: 13.2, radius: 50 }]);
     assert.equal((await parse(h, ANNA, 'bei Oma Inge klingeln')).place.via, 'name');
+    assert.equal((await h.call(ANNA, 'DELETE', 'places/' + oma.id)).status, 404);
   } finally { await done(h); }
 });
 
@@ -308,7 +338,7 @@ test('the place of a task: set, change, take away; „Jeder Lidl“; refused inp
     await h.ok(ANNA, 'PUT', `lists/${l.id}/members`, { members: [{ id: LENA.id, role: 'read' }] });
     const shared = (await h.ok(ANNA, 'POST', 'tasks', { title: 'Brot', listId: l.id, place: { name: 'Bäcker', lat: 52.5, lon: 13.4 } })).task;
     assert.equal((await h.call(LENA, 'PATCH', 'tasks/' + shared.id, { place: null })).status, 403);
-    assert.equal((await h.call(LENA, 'POST', `tasks/${shared.id}/place/skip`, { fence: 'p:' + shared.place.id })).status, 403);
+    assert.equal((await h.call(LENA, 'POST', `tasks/${shared.id}/place/skip`, { fence: await fenceOf(h, shared) })).status, 403);
     assert.equal((await h.call(LENA, 'POST', `tasks/${shared.id}/place/later`, {})).status, 403);
     // a place made offline is named by its clientId; an unknown one is refused until the place has arrived
     assert.deepEqual((await h.call(ANNA, 'POST', 'tasks', { title: 'Paket', place: { placeClientId: 'place-buero-0001' } })).json, { ok: false, code: 'unknown_client_id', field: 'place.placeClientId', clientId: 'place-buero-0001' });
@@ -330,12 +360,15 @@ test('what a phone watches: the tasks\' places by urgency, the other places of a
     const c = await mk('Leiter zurückgeben', { due: { date: '2026-11-07' }, important: true }, { placeId: oma.id });
     const d = await mk('Pfand wegbringen', {}, { any: true, key: 'name:lidl' });
     const e = await mk('Auto abholen', {}, { name: 'Werkstatt', lat: 52.51, lon: 13.39, trigger: 'exit' });
+    const fOma = await fenceOf(h, c);
+    const fE = await fenceOf(h, e);
+    assert.deepEqual([c.place.id, c.place.ref, e.place.ref, fE], [oma.id, 'profile:' + oma.id, null, 'p:' + e.place.id]);
     // without a position: only the tasks' own places — the overdue one first, then the one due today, then the rest (newest first)
     const w0 = await h.ok(ANNA, 'POST', 'places/watch', {});
     assert.deepEqual(w0.fences.map((f) => [f.id, f.name, f.radius, f.transitions, f.tasks.map((x) => x.taskId)]), [
-      ['p:' + oma.id, 'Oma', 150, ['enter'], [c.id]],
+      [fOma, 'Oma', 150, ['enter'], [c.id]],
       ['osm:W101', 'Baumarkt Nord', 150, ['enter'], [b.id, a.id]],
-      ['p:' + e.place.id, 'Werkstatt', 150, ['exit'], [e.id]]]);
+      [fE, 'Werkstatt', 150, ['exit'], [e.id]]]);
     assert.deepEqual([w0.max, w0.perTask, w0.refreshM, w0.cell, w0.nearby, w0.dropped, w0.search], [60, 5, 3000, null, true, 0, 'on']);
     const first = w0.fences[1].tasks[1];
     assert.deepEqual(first, { taskId: a.id, listId: a.listId, area: 'private', title: 'Schrauben kaufen', kind: 'place', trigger: 'enter', planned: null, tag: `place:${a.id}:osm:W101`, important: false, due: null,
@@ -346,9 +379,9 @@ test('what a phone watches: the tasks\' places by urgency, the other places of a
     const w = await h.ok(ANNA, 'POST', 'places/watch', { near: HOME });
     assert.deepEqual(w.cell, CELL);
     assert.deepEqual(w.fences.map((f) => [f.id, f.radius, f.tasks.map((x) => [x.taskId, x.kind, x.planned])]), [
-      ['p:' + oma.id, 150, [[c.id, 'place', null]]],
+      [fOma, 150, [[c.id, 'place', null]]],
       ['osm:W101', 150, [[b.id, 'place', null], [a.id, 'place', null]]],
-      ['p:' + e.place.id, 150, [[e.id, 'place', null]]],
+      [fE, 150, [[e.id, 'place', null]]],
       ['osm:N201', 150, [[d.id, 'place', null]]],
       ['osm:N202', 150, [[d.id, 'place', null]]],
       ['osm:W102', 300, [[b.id, 'nearby', 'Baumarkt Nord'], [a.id, 'nearby', 'Baumarkt Nord']]],
@@ -365,7 +398,7 @@ test('what a phone watches: the tasks\' places by urgency, the other places of a
     assert.equal(h.net.calls.length, calls + sent.length, 'a little further: from the cache');
     // the budget: the phone says what it has room for; the tasks' own places come first, `dropped` says what did not fit
     const cut = await h.ok(ANNA, 'POST', 'places/watch', { near: HOME, budget: 4 });
-    assert.deepEqual([cut.max, cut.fences.map((f) => f.id), cut.dropped], [4, ['p:' + oma.id, 'osm:W101', 'p:' + e.place.id, 'osm:N201'], 3]);
+    assert.deepEqual([cut.max, cut.fences.map((f) => f.id), cut.dropped], [4, [fOma, 'osm:W101', fE, 'osm:N201'], 3]);
     assert.deepEqual((await h.ok(ANNA, 'POST', 'places/watch', { near: HOME, budget: 0 })).fences, []);
     assert.equal((await h.call(ANNA, 'POST', 'places/watch', { budget: -1 })).status, 400);
     assert.equal((await h.call(ANNA, 'POST', 'places/watch', { near: { lat: 'x' } })).status, 400);
@@ -376,7 +409,7 @@ test('what a phone watches: the tasks\' places by urgency, the other places of a
     assert.equal((await task(h, ANNA, a.id)).place.skipped, 1);
     await h.ok(ANNA, 'PUT', 'prefs', { places: { nearby: false } });
     now = await h.ok(ANNA, 'POST', 'places/watch', { near: HOME });
-    assert.deepEqual([now.nearby, now.fences.map((f) => f.id)], [false, ['p:' + oma.id, 'osm:W101', 'p:' + e.place.id, 'osm:N201', 'osm:N202']]);
+    assert.deepEqual([now.nearby, now.fences.map((f) => f.id)], [false, [fOma, 'osm:W101', fE, 'osm:N201', 'osm:N202']]);
     // the person's search switched off: only the tasks' own places, nothing goes out
     await h.ok(ANNA, 'PUT', 'prefs', { places: { nearby: true, search: false } });
     search.reset(); search.state.pauseMs = 0;
@@ -386,7 +419,7 @@ test('what a phone watches: the tasks\' places by urgency, the other places of a
     assert.equal(h.net.calls.length, n);
     // done: the task is gone from the list
     await h.ok(ANNA, 'POST', `tasks/${c.id}/complete`, { done: true });
-    assert.ok(!(await h.ok(ANNA, 'POST', 'places/watch', {})).fences.some((f) => f.id === 'p:' + oma.id));
+    assert.ok(!(await h.ok(ANNA, 'POST', 'places/watch', {})).fences.some((f) => f.id === fOma));
     // Marc has nothing to watch; nothing of Anna's reaches him
     assert.deepEqual((await h.ok(MARC, 'POST', 'places/watch', { near: HOME })).fences, []);
   } finally { await done(h); }
@@ -484,7 +517,7 @@ test('a place for someone else: their phone watches it only after they agreed; a
     assert.deepEqual([(await task(h, MARC, t1.id)).place.consent, (await task(h, MARC, t1.id)).place.watch], ['pending', false]);
     assert.deepEqual((await h.ok(MARC, 'POST', 'places/watch', {})).fences, []);
     assert.deepEqual((await h.ok(ANNA, 'POST', 'places/watch', {})).fences, []);
-    assert.deepEqual(await h.ok(MARC, 'POST', 'places/fired', { taskId: t1.id, fence: 'p:' + t1.place.id, transition: 'enter' }), { ok: true, notify: false, reason: 'gone' });
+    assert.deepEqual(await h.ok(MARC, 'POST', 'places/fired', { taskId: t1.id, fence: await fenceOf(h, t1), transition: 'enter' }), { ok: true, notify: false, reason: 'gone' });
     // only Marc answers; the button of the push
     assert.equal((await h.call(ANNA, 'POST', `tasks/${t1.id}/place/consent`, { accept: true })).status, 403);
     assert.deepEqual(await h.press(MARC, ask, 'place_accept'), { ok: true, consent: 'accepted' });
@@ -533,7 +566,7 @@ test('a task with a place and a shopping list: the reminder at the place carries
   } finally { await done(h); }
 });
 
-test('the hourly purge: places taken once and deleted ones go when no task and no choice needs them', async () => {
+test('the hourly purge: places taken once, deleted ones and unused copies of the profile\'s go when no task and no choice needs them', async () => {
   const h = await host();
   try {
     const names = async () => (await store.all(h.host.gc, 'SELECT name FROM places ORDER BY id')).map((r) => r.name);
@@ -543,13 +576,15 @@ test('the hourly purge: places taken once and deleted ones go when no task and n
     const office = (await h.ok(ANNA, 'POST', 'places', { name: 'Büro', lat: 52.6, lon: 13.5 })).place;
     const gone = (await h.ok(ANNA, 'POST', 'places', { name: 'Alte Wohnung', lat: 52.7, lon: 13.6 })).place;
     await h.ok(ANNA, 'PATCH', 'tasks/' + once.id, { place: null });
-    await h.ok(ANNA, 'DELETE', 'places/' + gone.id);
-    assert.equal(await places.purge(h.host.gc, clock.now()), 1, 'the deleted one at once');
+    await h.host.places.remove(gone.id);
+    assert.equal(await places.purge(h.host.gc, clock.now()), 1, 'the copy of a place deleted in the profile, without a task: at once');
     assert.deepEqual(await names(), ['Irgendwo', 'Werkstatt', 'Baumarkt Nord', 'Büro']);
-    // a month later: the place taken once and not used any more goes; named, used and remembered ones stay
-    assert.equal(await places.purge(h.host.gc, clock.now() + 31 * 86400000), 1);
-    assert.deepEqual(await names(), ['Werkstatt', 'Baumarkt Nord', 'Büro']);
+    // a month later: the place taken once and not used any more goes, and the copy of a place of the profile nothing
+    // needs (the profile keeps it); used and remembered ones stay
+    assert.equal(await places.purge(h.host.gc, clock.now() + 31 * 86400000), 2);
+    assert.deepEqual(await names(), ['Werkstatt', 'Baumarkt Nord']);
     assert.equal((await task(h, ANNA, used.id)).place.name, 'Werkstatt');
     assert.equal(office.named, true);
+    assert.deepEqual((await h.ok(ANNA, 'GET', 'places')).places.map((p) => p.name), ['Baumarkt Nord', 'Büro']);
   } finally { await done(h); }
 });

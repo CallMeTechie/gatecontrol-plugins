@@ -10,7 +10,7 @@ here ticks it off there, tapping it opens it there.
 *Deutsch:* Eigene Aufgaben und Notizen plus alles „Zu tun“ aus den anderen Plugins an einer Stelle. Details im
 HANDBUCH.md und CHANGELOG.
 
-Needs GateControl ≥ 1.216.0 (`services.provides.<name>.maxPerHour`, `GC.keys`, `GC.mediaBytes`, `gc.events`, media
+Needs GateControl ≥ 1.298.0 (1.8.0: `gc.places`, „Meine Orte“ of the user profile; before: ≥ 1.216.0 for `services.provides.<name>.maxPerHour`, `GC.keys`, `GC.mediaBytes`, `gc.events`, media
 previews). Opening an item of another plugin from the portal uses `GC.openPortal` (GateControl ≥ 1.254.0, feature-
 detected — without it the portal says „In <Plugin> öffnen“). The move from Microsoft To Do needs GateControl Mail ≥
 1.12.0 (`gatecontrol-mail:ms_tasks_token`). The sources need their own releases that speak
@@ -168,6 +168,58 @@ second) and `vault` `{ vault, event: 'request' | 'approved', device }` — clien
 
 Opening: an item's `source.open` → apps `gatecontrol://plugin/<plugin>/<route>`, portal `GC.openPortal({ plugin,
 query: { open: route } })`; a note of Familie's notebooks is `{ plugin: 'gatecontrol-notizen', route: 'note/<id>' }`.
+
+## 1.8.0 — „Meine Orte“ live in the user profile
+
+GateControl 1.298.0 keeps a person's places in the user profile („Mein Profil › Meine Orte“: portal, Android, Windows).
+This plugin reads them through `gc.places` (version 1, `permissions.places`) and needs GateControl ≥ 1.298.0
+(`server/profileplaces.js`, `migrations/010_profile_places.sql`). Feature word `profilePlaces`.
+
+**The move (once).** At the first start of 1.8.0 — and in the background run until it is done — every person's named
+places and the ones remembered for a kind („mein Baumarkt“) go into the profile: `gc.places.importFor({ userId, places,
+source: 'notizen' })`, one call per person, `sourceRef` = the old `places.id`, only the fields the profile knows
+(`name` ≤ 60, `lat`, `lon`, `radiusM`, `address` ≤ 200). The table `place_moves` keeps old id → profile id (or why not).
+Idempotent: importFor answers an earlier import again (`created: false`), so a second run makes nothing twice.
+- Places of Familie (`ref` `familie:home` / `familie:place:<n>`) are not imported: they stay a reference to Familie.
+- What the profile refuses (`skipped`: `invalid` — e.g. no valid point —, `limit` — 100 places) stays the place of its
+  tasks (their `place_json` gets `copy` and `kept`); it is reported in `GET places` → `notMoved: [{ name, reason,
+  field }]`, in the status line of the settings and in the log.
+- Tasks at a moved place carry `place_json.ref = 'profile:<id>'` and `copy: { name, address, lat, lon, radius }`.
+
+**The copy.** Each place of the profile a task hangs on or that is remembered has a row in `places` with `profile_id`
+(and `owner_id`): what a task shows and a phone watches. The fence id stays `p:<row id>` (a moved place keeps its
+fence), the fence's `ref` is `profile:<id>`. Another person's place shared with „Familie“ / „Alle“ can be a task's place
+too (`own: false`).
+
+**Hook `placesChanged({ userId, ids, deleted })`.** The copies follow the profile (name, point, radius); a place deleted
+in the profile — or no longer visible to the person — leaves the tasks the copy (`place_json.was`, `ref` taken away,
+`Task.place.id` this plugin's id of the copy), its favourite goes. The phones get the event `places`. The hourly run compares every copy with
+the profile once more (a change while the plugin was stopped).
+
+**„Genutzt von“.** `gc.places.reportUsage({ kind: 'task', count })` — the open tasks per place (absolute), after a
+task's place changed and in the background run (done and deleted tasks); told as the owner of the place.
+
+**The API (compatible).** Every `id` / `placeId` of a place is the profile's id; `ref` is `'profile:<id>'`.
+- `GET places` → `places` = the person's own places of the profile (+ `icon`, `visibility`, `usedBy`, `favFor`),
+  `family` as before, `favs: [{ key, label, placeId, ref, uses }]` (favourites of a place of Familie are not listed),
+  `notMoved`, `profile: true`.
+- `POST places { name, lat, lon, address?, radius?, icon?, visibility?, ref?, clientId? }` makes a place of the profile
+  (importFor, `source: 'notizen'`, `sourceRef` `client:<clientId>` or `new:<uuid>`). A name the profile has already →
+  `409 duplicate { field: 'name', placeId }`; 100 places → `409 too_many`; `name` ≤ 60, never 0/0.
+- `PATCH places/<id>` — the same values (or only `named`) answer the place; a change → `409 profile_only { ref }`.
+  `DELETE places/<id>` → `409 profile_only { ref }`. gc.places v1 has no way to change or delete a place: that is done
+  in „Mein Profil › Meine Orte“ (`/api/v1/client/me/profile/places`).
+- `PUT places/favs { key, placeId | familyId | null }`; `place` of POST / PATCH tasks: `{ placeId }` or `{ ref:
+  'profile:<id>' }` for a place of the profile; `remember: true` at a hit or a point makes it a place of the profile.
+- `Task.place.id` — the profile's id when `ref` is `profile:<id>`; otherwise, as before, this plugin's id of the place
+  (a hit, a point, a place of Familie, the copy of a place deleted in the profile) — never to be sent as `placeId`.
+  `Task.place.ref` — `profile:<id>` | `osm:…` | `familie:…` | null; `own` — one of the person's own places.
+- `POST places/search` results: `placeId` is the profile's id of a place chosen before, else null.
+- `me.places.profile: { places: true, edit: 'profile' }`.
+
+**Search.** gc.places v1 has no search for plugins and a plugin cannot call the server's `GET places/search`: `POST
+places/search` stays this plugin's own (server/placesearch.js). The apps may use the server's search for „Meine Orte“
+(`GET /api/v1/client/me/places/search`).
 
 ## 1.7.0 — the reminders of Drive's deadlines ring from here
 
@@ -734,6 +786,6 @@ in the mock host's SQLite).
 
 ## Development
 
-`node tools/test.js gatecontrol-notizen` — the mock host as GateControl 1.216.0 with fake sources (`test/helpers.js`), a
+`node tools/test.js gatecontrol-notizen` — the mock host as GateControl 1.216.0 with gc.places of 1.298.0 (`tools/testing/mock-places.js`; the move and the hook: `test/profileplaces.test.js`) and fake sources (`test/helpers.js`), a
 fake Microsoft Graph and Mail (`test/mstodo.test.js`), the .nsx fixture (`node test/fixtures/build-nsx.js` writes
 `test/fixtures/sample.nsx`), the portal in a small DOM (`test/fake-dom.js`). Offline creates, changes and deletes sent twice or out of order, and the pushes' targets: `test/offline.test.js`.

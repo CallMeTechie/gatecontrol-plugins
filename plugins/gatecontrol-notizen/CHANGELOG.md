@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.8.0
+
+„Meine Orte“ ziehen ins Profil von GateControl (braucht GateControl 1.298.0).
+
+- **Ein Ort, überall:** Die gemerkten Orte („Oma“, „Büro“, „mein Baumarkt“) stehen jetzt in „Mein Profil › Meine Orte“
+  (Portal, Android, Windows) und gelten für alle Plugins. Hier liest das Plugin sie über `gc.places` (neue Berechtigung
+  `permissions.places`), Mindestversion GateControl 1.298.0 (`server/profileplaces.js`, `migrations/010_profile_places.sql`).
+- **Einmaliger Umzug beim ersten Start** (und im Hintergrund, bis er durch ist): je Person
+  `gc.places.importFor({ source: 'notizen' })`, `sourceRef` = alte ID, nur die Felder, die das Profil kennt.
+  Zuordnung alt → neu in `place_moves`. Läuft er zweimal, entsteht nichts doppelt. Orte des Familien-Plugins
+  (`familie:…`) bleiben ein Verweis auf die Familie. Was das Profil ablehnt (ungültiger Punkt, mehr als 100 Orte),
+  bleibt der Ort seiner Aufgaben und wird gemeldet (`GET places` → `notMoved`, Statuszeile, Protokoll). Ein Name, den
+  das Profil schon hat, bekommt eine Nummer („Büro 2“).
+- **Aufgaben** speichern den Verweis `profile:<id>` und eine Kopie des Orts. Ändert sich der Ort im Profil, zieht die
+  Aufgabe nach (Hook `placesChanged`); wird er dort gelöscht, behält die Aufgabe die Kopie und erinnert weiter.
+- **„Genutzt von“:** Das Profil zeigt, wie viele offene Aufgaben an einem Ort hängen (`gc.places.reportUsage`).
+- **API (kompatibel, Feature-Wort `profilePlaces`):** Orts-IDs sind die des Profils, dazu `ref`. `POST places` legt im
+  Profil an (`409 duplicate` bei gleichem Namen). `PATCH`/`DELETE places/<id>` ändern nichts mehr, sondern antworten
+  `409 profile_only` – geändert und gelöscht wird im Profil. „Als meinen Ort merken“ macht aus einem Treffer einen
+  Ort des Profils. Die Ortssuche bleibt die des Plugins.
+- Portal: „Einstellungen › Orte“ zeigt die Orte des Profils mit Verweis auf „Mein Profil › Meine Orte“; Bearbeiten und
+  Löschen gibt es dort.
+
 ## 1.7.0
 
 „Aufgaben und Erinnerungen“, Stufe 5 – an die Fristen aus Drive erinnert „Notizen & Aufgaben“.
