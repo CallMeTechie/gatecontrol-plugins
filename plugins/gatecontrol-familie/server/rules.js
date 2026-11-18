@@ -264,7 +264,8 @@ function triggerView(rule, places) {
   if (isPerson(rule.trigger)) return { type: rule.trigger, userId: rule.userId };
   if (isPlace(rule.trigger)) {
     const p = rule.placeId != null ? places.get(rule.placeId) : null;
-    return { type: rule.trigger, placeId: p ? p.id : null, placeName: p ? p.name : null, userId: rule.userId };
+    // 1.30.0: placeRef 'profile:<id>' for a profile place (a linked rule place), placeMissing when it went
+    return { type: rule.trigger, placeId: p ? p.id : null, placeName: p ? p.name : null, userId: rule.userId, placeRef: p ? p.ref : null, placeMissing: p ? p.missing : false };
   }
   if (rule.trigger === 'all_away') return { type: 'all_away', graceMinutes: rule.graceMinutes };
   if (rule.trigger === SCHOOL) {
@@ -408,7 +409,7 @@ async function create(gc, ctx, body) {
   await checkModules(f, ctx);
   if (scope === 'house' && (await store.one(gc, "SELECT COUNT(*) AS n FROM presence_rules WHERE scope = 'house'")).n >= MAX_HOUSE) throw fail('too_many');
   if (scope === 'personal' && (await store.one(gc, "SELECT COUNT(*) AS n FROM presence_rules WHERE scope = 'personal' AND owner_id = ?", [ownerId])).n >= MAX_PERSONAL) throw fail('too_many');
-  await presence.checkPlace(gc, f);
+  await presence.checkPlace(gc, f, { userId: ctx.userId, fam: ctx.fam, now: ctx.now });
   await checkOwn(gc, f, ctx.lang);
   f.actions = await presence.checkTargets(gc, f.actions, ownerId, ctx.lang);
   const lastKey = f.schedule ? conditions.initialKey(f.schedule, ctx.now, ctx.cfg.tz) : null;
@@ -416,6 +417,7 @@ async function create(gc, ctx, body) {
     owner_id, last_key, trigger_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   [f.title, f.title, scope, f.trigger, f.userId, f.placeId, f.graceMinutes, f.schedule ? JSON.stringify(f.schedule) : null, JSON.stringify(f.conditions), JSON.stringify(f.actions),
     f.active ? 1 : 0, ownerId, lastKey, f.school ? JSON.stringify(f.school) : null, ctx.now, ctx.now]);
+  if (f.placeRef) await presence.placeUsage(gc, ctx.userId, [f.placeRef]);
   return { rule: await one(gc, ctx, Number(res.lastInsertRowid)) };
 }
 
@@ -431,7 +433,8 @@ async function update(gc, ctx, raw, body) {
   const owner = cur.scope === 'house' && b.actions !== undefined ? ctx.userId : cur.ownerId;
   const f = fields(b, cur, ctx, cur.scope, owner);
   if (b.trigger !== undefined) await checkModules(f, ctx);
-  await presence.checkPlace(gc, f);
+  const oldRef = await presence.refOfPlace(gc, cur.placeId);
+  await presence.checkPlace(gc, f, { userId: ctx.userId, fam: ctx.fam, now: ctx.now });
   if (b.actions !== undefined) {
     await checkOwn(gc, f, ctx.lang);
     f.actions = await presence.checkTargets(gc, f.actions, owner, ctx.lang);
@@ -444,6 +447,7 @@ async function update(gc, ctx, raw, body) {
   [f.title, f.title, f.trigger, f.userId, f.placeId, f.graceMinutes, f.schedule ? JSON.stringify(f.schedule) : null, JSON.stringify(f.conditions), JSON.stringify(f.actions),
     f.active ? 1 : 0, owner, lastKey, f.school ? JSON.stringify(f.school) : null, ctx.now, cur.id]);
   if (!f.active) await store.run(gc, "UPDATE rule_reminders SET state = 'resolved', snooze_until = NULL WHERE rule_id = ? AND state IN ('open', 'snoozed')", [cur.id]);
+  if (oldRef || f.placeRef) await presence.placeUsage(gc, ctx.userId, [oldRef, f.placeRef].filter(Boolean));
   return { rule: await one(gc, ctx, cur.id) };
 }
 
@@ -452,9 +456,11 @@ async function remove(gc, ctx, raw) {
   const cur = await ruleOf(gc, raw);
   if (!visible(cur, ctx)) throw fail('not_found');
   if (!rights(cur, ctx)) throw fail(cur.scope === 'house' ? 'parents_only' : 'forbidden');
+  const oldRef = await presence.refOfPlace(gc, cur.placeId);
   await store.run(gc, 'DELETE FROM presence_rules WHERE id = ?', [cur.id]);
   await store.run(gc, 'DELETE FROM rule_reminders WHERE rule_id = ?', [cur.id]);
   await store.run(gc, 'DELETE FROM rule_fired WHERE rule_id = ?', [cur.id]);
+  if (oldRef) await presence.placeUsage(gc, ctx.userId, [oldRef]);
   return {};
 }
 
@@ -577,7 +583,7 @@ async function testBody(gc, ctx, body) {
   if (!SCOPES.includes(scope)) throw bad('scope');
   if (!c[scope]) throw fail(scope === 'house' ? 'parents_only' : 'forbidden', { field: 'scope' });
   const f = fields(b, null, ctx, scope, ctx.userId);
-  await presence.checkPlace(gc, f);
+  await presence.checkPlace(gc, f, { userId: ctx.userId, fam: ctx.fam, dry: true });
   const rule = { id: null, title: f.title, scope, trigger: f.trigger, userId: f.userId, placeId: f.placeId, graceMinutes: f.graceMinutes, schedule: f.schedule, school: f.school,
     conditions: f.conditions, actions: f.actions, active: f.active, ownerId: ctx.userId, lastKey: null };
   return dryRun(gc, ctx, rule);
@@ -634,7 +640,9 @@ async function options(gc, ctx) {
     })),
     actionsAvailable,
     calendars,
-    places: pres ? [...(await ruleplaces.all(gc)).values()].map((p) => ({ id: p.id, name: p.name, radius: p.radius })) : [],
+    places: pres ? [...(await ruleplaces.all(gc)).values()].filter((p) => !p.ref).map((p) => ({ id: p.id, name: p.name, radius: p.radius })) : [],
+    // 1.30.0: profile places shown to the family — a rule's placeId may be their ref ('profile:<id>')
+    profilePlaces: pres ? await ruleplaces.choosable(gc, ctx.fam, ctx.userId) : [],
     people: ctx.fam.list.map((m) => ({ userId: m.userId, name: m.name, role: m.role, ...members.faceOf(m), placesShared: !!(consent.get(m.userId) && consent.get(m.userId).places) })),
     messenger: { available: info.available === true, group: !!info.group },
     // 1.20.0: „Internet pausieren“ — parents, with „Internet zu Hause“ and GateControl ≥ 1.259.0

@@ -1,5 +1,13 @@
-<!-- version: 1.29.0 -->
+<!-- version: 1.30.0 -->
 # Family
+
+## New in 1.30.0
+
+- **My places:** a place reminder can use a place from “My profile › My places”. Point and radius come from the profile. When you move the place there, the reminder follows.
+- **Rules with your own places:** for a rule “arrives” or “leaves”, the portal offers the places you share with the family in your profiles (“Visible to family” or “Everyone”) next to the family places. A place set to “Only me” does not appear.
+- **Deleted or no longer shared:** the reminder or rule stays at the last point. The rule says “no longer shared”, and you can choose another place.
+- The profile shows for each place how many reminders and rules use it.
+- Needs GateControl 1.298.0 or newer.
 
 ## New in 1.29.0
 

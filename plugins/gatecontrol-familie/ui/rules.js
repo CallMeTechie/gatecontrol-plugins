@@ -111,7 +111,10 @@
     out.name = r.title != null ? r.title : r.name;
     out.trigger = t.type;
     out.userId = t.userId != null ? t.userId : null;
-    out.placeId = t.placeId != null ? t.placeId : null;
+    // 1.30.0: a profile place („Meine Orte“) is chosen by its ref ('profile:<id>')
+    out.placeId = t.placeRef ? t.placeRef : (t.placeId != null ? t.placeId : null);
+    out.placeRef = t.placeRef || null;
+    out.placeMissing = t.placeMissing === true;
     out.placeName = t.placeName || null;
     out.graceMinutes = t.graceMinutes != null ? t.graceMinutes : 10;
     out.schedule = t.type === 'schedule' ? { weekdays: (t.weekdays || []).slice(), time: t.time || '' } : null;
@@ -147,7 +150,20 @@
   }
 
   function isPlace(trigger) { return PLACE_TRIGGERS.indexOf(trigger) >= 0; }
-  function placeOf(data, id) { return (data.places || []).filter(function (p) { return p.id === id; })[0] || null; }
+  /** 1.30.0: the profile places a rule may choose (rules/options, else the places list) — [{ ref, name, radius, ownerName, own }]. */
+  function profilePlacesOf(data) {
+    if (data.options && Array.isArray(data.options.profilePlaces)) return data.options.profilePlaces;
+    if (!Array.isArray(data.profilePlaces)) data.profilePlaces = [];
+    return data.profilePlaces;
+  }
+  /** A rule place by its id, or (1.30.0) a profile place by its ref → { id, name, radius, profile? } | null. */
+  function placeOf(data, id) {
+    if (typeof id === 'string') {
+      var q = profilePlacesOf(data).filter(function (p) { return p.ref === id; })[0];
+      return q ? { id: q.ref, name: q.name, radius: q.radius, profile: true, ownerName: q.ownerName || null } : null;
+    }
+    return (data.places || []).filter(function (p) { return p.id === id; })[0] || null;
+  }
   /** "150 m" / "1,5 km" */
   function radiusText(m) {
     return m < 1000 ? m + ' m' : (m / 1000).toLocaleString(A.CTX.lang === 'en' ? 'en-GB' : 'de-DE', { maximumFractionDigits: 2 }) + ' km';
@@ -156,7 +172,11 @@
   function triggerText(rule, data) {
     if (rule.trigger === 'schedule') return T('rule.trigger_schedule', { days: daysText(rule.schedule && rule.schedule.weekdays), time: (rule.schedule && rule.schedule.time) || '–' });
     if (rule.trigger === 'person_home' || rule.trigger === 'person_away') return T('rule.trigger_' + rule.trigger, { name: nameOf(data, rule.userId) });
-    if (isPlace(rule.trigger)) return T('rule.trigger_' + rule.trigger, { name: rule.userId ? nameOf(data, rule.userId) : T('rule.someone'), place: rule.placeName || '–' });
+    if (isPlace(rule.trigger)) {
+      // 1.30.0: a profile place that went or is hidden now — the rule keeps the last point
+      var pn = (rule.placeName || '–') + (rule.placeMissing ? ' (' + T('rule.m_place_profile_gone') + ')' : '');
+      return T('rule.trigger_' + rule.trigger, { name: rule.userId ? nameOf(data, rule.userId) : T('rule.someone'), place: pn });
+    }
     if (rule.trigger === SCHOOL) return schoolText(rule.userId, rule.school, data);
     return T('rule.trigger_' + rule.trigger);
   }
@@ -344,7 +364,8 @@
       probe: null,
       name: r.name || '', trigger: r.trigger, userId: r.userId != null && !isPlace(r.trigger) ? r.userId : (people[0] ? people[0].userId : null),
       // a place rule: the person (null = anyone who shares places) and the place
-      placeUser: isPlace(r.trigger) ? r.userId : null, placeId: r.placeId != null ? r.placeId : ((data.places || [])[0] ? data.places[0].id : null),
+      placeUser: isPlace(r.trigger) ? r.userId : null,
+      placeId: r.placeRef ? r.placeRef : (r.placeId != null ? r.placeId : ((data.places || [])[0] ? data.places[0].id : (profilePlacesOf(data)[0] ? profilePlacesOf(data)[0].ref : null))),
       grace: r.graceMinutes == null ? 10 : r.graceMinutes, active: r.active !== false,
       window: !!(r.conditions && r.conditions.time), from: r.conditions && r.conditions.time ? r.conditions.time.from : '22:00', to: r.conditions && r.conditions.time ? r.conditions.time.to : '06:00',
       sun: !!(r.conditions && r.conditions.afterSunset),
@@ -605,17 +626,32 @@
         el('span', { class: 'fa-rm-label', id: uid + '-pwho', text: T('rule.m_who') }),
         el('div', { class: 'fa-rm-people', role: 'group', 'aria-labelledby': uid + '-pwho' }, chips),
       ]));
-      var list = data.places || [];
+      var fams = data.places || [];
+      // 1.30.0: „Meine Orte“ of the profile the owners show to the family — chosen by ref, kept by Familie as a copy
+      var profs = profilePlacesOf(data);
+      var list = fams.map(function (p) { return { value: String(p.id), id: p.id, text: p.name + ' · ' + radiusText(p.radius) }; });
+      var plist = profs.map(function (p) {
+        return { value: p.ref, id: p.ref, text: p.name + ' · ' + (p.gone ? T('rule.m_place_profile_gone') : radiusText(p.radius) + (p.ownerName ? ' · ' + p.ownerName : '')) };
+      });
       // „Orte verwalten“ only for who may (the admin page, parents in the portal)
       var manage = opts.managePlaces === false ? null : el('button', { type: 'button', class: 'fa-rm-link', 'data-k': 'places-manage', on: { click: function () { managePlaces(data, opts, placesChanged); } } }, [A.svg(ICON.pin, 14), T('rule.m_places_manage')]);
       var row;
-      if (list.length) {
-        var sel = el('select', { class: 'form-select fa-rm-select', id: uid + '-place', 'data-k': 'place' }, list.map(function (p) {
-          return el('option', { value: String(p.id), text: p.name + ' · ' + radiusText(p.radius) });
-        }));
-        if (!placeOf(data, st.placeId)) st.placeId = list[0].id;
+      // the rule's own profile place stays choosable when the owner hides it later (the copy still holds)
+      var own = r.placeRef || null;
+      if (own && st.placeId === own && !plist.some(function (p) { return p.id === own; })) {
+        plist.push({ value: own, id: own, text: (r.placeName || own) + ' · ' + T('rule.m_place_profile_gone') });
+        profilePlacesOf(data).push({ ref: own, name: r.placeName || own, radius: null, gone: true });
+      }
+      if (list.length || plist.length) {
+        var opt2 = function (p) { return el('option', { value: p.value, text: p.text }); };
+        // without profile places the select of before; with them two groups („Familie-Orte“, „Meine Orte“)
+        var kids = !plist.length ? list.map(opt2) : (list.length ? [el('optgroup', { label: T('rule.m_places_family') }, list.map(opt2))] : [])
+          .concat([el('optgroup', { label: T('rule.m_places_profile') }, plist.map(opt2))]);
+        var sel = el('select', { class: 'form-select fa-rm-select', id: uid + '-place', 'data-k': 'place' }, kids);
+        var all = list.concat(plist);
+        if (!all.some(function (p) { return p.id === st.placeId; })) st.placeId = all[0].id;
         sel.value = String(st.placeId);
-        sel.addEventListener('change', function () { st.placeId = Number(sel.value); renderFlow(); });
+        sel.addEventListener('change', function () { st.placeId = /^profile:/.test(sel.value) ? sel.value : Number(sel.value); renderFlow(); });
         row = sel;
       } else {
         st.placeId = null;
@@ -999,7 +1035,7 @@
       var pl = place() ? placeOf(data, st.placeId) : null;
       var who = st.trigger === 'schedule' ? T('rule.trigger_schedule', { days: daysText(st.days.slice().sort()), time: st.at || '–' })
         : (person() ? T('rule.trigger_' + st.trigger, { name: nameOf(data, st.userId) })
-          : (place() ? T('rule.trigger_' + st.trigger, { name: st.placeUser == null ? T('rule.someone') : nameOf(data, st.placeUser), place: pl ? pl.name + ' (' + radiusText(pl.radius) + ')' : '…' })
+          : (place() ? T('rule.trigger_' + st.trigger, { name: st.placeUser == null ? T('rule.someone') : nameOf(data, st.placeUser), place: pl ? pl.name + (pl.radius ? ' (' + radiusText(pl.radius) + ')' : '') : '…' })
             : (st.trigger === SCHOOL ? schoolText(st.schoolUser, { kinds: st.kinds.length ? st.kinds : ['cancelled'], days: st.schoolDays }, data) : T('rule.trigger_' + st.trigger))));
       var parts = [who + (st.trigger === 'all_away' && st.grace > 0 ? ' (' + T('rule.m_s_grace', { n: st.grace }) + ')' : '')];
       if (st.window && st.from && st.to) parts.push(T('rule.m_s_window', { from: st.from, to: st.to }));
