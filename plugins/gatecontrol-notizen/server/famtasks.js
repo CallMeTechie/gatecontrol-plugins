@@ -350,7 +350,9 @@ async function fields(gc, base, fam, f) {
 async function placeRow(gc, base, cur, x) {
   const p = x.place;
   const name = line(t(base.notifyLang, 'fam.place_name', { title: x.title }), 80);
-  const have = cur && cur.place_id ? await store.one(gc, 'SELECT * FROM places WHERE id = ? AND user_id = ? AND deleted_at IS NULL', [cur.place_id, p.owner]) : null;
+  const was = cur && cur.place_id ? await store.one(gc, 'SELECT * FROM places WHERE id = ? AND user_id = ? AND deleted_at IS NULL', [cur.place_id, p.owner]) : null;
+  // 1.8.0: the copy of a place of the profile follows the profile, not Familie — another point is a row of its own
+  const have = was && was.profile_id && (was.lat !== p.lat || was.lon !== p.lon || was.radius !== p.radius) ? null : was;
   if (have) {
     if (have.lat !== p.lat || have.lon !== p.lon || have.radius !== p.radius || (!have.named && have.name !== name)) {
       await store.run(gc, 'UPDATE places SET lat = ?, lon = ?, radius = ?, name = ?, updated_at = ? WHERE id = ?', [p.lat, p.lon, p.radius, have.named ? have.name : name, base.now, have.id]);

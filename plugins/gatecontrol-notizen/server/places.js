@@ -19,12 +19,17 @@
 //   POST | PATCH tasks { place: null | { placeId | placeClientId | familyId | lat, lon, name, address?, ref? | any: true, key?, label?,
 //                  trigger?, radius?, remember? } }      remember: this place is „mein Baumarkt“ from now on
 //
-//   GET    places                 → { places: [Place], family: [FamilyPlace], favs: [{ key, label, placeId }] }
-//   POST   places { name, lat, lon, address?, radius?, ref?, clientId? } → { place }       one of „Meine Orte“
-//   PATCH  places/<id> { name?, address?, lat?, lon?, radius?, named? }  → { place }
-//   DELETE places/<id>            → { ok }   (tasks that hang on it keep it)
-//   PUT    places/favs { key, placeId | null } → { favs }
+//   1.8.0: „Meine Orte“ are the places of the user profile (server/profileplaces.js, gc.places). Every `id` / `placeId`
+//   of a place is the profile's id, `ref` is 'profile:<id>'; a task keeps a copy of its place (a row of `places`).
+//
+//   GET    places                 → { places: [Place], family: [FamilyPlace], favs: [{ key, label, placeId, ref }], notMoved, profile: true }
+//   POST   places { name, lat, lon, address?, radius?, icon?, visibility?, ref?, clientId? } → { place }   a new place of the profile
+//   PATCH  places/<id> { name?, address?, lat?, lon?, radius?, icon?, visibility? } → { place }   (gc.places.update, own only)
+//   DELETE places/<id> [?force=1] → { ok }   (gc.places.remove, own only; tasks keep the place) — another plugin still
+//                                   uses it: 409 in_use { usedBy, ref } unless force
+//   PUT    places/favs { key, placeId | familyId | null } → { favs }
 //   POST   places/search { key | q, address?, near: { lat, lon } | nearPlaceId | nearFamilyId } → { results, … }
+//          (1.8.0: an address through the server's search, gc.places.search; a kind or a name as before, placesearch.js)
 //   POST   places/watch { near?, budget? } → { fences, … }
 //   POST   places/fired { taskId, fence, transition } → { notify, reason? }
 //   POST   tasks/<id>/place/skip { fence }   „Nicht hier“      POST tasks/<id>/place/later { until? }   „Später“
@@ -41,9 +46,10 @@ const clientIds = require('./clientids');
 const pushprefs = require('./pushprefs');
 const shopping = require('./shopping');
 const search = require('./placesearch');
+const pp = require('./profileplaces');
 const words = require('./placewords');
 const { t } = require('./text');
-const { fail, posInt, line, parse, bool, isTime } = require('./util');
+const { fail, posInt, line, parse, isTime } = require('./util');
 
 const FAMILIE = 'gatecontrol-familie';
 const NAME_MAX = 80;
@@ -52,9 +58,10 @@ const RADIUS_MIN = 50;
 const RADIUS_MAX = 2000;
 const RADIUS_DEFAULT = 150;
 const NEARBY_RADIUS = 300;      // „ist gleich hier“: a wider circle around the other places of a kind
-const PLACES_MAX = 100;         // „Meine Orte“ of one person
 const TRIGGERS = ['enter', 'exit'];
 const REF_RE = /^osm:[NWR]\d{1,18}$/;
+const ICONS = ['home', 'work', 'school', 'gym', 'shop', 'family', 'pin'];
+const VISIBILITY = ['self', 'family', 'all'];
 const FENCE_RE = /^(?:p:\d{1,15}|osm:[NWR]\d{1,18})$/;
 // Android: 100 watched places per app and device. Familie's place reminders (up to 50 a person) and rule places (up to
 // 20) come first; RESERVE stays free. Without an answer of Familie about what it uses, the worst case is assumed.
@@ -113,33 +120,42 @@ function clampRadius(v) {
 }
 const coord = (v, max, field) => { const n = typeof v === 'number' ? v : NaN; if (!Number.isFinite(n) || Math.abs(n) > max) throw fail('invalid', { field }); return Math.round(n * 1e6) / 1e6; };
 
-/** A places row → the API's Place. */
+/**
+ * A places row (the copy of a place a task hangs on or that was chosen) → the API's Place. `id` is the profile's id
+ * (null: a hit of the search, a point on the map, a place of the family — `ref` / `familyId` say which).
+ */
 function view(r, extra = {}) {
-  return { id: r.id, name: r.name, address: r.address || '', lat: r.lat, lon: r.lon, radius: r.radius, named: !!r.named, ref: r.ref || null,
-    family: !!(r.ref && r.ref.startsWith('familie:')), ...(extra.favFor ? { favFor: extra.favFor } : {}), ...(extra.uses != null ? { uses: extra.uses } : {}), updatedAt: r.updated_at };
+  const fam = !!(r.ref && r.ref.startsWith('familie:'));
+  return { id: r.profile_id || null, name: r.name, address: r.address || '', lat: r.lat, lon: r.lon, radius: r.radius, named: !!(r.named && r.profile_id),
+    ref: r.profile_id ? pp.refOf(r.profile_id) : r.ref || null, family: fam, ...(fam ? { familyId: r.ref.slice(8) } : {}),
+    ...(extra.favFor ? { favFor: extra.favFor } : {}), ...(extra.uses != null ? { uses: extra.uses } : {}), updatedAt: r.updated_at };
 }
 
-const own = (gc, userId) => store.all(gc, 'SELECT * FROM places INDEXED BY idx_places_user WHERE user_id = ? AND deleted_at IS NULL ORDER BY named DESC, name COLLATE NOCASE, id LIMIT 1000', [userId]);
-const picksOf = (gc, userId) => store.all(gc, 'SELECT * FROM place_picks WHERE user_id = ? ORDER BY fav DESC, uses DESC, used_at DESC LIMIT 2000', [userId]);
+const picksOf = (gc, userId) => store.all(gc, `SELECT k.*, p.profile_id AS p_profile, p.ref AS p_ref FROM place_picks k JOIN places p ON p.id = k.place_id AND p.deleted_at IS NULL
+  WHERE k.user_id = ? ORDER BY k.fav DESC, k.uses DESC, k.used_at DESC LIMIT 2000`, [userId]);
 
-async function mine(gc, userId, id) {
-  const pid = posInt(id);
-  const r = pid ? await store.one(gc, 'SELECT * FROM places WHERE id = ? AND user_id = ? AND deleted_at IS NULL', [pid, userId]) : null;
-  if (!r) throw fail('not_found', { field: 'place' });
-  return r;
+/** The person's copy of a place of the profile they may see (`id` the profile's id) → the row id. */
+async function copyFor(gc, ctx, id, field) {
+  const p = await pp.get(gc, ctx.userId, id);
+  if (!p) throw fail('not_found', { field: field || 'place' });
+  return { rowId: await pp.mirror(gc, ctx.userId, p, ctx.now), place: p };
 }
 
-/** GET places — „Meine Orte“: the named ones and those remembered for a kind or a name; the family's; the remembered. */
+/** GET places — „Meine Orte“ (the profile's, with what each is remembered for here); the family's; the remembered. */
 async function all(gc, ctx) {
-  const rows = await own(gc, ctx.userId);
-  const picks = await picksOf(gc, ctx.userId);
-  const favs = picks.filter((p) => p.fav);
+  await pp.move(gc, ctx.now);
+  const mine = await pp.own(gc, ctx.userId);
+  const favs = (await picksOf(gc, ctx.userId)).filter((p) => p.fav);
   const byPlace = new Map();
-  for (const p of favs) { if (!byPlace.has(p.place_id)) byPlace.set(p.place_id, []); byPlace.get(p.place_id).push({ key: p.key, label: words.labelOf(p.key, ctx.lang) }); }
+  for (const p of favs) { if (!p.p_profile) continue; if (!byPlace.has(p.p_profile)) byPlace.set(p.p_profile, []); byPlace.get(p.p_profile).push({ key: p.key, label: words.labelOf(p.key, ctx.lang) }); }
+  const ids = new Set(mine.map((p) => p.id));
   return {
-    places: rows.filter((r) => r.named || byPlace.has(r.id)).map((r) => view(r, { favFor: byPlace.get(r.id) || [] })),
+    places: mine.map((p) => pp.view(p, { favFor: byPlace.get(p.id) || [] })),
     family: (await familyPlaces(gc, ctx.userId)).map((p) => ({ familyId: p.id, name: p.name, lat: p.lat, lon: p.lon, radius: p.radius })),
-    favs: favs.filter((p) => rows.some((r) => r.id === p.place_id)).map((p) => ({ key: p.key, label: words.labelOf(p.key, ctx.lang), placeId: p.place_id, uses: p.uses })),
+    favs: favs.filter((p) => p.p_profile && ids.has(p.p_profile)).map((p) => ({ key: p.key, label: words.labelOf(p.key, ctx.lang), placeId: p.p_profile, ref: pp.refOf(p.p_profile), uses: p.uses })),
+    // what the profile refused when „Meine Orte“ moved there (1.8.0) — the tasks keep it as their place
+    notMoved: await pp.notMoved(gc, ctx.userId),
+    profile: true,
   };
 }
 
@@ -153,69 +169,87 @@ function iso(ctx, ms) {
   return `${tz.dateStr(p.y, p.m, p.d)}T${tz.pad(p.hh)}:${tz.pad(p.mm)}:${tz.pad(p.ss)}${off < 0 ? '-' : '+'}${tz.pad(Math.floor(a / 60))}:${tz.pad(a % 60)}`;
 }
 
-/** POST places — one of „Meine Orte“ (a place already taken once with the same ref becomes it). */
+/** POST places — a new place of the profile (gc.places.create); a hit of the search keeps its tasks. */
 async function create(gc, ctx, b) {
   const cid = clientIds.arg(b.clientId);
-  if (cid) { const have = await clientIds.find(gc, ctx.userId, cid, 'place'); if (have) { try { return { place: view(await mine(gc, ctx.userId, have)), clientId: cid, replayed: true }; } catch { throw clientIds.gone(cid, have); } } }
-  const name = line(b.name, NAME_MAX);
+  if (cid) {
+    const have = await clientIds.find(gc, ctx.userId, cid, 'place');
+    if (have) { const p = await pp.get(gc, ctx.userId, have); if (!p) throw clientIds.gone(cid, have); return { place: pp.view(p), clientId: cid, replayed: true }; }
+  }
+  const name = line(b.name, pp.NAME_MAX);
   if (!name) throw fail('invalid', { field: 'name' });
-  const f = { name, address: line(b.address, ADDRESS_MAX), lat: coord(b.lat, 90, 'lat'), lon: coord(b.lon, 180, 'lon'), radius: b.radius === undefined ? RADIUS_DEFAULT : clampRadius(b.radius) };
+  const f = { name, address: line(b.address, pp.ADDRESS_MAX), lat: coord(b.lat, 90, 'lat'), lon: coord(b.lon, 180, 'lon'), radius: b.radius === undefined ? RADIUS_DEFAULT : clampRadius(b.radius) };
+  if ((f.lat === 0 && f.lon === 0)) throw fail('invalid', { field: 'lat' });
+  if (b.icon !== undefined) { if (typeof b.icon !== 'string' || !ICONS.includes(b.icon)) throw fail('invalid', { field: 'icon' }); f.icon = b.icon; }
+  if (b.visibility !== undefined) { if (typeof b.visibility !== 'string' || !VISIBILITY.includes(b.visibility)) throw fail('invalid', { field: 'visibility' }); f.visibility = b.visibility; }
   const ref = b.ref == null ? null : (typeof b.ref === 'string' && REF_RE.test(b.ref) ? b.ref : undefined);
   if (ref === undefined) throw fail('invalid', { field: 'ref' });
-  const n = await store.one(gc, 'SELECT COUNT(*) AS n FROM places INDEXED BY idx_places_user WHERE user_id = ? AND deleted_at IS NULL AND named = 1', [ctx.userId]);
-  if (n.n >= PLACES_MAX) throw fail('too_many');
-  const id = await store.tx(gc, async () => {
-    const have = ref ? await store.one(gc, 'SELECT id FROM places WHERE user_id = ? AND ref = ? AND deleted_at IS NULL', [ctx.userId, ref]) : null;
-    let pid;
-    if (have) {
-      await store.run(gc, 'UPDATE places SET name = ?, address = ?, lat = ?, lon = ?, radius = ?, named = 1, updated_at = ? WHERE id = ?', [f.name, f.address, f.lat, f.lon, f.radius, ctx.now, have.id]);
-      pid = have.id;
-    } else {
-      pid = Number((await store.run(gc, 'INSERT INTO places (user_id, name, address, lat, lon, radius, named, ref, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)',
-        [ctx.userId, f.name, f.address, f.lat, f.lon, f.radius, ref, ctx.now, ctx.now])).lastInsertRowid);
-    }
-    await clientIds.claim(gc, ctx, cid, 'place', pid);
-    return pid;
+  let place;
+  try { place = await pp.createOne(gc, ctx.userId, f); } catch (e) { throw await duplicate(gc, ctx, e, name); }
+  await store.tx(gc, async () => {
+    // a hit taken once before („Baumarkt Nord“ of a task) becomes the copy of the new place: its tasks follow it
+    const was = ref ? await store.one(gc, 'SELECT id FROM places WHERE user_id = ? AND ref = ? AND deleted_at IS NULL AND profile_id IS NULL', [ctx.userId, ref]) : null;
+    const rowId = await pp.mirror(gc, ctx.userId, place, ctx.now, was ? was.id : null);
+    if (was) { const row = await store.one(gc, 'SELECT * FROM places WHERE id = ?', [rowId]); await pp.retag(gc, rowId, place.ref || pp.refOf(place.id), pp.jsonCopy(row)); }
+    await clientIds.claim(gc, ctx, cid, 'place', place.id);
   });
   told(gc, [ctx.userId]);
-  return { place: view(await mine(gc, ctx.userId, id)), ...(cid ? { clientId: cid } : {}) };
+  return { place: pp.view(place), ...(cid ? { clientId: cid } : {}) };
 }
 
-/** Everybody who sees an open task at this place (their phones watch it). */
-async function watchers(gc, placeId) {
-  const rows = await store.all(gc, 'SELECT DISTINCT m.user_id FROM tasks t INDEXED BY idx_tasks_place_id JOIN list_members m ON m.list_id = t.list_id WHERE t.place_id = ? AND t.done_at IS NULL AND t.deleted_at IS NULL LIMIT 500', [placeId]);
-  return rows.map((r) => r.user_id);
+/** 409 duplicate of the profile (a name once, without upper / lower case) → with the id of the place that has it. */
+async function duplicate(gc, ctx, e, name) {
+  if (!e || e.code !== 'duplicate') return e;
+  const same = (await pp.own(gc, ctx.userId).catch(() => [])).find((p) => p.name.toLowerCase() === String(name).toLowerCase());
+  return fail('duplicate', { field: 'name', ...(same ? { placeId: same.id } : {}) });
 }
 
-/** PATCH places/<id> */
+/**
+ * PATCH places/<id> { name?, address?, lat?, lon?, radius?, icon?, visibility? } — one of the person's own places of
+ * the profile (gc.places.update; another's or an unknown one: 404). Only what differs goes to the profile; lat or lon
+ * alone keeps the other; `named` (1.7) is left alone — a place of the profile stays one (DELETE takes it away).
+ */
 async function update(gc, ctx, id, b) {
-  const r = await mine(gc, ctx.userId, id);
-  const set = [];
-  const args = [];
-  const put = (col, v) => { if (v !== r[col]) { set.push(col + ' = ?'); args.push(v); } };
-  if (b.name !== undefined) { const name = line(b.name, NAME_MAX); if (!name) throw fail('invalid', { field: 'name' }); put('name', name); }
-  if (b.address !== undefined) put('address', line(b.address, ADDRESS_MAX));
-  if (b.lat !== undefined) put('lat', coord(b.lat, 90, 'lat'));
-  if (b.lon !== undefined) put('lon', coord(b.lon, 180, 'lon'));
-  if (b.radius !== undefined) put('radius', clampRadius(b.radius));
-  if (b.named !== undefined) put('named', bool(b.named) ? 1 : 0);
-  if (set.length) {
-    await store.run(gc, `UPDATE places SET ${set.join(', ')}, updated_at = ? WHERE id = ?`, [...args, ctx.now, r.id]);
-    told(gc, [...new Set([ctx.userId, ...(await watchers(gc, r.id))])]);
+  const p = await pp.mine(gc, ctx.userId, id);
+  const patch = {};
+  if (b.name !== undefined) { const name = line(b.name, pp.NAME_MAX); if (!name) throw fail('invalid', { field: 'name' }); if (name !== p.name) patch.name = name; }
+  if (b.address !== undefined) { const a = line(b.address, pp.ADDRESS_MAX); if (a !== (p.address || '')) patch.address = a || null; }
+  if (b.lat !== undefined || b.lon !== undefined) {
+    const lat = b.lat === undefined ? p.lat : coord(b.lat, 90, 'lat');
+    const lon = b.lon === undefined ? p.lon : coord(b.lon, 180, 'lon');
+    if (lat === 0 && lon === 0) throw fail('invalid', { field: 'lat' });
+    if (lat !== p.lat || lon !== p.lon) { patch.lat = lat; patch.lon = lon; }
   }
-  return { place: view(await mine(gc, ctx.userId, r.id)) };
+  if (b.radius !== undefined) { const r = clampRadius(b.radius); if (r !== p.radiusM) patch.radiusM = r; }
+  if (b.icon !== undefined) { if (typeof b.icon !== 'string' || !ICONS.includes(b.icon)) throw fail('invalid', { field: 'icon' }); if (b.icon !== (p.icon || 'pin')) patch.icon = b.icon; }
+  if (b.visibility !== undefined) {
+    if (typeof b.visibility !== 'string' || !VISIBILITY.includes(b.visibility)) throw fail('invalid', { field: 'visibility' });
+    if (b.visibility !== (p.visibility || 'self')) patch.visibility = b.visibility;
+  }
+  if (!Object.keys(patch).length) return { place: pp.view(p) };
+  let place;
+  try { place = await pp.updateOne(gc, ctx.userId, p.id, patch); } catch (e) { throw await duplicate(gc, ctx, e, patch.name || ''); }
+  // the copies follow at once (the hook placesChanged comes as well and then finds nothing to do)
+  await pp.changed(gc, { userId: ctx.userId, ids: [p.id], deleted: false }, ctx.now);
+  told(gc, [ctx.userId]);
+  return { place: pp.view(place) };
 }
 
-/** DELETE places/<id> — gone from „Meine Orte“ and from what is remembered; a task that hangs on it keeps it. */
-async function remove(gc, ctx, id) {
-  const pid = posInt(id);
-  const r = pid ? await store.one(gc, 'SELECT * FROM places WHERE id = ? AND user_id = ?', [pid, ctx.userId]) : null;
-  if (!r) throw fail('not_found', { field: 'place' });
-  if (r.deleted_at) return { ok: true, gone: true };
-  await store.tx(gc, async () => {
-    await store.run(gc, 'UPDATE places SET deleted_at = ?, updated_at = ? WHERE id = ?', [ctx.now, ctx.now, r.id]);
-    await store.run(gc, 'DELETE FROM place_picks INDEXED BY idx_place_picks_place WHERE place_id = ?', [r.id]);
-  });
+/**
+ * DELETE places/<id> [?force=1] — one of the person's own places of the profile (gc.places.remove; another's or an
+ * unknown one: 404). As in 1.7 a task that hangs on it keeps it (its copy, place_json) and what is remembered for it
+ * goes. Notizen's own „Genutzt von“ goes to 0 first; another plugin that still uses the place (Messenger, Familie) →
+ * 409 in_use { usedBy: [{ plugin, pluginName, kind, count }], ref } — with force=1 it is deleted all the same.
+ */
+async function remove(gc, ctx, id, q = {}, b = {}) {
+  const p = await pp.mine(gc, ctx.userId, id);
+  const force = q.force === '1' || q.force === 'true' || (b && b.force === true);
+  try { await pp.removeOne(gc, ctx.userId, p.id, { force, now: ctx.now }); } catch (e) {
+    if (e && e.code === 'in_use') throw fail('in_use', { ...e.extra, ref: pp.refOf(p.id) });
+    throw e;
+  }
+  // the tasks keep their copy (the hook placesChanged comes as well and then finds nothing to do)
+  await pp.changed(gc, { userId: ctx.userId, ids: [p.id], deleted: true }, ctx.now);
   told(gc, [ctx.userId]);
   return { ok: true };
 }
@@ -223,8 +257,14 @@ async function remove(gc, ctx, id) {
 /** PUT places/favs { key, placeId | null } — „mein Baumarkt“: one place per kind or name. */
 async function setFav(gc, ctx, b) {
   if (!b || !words.validKey(b.key)) throw fail('invalid', { field: 'key' });
-  const place = b.placeId == null ? null : await mine(gc, ctx.userId, b.placeId);
-  await store.tx(gc, () => favTx(gc, ctx, b.key, place ? place.id : null));
+  let rowId = null;
+  if (b.placeId != null) rowId = (await copyFor(gc, ctx, b.placeId)).rowId;
+  else if (b.familyId != null) {
+    const f = (await familyPlaces(gc, ctx.userId)).find((p) => p.id === b.familyId);
+    if (!f) throw fail('not_found', { field: 'place' });
+    rowId = await upsert(gc, ctx, { ref: 'familie:' + f.id, name: f.name, address: '', lat: f.lat, lon: f.lon, radius: f.radius });
+  }
+  await store.tx(gc, () => favTx(gc, ctx, b.key, rowId));
   told(gc, [ctx.userId]);
   return { favs: (await all(gc, ctx)).favs };
 }
@@ -260,11 +300,14 @@ function taskView(ctx, r, placeRows) {
   const p = r.place_id && placeRows ? placeRows.get(r.place_id) : null;
   if (!j.any && !p) return null;
   const st = stateOf(r);
-  const named = !!(p && p.named && p.user_id === ctx.userId);
+  // 1.8.0: one of „Meine Orte“ of this person — a place of their profile (id is the profile's id)
+  const named = !!(p && p.profile_id && p.named && p.user_id === ctx.userId);
   const label = j.key ? words.labelOf(j.key, ctx.lang, j.label) : null;
   return {
-    mode: j.any ? 'any' : 'place', id: p ? p.id : null, name: p ? p.name : t(ctx.lang, 'pl.any', { label: label || '' }), address: p ? p.address || '' : '',
-    lat: p ? p.lat : null, lon: p ? p.lon : null, radius: p ? p.radius : null, ref: p ? p.ref || null : null, own: named,
+    // 1.8.0: id — the profile's id when ref is 'profile:<id>'; else, as before, the plugin's id of the place (a hit, a
+    // point, a place of Familie, the copy of a place deleted in the profile) — no `placeId` to send back
+    mode: j.any ? 'any' : 'place', id: p ? p.profile_id || p.id : null, name: p ? p.name : t(ctx.lang, 'pl.any', { label: label || '' }), address: p ? p.address || '' : '',
+    lat: p ? p.lat : null, lon: p ? p.lon : null, radius: p ? p.radius : null, ref: p ? (p.profile_id ? pp.refOf(p.profile_id) : p.ref || null) : null, own: named,
     trigger: j.trigger === 'exit' ? 'exit' : 'enter', key: j.key || null, label, by: j.by || null,
     consent: j.consent || 'accepted', watch: j.who === ctx.userId && (j.consent || 'accepted') === 'accepted',
     // 1.6.0: mine — it is this person's phone that is to watch the place; canConsent — they may answer (POST
@@ -289,24 +332,30 @@ async function argFor(gc, ctx, cur, v) {
   let placeId = cur ? cur.place_id || null : null;
   let any = !!(was && was.any);
   let chosen = false;
+  let profileRef = was && !v.any && v.placeId == null && v.placeClientId == null && v.familyId == null && v.lat === undefined && v.lon === undefined ? was.ref || null : null;
+  const pref = v.lat === undefined && v.lon === undefined ? pp.parseRef(v.ref) : null;
   if (v.any === true) {
     if (!key) throw fail('invalid', { field: 'place.key' });
     placeId = null; any = true; chosen = true;
-  } else if (v.placeId != null || v.placeClientId != null) {
-    // one of the person's places — or one made offline on the device, named by the clientId it was made with
-    const pid = v.placeId != null ? v.placeId : await clientIds.resolve(gc, ctx, v.placeClientId, 'place', 'place.placeClientId');
-    placeId = (await mine(gc, ctx.userId, pid)).id; any = false; chosen = true;
+  } else if (v.placeId != null || v.placeClientId != null || pref) {
+    // a place of the profile (1.8.0: its id or 'profile:<id>') — or one made offline on the device, named by the
+    // clientId it was made with; the task hangs on the person's copy of it
+    const pid = v.placeId != null ? v.placeId : pref || await clientIds.resolve(gc, ctx, v.placeClientId, 'place', 'place.placeClientId');
+    const c = await copyFor(gc, ctx, pid, 'place');
+    placeId = c.rowId; profileRef = pp.refOf(c.place.id); any = false; chosen = true;
   } else if (v.familyId != null) {
     const f = (await familyPlaces(gc, ctx.userId)).find((p) => p.id === v.familyId);
     if (!f) throw fail('not_found', { field: 'place' });
     placeId = await upsert(gc, ctx, { ref: 'familie:' + f.id, name: f.name, address: '', lat: f.lat, lon: f.lon, radius: f.radius });
-    any = false; chosen = true;
+    profileRef = null; any = false; chosen = true;
   } else if (v.lat !== undefined || v.lon !== undefined) {
     const name = line(v.name, NAME_MAX);
     if (!name) throw fail('invalid', { field: 'place.name' });
     if (v.ref != null && (typeof v.ref !== 'string' || !REF_RE.test(v.ref))) throw fail('invalid', { field: 'place.ref' });
     placeId = await upsert(gc, ctx, { ref: v.ref || null, name, address: line(v.address, ADDRESS_MAX), lat: coord(v.lat, 90, 'place.lat'), lon: coord(v.lon, 180, 'place.lon'),
       radius: v.radius === undefined ? RADIUS_DEFAULT : clampRadius(v.radius) });
+    const row = await store.one(gc, 'SELECT profile_id FROM places WHERE id = ?', [placeId]);
+    profileRef = row && row.profile_id ? pp.refOf(row.profile_id) : null;
     any = false; chosen = true;
   } else if (!was) {
     throw fail('invalid', { field: 'place' });
@@ -317,6 +366,11 @@ async function argFor(gc, ctx, cur, v) {
   const same = was && !fresh && was.trigger === trigger && (was.key || null) === key;
   if (same && v.remember !== true) return { change: null };
   const json = { key, label, any, trigger, by: fresh || !was ? ctx.userId : was.by, who: was && !fresh ? was.who : null, consent: was && !fresh ? was.consent : null };
+  // 1.8.0: a place of the profile — the reference, and the copy the task falls back to when it is deleted there
+  if (profileRef && placeId && !any) {
+    const row = await store.one(gc, 'SELECT * FROM places WHERE id = ?', [placeId]);
+    if (row && row.profile_id) { json.ref = pp.refOf(row.profile_id); json.copy = pp.jsonCopy(row); }
+  }
   return { change: same ? null : { placeId, json, fresh }, pick: key && placeId ? { key, placeId, count: chosen && fresh, fav: v.remember === true } : null };
 }
 
@@ -338,6 +392,8 @@ async function upsert(gc, ctx, f) {
 /** After the task is written: the choice is counted („zuletzt sechsmal gewählt“) and, with remember, remembered. */
 async function picked(gc, ctx, pick) {
   if (!pick) return;
+  // 1.8.0: „mein Baumarkt“ is one of „Meine Orte“ — a hit or a point remembered becomes a place of the profile
+  if (pick.fav) await promote(gc, ctx, pick.placeId);
   await store.tx(gc, async () => {
     if (pick.count) {
       await store.run(gc, `INSERT INTO place_picks (user_id, key, place_id, uses, used_at, fav) VALUES (?, ?, ?, 1, ?, 0)
@@ -345,6 +401,21 @@ async function picked(gc, ctx, pick) {
     }
     if (pick.fav) await favTx(gc, ctx, pick.key, pick.placeId);
   });
+}
+
+/** The row `rowId` (a hit, a point) becomes a place of the profile (gc.places.create), the row its copy. */
+async function promote(gc, ctx, rowId) {
+  const r = await store.one(gc, 'SELECT * FROM places WHERE id = ? AND deleted_at IS NULL', [rowId]);
+  if (!r || r.profile_id || r.user_id !== ctx.userId || (r.ref && r.ref.startsWith('familie:')) || !pp.has(gc)) return;
+  let place;
+  // a name in use becomes „Name 2“ (it was chosen as a kind, not typed as a name)
+  try { place = await pp.createOne(gc, ctx.userId, r, { free: true }); } catch (e) { gc.log.warn('place not taken into the profile', (e && e.code) || 'error'); return; }
+  await store.tx(gc, async () => {
+    const id = await pp.mirror(gc, ctx.userId, place, ctx.now, r.id);
+    const row = await store.one(gc, 'SELECT * FROM places WHERE id = ?', [id]);
+    await pp.retag(gc, id, pp.refOf(place.id), pp.jsonCopy(row));
+  });
+  told(gc, [ctx.userId]);
 }
 
 /**
@@ -498,13 +569,14 @@ async function chosen(gc, userId, key) {
  */
 async function suggest(gc, ctx, parsed) {
   if (!parsed || typeof parsed.title !== 'string') return null;
-  const named = (await own(gc, ctx.userId)).filter((r) => r.named);
+  await pp.move(gc, ctx.now);
+  const named = await pp.own(gc, ctx.userId);
   const fam = await familyPlaces(gc, ctx.userId);
   const d = words.detect(parsed.title, ctx.lang, { own: named.map((r) => ({ id: r.id, name: r.name })), family: fam });
   if (!d) return null;
   const out = { via: d.via, word: d.word, query: d.query, key: d.key, label: d.label, title: d.title, certain: d.certain, trigger: 'enter', place: null, uses: 0, options: [],
     search: await searchState(gc, await config.get(gc), await prefs.get(gc, ctx.userId)) };
-  if (d.via === 'own') out.place = view(named.find((r) => r.id === d.ownId));
+  if (d.via === 'own') out.place = pp.view(named.find((r) => r.id === d.ownId));
   else if (d.via === 'family') { const f = fam.find((p) => p.id === d.familyId); out.place = { familyId: f.id, name: f.name, address: '', lat: f.lat, lon: f.lon, radius: f.radius, family: true }; }
   else if (d.key) {
     const list = await chosen(gc, ctx.userId, d.key);
@@ -515,15 +587,14 @@ async function suggest(gc, ctx, parsed) {
 }
 
 /** The `place` argument of a task for a suggestion that is decided (POST tasks { text, place: 'auto' }). */
-const argOf = (s) => (!s || !s.place || !s.certain ? null : s.place.familyId ? { familyId: s.place.familyId, trigger: s.trigger } : { placeId: s.place.id, key: s.key || undefined, trigger: s.trigger });
+const argOf = (s) => (!s || !s.place || !s.certain ? null : s.place.familyId ? { familyId: s.place.familyId, trigger: s.trigger }
+  : s.place.id ? { placeId: s.place.id, key: s.key || undefined, trigger: s.trigger }
+    : { name: s.place.name, address: s.place.address || undefined, lat: s.place.lat, lon: s.place.lon, radius: s.place.radius, ...(s.place.ref && REF_RE.test(s.place.ref) ? { ref: s.place.ref } : {}), key: s.key || undefined, trigger: s.trigger });
 
 /** POST places/search { key | q, near: { lat, lon } | nearPlaceId | nearFamilyId } → the places near, the fastest to reach first. */
 async function find(gc, ctx, b) {
   const cfg = await config.get(gc);
   const p = await prefs.get(gc, ctx.userId);
-  const st = await searchState(gc, cfg, p);
-  if (st === 'off') throw fail('module_off', { reason: search.modeOf(cfg) === 'off' ? 'admin' : 'self' });
-  if (st !== 'on') throw fail('unavailable', { reason: 'service' });
   let key = null;
   let address = null;
   if (b.key != null) { if (!words.validKey(b.key)) throw fail('invalid', { field: 'key' }); key = b.key; }
@@ -539,25 +610,47 @@ async function find(gc, ctx, b) {
   }
   // near: a position (rounded here, whatever was sent) or one of the person's places (the portal has no position)
   let near = b.near;
-  if (b.nearPlaceId != null) { const pl = await mine(gc, ctx.userId, b.nearPlaceId); near = { lat: pl.lat, lon: pl.lon }; }
+  if (b.nearPlaceId != null) { const pl = await pp.get(gc, ctx.userId, b.nearPlaceId); if (!pl) throw fail('not_found', { field: 'place' }); near = { lat: pl.lat, lon: pl.lon }; }
   else if (b.nearFamilyId != null) { const f = (await familyPlaces(gc, ctx.userId)).find((x) => x.id === b.nearFamilyId); if (!f) throw fail('not_found', { field: 'near' }); near = { lat: f.lat, lon: f.lon }; }
   const cell = search.cellOf(near);
   // an address may be searched without a place to search near (the first place a person saves in the portal)
   if (!cell && !(address && near == null)) throw fail('invalid', { field: 'near' });
+  // 1.8.0: an address through the server's search (gc.places.search: the administrator's setting of GateControl, its
+  // limits) — the person's own switch still counts; a kind or a name through the plugin's search (map tags, OSM ids
+  // for the phones' fences, the cache of POST places/watch)
+  if (address) {
+    if (p.places.search === false) throw fail('module_off', { reason: 'self' });
+    return addressHits(gc, ctx, address, cell);
+  }
+  const st = await searchState(gc, cfg, p);
+  if (st === 'off') throw fail('module_off', { reason: search.modeOf(cfg) === 'off' ? 'admin' : 'self' });
+  if (st !== 'on') throw fail('unavailable', { reason: 'service' });
   const hits = await search.find(gc, cfg, { key, address, cell, lang: ctx.lang, userId: ctx.userId });
   // what the person chose before comes first: the remembered one, then the often used ones, then by distance
   const before = key ? await chosen(gc, ctx.userId, key) : [];
   const byRef = new Map(before.filter((c) => c.row.ref).map((c) => [c.row.ref, c]));
   const results = hits.map((h) => { const c = h.ref ? byRef.get(h.ref) : null; return { ref: h.ref, name: c ? c.row.name : h.name, address: h.address, lat: h.lat, lon: h.lon, distanceM: h.distanceM, minutes: h.minutes,
-    placeId: c ? c.row.id : null, fav: !!(c && c.fav), uses: c ? c.uses : 0 }; });
+    placeId: c ? c.row.profile_id || null : null, fav: !!(c && c.fav), uses: c ? c.uses : 0 }; });
   for (const c of before) {
     if (c.row.ref && results.some((x) => x.ref === c.row.ref)) continue;
     const dist = cell ? search.distance(cell, c.row) : null;
-    results.push({ ref: c.row.ref || null, name: c.row.name, address: c.row.address || '', lat: c.row.lat, lon: c.row.lon, distanceM: dist, minutes: dist == null ? null : search.minutes(dist), placeId: c.row.id, fav: c.fav, uses: c.uses });
+    results.push({ ref: c.row.ref || null, name: c.row.name, address: c.row.address || '', lat: c.row.lat, lon: c.row.lon, distanceM: dist, minutes: dist == null ? null : search.minutes(dist), placeId: c.row.profile_id || null, fav: c.fav, uses: c.uses });
   }
   results.sort((x, y) => (y.fav - x.fav) || ((y.uses > 0) - (x.uses > 0)) || (x.distanceM - y.distanceM));
   return { key, label: key ? words.labelOf(key, ctx.lang, typeof b.label === 'string' ? line(b.label, 40) : line(b.q, 40)) : address, kind: address ? 'address' : key.startsWith('kind:') ? 'kind' : 'name', radiusKm: search.RADIUS_KM, cell,
     results: results.slice(0, search.RESULTS_MAX), any: !!key && results.length > 0, approx: true, attribution: { text: search.ATTRIBUTION, url: search.ATTRIBUTION_URL } };
+}
+
+/** POST places/search with an address: the server's search (gc.places.search) → the answer of find(). */
+async function addressHits(gc, ctx, address, cell) {
+  const r = await pp.searchAddress(gc, ctx.userId, Array.from(address).slice(0, 120).join(''), cell, ctx.lang);
+  const results = (r && Array.isArray(r.results) ? r.results : []).slice(0, search.RESULTS_MAX).map((h) => {
+    const dist = Number.isFinite(h.distanceM) ? h.distanceM : cell ? search.distance(cell, h) : null;
+    return { ref: null, name: line(h.name, NAME_MAX) || line(h.address, NAME_MAX), address: line(h.address, ADDRESS_MAX), lat: h.lat, lon: h.lon, distanceM: dist,
+      minutes: dist == null ? null : search.minutes(dist), placeId: null, fav: false, uses: 0 };
+  });
+  const a = r && r.attribution && typeof r.attribution.text === 'string' ? r.attribution : { text: search.ATTRIBUTION, url: search.ATTRIBUTION_URL };
+  return { key: null, label: address, kind: 'address', radiusKm: search.RADIUS_KM, cell, results, any: false, approx: true, attribution: { text: a.text, url: a.url }, via: 'gatecontrol' };
 }
 
 // ─── what a phone watches ───────────────────────
@@ -617,7 +710,7 @@ async function watch(gc, ctx, b) {
     const s = stateOf(r);
     const id = fenceOf(pl);
     if (s.skip.includes(id)) continue;
-    add(id, { ref: pl.ref, lat: pl.lat, lon: pl.lon, radius: pl.radius, name: pl.name, address: pl.address }, entry(r, j, 'place', { name: pl.name, fence: id }, null));
+    add(id, { ref: pl.profile_id ? pp.refOf(pl.profile_id) : pl.ref, lat: pl.lat, lon: pl.lon, radius: pl.radius, name: pl.name, address: pl.address }, entry(r, j, 'place', { name: pl.name, fence: id }, null));
   }
   // 2. the other places of each task's kind near the phone (needs a position and the search)
   if (cell && st === 'on') {
@@ -659,16 +752,22 @@ async function meInfo(gc, ctx, cfg, p) {
   const st = await searchState(gc, cfg, p);
   return {
     search: { state: st, enabled: search.modeOf(cfg) !== 'off', mine: p.places.search !== false, service: search.modeOf(cfg), radiusKm: search.RADIUS_KM, decimals: search.DECIMALS,
-      attribution: { text: search.ATTRIBUTION, url: search.ATTRIBUTION_URL } },
+      attribution: { text: search.ATTRIBUTION, url: search.ATTRIBUTION_URL },
+      // 1.8.0: an address is searched by GateControl (gc.places.search — its administrator's setting and limits)
+      address: 'gatecontrol' },
     nearby: p.places.nearby !== false, quiet: p.places.quiet || null, perTask: PER_TASK, radius: { min: RADIUS_MIN, max: RADIUS_MAX, default: RADIUS_DEFAULT },
     // Familie 1.22.0 lets the hub read its places (older ones offer the service, but not to the hub)
     family: await offered(gc, 'geofences'),
+    // 1.8.0: „Meine Orte“ are the places of the user profile — POST / PATCH / DELETE places change them there
+    // (gc.places version 2); the server's own search for the apps: GET /api/v1/client/me/places/search
+    profile: { places: true, edit: 'plugin' },
   };
 }
 
 /** The background run (hourly): places nobody needs any more — deleted ones and ones taken once, without a task. */
 async function purge(gc, now) {
-  const r = await store.run(gc, `DELETE FROM places WHERE (deleted_at IS NOT NULL OR (named = 0 AND updated_at < ?))
+  // 1.8.0: a copy of a place of the profile goes as well when nothing needs it (the profile keeps the place)
+  const r = await store.run(gc, `DELETE FROM places WHERE (deleted_at IS NOT NULL OR ((named = 0 OR profile_id IS NOT NULL) AND updated_at < ?))
     AND NOT EXISTS (SELECT 1 FROM tasks INDEXED BY idx_tasks_place_id WHERE tasks.place_id = places.id)
     AND NOT EXISTS (SELECT 1 FROM place_picks INDEXED BY idx_place_picks_place WHERE place_picks.place_id = places.id)`, [now - UNNAMED_KEEP_MS]);
   return (r && r.changes) || 0;
@@ -687,5 +786,8 @@ async function namesOf(gc, lang, rows) {
   return out;
 }
 
-module.exports = { all, create, update, remove, setFav, argFor, picked, sync, taskView, ofTasks, consent, onAction, skip, later, fired, suggest, argOf, find, watch, meInfo, purge, namesOf,
+/** 1.8.0: „Genutzt von“ of the profile's places — after a task's place changed (never fails the request). */
+async function counted(gc, ctx) { try { await pp.usage(gc, ctx.now); } catch (e) { gc.log.warn('places usage failed', (e && (e.code || e.message)) || 'error'); } }
+
+module.exports = { counted, all, create, update, remove, setFav, argFor, picked, sync, taskView, ofTasks, consent, onAction, skip, later, fired, suggest, argOf, find, watch, meInfo, purge, namesOf,
   familyPlaces, budget, quietNow, reset, jsonOf, PER_TASK, WATCH_MAX, WATCH_FALLBACK, REPEAT_MS, LATER_MS, RADIUS_DEFAULT, NEARBY_RADIUS, REFRESH_M };

@@ -56,7 +56,12 @@ const FEATURES = ['tasks', 'notes', 'sources', 'vault', 'mstodo', 'dsnote', 'sea
   'taskTurns', 'taskStars', 'familyTasks', 'doneFeedback', 'placeMine',
   // 1.7.0 (README "1.7.0"): `driveDeadlines` — the reminders of Drive's deadlines ring from here: Task.deadline, the
   // reminder of such a task (`deadline`, the button open_file) in the push and in GET reminders, me.driveDeadlines
-  'driveDeadlines'];
+  'driveDeadlines',
+  // 1.8.0 (README "1.8.0"): `profilePlaces` — „Meine Orte“ are the places of the user profile: every place id is the
+  // profile's ('profile:<id>' in `ref`), POST / PATCH / DELETE places change them there (gc.places version 2; DELETE
+  // → 409 in_use { usedBy } while another plugin uses the place, ?force=1), an address search through GateControl's
+  // search, GET places notMoved, me.places.profile
+  'profilePlaces'];
 
 const ok = (json) => ({ status: 200, json: { ok: true, ...json } });
 
@@ -249,7 +254,7 @@ async function handle(gc, ctx, req) {
   if (m === 'POST' && n === 2 && a === 'places' && x === 'watch') return ok(await places.watch(gc, ctx, b));
   if (m === 'POST' && n === 2 && a === 'places' && x === 'fired') return ok(await places.fired(gc, ctx, b));
   if (m === 'PATCH' && n === 2 && a === 'places') return ok(await places.update(gc, ctx, x, b));
-  if (m === 'DELETE' && n === 2 && a === 'places') return ok(await places.remove(gc, ctx, x));
+  if (m === 'DELETE' && n === 2 && a === 'places') return ok(await places.remove(gc, ctx, x, q || {}, b || {}));
   if (m === 'POST' && n === 4 && a === 'tasks' && y === 'place' && z === 'skip') return ok(await places.skip(gc, ctx, x, b));
   if (m === 'POST' && n === 4 && a === 'tasks' && y === 'place' && z === 'later') return ok(await places.later(gc, ctx, x, b));
   if (m === 'POST' && n === 4 && a === 'tasks' && y === 'place' && z === 'consent') return ok(await places.consent(gc, ctx, x, b));

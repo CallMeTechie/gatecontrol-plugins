@@ -52,7 +52,7 @@ async function host(opts = {}) {
   const net = { calls: [], fail: false };
   const fam = { reminders: 0, ...(opts.fam || {}) };
   const sources = opts.noFamily ? PLUGINS.filter((p) => p !== 'gatecontrol-familie').map((p) => fakeSource(p)) : PLUGINS.map((p) => (p === 'gatecontrol-familie' ? familie(fam) : fakeSource(p)));
-  const h = await withHost({ settings: { place_search: 'osm', ...(opts.settings || {}) }, sources, fetch: nominatim(net), host: opts.targets ? { targets: { places: [{ label: 'Nominatim', fetch: nominatim(net) }] } } : {}, ...(opts.now ? { now: opts.now } : {}) });
+  const h = await withHost({ settings: { place_search: 'osm', ...(opts.settings || {}) }, sources, fetch: nominatim(net), ...(opts.places ? { places: opts.places } : {}), host: opts.targets ? { targets: { places: [{ label: 'Nominatim', fetch: nominatim(net) }] } } : {}, ...(opts.now ? { now: opts.now } : {}) });
   shopping.state.noTimer = true;
   search.reset(); places.reset();
   search.state.pauseMs = opts.pauseMs || 0;

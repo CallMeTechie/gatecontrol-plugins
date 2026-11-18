@@ -243,7 +243,8 @@
     draw();
     E.api('GET', 'places').then(function (r) {
       st.all = r;
-      if (cur && cur.id && !st.sel && (r.places || []).some(function (p) { return p.id === cur.id; })) st.sel = { type: 'own', placeId: cur.id };
+      // 1.8.0: the task's place is one of „Meine Orte“ when its ref is the profile's
+      if (cur && cur.id && cur.ref === 'profile:' + cur.id && !st.sel && (r.places || []).some(function (p) { return p.id === cur.id; })) st.sel = { type: 'own', placeId: cur.id };
       draw();
       // a kind or a name from the line, and a place to search near: the list is there at once (one search, asked for by opening the dialog)
       if (o.hint && o.hint.key && info().search.state === 'on' && nearOptions(r).length) search();
@@ -251,10 +252,28 @@
     return box;
   }
 
+  /**
+   * DELETE places/<id> — tasks at the place keep it. Another plugin still uses it (Messenger, Familie): 409 in_use with
+   * who — the person is asked, then it is deleted all the same (force=1).
+   */
+  function removePlace(x, done) {
+    E.api('DELETE', 'places/' + x.id).then(done, function (e) {
+      if (!e || e.code !== 'in_use') { E.fail(e); return; }
+      var who = ((e.extra && e.extra.usedBy) || []).map(function (u) { return u.pluginName || u.plugin; }).filter(function (v, i, a) { return a.indexOf(v) === i; }).join(', ');
+      E.dialog(T('p.delete'), [
+        E.h('p', { class: 'dp-hint', text: T('pl.in_use', { name: x.name, who: who }) }),
+        E.h('div', { class: 'dp-actions' }, [E.btn(T('p.cancel'), E.closeDialog), E.btn(T('pl.delete_anyway'), function () {
+          E.closeDialog();
+          E.api('DELETE', 'places/' + x.id, null, { force: '1' }).then(done, E.fail);
+        }, { danger: true })]),
+      ]);
+    });
+  }
+
   /** The dialog of one of „Meine Orte“ (new or changed): name, address, a point on the map, the radius. */
   function edit(p, all, done) {
-    var name = E.h('input', { type: 'text', class: 'dp-input', value: p ? p.name : '', attrs: { 'aria-label': T('pl.name'), maxlength: '80' } });
-    var addr = E.h('input', { type: 'text', class: 'dp-input', value: p ? p.address : '', attrs: { 'aria-label': T('pl.address'), maxlength: '160', placeholder: T('pl.address_ph') } });
+    var name = E.h('input', { type: 'text', class: 'dp-input', value: p ? p.name : '', attrs: { 'aria-label': T('pl.name'), maxlength: '60' } });
+    var addr = E.h('input', { type: 'text', class: 'dp-input', value: p ? p.address : '', attrs: { 'aria-label': T('pl.address'), maxlength: '200', placeholder: T('pl.address_ph') } });
     var lat = E.h('input', { type: 'number', class: 'dp-input', value: p ? String(p.lat) : '', attrs: { step: 'any', min: '-90', max: '90', 'aria-label': T('pl.lat'), placeholder: T('pl.lat') } });
     var lon = E.h('input', { type: 'number', class: 'dp-input', value: p ? String(p.lon) : '', attrs: { step: 'any', min: '-180', max: '180', 'aria-label': T('pl.lon'), placeholder: T('pl.lon') } });
     var radius = E.h('input', { type: 'number', class: 'dp-input', value: String(p ? p.radius : info().radius ? info().radius.default : 150), attrs: { min: '50', max: '2000', step: '10', 'aria-label': T('pl.radius') } });
@@ -278,7 +297,8 @@
         if (r.attribution && r.results.length) hits.appendChild(E.h('p', { class: 'dp-hint na-pl-attr' }, [E.h('a', { href: r.attribution.url, target: '_blank', rel: 'noopener', text: r.attribution.text })]));
       }, function (e) { E.clear(hits); hits.appendChild(E.h('p', { class: 'dp-hint', attrs: { role: 'alert' }, text: e.code === 'busy' ? T('pl.search_busy') : T('pl.search_down') })); });
     }
-    var searchOn = info().search.state === 'on';
+    // 1.8.0: the address is looked up by GateControl (its own switch) — also when the plugin's search is off
+    var searchOn = info().search.state === 'on' || info().search.address === 'gatecontrol';
     var kids = [
       E.h('label', { class: 'dp-field' }, [E.h('span', { class: 'dp-label', text: T('pl.name') }), name]),
       E.h('label', { class: 'dp-field' }, [E.h('span', { class: 'dp-label', text: T('pl.address') }), E.h('span', { class: 'na-add' }, [addr, searchOn ? E.btn(T('pl.addr_find'), find, { small: true, icon: 'search' }) : null])]),
@@ -291,7 +311,8 @@
         if (!name.value.trim()) { E.toast(T('pl.name_need'), 'error'); return; }
         if (lat.value === '' || lon.value === '' || !isFinite(a) || !isFinite(b) || Math.abs(a) > 90 || Math.abs(b) > 180) { E.toast(T('pl.pin_need'), 'error'); return; }
         var body = { name: name.value.trim(), address: addr.value.trim(), lat: a, lon: b, radius: Number(radius.value) || 150 };
-        (p ? E.api('PATCH', 'places/' + p.id, Object.assign(body, { named: true })) : E.api('POST', 'places', body)).then(function () { E.closeDialog(); done(); }, E.fail);
+        // 1.8.0: a new place goes into the profile; a name it has already is refused there (409 duplicate)
+        (p ? E.api('PATCH', 'places/' + p.id, body) : E.api('POST', 'places', body)).then(function () { E.closeDialog(); done(); }, function (e) { if (e && e.code === 'duplicate') E.toast(T('pl.duplicate'), 'error'); else E.fail(e); });
       }, { primary: true })]),
     ];
     E.dialog(p ? T('pl.edit') : T('pl.new'), kids);
@@ -337,15 +358,18 @@
         (r.places || []).forEach(function (x) {
           var favs = (x.favFor || []);
           var sub = [x.address, favs.map(function (f) { return T('pl.fav_for', { label: f.label }); }).join(', ')].filter(Boolean).join(' · ');
+          // 1.8.0: the places of the profile — changed and deleted there (also here: gc.places)
           var tools = E.h('span', { class: 'na-add' }, [
             favs.length ? E.ib('x', T('pl.forget', { label: favs.map(function (f) { return f.label; }).join(', ') }), function () { Promise.all(favs.map(function (f) { return E.api('PUT', 'places/favs', { key: f.key, placeId: null }); })).then(load, E.fail); }) : null,
             E.ib('edit', T('pl.edit'), function () { edit(x, r, load); }),
-            E.ib('trash', T('p.delete'), function () { E.api('DELETE', 'places/' + x.id).then(load, E.fail); }),
+            E.ib('trash', T('p.delete'), function () { removePlace(x, load); }),
           ]);
           list.appendChild(E.h('div', { class: 'na-set-row' }, [E.h('span', { class: 't' }, [E.h('span', { text: x.name }), sub ? E.h('small', { text: sub }) : null]), tools]));
         });
         if (!(r.family || []).length && !(r.places || []).length) list.appendChild(E.h('p', { class: 'dp-hint', text: T('pl.mine_none') }));
         mine.appendChild(list);
+        if (r.profile) mine.appendChild(E.h('p', { class: 'dp-hint' }, [E.h('span', { text: T('pl.profile_hint') + ' ' }), E.h('a', { href: '/portal#orte', target: '_top', text: T('pl.profile_open') })]));
+        if ((r.notMoved || []).length) mine.appendChild(E.h('p', { class: 'dp-hint', attrs: { role: 'note' }, text: T('pl.not_moved', { list: r.notMoved.map(function (x) { return x.name; }).join(', ') }) }));
       }, E.fail);
     };
     load();

@@ -98,6 +98,8 @@ async function purge(gc, ctx) {
     AND NOT EXISTS (SELECT 1 FROM tasks INDEXED BY idx_tasks_rest WHERE tasks.list_id = lists.id AND (tasks.deleted_at IS NOT NULL OR tasks.parent_id IS NOT NULL))`, [before]);
   await store.run(gc, 'DELETE FROM my_day WHERE user_id IN (SELECT DISTINCT user_id FROM my_day) AND day < ?', [tz.addDays(ctx.today, -7)]);
   await clientIds.purge(gc, ctx.now);
+  // 1.8.0: the copies of the profile's places against the profile (a change while the plugin was stopped)
+  await require('./profileplaces').refresh(gc, ctx.now);
   // 1.5.0: places no task and no choice needs any more
   await places.purge(gc, ctx.now);
   return ts.length + ns.length;
@@ -116,6 +118,8 @@ async function tick(gc, ctx) {
   await run('family', () => require('./famtasks').tick(gc, ctx));
   await run('sources', () => sources.tick(gc, ctx));
   await run('mstodo', () => mstodo.tick(gc, ctx));
+  // 1.8.0: „Meine Orte“ in the profile — the move until it is done, „Genutzt von“ when a number changed
+  await run('profile', async () => { const pp = require('./profileplaces'); await pp.move(gc, ctx.now); return pp.usage(gc, ctx.now); });
   if (!tick.lastPurge || ctx.now - tick.lastPurge > 3600000) { tick.lastPurge = ctx.now; await run('purge', () => purge(gc, ctx)); }
   events.now();
   return out;
