@@ -152,6 +152,24 @@ describe('profiles shared with a home network', () => {
     assert.deepEqual([r.http, r.code], [400, 'home_invalid']);
   });
 
+  it('app status: profile.home — "gilt zu Hause und unterwegs" while the profile is shared and the home filter is on', async () => {
+    s = await setup({ vpnDns: { homes: HOME() } });
+    let r = await s.app(LEA, P.leaPhone, 'GET', 'status');
+    assert.deepEqual([r.profile.id, r.profile.home], ['pkinder01', false], 'not shared');
+    await s.admin('PUT', 'profiles/pkinder01', { profile: { home: { gateway: P.gateway, profile: 'phome0001' } } });
+    r = await s.app(LEA, P.leaPhone, 'GET', 'status');
+    assert.deepEqual([r.profile.id, r.profile.name, r.profile.home], ['pkinder01', 'Kinder', true]);
+    assert.deepEqual(Object.keys(r.profile), ['id', 'name', 'safeSearch', 'home'], 'nothing of the home network beyond the flag');
+    // the DNS filter of the home network is off: the profile does not hold at home
+    s.host.vpnDnsSet({ homes: HOME().map((h) => ({ ...h, enabled: false })) });
+    r = await s.app(LEA, P.leaPhone, 'GET', 'status');
+    assert.equal(r.profile.home, false);
+    // the link dropped
+    s.host.vpnDnsSet({ homes: HOME() });
+    await s.admin('PUT', 'profiles/pkinder01', { profile: { home: null } });
+    assert.equal((await s.app(LEA, P.leaPhone, 'GET', 'status')).profile.home, false);
+  });
+
   it('a home profile that is gone: the link is dropped, the profile keeps the last content', async () => {
     s = await setup({ vpnDns: { homes: HOME() } });
     await s.admin('PUT', 'profiles/pkinder01', { profile: { home: { gateway: P.gateway, profile: 'phome0001' } } });

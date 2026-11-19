@@ -1,4 +1,4 @@
-<!-- version: 1.1.2 -->
+<!-- version: 1.2.0 -->
 # DNS Protection
 
 ## What the plugin does
@@ -128,6 +128,8 @@ The card shows the state: “active for N devices”, “idle” or an error. Wi
 
 While the log is off, app and portal show the counters of the whole server.
 
+When the profile is linked with the home network (and the DNS filter there is on), portal and apps show “holds at home and on the road”.
+
 While a person’s internet is paused (Family), the portal shows “Internet paused until …”. “Suspend” is not offered meanwhile – it would not lift the pause.
 
 ## Permissions {#berechtigungen}
@@ -176,6 +178,10 @@ The device has a fixed provider as “Private DNS”. Set “Private DNS” to �
 
 **“The home network already has a profile with this name”.**
 Link to the existing home profile instead of creating it – or give the profile another name first.
+
+## New in 1.2.0
+
+- **“Holds at home and on the road”** now also appears in the portal and the apps when a device’s profile is linked with the home network.
 
 ## New in 1.1.2
 

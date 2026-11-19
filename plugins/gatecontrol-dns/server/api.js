@@ -5,7 +5,8 @@
 // device, suspending it and switching it back on, for administrators and parents also the people they may decide
 // for, the own query log. Every call is checked here (server/rights.js) — the apps only draw what `may` says.
 //
-//   GET  status                      → state, device, profile, pause, internet, counters, top, may, today, devices, manage
+//   GET  status                      → state, device, profile (with home: "gilt zu Hause und unterwegs"), pause, internet,
+//                                      counters, top, may, today, devices, manage
 //   POST pause  { minutes | forever: true | extend: minutes, peerId? | userId? | all? }
 //   POST resume { peerId? | userId? | all? }
 //   GET  people                      → the people (with their devices) the viewer may suspend for (admin, parent)
@@ -156,6 +157,20 @@ function todayOf(settings, profileId, now = new Date()) {
   return p.schedules.filter((s) => s.days.includes(day)).map((s) => ({ from: s.from, to: s.to, block: s.block, categories: s.categories.slice() }));
 }
 
+/**
+ * "gilt zu Hause und unterwegs": the profile is shared with the DNS filter of a home network (profiles[].home,
+ * gc.vpnDns version 4) and that filter is on. Without homes() (it failed) the link alone counts.
+ */
+async function homeOf(gc, prof) {
+  const link = prof && prof.home && Number.isSafeInteger(prof.home.gateway) ? prof.home : null;
+  if (!link) return false;
+  let homes;
+  try { homes = await gc.vpnDns.homes(); } catch { return true; }
+  const h = (Array.isArray(homes) ? homes : []).find((x) => (x.gateway && x.gateway.peerId === link.gateway)
+    || (Array.isArray(x.gateways) && x.gateways.some((g) => g && g.peerId === link.gateway)));
+  return !!h && h.enabled !== false;
+}
+
 async function status(gc, user) {
   const c = await load(gc, user);
   const target = await targetOf(gc, c, user, {});
@@ -177,11 +192,12 @@ async function status(gc, user) {
   const profile = (d && d.profile) || (target.devices[0] && target.devices[0].profile) || null;
   if (profile) { try { settings = await gc.vpnDns.get(); } catch { settings = null; } }
   const prof = profile && settings ? settings.profiles.find((x) => x.id === profile.id) : null;
+  const home = await homeOf(gc, prof);
   return {
     state,
     enabled: !!c.st.enabled,
     device: d ? { peerId: d.peerId, name: d.name, platform: d.platform || null, state: d.state, ownDns: d.ownDns || null } : null,
-    profile: profile ? { id: profile.id, name: profile.name, safeSearch: !!(prof && prof.safeSearch) } : null,
+    profile: profile ? { id: profile.id, name: profile.name, safeSearch: !!(prof && prof.safeSearch), home } : null,
     pause: state === 'paused' ? pauseView(pauseOf(c, first), user) : null,
     internet: c.st.state === 'filtering' ? internetOf(target.devices) : null,
     outage: c.st.state === 'fallback' ? { since: c.st.since || null } : null,

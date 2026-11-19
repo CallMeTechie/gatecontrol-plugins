@@ -51,7 +51,7 @@ keinen Peer (und im Portal), für **alle VPN-Geräte der Person**.
   "state": "active",
   "enabled": true,
   "device": { "peerId": 21, "name": "Leas Handy", "platform": "android", "state": "filtered", "ownDns": null },
-  "profile": { "id": "p1a2b3c4d", "name": "Kinder", "safeSearch": true },
+  "profile": { "id": "p1a2b3c4d", "name": "Kinder", "safeSearch": true, "home": true },
   "pause": null,
   "outage": null,
   "counters": { "scope": "device", "queries": 3310, "blocked": 893, "percent": 27 },
@@ -69,6 +69,10 @@ keinen Peer (und im Portal), für **alle VPN-Geräte der Person**.
   Plugin Familie gilt für das Gerät (bzw. alle gefilterten Geräte der Person). `state` bleibt `active` (oder
   `paused`): es wird gefiltert, aber nur „Immer erlaubt“ antwortet. `may.pause` ist dann `false` mit
   `may.reason: "internet_paused"` – Unterbrechen hebt die Pause nicht auf.
+* `profile` (seit 1.2.0 mit `home`): `{ id, name, safeSearch, home }` | `null` – `home: true` = das Profil „gilt zu
+  Hause und unterwegs“: es ist mit dem Profil des DNS-Filters eines Heimnetzes verbunden und der DNS-Filter dort ist
+  eingeschaltet (zu Hause wirkt es für die Heimgeräte, die dort diesem Profil zugeordnet sind). Sonst `false`; fehlt
+  bei Plugin < 1.2.0 (wie `false` behandeln). Nur `status.profile`, nicht `devices[].profile`.
 * `state`: `active` (wird gefiltert) · `paused` (unterbrochen, siehe `pause`) · `fallback` (Filter ausgefallen,
   ungefiltert, siehe `outage.since`) · `unfiltered` (das Gerät hat einen eigenen DNS-Server, ist ausgenommen oder die
   Person hat kein VPN-Gerät) · `starting` · `off`.
@@ -133,7 +137,8 @@ next }` – `next` als `before` der nächsten Seite. `scope` (seit 1.1.0): bei e
 | 403 | `not_allowed` | Unterbrechen hier nicht erlaubt – `reason`: `admins_only`, `profile`, `admin_target`, `not_yours`, `not_filtered`, `paused_for_all`, `log_admins_only`, `internet_paused` (seit 1.1.0) |
 | 403 | `forever_not_allowed` | „Bis ich wieder einschalte“ ist für Benutzer nicht freigegeben |
 | 403 | `too_long` | länger als die längste Dauer (`maxMinutes`) |
-| 404 | `not_found` | Gerät oder Person unbekannt |
+| 404 | `not_found` | Gerät oder Person unbekannt (Antwort des Plugins, mit `error`-Text, ohne `reason`) |
+| 404 | `not_found` + `reason: "plugin_unavailable"` | Antwort des **Kerns**: Plugin nicht installiert, deaktiviert oder ohne Lizenz (GateControl ≥ 1.301.0; ältere Server: 404 ohne `reason` und ohne `error`) – in der App wie „kein DNS-Schutz“ |
 | 409 | `off` | der DNS-Schutz ist ausgeschaltet (oder startet noch) |
 | 409 | `not_filtering` | der Filter ist ausgefallen (Rückfall) – es gibt nichts zu unterbrechen |
 | 409 | `no_device` | die Person hat kein VPN-Gerät |

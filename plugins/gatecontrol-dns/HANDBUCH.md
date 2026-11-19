@@ -1,4 +1,4 @@
-<!-- version: 1.1.2 -->
+<!-- version: 1.2.0 -->
 # DNS-Schutz
 
 ## Was das Plugin kann
@@ -128,6 +128,8 @@ Die Karte zeigt den Zustand: „aktiv für N Geräte“, „ruht“ oder einen F
 
 Ist das Protokoll aus, zeigen App und Portal die Zähler des ganzen Servers.
 
+Ist das Profil mit dem Heimnetz verbunden (und der DNS-Filter dort an), zeigen Portal und Apps „gilt zu Hause und unterwegs“.
+
 Ist das Internet einer Person pausiert (Familie), zeigt das Portal „Internet pausiert bis …“. „Unterbrechen“ wird solange nicht angeboten – es würde die Pause nicht aufheben.
 
 ## Berechtigungen {#berechtigungen}
@@ -176,6 +178,10 @@ Auf dem Gerät ist ein fester Anbieter als „Privates DNS“ eingetragen. Stell
 
 **„Im Heimnetz gibt es schon ein Profil mit diesem Namen“.**
 Verbinde mit dem vorhandenen Heimnetz-Profil, statt es neu anzulegen – oder gib dem Profil erst einen anderen Namen.
+
+## Neu in 1.2.0
+
+- **„Gilt zu Hause und unterwegs“** erscheint jetzt auch im Portal und in den Apps, wenn das Profil eines Geräts mit dem Heimnetz verbunden ist.
 
 ## Neu in 1.1.2
 

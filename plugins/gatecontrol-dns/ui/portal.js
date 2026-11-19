@@ -38,7 +38,7 @@
         ? el('span', {}, [el('strong', { class: 'num cd', 'data-until': st.pause.until, text: D.countdown(st.pause.until) }), ' · ' + sub])
         : el('span', { text: sub })])]);
     c.appendChild(head);
-    if (st.profile) c.appendChild(el('div', { class: 's-hint', text: T('po.profile', { name: st.profile.name }) + (st.profile.safeSearch ? ' · ' + T('pf.safe') : '') }));
+    if (st.profile) c.appendChild(el('div', { class: 's-hint', text: T('po.profile', { name: st.profile.name }) + (st.profile.safeSearch ? ' · ' + T('pf.safe') : '') + (st.profile.home ? ' · ' + T('pf.home_pill') : '') }));
     var k = st.counters;
     var kpi = function (lab, val, sub2) { return el('div', { class: 'kpi' }, [el('div', { class: 'lab', text: lab }), el('div', { class: 'val', text: val }), el('small', { text: sub2 })]); };
     c.appendChild(el('div', { class: 'kpis' }, [kpi(T('po.queries'), D.num(k.queries), T('po.scope_' + k.scope)), kpi(T('po.blocked'), D.num(k.blocked), D.pct(k.blocked, k.queries))]));
