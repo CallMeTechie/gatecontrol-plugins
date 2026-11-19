@@ -1,4 +1,4 @@
-<!-- version: 1.8.0 -->
+<!-- version: 1.8.1 -->
 # Remote access – Handbook
 
 ## What the plugin does {#was-das-plugin-kann}
@@ -28,6 +28,7 @@ Passwords and SSH keys are not stored by the plugin but in GateControl's encrypt
 
 ## Requirements {#voraussetzungen}
 
+- GateControl **1.300.1** or newer. From this version on GateControl also dims the header when a long dialog moves the page, and tells the plugin the free room correctly – the dialogs then fit the window exactly.
 - For “Set up the key automatically”, ending tmux sessions and codes for the Linux agent on the admin page: GateControl with remote access interface **version 9** (GateControl **1.297.0** or newer). With an older GateControl these buttons are missing; “Generate SSH key” stays, and you make the code for the agent as before under Users › Add device.
 - To control a phone: GateControl with remote access interface **version 5** (GateControl 1.287.0 or newer) and the GateControl app for Android **from GitHub** with the accessibility service "GateControl remote control" switched on. With an older GateControl or the app from Google Play only viewing works.
 - For screen sharing from a phone: GateControl **1.286.0** or newer (remote access interface version 4, the relay of the picture) and the GateControl app for Android with "Share screen". An older GateControl refuses the phone's registration.
@@ -315,6 +316,11 @@ The right is checked again on every connect.
 **"Too many wrong codes":** wait 15 minutes or let the PC show a new code.
 
 **In the browser Windows does not ask for the sign-in:** when the PC requires network level authentication (NLA), the session in the browser needs a user name and password that the session page does not ask for yet. Connect from the GateControl app then.
+
+## New in 1.8.1 {#neu-1-8-1}
+
+- **Dialogs fit the window:** “Add device”, “Edit” and the wizard are as tall as the free room in the window, also in a lower window. Before, they were at least 420 pixels tall and then reached past the window. Only in a very low window (e.g. a phone held sideways) they stay tall enough for the buttons to show; then the page scrolls, without a light band.
+- Needs GateControl 1.300.1 or newer.
 
 ## New in 1.8.0 {#neu-1-8-0}
 

@@ -125,13 +125,17 @@ body{padding:2px 2px 24px}
 .rmx-steps span.done b{background:color-mix(in srgb,var(--accent) 75%,#000);color:#fff}
 .rmx-body{padding:14px 18px 16px;display:flex;flex-direction:column;gap:12px;min-width:0}
 .rmx-foot{display:flex;gap:8px;justify-content:flex-end;align-items:center;flex-wrap:wrap;padding:12px 18px 16px;border-top:1px solid var(--line);background:var(--surface-2)}
-/* 1.7.2: the wizard keeps to the height the frame gets without the page scrolling (GC.viewport; at least 420 px, as
-   that value is only the frame's own height while the page is shorter than the window) and scrolls inside, the wheel
-   stays in the dialog. A taller dialog grew the frame, the page around it scrolled, and the frame slid under
+/* 1.7.2: the wizard keeps to the height the frame gets without the page scrolling (GC.viewport) and scrolls inside, the
+   wheel stays in the dialog. A taller dialog grew the frame, the page around it scrolled, and the frame slid under
    GateControl's sticky, see-through header — undimmed there, as the page's dim leaves the frame's area out: a light
-   band over the dialog's head and the header. */
+   band over the dialog's head and the header.
+   1.8.1: no floor of 420 px any more. It stood in for GC.viewport telling a frame on a page shorter than the window its
+   own height or less; GateControl 1.300.1 (#532) leaves the page's min-height filler out and dims the header too.
+   With it, a window lower than about 600 px scrolled the page for the dialog. What stays is 300 px, so that head, steps
+   and buttons still fit in a very low window (GC.viewport is at least 200 px) — there the page scrolls, and GateControl
+   dims its header and bottom navigation over the frame. */
 .modal-overlay.rmx-ov{overscroll-behavior:contain}
-.modal.rmx-modal{max-height:max(420px,calc(var(--gc-viewport-height,100vh) - 64px))}
+.modal.rmx-modal{max-height:max(300px,calc(var(--gc-viewport-height,100vh) - 64px))}
 .rmx-modal>.rmx-head,.rmx-modal>.rmx-steps,.rmx-modal>.rmx-foot{flex:0 0 auto}
 .rmx-modal>.rmx-body{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain}
 .rmx-modal>.rmx-body>*{flex-shrink:0}
@@ -380,8 +384,8 @@ details.rmx-adv .advb{padding:0 14px 14px;display:flex;flex-direction:column;gap
 }
 /* the large dialog */
 .modal-overlay.rm-dlg-ov{padding:16px;align-items:flex-start;overscroll-behavior:contain}
-.modal.rm-dlg{max-width:min(1100px,calc(100% - 0px));display:flex;flex-direction:column;overflow:hidden;border-radius:18px;max-height:max(420px,calc(var(--gc-viewport-height,100vh) - 32px));container-type:inline-size}
-.modal.rm-dlg.xl{height:max(420px,calc(var(--gc-viewport-height,100vh) - 32px))}
+.modal.rm-dlg{max-width:min(1100px,calc(100% - 0px));display:flex;flex-direction:column;overflow:hidden;border-radius:18px;max-height:max(300px,calc(var(--gc-viewport-height,100vh) - 32px));container-type:inline-size}
+.modal.rm-dlg.xl{height:max(300px,calc(var(--gc-viewport-height,100vh) - 32px))}
 .modal.rm-dlg.md{max-width:640px}
 .modal.rm-dlg.sm{max-width:520px}
 .rm-dlg-head{display:flex;align-items:center;gap:10px;padding:14px 18px 12px;border-bottom:1px solid var(--line);flex:0 0 auto}
@@ -475,7 +479,7 @@ details.rmx-adv .advb{padding:0 14px 14px;display:flex;flex-direction:column;gap
 .rm-inst summary{cursor:pointer;font:600 13px var(--font);color:var(--muted)}
 .rm-inst[open] summary{margin-bottom:6px}
 /* the wizard in the large dialog: list and details side by side */
-.modal.rmx-modal.rm-wiz{max-width:min(1100px,100%);width:100%;height:max(420px,calc(var(--gc-viewport-height,100vh) - 32px))}
+.modal.rmx-modal.rm-wiz{max-width:min(1100px,100%);width:100%;height:max(300px,calc(var(--gc-viewport-height,100vh) - 32px))}
 .rmx-modal.rm-wiz>.rmx-body{container-type:inline-size}
 .rmx-body.rmx-two{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);padding:0;gap:0;overflow:hidden}
 .rmx-colL,.rmx-colR{padding:14px 18px 16px;display:flex;flex-direction:column;gap:12px;min-width:0;min-height:0;overflow-y:auto;overscroll-behavior:contain}
