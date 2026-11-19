@@ -283,7 +283,8 @@ async function bookStep(gc, a, book) {
         let photo;
         if (!have || have.change_key !== gx.changeKey) { try { photo = await pimgraph.contactPhoto(gc, a, gx.id); } catch { photo = undefined; } }
         const c = await cardstore.storeCard(gc, book, { uid: have ? have.uid : `graph:${gx.id}`, fields: f, vcard: null, remoteId: gx.id, changeKey: gx.changeKey || null, photo, id: have ? have.id : undefined });
-        return c.id;
+        // 1.17.1: the same contact once more (a delta from the start, a new changeKey of the same content): no change
+        return c.unchanged ? null : c.id;
       };
       const drop = async (rid) => { const c = await store.one(gc, 'SELECT * FROM cards WHERE addressbook_id = ? AND remote_id = ?', [book.id, rid]); if (c) { await cardstore.dropCard(gc, c); return true; } return false; };
       const r = await pimgraph.contactsStep(gc, a, book, put, drop);

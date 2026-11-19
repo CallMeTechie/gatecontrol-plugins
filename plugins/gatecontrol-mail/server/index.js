@@ -155,6 +155,8 @@ module.exports = {
     notizen.source.stop();
     compose.stop();
     await engine.stop();
+    // results of the virus scan still queued: one more try (scan.js)
+    try { await scan.flush({ once: true }); } catch { /* best effort */ }
   },
 
   async request(req, gc) {
@@ -200,22 +202,8 @@ module.exports = {
    * { kind: 'changed', messageId, attachmentId } to its person (scan.js). A deleted copy: the attachment stays removed.
    */
   async mediaScanned(arg, gc) {
-    const id = arg && typeof arg.mediaId === 'string' && /^[0-9a-f]{32}$/.test(arg.mediaId) ? arg.mediaId : null;
-    if (!id) return;
-    try {
-      const gone = arg.state === 'deleted';
-      const sc = scan.norm(gone ? { state: 'infected', blocked: true, finding: arg.finding || null } : arg);
-      if (!sc) return;
-      for (const t of await store.all(gc, 'SELECT t.id, t.message_id, m.user_id, m.account_id, m.folder_id FROM attachments t JOIN messages m ON m.id = t.message_id WHERE t.media_id = ?', [id])) {
-        if (gone) await scan.removed(gc, t.id, sc.finding);
-        else await scan.keepAttachment(gc, t.id, sc);
-        await push.changed(gc, t.user_id, t.account_id, t.folder_id, { messageId: t.message_id, attachmentId: t.id });
-      }
-      for (const x of await store.all(gc, 'SELECT x.id, x.draft_id, d.user_id, d.account_id FROM draft_atts x JOIN drafts d ON d.id = x.draft_id WHERE x.media_id = ?', [id])) {
-        await store.run(gc, 'UPDATE draft_atts SET scan_state = ?, scan_blocked = ?, scan_finding = ? WHERE id = ?', [...scan.cols(sc), x.id]);
-        await push.changed(gc, x.user_id, x.account_id, null, { draftId: x.draft_id });
-      }
-    } catch (e) { gc.log.warn('scan state failed', (e && e.code) || 'error'); }
+    // since 1.17.1 queued and written in batches, one transaction each, only what changes (scan.js)
+    await scan.scanned(gc, arg);
   },
 
   /**

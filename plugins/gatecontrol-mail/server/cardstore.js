@@ -47,7 +47,49 @@ function valueKey(field, v) {
   return fold(String(v)).replace(/\s+/g, ' ').trim();
 }
 
-const photoEtag = (p) => crypto.createHash('sha1').update(p.data).digest('hex').slice(0, 16);
+// the photo's data without the line breaks and spaces a vCard folds base64 with (the same picture, the same ETag)
+const photoData = (p) => String(p.data).replace(/\s+/g, '');
+const photoEtag = (p) => crypto.createHash('sha1').update(photoData(p)).digest('hex').slice(0, 16);
+
+/** JSON with the keys of every object in order: the same fields in another order are the same card. */
+function canonical(v) {
+  if (Array.isArray(v)) return `[${v.map(canonical).join(',')}]`;
+  if (v && typeof v === 'object') {
+    return `{${Object.keys(v).filter((k) => v[k] !== undefined).sort().map((k) => `${JSON.stringify(k)}:${canonical(v[k])}`).join(',')}}`;
+  }
+  return JSON.stringify(v === undefined ? null : v);
+}
+
+/**
+ * A vCard text as compared: its lines unfolded, without REV and PRODID (a server stamps them anew on every copy), in
+ * order (a server may write the properties in another order; the order of several e-mails or numbers is in the fields).
+ */
+function vcardKey(text) {
+  if (text == null) return null;
+  return String(text).replace(/\r\n?/g, '\n').replace(/\n[ \t]/g, '').split('\n').map((l) => l.trimEnd())
+    .filter((l) => l && !/^(?:[\w-]+\.)?(REV|PRODID)[;:]/i.test(l)).sort().join('\n');
+}
+
+/** The ETag the photo of a card gets from x.photo (undefined: kept; too large: kept, as setPhoto does). */
+function photoEtagOf(have, photo) {
+  if (photo === undefined) return have ? have.photo_etag || null : null;
+  if (!photo || !photo.data) return null;
+  if (Buffer.byteLength(photoData(photo), 'base64') > PHOTO_MAX) return have ? have.photo_etag || null : null;
+  return photoEtag(photo);
+}
+
+/**
+ * 1.17.1: whether `x` brings nothing new for the stored card `have` — the same fields (in any order), the same vCard
+ * (but for REV / PRODID), the same photo, nothing pending. A sync (a new ETag or changeKey of the same content, a
+ * delta from the start after 410, a full ETag comparison) wrote every such card anew — row, addresses, numbers,
+ * photo, a new version for GET cards?since= and the live event to the apps.
+ */
+function unchanged(have, x, view) {
+  if (!have || have.pending || x.pending || have.base_vcard || x.baseVcard) return false;
+  if (canonical(parse(have.fields_json, null)) !== canonical(view)) return false;
+  if (vcardKey(have.vcard) !== vcardKey(x.vcard || null)) return false;
+  return (have.photo_etag || null) === photoEtagOf(have, x.photo);
+}
 
 /**
  * Store a card in address book `book` → the row ({ created }). x: { uid, fields (vcard.fieldsOf shape), vcard (text
@@ -65,6 +107,18 @@ async function storeCard(gc, book, x) {
   }
   const view = { ...f, photo: undefined };
   delete view.photo;
+  if (have && unchanged(have, x, view)) {
+    // only what the server says about its copy (ETag, href, changeKey) — no new version, no event
+    const etag = x.etag === undefined ? have.etag : x.etag;
+    const changeKey = x.changeKey === undefined ? have.change_key : x.changeKey;
+    const href = x.href || have.href;
+    const remoteId = x.remoteId || have.remote_id;
+    if (etag !== have.etag || changeKey !== have.change_key || href !== have.href || remoteId !== have.remote_id) {
+      await store.run(gc, 'UPDATE cards SET etag = ?, change_key = ?, href = ?, remote_id = ? WHERE id = ?', [etag, changeKey, href, remoteId, have.id]);
+      return { ...have, etag, change_key: changeKey, href, remote_id: remoteId, created: false, unchanged: true };
+    }
+    return { ...have, created: false, unchanged: true };
+  }
   const json = JSON.stringify(view);
   const version = await pimstore.nextCardVersion(gc, book.user_id);
   const cols = [f.name.display || '', f.name.given || null, f.name.family || null, sortKeyOf(f), f.company || null, f.title || null, f.birthday || null, json,
@@ -95,6 +149,8 @@ async function storeCard(gc, book, x) {
 /** The photo of card `id` ({ mime, data } | null). */
 async function setPhoto(gc, id, photo) {
   if (!photo || !photo.data) {
+    const was = await store.one(gc, 'SELECT photo_etag FROM cards WHERE id = ?', [id]);
+    if (was && was.photo_etag == null) return; // none before either
     await store.run(gc, 'DELETE FROM card_photos WHERE card_id = ?', [id]);
     await store.run(gc, 'UPDATE cards SET photo_etag = NULL WHERE id = ?', [id]);
     return;
@@ -102,6 +158,8 @@ async function setPhoto(gc, id, photo) {
   const bytes = Buffer.byteLength(photo.data, 'base64');
   if (bytes > PHOTO_MAX) return;
   const etag = photoEtag(photo);
+  const was = await store.one(gc, 'SELECT c.photo_etag, p.mime FROM cards c LEFT JOIN card_photos p ON p.card_id = c.id WHERE c.id = ?', [id]);
+  if (was && was.photo_etag === etag && was.mime === photo.mime) return; // the same picture: not written again
   await store.run(gc, `INSERT INTO card_photos (card_id, mime, data, bytes, etag) VALUES (?, ?, ?, ?, ?)
     ON CONFLICT(card_id) DO UPDATE SET mime = excluded.mime, data = excluded.data, bytes = excluded.bytes, etag = excluded.etag`, [id, photo.mime, photo.data, bytes, etag]);
   await store.run(gc, 'UPDATE cards SET photo_etag = ? WHERE id = ?', [etag, id]);
@@ -138,4 +196,4 @@ async function dropBook(gc, b) {
   await store.run(gc, 'DELETE FROM addressbooks WHERE id = ?', [b.id]);
 }
 
-module.exports = { fold, valueKey, sortKeyOf, letterOf, storeCard, setPhoto, photoOf, dropCard, dropBook, CARDS_MAX, PHOTO_MAX };
+module.exports = { canonical, vcardKey, fold, valueKey, sortKeyOf, letterOf, storeCard, setPhoto, photoOf, dropCard, dropBook, CARDS_MAX, PHOTO_MAX };

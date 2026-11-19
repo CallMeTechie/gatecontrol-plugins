@@ -165,7 +165,8 @@ async function syncCollection(gc, a, col, kind, guard) {
         changed.push(ev.id);
       } else {
         const c = await storeVcard(gc, col, x.data, { href: x.href, etag: x.etag || null });
-        if (c) changed.push(c.id);
+        // 1.17.1: a card with the same content under a new ETag is no change (no event, no merge run)
+        if (c && !c.unchanged) changed.push(c.id);
       }
     } catch (e) {
       if (e && e.code === 'limit') break;

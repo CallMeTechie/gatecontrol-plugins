@@ -1,4 +1,4 @@
-<!-- version: 1.17.0 -->
+<!-- version: 1.17.1 -->
 # Mail
 
 ## What the plugin does
@@ -109,6 +109,13 @@ When attachments live on a storage target that is unreachable, Mail tries again 
 
 **Free/busy shows “unknown”.**
 The person switched free/busy off or is not in GateControl. Colleagues in Microsoft 365 appear through your Microsoft account.
+
+## New in 1.17.1
+
+- **“With attachment” shows every conversation:** If the attachment is only in an older mail that lies on the server beyond the retention, the conversation now shows too. When you scroll on, Mail fetches older mail from the server until the page is full; “Load more” only stops when the server has no older mail.
+- **Faster with “With attachment”:** The list reads only the mails with an attachment, no longer every mail of the folder.
+- **Contacts:** The sync no longer rewrites contacts that did not change. Your apps get no notice for them any more – less work for the server and the phone.
+- **Virus scan:** Many results at once (for example after the nightly re-check) are written together; results that stay the same are not written at all.
 
 ## New in 1.17.0
 

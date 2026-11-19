@@ -2,6 +2,41 @@
 
 Alle E-Mail-Konten an einem Ort – im eigenen Tab der GateControl-Apps und im Portal.
 
+## 1.17.1
+
+Fehlerbehebungen: „mit Anhang“ in der Unterhaltungsansicht, unveränderte Kontakte, Schreiblast des Virenscans.
+
+- **„mit Anhang“ verschluckte Unterhaltungen** (`server/messages.js` `list`): Eine Seite zählt Unterhaltungen und
+  Mails, die den Filter bestehen; jenseits der Aufbewahrung kamen ältere Mails vom Server aber in Stapeln von `limit`
+  Mails. Füllte ein Stapel die Seite nicht, endete die Liste (kein `next`), und eine erste Seite ohne Treffer gab gar
+  keinen Cursor – eine Unterhaltung, deren Anhang nur in einer älteren Mail jenseits der Aufbewahrung steckt, erschien
+  nie. Jetzt lädt eine Seite Stapel um Stapel, bis sie voll ist, der Server nichts mehr hat oder `WAIT_MS` um ist; die
+  Liste gibt `next`, solange der Ordner nicht vollständig ist; mit Filter lädt auch eine leere erste Seite. Die Unterhaltung
+  steht weiter mit ihrer neuesten passenden Mail in der Liste (1.10.1).
+- **Microsoft, ältere Mails** (`server/graph.js` `older`): ab der ältesten Mail hier, nicht ab der letzten Zeile der
+  Seite – mit Filter oder Unterhaltungen ist die viel neuer, Microsoft lieferte nur Bekanntes, und der Ordner galt als
+  vollständig. **IMAP** (`server/imap.js` `older`): `BEFORE` zählt ganze Tage – der Tag selbst gehört jetzt dazu (die
+  bekannten Mails bleiben außen vor).
+- **„mit Anhang“ über einen Teilindex** (`migrations/016_attachments.sql` `messages_att`, `INDEXED BY` in `page`): vorher
+  las jede Seite die Zeile jeder Mail des Ordners, um `has_att` anzusehen.
+- **Kontakte: unverändert = kein Schreiben** (`server/cardstore.js` `storeCard`): Eine neue ETag desselben Inhalts
+  (der Server stempelt `REV`/`PRODID`, faltet das Foto anders, ordnet Eigenschaften um), ein Graph-Delta von vorn (nach
+  410) oder eine neue `changeKey` schrieben jede Karte neu – Zeile, Adressen, Nummern, Foto, neue Version für
+  `GET cards?since=` und das Live-Ereignis `contacts`. Jetzt werden die Felder kanonisch (Schlüssel sortiert), die vCard
+  ohne `REV`/`PRODID` mit sortierten Zeilen und das Foto ohne Zeilenumbrüche verglichen: gleich → höchstens ETag,
+  `changeKey`, `href` werden nachgeführt, keine Version, kein Ereignis, kein Abgleich der Dubletten (`pimdav.js`,
+  `pim.js`). `setPhoto` schreibt dasselbe Bild nicht erneut. Karten mit ausstehender Änderung (`pending`) wie bisher.
+- **Virenscan: Ergebnisse gesammelt** (`server/scan.js`, Muster von Drive 1.28.1): Der Hook `mediaScanned` kommt je
+  Datei (nächtliche Nachprüfung: Hunderte in Minuten). Jeder Hook las und schrieb für sich; mehr als 32 offene
+  Host-Aufrufe → `ERR_BUSY`, und je Datei „scan state failed“. Jetzt: Warteschlange (100 ms sammeln, Stapel bis 200), eine
+  Transaktion je Stapel, immer nur ein Stapel, nur geänderte Zeilen (ohne Änderung keine Transaktion, kein Ereignis), eine
+  `UPDATE` je Ergebnis für viele Zeilen; `ERR_BUSY`/`SQLITE_BUSY`: derselbe Stapel nach 250 ms, 1 s, 3 s, danach 30 s
+  warten (höchstens zehnmal); eine Zeile „scan states deferred (database busy)“ je Lauf, bei anderem Fehler eine Warnung
+  je Stapel mit `files`. `keepAttachment` schreibt dasselbe Ergebnis nicht erneut; `stop()` versucht Wartendes einmal.
+  Indizes `attachments_media`, `draft_atts_media` (vorher las jedes Ergebnis alle Anhänge).
+- Tests: `test/list_paging.test.js`, `test/card_writes.test.js`, `test/scan_writes.test.js` (494 Hooks gleichzeitig unter
+  der Grenze von 32 Host-Aufrufen).
+
 ## 1.17.0
 
 Nutzerprofil – Vorschlag für Absendername und Signatur (GateControl ≥ 1.280.0, `permissions.profile: ["firstName", "lastName"]`).

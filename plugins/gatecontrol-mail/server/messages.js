@@ -23,6 +23,8 @@ const WAIT_MS = 8000;
 // what a person waits for at most before the answer goes without it (the apps give up after 25 s); the work goes on and
 // the live event `mail` { kind: 'changed', …, messageId } tells when it is there
 const timing = { bodyMs: 12000, fileMs: 12000 };
+// a cursor above every mail (15 digits, as cursorArg reads them): the list from its start
+const TOP = 999999999999999;
 const IMG_MAX = 700 * 1024; // the picture travels as base64 in a JSON answer (≤ 1 MB)
 
 const SUMMARY_COLS = `m.*, (SELECT COUNT(*) FROM messages t WHERE t.thread_id = m.thread_id AND t.user_id = m.user_id) AS thread_count,
@@ -135,7 +137,9 @@ async function page(gc, userId, sc, q, limit) {
       ${same.join(' ')} AND (n.date > m.date OR (n.date = m.date AND n.id > m.id)))`);
     args.push(...ids, ...(tabbed ? [tab] : []));
   }
-  const rows = await store.all(gc, `SELECT ${SUMMARY_COLS} FROM messages m WHERE ${where.join(' AND ')} ORDER BY m.date DESC, m.id DESC LIMIT ?`, [...args, limit + 1]);
+  // 1.17.1: „mit Anhang“ along its partial index (migrations/016_attachments.sql) — not every mail of the folder read
+  const by = on(q.attachments) ? ' INDEXED BY messages_att' : '';
+  const rows = await store.all(gc, `SELECT ${SUMMARY_COLS} FROM messages m${by} WHERE ${where.join(' AND ')} ORDER BY m.date DESC, m.id DESC LIMIT ?`, [...args, limit + 1]);
   const more = rows.length > limit;
   const list = rows.slice(0, limit);
   return { rows: list, next: more ? cursorOf(list[list.length - 1]) : null };
@@ -152,15 +156,36 @@ async function list(gc, userId, q) {
   }
   let res = await page(gc, userId, sc, q, limit);
   // past the retention (one folder): the end of the copy here gives a cursor; asking for that page loads older mail
-  // from the server
-  const older = sc.folders.length === 1 && !sc.folders[0].complete;
-  if (!res.next && older && q.before && res.rows.length < limit) {
-    const before = res.rows.length ? res.rows[res.rows.length - 1].date : cursorArg(q.before).date;
-    const got = await within(engine.loadOlder(gc, sc.accounts[0], sc.folders[0], before, limit), WAIT_MS);
-    if (got && got.length) res = await page(gc, userId, sc, q, limit);
+  // from the server.
+  // 1.17.1: a page counts conversations and the mails that pass the filter („mit Anhang“, …), the server gives mails —
+  // a batch of `limit` older mails often fills only part of a page (or none). Before, such a page ended the list (no
+  // cursor), and a first page without a hit gave none at all: a conversation whose attachment lies in an older mail
+  // beyond the retention never showed. Now older mail loads batch by batch until the page is full, the server has no
+  // more or the wait is over, and the list goes on while the server has older mail (graph.js / imap.js older: each
+  // batch below the mails known here).
+  const f1 = sc.folders.length === 1 ? sc.folders[0] : null;
+  let older = !!f1 && !f1.complete;
+  let loaded = false;
+  // with a filter („mit Anhang“, unread, flagged) a first page without any row waits for older mail too (else it showed
+  // „nothing here“ while the server has matching mail); without one an empty first page is an empty folder
+  const filtered = on(q.attachments) || on(q.unread) || on(q.flagged);
+  if (!res.next && older && (q.before || (filtered && !res.rows.length)) && res.rows.length < limit) {
+    const from = q.before ? cursorArg(q.before).date : TOP;
+    const until = Date.now() + WAIT_MS;
+    for (;;) {
+      const got = await within(engine.loadOlder(gc, sc.accounts[0], f1, from, limit), Math.max(until - Date.now(), 1));
+      if (!got || !got.length) break;
+      loaded = true;
+      res = await page(gc, userId, sc, q, limit);
+      if (res.next || res.rows.length >= limit || Date.now() >= until) break;
+    }
+    const fr = await store.one(gc, 'SELECT complete FROM folders WHERE id = ?', [f1.id]);
+    older = !!fr && !fr.complete;
   }
   if (!res.next && older && res.rows.length === limit) res.next = cursorOf(res.rows[res.rows.length - 1]);
-  if (!res.next && older && !q.before && res.rows.length && res.rows.length < limit) res.next = cursorOf(res.rows[res.rows.length - 1]);
+  if (!res.next && older && res.rows.length && res.rows.length < limit && (!q.before || loaded)) res.next = cursorOf(res.rows[res.rows.length - 1]);
+  // nothing here passes the filter (yet): the list goes on from where it was — asking for that page loads older mail
+  if (!res.next && older && !res.rows.length && ((filtered && !q.before) || loaded)) res.next = q.before || cursorOf({ date: TOP, id: 0 });
   const counts = { relevant: 0, other: 0 };
   if (sc.inbox && sc.folders.length) {
     const ids = sc.folders.map((f) => f.id);
