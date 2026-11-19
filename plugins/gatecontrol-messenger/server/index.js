@@ -344,23 +344,8 @@ module.exports = {
    * live event message.update { conversationId, messageId, editedAt, scan } to the members (scan.js).
    */
   async mediaScanned(arg, gc) {
-    const id = arg && typeof arg.mediaId === 'string' && /^[0-9a-f]{32}$/.test(arg.mediaId) ? arg.mediaId : null;
-    const sc = scan.norm(arg && arg.state === 'deleted' ? { state: 'infected', blocked: true, finding: arg.finding || null } : arg);
-    if (!id || !sc) return;
-    try {
-      const m = await store.one(gc, 'SELECT * FROM media WHERE media_id = ?', [id]);
-      if (!m) return;
-      const now = Date.now();
-      await store.run(gc, 'UPDATE media SET scan_state = ?, scan_blocked = ?, scan_finding = ? WHERE media_id = ?', [...scan.cols(sc), id]);
-      const msg = m.msg_id == null ? null : await store.one(gc, 'SELECT id, conv_id FROM messages WHERE id = ? AND deleted_at IS NULL', [m.msg_id]);
-      if (!msg || m.role === 'story' || m.role === 'story_thumb') return;
-      await store.run(gc, 'UPDATE messages SET updated_at = ? WHERE id = ?', [now, msg.id]);
-      const users = (await store.all(gc, 'SELECT user_id FROM members WHERE conv_id = ? AND left_at IS NULL', [msg.conv_id])).map((r) => r.user_id);
-      const box = live.outbox();
-      // editedAt: the time of the change, as clients fetch messages?changedSince= with it (the message's own editedAt stays)
-      live.queue(box, users, 'message.update', { conversationId: msg.conv_id, messageId: msg.id, editedAt: new Date(now).toISOString(), scan: sc });
-      await live.flush(gc, box);
-    } catch (e) { gc.log.warn('scan state failed', (e && e.code) || 'error'); }
+    // since 1.28.1 queued and written in batches, one transaction each; one line per run, none per file (scan.js)
+    await scan.scanned(gc, arg);
   },
 
   async tick(gc) {
@@ -387,5 +372,10 @@ module.exports = {
     // 1.9.0: the group chats of GateControl groups — after a start and every 6 hours
     try { await groupchats.tick(gc, Date.now()); } catch (e) { gc.log.warn('group chats tick failed', (e && (e.code || e.message)) || 'error'); }
     return out;
+  },
+
+  async stop() {
+    // 1.28.1: results of the virus scan still queued — one more try (scan.js)
+    try { await scan.flush({ once: true }); } catch { /* best effort */ }
   },
 };

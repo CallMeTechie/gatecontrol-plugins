@@ -1,4 +1,4 @@
-<!-- version: 1.28.0 -->
+<!-- version: 1.28.1 -->
 # Messenger
 
 ## Was das Plugin kann
@@ -73,6 +73,10 @@ Er kommt nur beim Verknüpfen und erscheint nachts. Steht „Älteren Verlauf la
 
 **Alte Nachrichten sind weg.**
 Der Administrator hat eine Aufbewahrung eingestellt, oder der Chat ist selbstlöschend.
+
+## Neu in 1.28.1
+
+- **Virenscan nach einer Störung:** War der Virenscanner eine Weile weg und prüft danach viele Dateien auf einmal, kam bisher nicht jedes Ergebnis im Chat an – manche Bilder und Dateien blieben auf „Wird geprüft …“ stehen. Jetzt kommt jedes Ergebnis an, und die Chats zeigen es sofort.
 
 ## Neu in 1.28.0
 

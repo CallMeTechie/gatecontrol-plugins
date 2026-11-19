@@ -3,6 +3,31 @@
 Chats zwischen den GateControl-Konten – in der GateControl-App (eigener Tab „Chats“), im
 Windows-Client und im Portal (eigener Tab „Chats“). Alles bleibt auf dem eigenen Server.
 
+## 1.28.1
+**Virenscan-Ergebnisse gesammelt in einer Transaktion** (Muster von Drive 1.28.1). GateControl ruft den Hook
+`mediaScanned` je Datei auf und wartet nicht auf die Antwort – nach einem Ausfall des Scanners (`retryPending`) oder bei
+der nächtlichen Nachprüfung kommen Hunderte auf einmal. Bisher schrieb jeder Hook für sich (Medium, Nachricht,
+Mitglieder lesen); die Hooks liefen parallel, bis mehr als 32 Host-Aufrufe offen waren (GateControl `MAX_HOST_CALLS`),
+GateControl antwortete `ERR_BUSY`, der Zustand ging verloren und das Protokoll hatte je Datei eine Zeile
+„scan state failed ERR_BUSY“. Die Nachricht blieb für die Empfänger auf „Wird geprüft …“.
+- **Warteschlange** (`server/scan.js`): Meldungen sammeln (100 ms, höchstens 200), ein Stapel je Transaktion, immer nur
+  ein Stapel gleichzeitig; was währenddessen kommt, ist der nächste. Kommt eine Datei zweimal, zählt die neueste Meldung.
+- **Nur Änderungen:** gleiche `state`/`blocked`/`finding` → kein Schreiben, kein Event; ohne Änderung im Stapel keine
+  Transaktion. `UPDATE media` je Ergebnis für alle Dateien des Stapels zusammen, `updated_at` der betroffenen
+  Nachrichten (nicht gelöscht, keine Storys) in einer Anweisung, höchstens 90 Parameter je Anweisung.
+- **Nachgelagert unverändert:** nach dem Commit je geänderter Nachricht `message.update { conversationId, messageId,
+  editedAt, scan }` an die Mitglieder (wie bisher); der Hook antwortet erst danach. URL, Vorschau und Push-Bild einer
+  freigegebenen Datei ergeben sich weiter beim Lesen aus `media.scan_blocked`; Brücken senden nur Dateien mit fertigem
+  Scan (`scan_pending` beim Senden) – beides ohne eigene Auslösung durch den Hook.
+- **`ERR_BUSY` / `SQLITE_BUSY`:** derselbe Stapel nach 250 ms, 1 s und 3 s erneut, danach 30 s bis zum nächsten Lauf
+  (höchstens zehnmal). Eine Zeile je Lauf „scan states deferred (database busy)“ mit `deferred`/`dropped`/`written`
+  (info, warn wenn aufgegeben), keine je Datei. Ein anderer Fehler: eine Warnung je Stapel mit `files`.
+- **`stop()`** (neu): ein letzter Versuch für Wartendes.
+- Tests: `test/scan_writes.test.js` – 494 gleichzeitige Meldungen mit der Grenze von 32 offenen Host-Aufrufen und
+  langsamer Platte: alle geschrieben, 3 Transaktionen, 494 `message.update`, keine Zeile im Protokoll; dieselben
+  Meldungen noch einmal schreiben nichts; `ERR_BUSY` wiederholt ohne Warnung; `SQLITE_BUSY` verschoben, eine Zeile;
+  nach zehn Läufen aufgegeben, eine Warnung; ein anderer Fehler, eine Warnung mit `files`.
+
 ## 1.28.0
 **„Meine Orte“ aus dem Profil.** Braucht GateControl ≥ 1.298.0 (`gc.places` Version 1, Permission `places`, Hook
 `placesChanged`). Ortsnachrichten und die Live-Ankunft können einen eigenen Ort aus „Mein Profil › Meine Orte“ nutzen;
