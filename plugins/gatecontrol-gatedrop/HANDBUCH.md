@@ -1,4 +1,4 @@
-<!-- version: 1.5.2 -->
+<!-- version: 1.6.0 -->
 # GateDrop
 
 ## Was das Plugin kann
@@ -64,7 +64,10 @@ Belegter Speicher, angekommene Sendungen, der Weg (direkt oder über den Server)
 Ein Administrator schaltet sie unter Einstellungen › Plugins › GateDrop › Berechtigungen › „Öffentliche Links erlauben“ ein.
 
 **Mein Gerät erscheint nicht als Ziel.**
-Als eigene Geräte erscheinen nur App-Installationen, die GateDrop schon einmal benutzt haben. Öffne einmal die GateDrop-Seite der App.
+Als eigene Geräte erscheinen nur App-Installationen, die GateDrop schon einmal benutzt haben – die Android-App und der Windows-Client. Öffne einmal die GateDrop-Seite der App. Der Linux-Agent, Gateways und iOS erscheinen nie, sie können nichts empfangen.
+
+**Eine direkte Sendung steht kurz auf „direkt …“.**
+Sie gilt erst als zugestellt, wenn das empfangende Gerät bestätigt, dass es alles gespeichert hat. Kommt diese Bestätigung nicht innerhalb von 20 Sekunden, nimmt GateDrop von selbst den Weg über den Server – das Gerät bekommt die Sendung dann trotzdem, aber nur einmal.
 
 **Die Übertragung geht nicht direkt.**
 Direkt geht es nur, wenn beide Geräte im selben WLAN sind. Sonst nimmt GateDrop von selbst den Weg über den Server.
@@ -74,6 +77,13 @@ Sende später noch einmal. Gesperrte Dateien gibt GateDrop nicht weiter.
 
 **Eine Sendung heißt „Vom Admin entfernt“.**
 Ein Administrator hat ihre Dateien auf dem Server gelöscht.
+
+## Neu in 1.6.0
+
+- **Nur Geräte mit GateDrop als Ziel:** Der Linux-Agent, Gateways und andere Geräte ohne GateDrop stehen nicht mehr in der Liste „Senden an“ – auch nicht bei den freigegebenen Geräten anderer.
+- **Direkt zugestellt erst mit Bestätigung:** Eine Sendung direkt im WLAN heißt erst „zugestellt“ und „abgeholt“, wenn das empfangende Gerät alles gespeichert hat. Bis dahin steht sie auf „direkt …“.
+- **Rückfall über den Server:** Bestätigt das empfangende Gerät nicht innerhalb von 20 Sekunden, geht die Sendung von selbst über den Server – ohne doppelte Zustellung.
+- **Ruhiger bei der nächtlichen Virenprüfung:** Viele Prüfergebnisse auf einmal schreibt GateDrop gesammelt und nur, wenn sich etwas ändert. Sendungen, die auf die Prüfung warten, gehen danach sofort weiter.
 
 ## Neu in 1.5.2
 

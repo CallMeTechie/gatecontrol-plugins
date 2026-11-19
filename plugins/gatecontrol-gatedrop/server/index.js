@@ -36,10 +36,9 @@ const admin = require('./admin');
 const jobs = require('./jobs');
 const bg = require('./bg');
 const net = require('./net');
-const scan = require('./scan');
-const retry = require('./retry');
 const retention = require('./retention');
 const seen = require('./seen');
+const scanq = require('./scanq');
 const { t } = require('./text');
 const { STATUS, fail, isKnown, iso, DEVICE_RE } = require('./util');
 
@@ -83,16 +82,18 @@ async function targets(ctx) {
   if (r && [...r.parents, ...r.children].includes(ctx.viewer)) list.unshift({ id: 'family', name: t(ctx.lang, 'family'), avatar: null, initials: null, colorHex: null, kind: 'family' });
   const me = ctx.deviceId ? await presence.get(gc, ctx.deviceId, ctx.viewer, ctx.now) : null;
   const devices = [];
-  // since 1.5.0 only app installations that use GateDrop (seen.js): an app without it would never fetch a send
+  // since 1.5.0 only app installations that use GateDrop (seen.js): an app without it would never fetch a send; since
+  // 1.6.0 also only an app whose platform has GateDrop (people.hasGateDrop) — never the Linux agent, a gateway or a script
   const known = await seen.of(gc, ctx.viewer);
   for (const d of await people.devicesOf(gc, ctx.viewer)) {
-    if (d.id === ctx.deviceId || !known.has(d.id)) continue;
+    if (d.id === ctx.deviceId || !known.has(d.id) || !people.hasGateDrop(d)) continue;
     const p = await presence.plan(gc, me, d, ctx.viewer, ctx.now);
     devices.push({ id: d.id, name: d.name, platform: d.platform, online: d.online, direct: p.direct === true, ...(p.direct ? { mode: p.mode } : {}) });
   }
   // other people's devices that are open for everyone (their owner's GET/PUT device)
   const peopleDevices = [];
   for (const d of await access.openDevices(gc, ctx.viewer, ctx.users, kiosk)) {
+    if (!people.hasGateDrop(d)) continue; // since 1.6.0: only apps with GateDrop (as for one's own)
     const p = await presence.plan(gc, me, d, d.owner.id, ctx.now);
     peopleDevices.push({ id: d.id, name: d.name, platform: d.platform, online: d.online, direct: p.direct === true, ...(p.direct ? { mode: p.mode } : {}), owner: d.owner });
   }
@@ -270,14 +271,14 @@ module.exports = {
    * that wait for this result (retry.js) are tried again after the answer.
    */
   async mediaScanned(arg, gc) {
-    const id = arg && typeof arg.mediaId === 'string' && /^[0-9a-f]{32}$/.test(arg.mediaId) ? arg.mediaId : null;
-    if (!id) return;
-    const sc = scan.norm(arg.state === 'deleted' ? { state: 'infected', blocked: true, finding: arg.finding || null } : arg);
-    if (!sc) return;
-    try {
-      await store.run(gc, 'UPDATE items SET scan_state = ?, scan_blocked = ?, scan_finding = ? WHERE media_id = ?', [...scan.cols(sc), id]);
-      if (sc.state !== 'pending') await retry.scanned(gc, id);
-    } catch (e) { gc.log.warn('scan state failed', (e && e.code) || 'error'); }
+    // since 1.6.0 queued and written in batches, one transaction each, only what changes; the waiting deliveries are
+    // tried again once their batch is written (scanq.js)
+    await scanq.scanned(gc, arg);
+  },
+
+  async stop() {
+    // results of the virus scan still queued: one more try (scanq.js)
+    try { await scanq.flush({ once: true }); } catch { /* best effort */ }
   },
 
   async tick(gc) {

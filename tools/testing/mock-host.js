@@ -191,7 +191,7 @@
 //   than the buffer holds (a big file without allocating it; checked against maxBytes and the quota like a real one).
 //   Devices — permissions.devices (a boolean): gc.devices.list({ userId }) → [{ id, name, platform, clientType, appVersion,
 //   online, lastSeen, via }] of that person, from opts.devices: [{ id, userId, name, platform ('android'|'windows'|'ios'|
-//   'web'), clientType?, appVersion?, online?, lastSeen?, via? }] (ERR_DEVICES_DENIED without the permission, ERR_INVALID for
+//   'web'|'linux' — the Linux agent —, or null: a token that never named its platform), clientType?, appVersion?, online?, lastSeen?, via? }] (ERR_DEVICES_DENIED without the permission, ERR_INVALID for
 //   a userId that is not an enabled account). An app request carries user.device = { id, platform } — tests pass it in
 //   req.user; like GateControl, host.request drops it for a plugin without permissions.devices. gc.notify({ …, users, devices: [deviceId] }) → only those devices (1…50 ids, each a device of opts.devices
 //   owned by one of `users`, `users` required — else ERR_INVALID; ids as strings or numbers, ≤ 100); gc.notify({ …,
@@ -566,7 +566,7 @@ const SERVICE_PAYLOAD_MAX_180 = 512 * 1024;
 // GateControl ≥ 1.193.0 (GateDrop)
 const MEDIA_MAX_BYTES_193 = 2 * 1024 * 1024 * 1024;
 const DEVICE_ID_RE = /^[A-Za-z0-9_.:-]{1,64}$/;
-const DEVICE_PLATFORMS = new Set(['android', 'windows', 'ios', 'web']);
+const DEVICE_PLATFORMS = new Set(['android', 'windows', 'ios', 'web', 'linux']);
 const UPLOAD_TIMEOUT_MAX = 30 * 60000;
 const TARGET_ANSWER_MAX = 5 * 1024 * 1024;
 const LINK_TTL_MAX = 30 * 86400000;
@@ -2032,10 +2032,11 @@ async function createHost(pluginDir, opts = {}) {
   };
   /** opts.devices as the host lists them (read on every call: a test may change the array). */
   const deviceList = () => (Array.isArray(opts.devices) ? opts.devices : []).map((d) => {
-    const platform = DEVICE_PLATFORMS.has(d.platform) ? d.platform : 'android';
+    // null: an app token that never said its platform (a gateway, a script) — GateControl lists it with platform null
+    const platform = d.platform === null ? null : (DEVICE_PLATFORMS.has(d.platform) ? d.platform : 'android');
     return {
       id: String(d.id), userId: d.userId, name: d.name == null ? String(d.id) : String(d.name), platform,
-      clientType: d.clientType || platform, appVersion: d.appVersion == null ? null : String(d.appVersion),
+      clientType: d.clientType || platform || null, appVersion: d.appVersion == null ? null : String(d.appVersion),
       online: d.online === true, lastSeen: d.lastSeen == null ? null : d.lastSeen, via: d.via == null ? null : d.via,
     };
   });

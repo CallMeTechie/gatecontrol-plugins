@@ -9,8 +9,13 @@
 //   (done, failed or expired: key and ticket are removed from the database)
 // Since 1.5.0 the receiving end decides: its ok with `bytes` below the files' size is no success ('incomplete' →
 // the server way, also after the other end's ok), its ok with every byte (or without bytes, older apps) is the
-// pick-up (deliveries.picked_at). The sender's ok alone makes the delivery 'delivered' (as before) but not picked up;
-// a failure reported after it by either end still takes the server way while the receiver has not confirmed.
+// pick-up (deliveries.picked_at). A failure reported after the sender's ok by either end still takes the server way while
+// the receiver has not confirmed.
+// Since 1.6.0 only the receiving end's ok makes the delivery 'delivered' (via direct, picked up). The sender's ok alone
+// leaves it 'direct' (on its way — apps and portal know the state since 1.0); when the receiving device has not confirmed
+// CONFIRM_MS after it (its app ended, the files never arrived, its report got lost), the delivery takes the server way
+// like a failed transfer (`unconfirmed`: overdue()) — once: the transfer is 'expired' then, and a late ok of the receiver
+// only records the pick-up (and spares the upload) instead of delivering a second time.
 //   failed/expired  → the server way: all files on the server → a push to the device (delivered via server);
 //                     files still local → the delivery waits (pending, error direct_failed) and the sender is
 //                     told { fallback: 'upload' }: it uploads them and calls POST sends/<id>/items.
@@ -22,6 +27,9 @@ const retention = require('./retention');
 const { fail, newId, iso, parseJson, DEVICE_RE } = require('./util');
 
 const TICKET_MS = 10 * 60000;
+// how long after the sender's ok the receiving device may take to confirm (it reports right after saving; Android's
+// sender asks for the pick-up 30 s and uploads when the server way needs its files)
+const CONFIRM_MS = 20000;
 const ERROR_RE = /^[a-z0-9_.-]{1,64}$/;
 
 /** A new transfer row (inside the send's transaction) → the row. */
@@ -72,7 +80,10 @@ function peerOf(tr, side) {
  * polls this and takes the server way as soon as the other end gave up, instead of waiting for its own timeout.
  */
 async function get(ctx, id) {
-  const { tr, side, send } = await locate(ctx, id);
+  let { tr, side, send } = await locate(ctx, id);
+  // the receiving device did not confirm in time (since 1.6.0): the server way first, then the answer — only when the
+  // sender asks (a receiver still saving must not learn 'expired' from its own poll and drop what it has)
+  if (side === 'sender' && await overdue(ctx.gc, ctx.now, async (uid) => (ctx.users && ctx.users.get(uid) ? ctx.users.get(uid).name : null), send.id)) ({ tr, side, send } = await locate(ctx, id));
   const items = await store.all(ctx.gc, 'SELECT idx, name, mime, bytes FROM items WHERE send_id = ? ORDER BY idx', [send.id]);
   const open = tr.status === 'open' && tr.expires_at > ctx.now;
   return {
@@ -141,10 +152,14 @@ async function result(ctx, id, body) {
     const confirmed = delivery.picked_at != null || delivery.status === 'opened';
     const directNow = delivery.status === 'direct' || (delivery.status === 'delivered' && delivery.via === 'direct');
     if (ok) {
-      if (tr.status !== 'done') await store.run(ctx.gc, "UPDATE transfers SET status = 'done', key = NULL, ticket = NULL, done_at = ? WHERE id = ?", [ctx.now, tr.id]);
-      // the sender's ok does not undo the server way the receiver's failure started
-      const recvFailed = side === 'sender' && peerOf(tr, 'sender') && !peerOf(tr, 'sender').ok;
-      if ((delivery.status === 'direct' || delivery.status === 'pending') && !recvFailed) {
+      // the sender's ok of a transfer the server way took over already (overdue) keeps it expired
+      if (tr.status === 'open' || (side === 'receiver' && tr.status !== 'done')) {
+        await store.run(ctx.gc, "UPDATE transfers SET status = 'done', key = NULL, ticket = NULL, done_at = ? WHERE id = ?", [ctx.now, tr.id]);
+      }
+      // only the receiving device's ok delivers (since 1.6.0); the sender's ok leaves the delivery 'direct' until the
+      // receiver confirms or CONFIRM_MS pass (overdue: the server way). A late ok after the server way took over (pending
+      // + direct_failed: the files were still on the sender) spares the upload; 'delivered' via server stays as it is.
+      if (side === 'receiver' && (delivery.status === 'direct' || delivery.status === 'pending')) {
         await store.run(ctx.gc, "UPDATE deliveries SET status = 'delivered', via = 'direct', error = NULL, at = ? WHERE id = ?", [ctx.now, delivery.id]);
       }
       // the receiving device has every file: the pick-up
@@ -192,6 +207,37 @@ async function expire(gc, now, nameOf) {
   return rows.length;
 }
 
+/**
+ * Direct deliveries the sending end reported ok but the receiving device did not confirm within CONFIRM_MS → the server
+ * way (fallback: all files on the server → a push to the device; files still on the sender → 'pending' + direct_failed,
+ * the sender uploads them). Optionally only those of the send `sendId`. Background, and GET sends/<id> / GET
+ * transfers/<id> (the sender asks for the pick-up — it learns of the server way at once). → count
+ */
+async function overdue(gc, now, nameOf, sendId = null) {
+  const rows = await store.all(gc, `SELECT t.id, t.send_id FROM transfers t JOIN deliveries d ON d.id = t.delivery_id
+    WHERE t.status = 'done' AND t.receiver_result IS NULL AND t.sender_result IS NOT NULL AND t.done_at <= ? AND d.status = 'direct'
+      AND d.picked_at IS NULL${sendId ? ' AND t.send_id = ?' : ''} LIMIT 200`, [now - CONFIRM_MS, ...(sendId ? [sendId] : [])]);
+  let n = 0;
+  for (const r of rows) {
+    let job = null;
+    let send = null;
+    await store.tx(gc, async () => {
+      const tr = await store.one(gc, 'SELECT * FROM transfers WHERE id = ?', [r.id]);
+      if (!tr || tr.status !== 'done' || tr.receiver_result != null) return;
+      const delivery = await store.one(gc, 'SELECT * FROM deliveries WHERE id = ?', [tr.delivery_id]);
+      if (!delivery || delivery.status !== 'direct' || delivery.picked_at != null) return;
+      send = await store.one(gc, 'SELECT * FROM sends WHERE id = ?', [tr.send_id]);
+      if (!send) return;
+      await store.run(gc, "UPDATE transfers SET status = 'expired', done_at = ? WHERE id = ?", [now, tr.id]);
+      job = (await fallback(gc, send, delivery, now)).job;
+      n++;
+    });
+    if (job) await runJobs(gc, [job], await nameOf(send.user_id));
+    if (send) await retention.touch(gc, send.id);
+  }
+  return n;
+}
+
 const isDevice = (v) => typeof v === 'string' && DEVICE_RE.test(v);
 
-module.exports = { create, get, result, expire, fallback, runJobs, directOut, rowOf, isDevice, TICKET_MS };
+module.exports = { create, get, result, expire, overdue, fallback, runJobs, directOut, rowOf, isDevice, TICKET_MS, CONFIRM_MS };
