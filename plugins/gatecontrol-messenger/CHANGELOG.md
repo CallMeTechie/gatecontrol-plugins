@@ -3,6 +3,21 @@
 Chats zwischen den GateControl-Konten – in der GateControl-App (eigener Tab „Chats“), im
 Windows-Client und im Portal (eigener Tab „Chats“). Alles bleibt auf dem eigenen Server.
 
+## 1.28.2
+**Unbekannte Brücken-Netze ausgeblendet.** Kennt GateControl ein Netz, das diese Messenger-Version noch nicht kennt
+(neuer Server, altes Plugin – z. B. Telegram mit Messenger 1.23.0), zeigte die Karte „Brücken“ den rohen Textschlüssel
+`admin.br_net_<netz>` (Zeile, Schalter, Hinweise, Messwerte von `update.sh bridges-probe`).
+- **Server** (`server/bridges.js`, `hostStatus`): `status().networks` nur mit den Netzen aus `NETWORKS`, in
+  `host.probe.services`/`sockets` nur `hs`, bekannte Netze und deren `-relay`. Damit sehen `GET admin/bridges`,
+  `PUT admin/bridges`, `GET bridges`, die Dienste für Familie und die Pushes nur bekannte Netze. Ein unbekanntes Netz
+  schalten bleibt `400 invalid`.
+- **Seiten** (`ui/common.js`): `M.netKnown(id)` (es gibt `admin.br_net_<id>`) und `M.knownNets(bridges)`; die Karte
+  „Brücken“, ihre Messwerte, „Verknüpfte Dienste“ und die Zeilen „Chat mit Nummer“ im Portal lassen Unbekanntes weg.
+  Bekannte Netze unverändert.
+- Keine Server-Änderung; weiterhin GateControl ≥ 1.298.0. Testhilfe `mock-bridges`: `setHost({ newerNetworks })`.
+  Tests in `test/unknownnets.test.js`.
+- CHANGELOG 1.25.2: Zeilenumbruch im Abschnitt „Geprüft“ geglättet.
+
 ## 1.28.1
 **Virenscan-Ergebnisse gesammelt in einer Transaktion** (Muster von Drive 1.28.1). GateControl ruft den Hook
 `mediaScanned` je Datei auf und wartet nicht auf die Antwort – nach einem Ausfall des Scanners (`retryPending`) oder bei
@@ -149,8 +164,8 @@ und das wurde erst beim ersten Öffnen der Status-Reihe angefordert.
   der Chatliste. Gespeicherte Namen räumt die Namenskorrektur beim nächsten Start auf.
 - **Geprüft (Befund „sechs Status, sechsmal dasselbe Bild“ in Android 1.126.0):** Der Feed liefert je Status seine
   eigene `mediaId`/`url`, auch für Bilder, die kurz hintereinander abgelegt werden (neuer Test). Die Ursache lag in der
-  App (Bild-Laden behielt beim Wechsel der `mediaId` das erste Bild), behoben in der Android-App
-  (GateControl-Android-Client #247). Portal und Windows laden je Status neu.
+  App (Bild-Laden behielt beim Wechsel der `mediaId` das erste Bild), behoben in der Android-App (GateControl-Android-Client
+  #247). Portal und Windows laden je Status neu.
 - Keine Server-Änderung; weiterhin GateControl ≥ 1.294.0. Testhilfe `mock-bridges`: `contacts[].contactId`. Tests in
   `test/bridgestatus.test.js` (LID-Ghost „.“ ohne Chat, mit Adressbuch, mit Chat und Bild über `contacts()`, Kontaktbild).
 

@@ -19,6 +19,7 @@
 //   host.bridges.oddStep = 'webauthn'        the next login starts with a step GateControl does not offer
 //   host.bridges.setHost({ outdated: true })     the bridge runs an older image than GateControl pins (networks[].outdated)
 //   host.bridges.setHost({ probe: {…} })         what `update.sh bridges-probe` measured (status().host.probe)
+//   host.bridges.setHost({ newerNetworks: ['matrix'] })  a newer GateControl also offers networks the plugin does not know
 //   host.bridges.acting(userId, fn)          run fn while that person has a changing request to ANOTHER plugin in
 //                                            flight (the Familie page calling this plugin's service) — unlinkFor
 //   createHost(dir, { bridges: { …, version: 1 } })   a GateControl whose gc.bridges has no unlinkFor yet (1.273.x)
@@ -183,7 +184,10 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
           ...(v10 ? { flows: [...NET_FACTS[id].flows], history: { ...NET_FACTS[id].history }, needs: noApp ? 'app' : (st.needs[id] || null), scriptNeeded: NET_FACTS[id].scriptNeeded } : {}),
           ...(v14 ? { location: id !== 'signal' } : {}),
         };
-      }),
+      // a network of a newer GateControl the plugin does not know yet (setHost({ newerNetworks: ['…'] }))
+      }).concat((st.host.newerNetworks || []).map((id) => ({ id, enabled: true, state: up ? 'running' : 'off', version: up ? '0.1.0' : null, memMb: up ? 40 : null, limitMb: up ? 256 : null,
+        ...(version >= 2 ? { outdated: false, wantVersion: '0.1.0' } : {}), ...(version >= 5 ? { clientOutdated: false } : {}),
+        ...(v10 ? { flows: ['qr'], history: { maxDays: null, phoneConfirms: false }, needs: null, scriptNeeded: 10 } : {}) }))),
       ...(v10 ? { stickers: { animated: st.stickers } } : {}),
       ...(v13 ? { mediaRequests: { mode: st.mediaRequests, options: ['off', 'daily', 'now'], dailyAt: '11:10', timeZone: 'Europe/Berlin' } } : {}),
       ...(v11 ? { telegramApp: { set: !!st.tgApp, setAt: st.tgApp ? st.tgApp.setAt : null, setBy: st.tgApp ? st.tgApp.setBy : null } } : {}),

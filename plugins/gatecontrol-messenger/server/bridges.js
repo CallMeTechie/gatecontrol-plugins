@@ -125,8 +125,25 @@ async function hostStatus(gc) {
   if (!b) return NONE;
   try {
     const s = await b.status();
-    return s && typeof s === 'object' ? s : NONE;
+    return s && typeof s === 'object' ? knownOnly(s) : NONE;
   } catch { return NONE; }
+}
+
+/**
+ * 1.28.2: only the networks this plugin knows — a newer GateControl can offer one an older Messenger has no name, no
+ * texts and no way for (e.g. Telegram before 1.24.0). Such a network is left out everywhere (admin page, portal, the
+ * lists of the probe) instead of showing its text key; the known ones stay as they are.
+ */
+function knownOnly(s) {
+  const out = { ...s };
+  if (Array.isArray(s.networks)) out.networks = s.networks.filter((n) => n && NETWORKS.includes(n.id));
+  const p = s.host && s.host.probe;
+  if (p && typeof p === 'object') {
+    const keep = (k) => k === 'hs' || NETWORKS.includes(k) || NETWORKS.includes(String(k).replace(/-relay$/, ''));
+    const only = (o) => (o && typeof o === 'object' ? Object.fromEntries(Object.entries(o).filter(([k]) => keep(k))) : o);
+    out.host = { ...s.host, probe: { ...p, services: only(p.services), sockets: only(p.sockets) } };
+  }
+  return out;
 }
 
 /** GateControl's refusals → this API's codes (the reason travels along as `reason`). */

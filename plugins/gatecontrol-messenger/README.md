@@ -983,7 +983,7 @@ Rules:
 | `DELETE bridges/:network/logins/:id` | | `{ unlinked: true }` |
 | `GET bridges/children` | | parents only: `{ children: [{ userId, networks: { whatsapp: boolean }, linked: { whatsapp: boolean }, newChat: { whatsapp: boolean } }] }` — `linked` (1.13.0): the child has an account linked, never which; `newChat` (1.16.0): new chats by number allowed |
 | `PUT bridges/children/:userId` | `{ networks?: { whatsapp: boolean }, newChat?: { whatsapp: boolean } }` | parents only: `{ child, unlinked }` — `unlinked` (1.13.0): per network taken back `true` (the child's link was ended) or `false` (it could not be ended); absent when nothing was linked or allowed |
-| `GET admin/bridges` · `PUT admin/bridges` | `{ enabled?, networks?: { whatsapp?: boolean } }` or (1.16.0, alone) `{ newChatPerHour: 1…60 }` | administrators in the admin UI: `{ bridges }` — GateControl's `gc.bridges.status()` plus `linked` per network |
+| `GET admin/bridges` · `PUT admin/bridges` | `{ enabled?, networks?: { whatsapp?: boolean } }` or (1.16.0, alone) `{ newChatPerHour: 1…60 }` | administrators in the admin UI: `{ bridges }` — GateControl's `gc.bridges.status()` plus `linked` per network (since 1.28.2 only the networks this version knows; `GET bridges` too) |
 
 `step`: `{ id, type: "user_input", fields: [{ id, type: "phone_number", optional }] }`,
 `{ id, type: "display_and_wait", display: { type: "code" | "qr", data } }` (draw

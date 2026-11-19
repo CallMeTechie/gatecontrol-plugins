@@ -1,4 +1,4 @@
-<!-- version: 1.28.1 -->
+<!-- version: 1.28.2 -->
 # Messenger
 
 ## Was das Plugin kann
@@ -73,6 +73,13 @@ Er kommt nur beim Verknüpfen und erscheint nachts. Steht „Älteren Verlauf la
 
 **Alte Nachrichten sind weg.**
 Der Administrator hat eine Aufbewahrung eingestellt, oder der Chat ist selbstlöschend.
+
+**Ein Dienst fehlt in der Karte „Brücken“.**
+GateControl bietet vielleicht schon einen Dienst an, den diese Messenger-Version noch nicht kennt. Er erscheint, sobald du den Messenger aktualisierst.
+
+## Neu in 1.28.2
+
+- **Neuer Dienst, älterer Messenger:** Bietet GateControl einen Dienst an, den diese Messenger-Version noch nicht kennt, steht er nirgends mehr – weder in der Karte „Brücken“ noch unter „Verknüpfte Dienste“. Bisher stand dort ein Textschlüssel wie „admin.br_net_telegram“. Nach einem Update des Messengers erscheint der Dienst wie gewohnt.
 
 ## Neu in 1.28.1
 
