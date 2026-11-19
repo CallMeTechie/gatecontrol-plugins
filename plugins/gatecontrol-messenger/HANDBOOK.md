@@ -1,4 +1,4 @@
-<!-- version: 1.28.1 -->
+<!-- version: 1.28.2 -->
 # Messenger
 
 ## What the plugin does
@@ -73,6 +73,13 @@ It only comes when linking and appears at night. When “Load older history” i
 
 **Old messages are gone.**
 The administrator set a retention, or the chat is a disappearing chat.
+
+**A service is missing from the card “Bridges”.**
+GateControl may already offer a service this Messenger version does not know yet. It appears once you update the Messenger.
+
+## New in 1.28.2
+
+- **New service, older Messenger:** when GateControl offers a service this Messenger version does not know yet, it no longer shows up anywhere – neither in the card “Bridges” nor under “Linked services”. Before, a text key such as “admin.br_net_telegram” stood there. After an update of the Messenger the service appears as usual.
 
 ## New in 1.28.1
 

@@ -145,6 +145,19 @@
     }
     return s;
   }
+  /**
+   * 1.28.2: a bridge network this page has a name for. A newer GateControl can offer a network an older Messenger does
+   * not know yet — it is left out instead of showing its text key (admin.br_net_…).
+   */
+  function netKnown(id) { return typeof id === 'string' && T('admin.br_net_' + id) !== 'admin.br_net_' + id; }
+  /** The bridges state with the known networks only (the same object when there is nothing to leave out). */
+  function knownNets(b) {
+    if (!b || !Array.isArray(b.networks) || b.networks.every(function (n) { return n && netKnown(n.id); })) return b;
+    var out = {};
+    Object.keys(b).forEach(function (k) { out[k] = b[k]; });
+    out.networks = b.networks.filter(function (n) { return n && netKnown(n.id); });
+    return out;
+  }
   /** The mark at a picture: the logo on the service's colour (`cls`: another class than ms-net, e.g. a mark in a row). */
   function netLogo(network, label, size, cls) {
     var known = !!NET_GLYPH[network];
@@ -353,6 +366,6 @@
     CTX: CTX, T: T, $: $, $$: $$, el: el, clear: clear, api: api, errText: errText, errCode: errCode, toast: toast, warn: warn,
     svg: svg, icon: icon, safeColor: safeColor, hm: hm, listTime: listTime, dayLabel: dayLabel, dayKey: dayKey, when: when, bytes: bytes, duration: duration,
     uuid: uuid, initials: initials, avatar: avatar, switchBtn: switchBtn, dialog: dialog, confirm: confirmDialog, LOCALE: LOCALE,
-    richText: richText, linkify: linkify, netLogo: netLogo, netGlyph: netGlyph,
+    richText: richText, linkify: linkify, netLogo: netLogo, netGlyph: netGlyph, netKnown: netKnown, knownNets: knownNets,
   };
 }());

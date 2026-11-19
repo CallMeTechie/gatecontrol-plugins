@@ -2064,7 +2064,7 @@
       body.appendChild(numRows);
       if (feature('bridge_new_chat') && window.MSNewChat && !cc) {
         M.api('GET', 'bridges').then(function (r) {
-          var b = r.bridges || {};
+          var b = M.knownNets(r.bridges || {});
           (b.networks || []).filter(function (n) { return n.newChat && ['off', 'unlinked', 'child_new_chat_off'].indexOf(n.newChat.reason) < 0; }).forEach(function (n) {
             var label = T('admin.br_net_' + n.id);
             numRows.appendChild(el('button', { type: 'button', class: 'ms-person ms-nc-row', on: { click: function () {

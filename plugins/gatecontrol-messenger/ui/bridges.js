@@ -183,7 +183,7 @@
     show([el('p', { class: 'ms-muted', text: T('br.loading') })]);
     M.api('GET', 'bridges').then(function (r) {
       if (!open) return;
-      var b = r.bridges || {};
+      var b = M.knownNets(r.bridges || {});
       if (!b.available) { show([el('p', { class: 'ms-muted', text: T('br.none_offered') })]); return; }
       // 1.23.0: a phone sent its step here („Im Portal fortsetzen“) — straight to the QR code, once per handoff
       var ho = b.handoff;
@@ -369,7 +369,7 @@
    */
   function askRecognition(n, before) {
     M.api('GET', 'bridges').then(function (r) {
-      var b = r.bridges || {};
+      var b = M.knownNets(r.bridges || {});
       var net = (b.networks || []).filter(function (x) { return x.id === n.id; })[0] || {};
       // 1.23.0: one consent per network (an older server: WhatsApp's only)
       var rec = net.recognition || (n.id === 'whatsapp' ? b.recognition : null);

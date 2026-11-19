@@ -229,7 +229,9 @@
     var date = new Date(p.at).toLocaleString(M.LOCALE, { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
     if (p.result !== 'ok') return T('admin.br_probe_failed', { date: date, result: p.result || '?' });
     var label = function (k) { return k === 'hs' ? T('admin.br_probe_hs') : (/-relay$/.test(k) ? T('admin.br_probe_relay') : T('admin.br_net_' + k)); };
-    var rows = Object.keys(p.services || {}).map(function (k) {
+    // 1.28.2: a network this page does not know (a newer GateControl) is left out, its relay too
+    var known = function (k) { return k === 'hs' || M.netKnown(String(k).replace(/-relay$/, '')); };
+    var rows = Object.keys(p.services || {}).filter(known).map(function (k) {
       var x = p.services[k];
       if (!x.running || x.memMb == null) return T('admin.br_probe_row_down', { name: label(k) });
       return T('admin.br_probe_row', { name: label(k), mem: x.memMb, peak: x.memPeakMb != null ? x.memPeakMb : x.memMb, written: x.writtenKb != null ? M.bytes(x.writtenKb * 1024) : '?' });
@@ -244,6 +246,7 @@
       .catch(function (e) { brBusy = false; M.warn(e); M.api('GET', 'admin/bridges').then(function (r) { renderBr(r.bridges); }).catch(function () {}); });
   }
   function renderBr(b) {
+    b = M.knownNets(b);
     var card = $('#ms-br');
     card.hidden = !(b && b.available);
     if (card.hidden) return;
