@@ -1,4 +1,4 @@
-<!-- version: 1.1.1 -->
+<!-- version: 1.1.2 -->
 # DNS Protection
 
 ## What the plugin does
@@ -176,6 +176,10 @@ The device has a fixed provider as “Private DNS”. Set “Private DNS” to �
 
 **“The home network already has a profile with this name”.**
 Link to the existing home profile instead of creating it – or give the profile another name first.
+
+## New in 1.1.2
+
+- Tidied up: the texts of the setup dialog carry their normal names again (leftovers of the split “move from Pi-hole” / “set up anew”). Nothing changes for you.
 
 ## New in 1.1.1
 

@@ -1,4 +1,4 @@
-<!-- version: 1.1.1 -->
+<!-- version: 1.1.2 -->
 # DNS-Schutz
 
 ## Was das Plugin kann
@@ -176,6 +176,10 @@ Auf dem Gerät ist ein fester Anbieter als „Privates DNS“ eingetragen. Stell
 
 **„Im Heimnetz gibt es schon ein Profil mit diesem Namen“.**
 Verbinde mit dem vorhandenen Heimnetz-Profil, statt es neu anzulegen – oder gib dem Profil erst einen anderen Namen.
+
+## Neu in 1.1.2
+
+- Aufgeräumt: Die Texte des Einrichtungsdialogs tragen wieder ihre normalen Namen (Reste der Trennung „Umzug von Pi-hole“ / „neu einrichten“). Für dich ändert sich nichts.
 
 ## Neu in 1.1.1
 

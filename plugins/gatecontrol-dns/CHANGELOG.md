@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.2
+
+* Aufgeräumt: Die Textschlüssel des Dialogs „DNS-Schutz einrichten“ heißen wieder normal – `wz.s1`, `wz.s3`,
+  `wz.c3`, `wz.c3_sub`, `wz.lists_hint`, `wz.k_switch`, `wz.k_switch_sub`, `wz.switch_hint` statt `…_new` (DE/EN).
+  Der Zusatz stammte aus der Zeit mit zwei Wegen (Umzug von Pi-hole / neu einrichten). Oberfläche und Texte sind
+  unverändert.
+
 ## 1.1.1
 
 Braucht GateControl **1.268.0** – dort ist die Pi-hole-Anbindung entfernt (`status().pihole` meldet immer „nicht
