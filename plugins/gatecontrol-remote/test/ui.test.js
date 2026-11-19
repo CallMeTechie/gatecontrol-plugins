@@ -64,6 +64,17 @@ describe('pages and texts', () => {
     assert.match(fs.readFileSync(path.join(UI, 'style.css'), 'utf8'), /\.rm-portal \.btn[^{]*\{min-height:44px/);
   });
 
+  it('1.8.1: the dialogs keep to GC.viewport — no floor of 420 px any more, only 300 px for head, steps and buttons', () => {
+    const css = fs.readFileSync(path.join(UI, 'style.css'), 'utf8');
+    assert.doesNotMatch(css, /max\(\s*420px\s*,\s*calc\(var\(--gc-viewport-height/);
+    for (const [sel, prop, off] of [['.modal.rmx-modal', 'max-height', 64], ['.modal.rm-dlg', 'max-height', 32], ['.modal.rm-dlg.xl', 'height', 32], ['.modal.rmx-modal.rm-wiz', 'height', 32]]) {
+      const rules = [...css.matchAll(new RegExp('(?:^|\\})' + sel.replace(/\./g, '\\.') + '\\{([^}]*)\\}', 'gm'))].map((m) => m[1]);
+      const want = new RegExp('(?:^|;)' + prop + ':max\\(300px,calc\\(var\\(--gc-viewport-height,100vh\\) - ' + off + 'px\\)\\)');
+      assert.ok(rules.some((r) => want.test(r)), sel);
+    }
+    assert.equal(require('../plugin.json').gatecontrol, '>=1.300.1');
+  });
+
   it('1.7.1: the Linux set-up names the fixed download links of the agent, no placeholders', () => {
     const DL = 'https://github.com/CallMeTechie/gatecontrol-linux-agent/releases/latest/download';
     const portal = fs.readFileSync(path.join(UI, 'portal.js'), 'utf8');
@@ -103,7 +114,7 @@ describe('pages and texts', () => {
   it('plugin.json: the permissions of the contract, an own licence, the profile section', () => {
     const m = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'plugin.json'), 'utf8'));
     assert.equal(m.id, 'gatecontrol-remote');
-    assert.equal(m.version, '1.8.0');
+    assert.equal(m.version, '1.8.1');
     assert.equal(m.name.de, 'Fernzugriff');
     assert.equal(m.permissions.remote, true);
     assert.equal(m.license.required, true);

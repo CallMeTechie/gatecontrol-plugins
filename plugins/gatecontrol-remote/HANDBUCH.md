@@ -1,4 +1,4 @@
-<!-- version: 1.8.0 -->
+<!-- version: 1.8.1 -->
 # Fernzugriff – Handbuch
 
 ## Was das Plugin kann {#was-das-plugin-kann}
@@ -28,6 +28,7 @@ Passwörter und SSH-Schlüssel speichert nicht das Plugin, sondern der verschlü
 
 ## Voraussetzungen {#voraussetzungen}
 
+- GateControl **1.300.1** oder neuer. Ab dieser Version dunkelt GateControl auch die Kopfzeile ab, wenn ein langer Dialog die Seite verschiebt, und meldet dem Plugin den freien Platz richtig – die Dialoge passen damit genau ins Fenster.
 - Für „Schlüssel automatisch einrichten“, das Beenden von tmux-Sitzungen und Codes für den Linux-Agent auf der Admin-Seite: GateControl mit der Fernzugriff-Schnittstelle **Version 9** (GateControl **1.297.0** oder neuer). Mit einem älteren GateControl fehlen diese Knöpfe; „SSH-Schlüssel erzeugen“ bleibt, und den Code für den Agent erzeugst du wie bisher unter Benutzer › Gerät hinzufügen.
 - Für den neuen Dialog „Gerät hinzufügen“: GateControl mit der Fernzugriff-Schnittstelle **Version 7** (GateControl **1.292.0** oder neuer). Mit einem älteren GateControl bleibt das bisherige Formular mit Reitern.
 - Für Linux-Geräte: GateControl **1.289.0** oder neuer und auf dem Rechner der Agent **gatecontrol-agent** (siehe [Linux-Geräte](#linux)).
@@ -315,6 +316,11 @@ Das Recht wird bei jedem Verbinden neu geprüft.
 **„Zu viele falsche Codes“:** Warte 15 Minuten oder lass dir am PC einen neuen Code zeigen.
 
 **Im Browser fragt Windows nach der Anmeldung nicht:** Verlangt der PC die Anmeldung auf Netzwerkebene (NLA), braucht die Sitzung im Browser Benutzername und Passwort, die die Sitzungsseite noch nicht abfragt. Verbinde dich dann aus der GateControl-App.
+
+## Neu in 1.8.1 {#neu-1-8-1}
+
+- **Dialoge passen ins Fenster:** „Gerät hinzufügen“, „Bearbeiten“ und der Assistent sind so hoch wie der freie Platz im Fenster, auch in einem niedrigeren Fenster. Bisher waren sie mindestens 420 Pixel hoch und ragten dann über das Fenster hinaus. Nur in einem sehr niedrigen Fenster (z. B. Handy quer) bleiben sie so hoch, dass die Knöpfe sichtbar sind; dann scrollt die Seite, ohne hellen Streifen.
+- Braucht GateControl 1.300.1 oder neuer.
 
 ## Neu in 1.8.0 {#neu-1-8-0}
 

@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.8.1
+
+Mindestversion **GateControl 1.300.1** (`gatecontrol.ref` = v1.300.1, gatecontrol#532).
+
+- **Keine Mindesthöhe von 420 px mehr** (`ui/style.css`): Der Assistent (`.rmx-modal`, `.rm-wiz`) und der große Dialog
+  (`.rm-dlg`, `.rm-dlg.xl`) halten sich an `--gc-viewport-height` (abzüglich 64 bzw. 32 px). Die 420 px (1.7.2) fingen
+  ab, dass `GC.viewport` einem Rahmen auf einer Seite, die kürzer als das Fenster ist, nur seine eigene Höhe oder
+  weniger meldete; mit ihnen ragte der Dialog in einem Fenster unter etwa 600 px Höhe über das Fenster hinaus
+  (1280×560: 420 statt 326 px, die Seite scrollte). GateControl 1.300.1 zählt den `min-height`-Füller der Seite nicht
+  mehr als Inhalt und dunkelt Kopfzeile und untere Navigation über dem Rahmen mit ab.
+- **Untergrenze 300 px:** `GC.viewport` ist mindestens 200 px; ohne Untergrenze bliebe in einem sehr niedrigen Fenster
+  (1440×400, Handy quer 844×390) vom Assistenten nur Kopf und Schritte, die Knöpfe wären abgeschnitten. Mit 300 px
+  passen Kopf, Schritte, etwas Inhalt und Knöpfe; die Seite scrollt dort, GateControl 1.300.1 dunkelt Kopfzeile und
+  untere Navigation dabei mit ab (geprüft im Browser gegen v1.300.1: 1440×900, 1280×560, 1440×400, 844×390,
+  390×844, hell/dunkel).
+- Handbuch „Voraussetzungen“ und „Neu in 1.8.1“.
+
 ## 1.8.0
 
 Entwürfe „SSH-Schlüssel und tmux“ und „Fernzugriff-Seite neu“ (freigegeben mit allen Empfehlungen; Vertrag `contract-fz-1.8`). Braucht GateControl mit `gc.remote` **Version 9** (`hostKeys.scan`, `installKey`, `testKey`, `removeKey`, `tmux.list` mit Fenstern, `tmux.kill`, `enrollment.*`). Mindestversion **GateControl 1.297.0** (`gatecontrol.ref` = v1.297.0, gatecontrol#517); ohne Version 9 fehlen die neuen Knöpfe, alles andere bleibt wie in 1.7.2.
