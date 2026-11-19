@@ -27,7 +27,7 @@ describe('GET status', () => {
     assert.equal(st.http, 200);
     assert.deepEqual([st.state, st.enabled, st.pause, st.outage], ['active', true, null, null]);
     assert.deepEqual(st.device, { peerId: P.leaPhone, name: 'Leas Handy', platform: 'android', state: 'filtered', ownDns: null });
-    assert.deepEqual(st.profile, { id: 'pkinder01', name: 'Kinder', safeSearch: true });
+    assert.deepEqual(st.profile, { id: 'pkinder01', name: 'Kinder', safeSearch: true, home: false });
     assert.deepEqual(st.counters, { scope: 'server', queries: 18432, blocked: 3127, percent: 17 });
     assert.equal(st.top, null, 'nothing per device without the query log');
     assert.deepEqual(st.may, { pause: true, resume: false, extend: false, reason: null, durations: [5, 30, 60], maxMinutes: 60, forever: false });

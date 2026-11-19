@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.2.0
+
+Läuft weiter ab GateControl **1.268.0** (keine neue Server-Funktion nötig).
+
+* **App-API: `status.profile.home`** (`true` | `false`): das Profil des Geräts „gilt zu Hause und unterwegs“ – es ist
+  mit dem Profil des DNS-Filters eines Heimnetzes verbunden (`profiles[].home`) und der DNS-Filter dort ist
+  eingeschaltet. Nur eine Ergänzung; ältere Apps übergehen das Feld.
+* **Portal**: „Profil „Kinder“ · gilt zu Hause und unterwegs“ bei einem solchen Profil.
+* README „App-API“: `profile.home`; die 404 des Kerns (Plugin nicht installiert / aus / ohne Lizenz) trägt ab
+  GateControl 1.301.0 `reason: "plugin_unavailable"` und ist so von der 404 des Plugins (`not_found`, Gerät oder
+  Person unbekannt) zu unterscheiden.
+
 ## 1.1.2
 
 * Aufgeräumt: Die Textschlüssel des Dialogs „DNS-Schutz einrichten“ heißen wieder normal – `wz.s1`, `wz.s3`,
