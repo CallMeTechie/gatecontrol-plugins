@@ -32,7 +32,7 @@ const SCREENS_MAX = 75;
 // the indexes the statements stand on: one that is gone or no longer taken shows here, also where SQLite then finds
 // its way by another index and sorts
 const INDEXES = {
-  screens: ['messages_list', 'messages_thread', 'messages_unread', 'messages_user', 'bodies_bytes', 'attachments_message', 'filing_user'],
+  screens: ['messages_list', 'messages_att', 'messages_thread', 'messages_unread', 'messages_user', 'bodies_bytes', 'attachments_message', 'filing_user'],
   background: ['messages_body_state', 'messages_unfiled', 'messages_user', 'bodies_bytes', 'attachments_message'],
   items: ['ai_results_at', 'messages_flagged', 'todo_done_message'],
 };

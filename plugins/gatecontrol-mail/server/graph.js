@@ -230,7 +230,11 @@ async function latest(gc, a, f, count, since, timeoutMs) {
 
 /** Older messages of folder `f` than `before` (beyond the retention) → created ids. */
 async function older(gc, a, f, before, count) {
-  const filter = encodeURIComponent(`receivedDateTime lt ${new Date(before).toISOString()}`);
+  // 1.17.1: below the oldest mail here — a list with a filter or conversations asks below its last row, which can be
+  // far newer: Microsoft answered with mails known already, nothing new came and the folder counted as complete
+  const low = await store.one(gc, 'SELECT date FROM messages WHERE folder_id = ? ORDER BY date ASC, id ASC LIMIT 1', [f.id]);
+  const at = Math.min(before, low ? low.date : before, 8.64e15);
+  const filter = encodeURIComponent(`receivedDateTime lt ${new Date(at).toISOString()}`);
   const j = await get(gc, a, `/me/mailFolders/${encodeURIComponent(f.remote_id)}/messages?$select=${SELECT}&$filter=${filter}&$orderby=receivedDateTime desc&$top=${count}`);
   const created = [];
   for (const x of (j && j.value) || []) {

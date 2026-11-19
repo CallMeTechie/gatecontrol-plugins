@@ -1,4 +1,4 @@
-<!-- version: 1.17.0 -->
+<!-- version: 1.17.1 -->
 # Mail
 
 ## Was das Plugin kann
@@ -109,6 +109,13 @@ Liegen die Anhänge auf einem Speicherziel, das nicht erreichbar ist, versucht M
 
 **Frei/Gebucht zeigt „unbekannt“.**
 Die Person hat Frei/Gebucht abgeschaltet oder ist nicht in GateControl. Kolleginnen in Microsoft 365 erscheinen über dein Microsoft-Konto.
+
+## Neu in 1.17.1
+
+- **„Mit Anhang“ zeigt alle Unterhaltungen:** Steckt der Anhang nur in einer älteren Mail, die über die Aufbewahrung hinaus auf dem Server liegt, erscheint die Unterhaltung jetzt auch. Beim Weiterblättern holt Mail ältere Mails vom Server, bis die Seite voll ist; „Weitere laden“ hört erst auf, wenn der Server keine älteren Mails mehr hat.
+- **Schneller bei „Mit Anhang“:** Die Liste liest nur noch die Mails mit Anhang, nicht mehr jede Mail des Ordners.
+- **Kontakte:** Der Abgleich schreibt Kontakte, die sich nicht geändert haben, nicht mehr neu. Deine Apps bekommen dafür keine Meldung mehr – weniger Arbeit für Server und Telefon.
+- **Virenscan:** Viele Prüfergebnisse auf einmal (etwa nach der nächtlichen Nachprüfung) schreibt Mail gesammelt; Ergebnisse, die gleich bleiben, schreibt es gar nicht.
 
 ## Neu in 1.17.0
 

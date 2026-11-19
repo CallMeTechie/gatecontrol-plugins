@@ -274,7 +274,9 @@ async function syncFolder(gc, a, s, f, o) {
 /** Headers older than `before` (ms) the server keeps beyond the retention → created ids (≤ count). */
 async function older(gc, a, s, f, before, count) {
   await s.open(f.path, { readOnly: true });
-  const uids = ((await s.search({ before: sinceArg(before) })) || []).filter(Number.isSafeInteger).sort((x, y) => y - x);
+  // IMAP's BEFORE counts whole days: the day of `before` too (the mails known here are left out below) — else the
+  // older mails of that day never loaded (1.17.1)
+  const uids = ((await s.search({ before: sinceArg(Math.min(before + 86400000, 8.64e15)) })) || []).filter(Number.isSafeInteger).sort((x, y) => y - x);
   const known = new Set((await store.all(gc, 'SELECT uid FROM messages WHERE folder_id = ? AND uid IS NOT NULL', [f.id])).map((r) => r.uid));
   const take = uids.filter((u) => !known.has(u)).slice(0, count);
   const created = [];
