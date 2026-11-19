@@ -2,6 +2,35 @@
 
 Alle E-Mail-Konten an einem Ort – im eigenen Tab der GateControl-Apps und im Portal.
 
+## 1.17.2
+
+Fehlerbehebungen (Befunde aus PR #246): ältere Mails nach Datum statt UID, Ordnerflag `complete`, deterministischer
+Budget-Test.
+
+- **Ältere Mails nach dem Datum** (`server/imap.js` `older`): Jenseits der Aufbewahrung kamen die `count` höchsten UIDs
+  vor dem Cursor. In importierten oder befüllten Ordnern folgen UIDs dem Eingang in den Ordner, nicht dem Datum – der
+  erste Stapel waren Mails von vor Jahren, die Liste setzte ihren Cursor dorthin, und neuere Mails eines späteren
+  Stapels lagen über dem Cursor (nie zu sehen, springende Liste). Jetzt nach dem Date-Kopf, nach dem auch die Liste
+  sortiert (`SENTBEFORE`/`SENTSINCE`, UTC-Tagesgrenzen): eine Suche nach allen unbekannten älteren Mails (wie bisher;
+  leer → vollständig), bei mehr als `count` Tagesfenster rückwärts, je doppelt so lang, bis sie `count` Mails halten;
+  das letzte Fenster wird halbiert, solange es weit mehr hält; dazu ein Tag darunter (Zeitzone des Date-Kopfs). Wenige
+  Suchen je Stapel (höchstens `WINDOWS_MAX`), Kopfdaten nur der gewählten Mails – nicht des ganzen Ordners. Holt ein
+  Stapel alle übrigen Mails, ist der Ordner sofort vollständig (nicht erst nach einem leeren Stapel).
+- **`complete` bleibt stehen** (`server/imap.js` `syncFolder`, `server/graph.js` `syncFolder`): Mit
+  Aufbewahrungsgrenze schrieb jede Synchronisierung `complete = 0` – die Liste fragte an ihrem Ende jedes Mal den Server
+  und gab `next`, obwohl nichts mehr kam. Jetzt: ohne Grenze wie bisher, mit Grenze der Wert, den `older` gesetzt hat;
+  eine neue UIDVALIDITY setzt ihn zurück (auch im Speicher). Die Aufräumung (`server/engine.js` `retention`) setzt
+  ihn für die Ordner der entfernten Mails auf 0.
+- **Budget-Test „Runde in Häppchen“ deterministisch** (`test/budget.test.js`): Schon die Einrichtung lief mit dem
+  Zugbudget von 60 ms; auf einer langsamen Maschine war die erste Runde danach nicht durch, `roundDue` ließ ihren Rest
+  stehen, und die geprüfte Runde öffnete nur diesen Rest. Jetzt Einrichtung mit den üblichen Grenzen (geprüft: keine
+  Runde offen) und für die geprüfte Runde eine eigene Uhr (`engine.clock`, von `deadline` gelesen), die jedes Öffnen um
+  25 ms vorstellt – die Prüfung ist schärfer: genau drei Ordner je Zug, genau vier Läufe. Derselbe Fehler steckte in
+  „ein Konto hängt an seinem Server“ (Einrichtung unter `runMs: 300`; unter Last ebenfalls rot): Einrichtung mit den
+  üblichen Grenzen, die Uhr des Laufs steht, der Test wartet auf das Ende der Züge statt auf feste 100 ms.
+- Tests: `test/list_paging.test.js` (importierter Ordner mit gemischter UID-/Datumsfolge, Flag nach Sync und
+  Aufräumung); die Test-Mailwelt kennt `SENTSINCE`/`SENTBEFORE` und ein eigenes `internalDate`.
+
 ## 1.17.1
 
 Fehlerbehebungen: „mit Anhang“ in der Unterhaltungsansicht, unveränderte Kontakte, Schreiblast des Virenscans.

@@ -58,7 +58,7 @@ class FakeMail {
     const uid = box.uidNext++;
     if (box.modseq != null) box.modseq++;
     const msg = {
-      uid, flags: m.flags || [], size: (m.text || m.html || '').length + 500, internalDate: ms(m.date || Date.now()),
+      uid, flags: m.flags || [], size: (m.text || m.html || '').length + 500, internalDate: ms(m.internalDate || m.date || Date.now()),
       envelope: {
         date: ms(m.date || Date.now()), subject: m.subject || '', from: [m.from || { name: 'Absender', address: 'absender@example.com' }], sender: [],
         replyTo: m.replyTo || [], to: m.to || [{ name: '', address: user }], cc: m.cc || [], bcc: [], inReplyTo: m.inReplyTo || null,
@@ -112,6 +112,14 @@ class FakeMail {
           if (q.uid && !inRange(q.uid, 1e9)(m.uid)) return false;
           if (q.since && m.internalDate < ms(q.since)) return false;
           if (q.before && m.internalDate >= ms(q.before)) return false;
+          // SENTSINCE / SENTBEFORE: the day of the Date header (UTC here), as imapflow sends them — a whole day; BEFORE a
+          // time that is not midnight counts that day too (imapflow adds a day)
+          const day = (v) => Math.floor(v / 86400000);
+          if (q.sentSince && day(m.envelope.date) < day(ms(q.sentSince))) return false;
+          if (q.sentBefore) {
+            const b = ms(q.sentBefore);
+            if (day(m.envelope.date) >= day(b) + (b % 86400000 ? 1 : 0)) return false;
+          }
           if (q.seen === false && m.flags.includes('\\Seen')) return false;
           const has = (v, w) => String(v || '').toLowerCase().includes(String(w).toLowerCase());
           if (q.subject && !has(m.envelope.subject, q.subject)) return false;

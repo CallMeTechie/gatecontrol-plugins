@@ -125,10 +125,14 @@ async function pump(x) {
 
 const waiting = (x) => x.prio.length + x.queue.length;
 
+// 1.17.2: the clock of the time budgets (deadline) — a test puts its own in (the run's steps take its time, not the
+// machine's: the same result on a slow machine)
+const clock = { now: () => Date.now() };
+
 /** A point in time `ms` from now: { left(), over() }. */
 function deadline(ms) {
-  const end = Date.now() + Math.max(0, ms);
-  return { left: () => end - Date.now(), over: () => Date.now() >= end };
+  const end = clock.now() + Math.max(0, ms);
+  return { left: () => end - clock.now(), over: () => clock.now() >= end };
 }
 const over = (until) => !!(until && until.over());
 
@@ -1063,8 +1067,13 @@ async function backfill(gc, a, quota, until) {
 async function retention(gc, cfg, now) {
   const since = config.retentionStart(cfg, now);
   if (!since) return 0;
-  const rows = await store.all(gc, 'SELECT id FROM messages WHERE date < ? AND (seen_at IS NULL OR seen_at < ?) AND flagged = 0 LIMIT 2000', [since, now - 7 * 86400000]);
-  if (rows.length) await mailstore.remove(gc, rows.map((r) => r.id));
+  const rows = await store.all(gc, 'SELECT id, folder_id FROM messages WHERE date < ? AND (seen_at IS NULL OR seen_at < ?) AND flagged = 0 LIMIT 2000', [since, now - 7 * 86400000]);
+  if (rows.length) {
+    await mailstore.remove(gc, rows.map((r) => r.id));
+    // 1.17.2: their folders have older mail on the server again (a sync keeps `complete` now — imap.js / graph.js)
+    const ids = [...new Set(rows.map((r) => r.folder_id))];
+    for (const part of store.chunks(ids)) await store.run(gc, `UPDATE folders SET complete = 0 WHERE complete = 1 AND id IN (${store.marks(part.length)})`, part);
+  }
   return rows.length;
 }
 
@@ -1176,7 +1185,7 @@ function adopt(gc, a, s0) {
 }
 
 module.exports = {
-  run, withAccount, direct, syncInbox, syncAll, syncOne, loadOlder, loadBody, loading, attachment, filesLater, setFlags, move, destroy, appendSent, remoteSearch,
+  clock, run, withAccount, direct, syncInbox, syncAll, syncOne, loadOlder, loadBody, loading, attachment, filesLater, setFlags, move, destroy, appendSent, remoteSearch,
   retention, tick, start, stop, forget, probe, adopt, setState, isGraph, mailError, stateOf, backfill, MONTH, copy, moveBack, dropCopies,
   limits, deadline, folderSynced,
 };
