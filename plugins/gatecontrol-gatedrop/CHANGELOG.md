@@ -2,6 +2,37 @@
 
 Teilen wie Quick Share – über den eigenen GateControl-Server.
 
+## 1.6.0
+
+- **Nur Geräte mit GateDrop als Ziel:** `GET targets` listet unter `devices` und `peopleDevices` nur noch App-Installationen
+  mit der Plattform `android` oder `windows` (`platform` aus `gc.devices.list`, das GateControl aus `X-Client-Platform`
+  der Apps kennt) – zusätzlich zu „hat GateDrop schon benutzt“ (1.5.0). Der Linux-Agent (`linux`), Gateways und
+  Skript-Tokens (Plattform unbekannt) und iOS erscheinen nicht mehr, auch wenn sie je die App-API von GateDrop
+  angefragt haben. `POST sends` nimmt eigene Geräte-IDs weiter an (Apps mit gespeicherter Liste).
+- **Direktzustellung erst mit echter Bestätigung:** Das `ok` des Absenders lässt die Zustellung jetzt auf `direct`
+  (unterwegs) statt sie `delivered` zu setzen. Erst das `ok` des empfangenden Geräts (alle Bytes, ältere Apps ohne
+  `bytes`) oder sein `POST sends/<id>/opened` macht sie `delivered` bzw. `opened` (via `direct`) mit `pickedAt`.
+  Bisher galt eine Direktzustellung schon nach dem `ok` des Absenders als `delivered` – auch wenn das Zielgerät die
+  Datei nie gespeichert hatte. Neue Zustände gibt es nicht: `direct` kennen alle Apps und das Portal („direkt …“).
+- **Rückfall ohne Bestätigung:** Meldet das empfangende Gerät 20 s (`CONFIRM_MS`) nach dem `ok` des Absenders nichts,
+  nimmt die Zustellung den Server-Weg wie eine fehlgeschlagene Übertragung (`error: direct_failed`): Dateien auf dem
+  Server → Push an das Gerät (`delivered` via `server`); Dateien nur auf dem Absender → `pending` + `direct_failed`, der
+  Absender lädt sie hoch (`POST sends/<id>/items`). Geprüft in der Hintergrundpflege und sofort bei `GET sends/<id>`
+  bzw. `GET transfers/<id>` des Absenders (Android fragt nach dem eigenen `ok` 30 s lang). Die Übertragung wird dabei
+  `expired`; der Rückfall läuft genau einmal. Ein spätes `ok` des Empfängers trägt danach nur noch die Abholung ein
+  (und erspart den Upload, wenn er noch aussteht) – keine zweite Zustellung, kein zweiter Push.
+- **Virenscan-Meldungen gesammelt (wie Drive 1.28.1):** Der Hook `mediaScanned` schreibt nicht mehr jede Meldung
+  einzeln: Warteschlange (100 ms sammeln, höchstens 200 je Stapel), ein Stapel je Transaktion, immer nur einer
+  gleichzeitig, ohne Änderung kein Schreibvorgang. `ERR_BUSY`/`SQLITE_BUSY`: derselbe Stapel nach 250 ms, 1 s und 3 s
+  erneut, danach 30 s auf den nächsten Lauf (höchstens zehnmal); eine Zeile je Lauf („scan states deferred (database
+  busy)“), bei anderen Fehlern eine Warnung je Stapel statt „scan state failed“ je Datei. Zustellungen, die auf die
+  Prüfung warten (`scan_pending`), werden direkt nach dem Schreiben ihres Stapels erneut versucht (eine Abfrage je
+  Stapel statt je Datei); auch ein aufgegebener Stapel stößt sie an.
+- Tests: `confirm.test.js` (Ziele, Bestätigung, Rückfall, keine Doppelzustellung, Empfangsbestätigung per `opened`),
+  `scan_writes.test.js` (ein Commit je Stapel, nichts ohne Änderung, ERR_BUSY/SQLITE_BUSY, ein Fehler eine Zeile,
+  wartende Zustellung geht nach dem Schreiben). Der Mock-Host kennt die Plattform `linux` und `platform: null`.
+- Keine neue GateControl-Funktion: Mindestversion bleibt 1.193.0. Keine Migration.
+
 ## 1.5.2
 
 - **Weniger Schreibvorgänge:** die Person (`people`: Sprache, zuletzt gesehen) wird höchstens alle 10 Minuten geschrieben (oder sofort, wenn sich die Sprache ändert), ein Wandtablet einmal als Kiosk-Gerät markiert – vorher bei jeder Anfrage jeder App (im Protokoll von GateControl 1.253.5 je ~300 ms auf einem langsamen Datenträger).

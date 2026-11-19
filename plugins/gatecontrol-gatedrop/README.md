@@ -76,7 +76,9 @@ anything else (HTML, XML, JSON, SVG, …) goes up as `application/octet-stream`.
 `family` is listed for members of Familie's family (parents and children). `devices`: the person's app installations
 (`gc.devices.list`, no web clients, not the asking one) — since 1.5.0 only those that used GateDrop's app API at least once
 (any request with `user.device`; the migration took over what was known: presence, sends, receipts, direct transfers,
-`PUT device`), so an app without GateDrop is no longer offered; `POST sends` still takes any own device id; `direct` = both have a presence report younger than 15 minutes
+`PUT device`), so an app without GateDrop is no longer offered; since 1.6.0 also only an app whose `platform` (from
+`gc.devices.list`, i.e. the apps' `X-Client-Platform`) is `android` or `windows` — never the Linux agent (`linux`), a
+gateway or script token (platform unknown) or iOS; the same for `peopleDevices`; `POST sends` still takes any own device id; `direct` = both have a presence report younger than 15 minutes
 with addresses in the same private IPv4 network (10/8, 172.16/12, 192.168/16; the shorter prefix of both), the target is
 online, and one side listens (`mode`: `push` = the target listens, `pull` = the asking device listens). Show the link
 target only when `me.canLink && links.enabled`.
@@ -209,13 +211,18 @@ receives `kind: "data"`, `silent: true`) whose `data` is
   delivery: { id, kind, target, status, via, error, at }, fallback: null | "server" | "upload", missing?: [indexes] }`.
   `ok: true` → delivered via direct. Since 1.5.0 the **receiving end** decides: its `ok` with `bytes` below the files'
   size counts as a failure (`incomplete`, stored as its result) — also after the sender's `ok`; its `ok` with every byte (or
-  without `bytes`, older apps) is the pick-up (`pickedAt`). The sender's `ok` alone makes the delivery `delivered` via
-  direct (as before) but not picked up, and no longer undoes a server way the receiver's failure started. The answer's
+  without `bytes`, older apps) is the pick-up (`pickedAt`). Since 1.6.0 only that `ok` makes the delivery `delivered`
+  via direct: the sender's `ok` alone leaves it `direct` (on its way), and it never undoes a server way the receiver's
+  failure started. No confirmation **20 s** after the sender's `ok` (the receiving app ended, the files never arrived,
+  its report got lost): the server way like a failure (`error: direct_failed`, the transfer `expired`) — checked by the
+  background and at once by the sender's `GET sends/<id>` / `GET transfers/<id>` (the sender that asks for the pick-up
+  learns `pending` + `direct_failed` and uploads). It runs once; a late receiver `ok` then only records the pick-up (and
+  makes a delivery still waiting for the upload `delivered` via direct) — no second delivery, no second push. The answer's
   `delivery` carries `pickedAt`. A failure: all files on the server → `fallback: "server"` (a push to the device
   now); files still local → `fallback: "upload"`, `missing` = the item indexes: the sender uploads them and calls
 * `POST sends/<id>/items` `{ items: [{ index, mediaId }] }` (sender) → `{ send }`; once all files are there the waiting
   device deliveries go through the server.
-* No result within 10 minutes: the background does the same as a failure.
+* No result within 10 minutes: the background does the same as a failure; since 1.6.0 also 20 s after the sender's `ok` without the receiver's (above).
 
 ### Deliveries through the server
 
@@ -271,7 +278,8 @@ files with `GET items/<mediaId>` as usual.
   apps' media route `/api/v1/client/plugins/gatecontrol-gatedrop/media/<mediaId>` (Range, the hook `mediaAccess`
   allows the sender and the recipients until the send expires), in the portal a signed `/plugin-media/…` URL.
 * `POST sends/<id>/opened` (recipient) → `{ send }`: the person deliveries, and a device delivery only when that device
-  itself calls (`waiting` or `delivered` → `opened`; the portal or another device never marks it). The apps call it once a send is received (files saved, or a text / link shown) — it takes the send off `GET pending`.
+  itself calls (`waiting` or `delivered` → `opened`; since 1.6.0 also `direct` → `opened` via direct, picked up: the
+  receiving device's receipt confirms a direct transfer whose result it did not report; the portal or another device never marks it). The apps call it once a send is received (files saved, or a text / link shown) — it takes the send off `GET pending`.
 * `DELETE links/<token>` (the link's owner) → `{ revoked }`.
 
 A link with a PIN gets a generic title ("Geteilte Dateien" / "Shared files"), so no file name shows before the PIN.
@@ -307,7 +315,9 @@ minimum stays 1.193.0.
   (hook `mediaScanned`), GateDrop delivers it: clean or only marked → `delivered`; quarantined or deleted → `failed`
   `quarantined`; not checkable and blocked → `failed` `scan_blocked` (NAS and Drive save the other files). The background
   tries a waiting delivery again every 5 minutes (a missed result) and gives up 24 hours after the send: `failed`
-  `scan_pending`. Before 1.4.1 such a delivery failed at once with `scan_pending`.
+  `scan_pending`. Since 1.6.0 the hook's results are queued and written in batches (≤ 200, one transaction each, one at
+  a time, nothing written without a change; a busy database: again after 250 ms / 1 s / 3 s, then the next run in 30 s,
+  one log line per run) — the waiting deliveries go right after their batch is written. Before 1.4.1 such a delivery failed at once with `scan_pending`.
 * **Portal:** an upload the scan refuses says „<name> abgelehnt – Schadsoftware gefunden.“, the history marks received
   files „Gesperrt – Schadsoftware“, „Gesperrt – nicht prüfbar“, „Wird geprüft …“ or „Warnung – Schadsoftware“ (no
   download for held-back files; a marked file asks first).
@@ -324,7 +334,7 @@ Topics `received` ("Empfangen": deliveries, silent transfer pushes) and `link` (
 | target | confirmed by |
 |---|---|
 | device (server) | that device's `POST sends/<id>/opened` (not another device, not the portal) |
-| device (direct) | the receiving device's `POST transfers/<id>/result { ok: true, bytes }` with every byte (or without `bytes`) |
+| device (direct) | the receiving device's `POST transfers/<id>/result { ok: true, bytes }` with every byte (or without `bytes`), or (1.6.0) its `POST sends/<id>/opened` |
 | person | the person's `POST sends/<id>/opened`; `family`: every member at sending (the delivery's `status` becomes `opened` at the first, as before) |
 | person via the Messenger | the message carries every file (no "+N Dateien in GateDrop") |
 | NAS, Drive | saved (`delivered`) |

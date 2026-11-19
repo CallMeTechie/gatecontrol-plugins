@@ -115,7 +115,8 @@ test('overview: storage picked up / not, 7 days arrived / waiting / failed, dire
     const tr = s2.direct[0].transferId;
     await phone(c)('POST', `transfers/${tr}/result`, { ok: true, bytes: 3000 });
     let r2 = await rowOf(c, s2.id);
-    assert.deepEqual([r2.way, r2.status.state, r2.server.state], ['direct', 'waiting', 'never'], 'the sender\'s ok alone is no pick-up');
+    // since 1.6.0 the delivery stays 'direct' (on its way) until the receiving end confirms: "ausstehend"
+    assert.deepEqual([r2.way, r2.status.state, r2.server.state], ['direct', 'pending', 'never'], 'the sender\'s ok alone is no pick-up');
     await pc(c)('POST', `transfers/${tr}/result`, { ok: true, bytes: 3000 });
     r2 = await rowOf(c, s2.id);
     assert.deepEqual([r2.status.state, r2.status.how], ['picked', 'received']);
@@ -150,7 +151,7 @@ test('direct, several files: the receiver\'s ok with fewer bytes is no success â
     const s2 = (await phone(c)('POST', 'sends', { items: [{ mediaId: await c.upload(ANNA, PDF, 'application/pdf') }, { mediaId: await c.upload(ANNA, PNG, 'image/png') }], to: { devices: ['anna-pc'] } })).json;
     const tr2 = s2.direct[0].transferId;
     const first = (await phone(c)('POST', `transfers/${tr2}/result`, { ok: true, bytes: PDF.length + PNG.length })).json;
-    assert.deepEqual([first.delivery.status, first.delivery.via, first.delivery.pickedAt], ['delivered', 'direct', null]);
+    assert.deepEqual([first.delivery.status, first.delivery.via, first.delivery.pickedAt], ['direct', 'direct', null], 'since 1.6.0: still on its way');
     const second = (await pc(c)('POST', `transfers/${tr2}/result`, { ok: true, bytes: 10 })).json;
     assert.deepEqual([second.fallback, second.delivery.via, second.delivery.error], ['server', 'server', 'direct_failed']);
     assert.deepEqual(JSON.parse((await host.gc.db.get('SELECT receiver_result FROM transfers WHERE id = ?', [tr2])).row.receiver_result).error, 'incomplete');

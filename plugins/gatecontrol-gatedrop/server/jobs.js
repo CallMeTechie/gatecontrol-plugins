@@ -1,7 +1,8 @@
 'use strict';
 
 // Background (permissions.background, every 60 s):
-//   * direct transfers whose ticket expired (10 min) without a result → the server way (transfers.expire);
+//   * direct transfers whose ticket expired (10 min) without a result → the server way (transfers.expire); since 1.6.0
+//     also those the sender reported ok but the receiving device did not confirm within 20 s (transfers.overdue);
 //   * retention: once a send's expires_at passed its files are deleted from GateControl's media (gc.media.delete), waiting
 //     deliveries become expired; the rows (history) stay 30 days, then go. expires_at follows the administrator's
 //     setting since 1.5.0 (retention.js: after the pick-up / not picked up, default 7 days after sending as before);
@@ -58,6 +59,7 @@ async function tick(gc, now = Date.now()) {
     const names = await people.users(gc);
     const out = {
       transfers: await transfers.expire(gc, now, async (uid) => (names.get(uid) || {}).name || null),
+      unconfirmed: await transfers.overdue(gc, now, async (uid) => (names.get(uid) || {}).name || null),
       purged: await purgeFiles(gc, now),
       removed: await purgeRows(gc, now),
       presence: await presence.cleanup(gc, now),

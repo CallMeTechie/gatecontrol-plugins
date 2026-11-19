@@ -1,4 +1,4 @@
-<!-- version: 1.5.2 -->
+<!-- version: 1.6.0 -->
 # GateDrop
 
 ## What the plugin does
@@ -64,7 +64,10 @@ Storage used, arrived sends, the way (direct or through the server), what is not
 An administrator switches them on under Settings › Plugins › GateDrop › Permissions › “Allow public links”.
 
 **My device is not listed as a target.**
-Only app installations that have used GateDrop before are listed as your devices. Open the app's GateDrop page once.
+Only app installations that have used GateDrop before are listed as your devices – the Android app and the Windows client. Open the app's GateDrop page once. The Linux agent, gateways and iOS are never listed; they cannot receive.
+
+**A direct send shows "direct …" for a moment.**
+It counts as delivered only once the receiving device confirms it saved everything. Without that confirmation within 20 seconds GateDrop takes the way through the server by itself – the device still gets the send, once.
 
 **The transfer does not go direct.**
 Direct transfers only work when both devices are on the same Wi-Fi. Otherwise GateDrop takes the way through the server by itself.
@@ -74,6 +77,13 @@ Send again later. Blocked files are never passed on.
 
 **A send says “Removed by the admin”.**
 An administrator deleted its files on the server.
+
+## New in 1.6.0
+
+- **Only devices with GateDrop as targets:** the Linux agent, gateways and other devices without GateDrop are no longer listed under "Send to" – not among other people's shared devices either.
+- **Delivered directly only with a confirmation:** a send directly over Wi-Fi reads "delivered" and "picked up" only once the receiving device has saved everything. Until then it shows "direct …".
+- **Falling back to the server:** if the receiving device does not confirm within 20 seconds, the send goes through the server by itself – never delivered twice.
+- **Calmer during the nightly virus re-check:** many scan results at once are written together and only when something changes. Sends waiting for the check go on right after.
 
 ## New in 1.5.2
 

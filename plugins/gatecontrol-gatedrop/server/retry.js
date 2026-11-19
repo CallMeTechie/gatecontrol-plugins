@@ -61,13 +61,22 @@ async function run(gc, id, now = Date.now()) {
   return st.status;
 }
 
-/** The result for `mediaId` is in (hook mediaScanned): its sends' waiting deliveries are tried again after the answer. */
-async function scanned(gc, mediaId) {
-  const rows = await store.all(gc, "SELECT d.id FROM deliveries d JOIN items i ON i.send_id = d.send_id WHERE i.media_id = ? AND d.status = 'pending' AND d.error = ? ORDER BY d.id",
-    [mediaId, deliver.SCAN_WAIT]);
-  if (!rows.length) return 0;
-  bg.queue(async () => { for (const r of rows) await run(gc, r.id); }, gc);
-  return rows.length;
+/**
+ * The results for `mediaIds` are in (hook mediaScanned, one batch since 1.6.0 — scanq.js): the waiting deliveries of
+ * their sends are tried again after the answer, each once. → how many
+ */
+async function scanned(gc, mediaIds) {
+  const ids = [...new Set((Array.isArray(mediaIds) ? mediaIds : [mediaIds]).filter((x) => typeof x === 'string' && x))];
+  const found = new Set();
+  for (const part of store.chunks(ids, store.CHUNK - 1)) {
+    const rows = await store.all(gc, `SELECT DISTINCT d.id FROM deliveries d JOIN items i ON i.send_id = d.send_id WHERE i.media_id IN (${store.marks(part.length)})
+      AND d.status = 'pending' AND d.error = ? ORDER BY d.id`, [...part, deliver.SCAN_WAIT]);
+    for (const r of rows) found.add(r.id);
+  }
+  if (!found.size) return 0;
+  const list = [...found].sort((a, b) => a - b);
+  bg.queue(async () => { for (const id of list) await run(gc, id); }, gc);
+  return list.length;
 }
 
 /** Background: waiting deliveries not tried for 5 minutes (a missed hook) — the oldest first. → how many were tried */

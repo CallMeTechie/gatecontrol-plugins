@@ -431,8 +431,13 @@ async function addItems(ctx, id, body) {
 /** GET sends/<id> — the sender's view, or a recipient's. */
 async function get(ctx, id) {
   if (typeof id !== 'string' || !/^[0-9a-f]{24}$/.test(id)) throw fail('not_found');
-  const send = await store.one(ctx.gc, 'SELECT * FROM sends WHERE id = ?', [id]);
+  let send = await store.one(ctx.gc, 'SELECT * FROM sends WHERE id = ?', [id]);
   if (!send) throw fail('not_found');
+  // a direct delivery the receiving device did not confirm in time takes the server way now (since 1.6.0): the sender
+  // that asks for the pick-up learns it at once (and uploads what is still only on it)
+  if (send.user_id === ctx.viewer && await transfers.overdue(ctx.gc, ctx.now, async (uid) => (ctx.users.get(uid) || {}).name || null, id)) {
+    send = await store.one(ctx.gc, 'SELECT * FROM sends WHERE id = ?', [id]);
+  }
   return viewOf(ctx, send);
 }
 
@@ -459,6 +464,14 @@ async function opened(ctx, id) {
   const pick = mine.filter((d) => d.kind !== 'device' || (!!ctx.deviceId && d.target === ctx.deviceId));
   await store.tx(ctx.gc, async () => {
     for (const d of pick) {
+      // since 1.6.0: the target device has a direct transfer whose result it never reported (or not yet): its receipt
+      // is the confirmation — delivered directly and picked up (the server way is not taken for it any more)
+      if (d.kind === 'device' && d.status === 'direct') {
+        if (send.removed_at) continue;
+        await store.run(ctx.gc, "UPDATE deliveries SET status = 'opened', via = 'direct', error = NULL, opened_at = ?, at = ? WHERE id = ?", [ctx.now, ctx.now, d.id]);
+        await picks.device(ctx.gc, d.id, ctx.now);
+        continue;
+      }
       if (d.status === 'delivered' || d.status === 'waiting') await store.run(ctx.gc, "UPDATE deliveries SET status = 'opened', opened_at = ? WHERE id = ?", [ctx.now, d.id]);
       // the real pick-up (since 1.5.0): this device / this person has it (a family: once every member did)
       if (!['delivered', 'waiting', 'opened'].includes(d.status) || send.purged || send.removed_at) continue;
