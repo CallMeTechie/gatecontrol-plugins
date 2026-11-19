@@ -1,4 +1,4 @@
-<!-- version: 1.17.1 -->
+<!-- version: 1.17.2 -->
 # Mail
 
 ## Was das Plugin kann
@@ -109,6 +109,11 @@ Liegen die Anhänge auf einem Speicherziel, das nicht erreichbar ist, versucht M
 
 **Frei/Gebucht zeigt „unbekannt“.**
 Die Person hat Frei/Gebucht abgeschaltet oder ist nicht in GateControl. Kolleginnen in Microsoft 365 erscheinen über dein Microsoft-Konto.
+
+## Neu in 1.17.2
+
+- **Ältere Mails in der richtigen Reihenfolge:** Blätterst du über die Aufbewahrung hinaus, holt Mail die älteren Mails jetzt nach ihrem Datum vom Server. Vorher kamen sie in der Reihenfolge, in der sie im Ordner gelandet sind – in importierten oder umgezogenen Ordnern rutschten dabei neuere Mails über die Stelle, an der du schon warst, und tauchten nie auf (oder die Liste sprang).
+- **Ende der Liste bleibt das Ende:** Hat Mail alle älteren Mails eines Ordners geholt, merkt es sich das jetzt auch über den nächsten Abgleich hinaus. Vorher fragte die Liste an ihrem Ende jedes Mal erneut beim Server nach und zeigte „Weitere laden“, obwohl nichts mehr kam. Räumt Mail alte, ungelesene Mails wieder weg, holt die Liste sie beim Weiterblättern erneut.
 
 ## Neu in 1.17.1
 

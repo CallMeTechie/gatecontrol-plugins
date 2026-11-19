@@ -1,4 +1,4 @@
-<!-- version: 1.17.1 -->
+<!-- version: 1.17.2 -->
 # Mail
 
 ## What the plugin does
@@ -109,6 +109,11 @@ When attachments live on a storage target that is unreachable, Mail tries again 
 
 **Free/busy shows “unknown”.**
 The person switched free/busy off or is not in GateControl. Colleagues in Microsoft 365 appear through your Microsoft account.
+
+## New in 1.17.2
+
+- **Older mail in the right order:** When you scroll past the retention, Mail now fetches the older mails from the server by their date. Before, they came in the order they had landed in the folder – in imported or moved folders newer mails slipped above the place you had already reached and never showed (or the list jumped).
+- **The end of the list stays the end:** Once Mail has fetched all older mails of a folder, it now remembers that beyond the next sync too. Before, the list asked the server again at its end every time and showed “Load more” although nothing came. When Mail clears away old unread mail again, the list fetches it again as you scroll on.
 
 ## New in 1.17.1
 

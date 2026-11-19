@@ -160,10 +160,13 @@ test('Microsoft bittet um eine Pause (429, Retry-After): der Zug endet, das Kont
 
 test('ein Konto hängt an seinem Server: der Lauf wartet nicht darauf, das andere Konto synchronisiert daneben; das hängende Konto bekommt keinen zweiten Zug', () => {
   const st = {};
-  return withLimits({ runMs: 300, graceMs: 50 }, () => withMail({ settings: CLIENT, fetch: microsoft(6, st) }, async (host, c) => {
+  // 1.17.2: the set-up with the usual limits (as „Runde in Häppchen“: under the short run of 300 ms a slow machine left
+  // the first round unfinished, and the round under test only went on with its rest — the Archiv never synced again)
+  return withMail({ settings: CLIENT, fetch: microsoft(6, st) }, async (host, c) => {
     const acc = await signIn(c);
     const marc = await c.addGmx(MARC);
     await c.tick();
+    assert.equal(engine.stateOf(marc.id).round, null, 'the first round is through before the one under test');
     c.mail.mail('marc@gmx.de', 'Archiv', { subject: 'im Archiv', text: 'hallo' });
     roundDue(acc.id);
     roundDue(marc.id);
@@ -171,25 +174,39 @@ test('ein Konto hängt an seinem Server: der Lauf wartet nicht darauf, das ander
     let release;
     const hang = new Promise((r) => { release = r; });
     st.fail = async () => { await hang; return undefined; };
-    const t0 = Date.now();
-    await host.tick();
-    const ms = Date.now() - t0;
-    assert.ok(ms < 5000, `the run answered after ${ms} ms although Microsoft hangs`);
-    assert.equal(st.asked.length, 1, 'the request hangs');
-    assert.equal((await c.db("SELECT COUNT(*) AS n FROM messages WHERE subject = 'im Archiv'"))[0].n, 1, 'the other account went through its folders meanwhile');
-    assert.ok(engine.stateOf(acc.id).turn, 'the turn still runs');
-    // the next runs: no second turn for the hanging account, the others go on
-    await host.tick();
-    assert.equal(st.asked.length, 1);
-    release();
-    await settle(100);
-    assert.equal(engine.stateOf(acc.id).turn, null);
-    st.fail = null;
-    await host.tick();
+    // the run's clock stands still (engine.clock): no turn ends for its budget — only the hanging request is left
+    // waiting; the run answers after its budget by the timer (runMs + graceMs), however slow the machine
+    const keep = engine.clock.now;
+    let now = Date.now();
+    engine.clock.now = () => now;
+    try {
+      await withLimits({ runMs: 300, graceMs: 50 }, async () => {
+        const t0 = Date.now();
+        await host.tick();
+        const ms = Date.now() - t0;
+        assert.ok(ms < 5000, `the run answered after ${ms} ms although Microsoft hangs`);
+        assert.equal(st.asked.length, 1, 'the request hangs');
+        await engine.stateOf(marc.id).turn;
+        assert.equal((await c.db("SELECT COUNT(*) AS n FROM messages WHERE subject = 'im Archiv'"))[0].n, 1, 'the other account went through its folders meanwhile');
+        assert.ok(engine.stateOf(acc.id).turn, 'the turn still runs');
+        // the next runs: no second turn for the hanging account, the others go on
+        await host.tick();
+        assert.equal(st.asked.length, 1);
+        // the answer comes after the turn's budget: the turn ends with that folder, the round goes on in the next run
+        now += 1000;
+        release();
+        await engine.stateOf(acc.id).turn;
+        assert.equal(engine.stateOf(acc.id).turn, null);
+        assert.equal(st.asked.length, 1, 'no further folder in the turn that hung');
+        st.fail = null;
+        await host.tick();
+        await engine.stateOf(acc.id).turn;
+      });
+    } finally { engine.clock.now = keep; }
     assert.equal(engine.stateOf(acc.id).round, null, 'the round went on and is through');
     assert.equal(new Set(st.asked).size, 5, 'every folder once, the one that hung too');
     assert.equal(st.asked.length, 5);
-  }));
+  });
 });
 
 /** The fake mail world with a hook per IMAP command: world.before(op, user, args) may wait or throw. */
@@ -212,34 +229,51 @@ function hooked(world) {
   return world;
 }
 
+// 1.17.2: der Test war einmal lokal rot (zeitabhängig). Ursache: schon die Einrichtung (die ersten Läufe) lief mit dem
+// kurzen Zugbudget von 60 ms — auf einer langsamen Maschine war die erste Runde nach vier Läufen nicht durch, roundDue
+// ließ ihren Rest (x.round) stehen, und die geprüfte Runde machte nur diesen Rest weiter (Archiv, Gesendet, … nie
+// geöffnet, ihre neue Mail nie geholt). Dazu hing die Zahl der Ordner je Zug an der echten Uhr. Jetzt: die
+// Einrichtung mit den üblichen Grenzen (und geprüft, dass keine Runde offen ist), die geprüfte Runde mit einer eigenen
+// Uhr (engine.clock), die jedes Öffnen eines Ordners um 25 ms vorstellt — genau drei Ordner je Zug, genau vier Läufe.
 test('IMAP: die Runde durch die Ordner in Häppchen — nach dem Zeitbudget geht sie im nächsten Lauf beim nächsten Ordner weiter, kein Ordner zweimal, neue Mail kommt genau einmal', () => {
   const { FakeMail } = require('./helpers');
   const world = hooked(new FakeMail());
   const folders = { Gesendet: '\\Sent', Archiv: '\\Archive' };
   for (let i = 0; i < 8; i++) folders[`Ordner${i}`] = null;
-  return withLimits({ turnMs: 60 }, () => withMail({ world }, async (host, c) => {
+  return withMail({ world }, async (host, c) => {
     const acc = await c.addGmx(ANNA, { login: { folders } });
     for (let i = 0; i < 4; i++) await c.tick();
+    assert.equal(engine.stateOf(acc.id).round, null, 'the first round is through before the one under test');
     for (const p of Object.keys(folders)) c.mail.mail('anna@gmx.de', p, { subject: `neu in ${p}`, text: 'x' });
     const x = roundDue(acc.id);
     const opened = [];
-    // every folder takes 25 ms to open: two or three fit into a turn of 60 ms
-    world.before = async (op, user, a) => { if (op === 'open' && a[0] !== 'INBOX') { opened.push(a[0]); await sleep(25); } };
+    const perRun = [];
+    // every folder takes 25 ms to open — on the run's own clock: three fit into a turn of 60 ms (at 0, 25 and 50 ms)
+    const base = Date.now();
+    let t = 0;
+    const keep = engine.clock.now;
+    engine.clock.now = () => base + t;
+    world.before = async (op, user, a) => { if (op === 'open' && a[0] !== 'INBOX') { opened.push(a[0]); t += 25; } };
     let runs = 0;
-    for (; runs < 40; runs++) {
-      await host.tick();
-      x.lastInbox = Date.now();
-      if (!x.round && x.lastAll) break;
-    }
-    assert.ok(runs >= 2, `the round took ${runs + 1} runs`);
-    assert.ok(runs < 40, 'the round ended');
+    try {
+      await withLimits({ turnMs: 60 }, async () => {
+        for (; runs < 40; runs++) {
+          const n = opened.length;
+          await host.tick();
+          perRun.push(opened.length - n);
+          x.lastInbox = Date.now();
+          if (!x.round && x.lastAll) break;
+        }
+      });
+    } finally { engine.clock.now = keep; world.before = null; }
+    assert.deepEqual(perRun, [3, 3, 3, 1], 'three folders per turn, the round in four runs');
     assert.deepEqual([...opened].sort(), Object.keys(folders).sort(), 'every folder opened once in the round');
     const rows = await c.db("SELECT subject, COUNT(*) AS n FROM messages WHERE subject LIKE 'neu in %' GROUP BY subject");
     assert.equal(rows.length, 10);
     assert.ok(rows.every((r) => r.n === 1), 'no mail twice');
     // between the runs the session is back on the posteingang (IDLE): new mail there is not missed during a long round
     assert.ok(world.sessions.some((s) => s.open && s.cur === 'INBOX' && s.idling));
-  }));
+  });
 });
 
 test('IMAP-Server nicht erreichbar: kurzes Zeitlimit beim Verbinden (10 s), Pause mit wachsendem Abstand, eine Meldung mit Konto und Grund; das andere Konto läuft weiter', () => {

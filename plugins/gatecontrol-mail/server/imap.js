@@ -193,7 +193,7 @@ async function syncFolder(gc, a, s, f, o) {
     const ids = (await store.all(gc, 'SELECT id FROM messages WHERE folder_id = ?', [f.id])).map((r) => r.id);
     await mailstore.remove(gc, ids);
     await store.run(gc, 'UPDATE folders SET uid_next = NULL, low_uid = NULL, modseq = NULL, complete = 0 WHERE id = ?', [f.id]);
-    f.uid_next = null; f.low_uid = null; f.modseq = null;
+    f.uid_next = null; f.low_uid = null; f.modseq = null; f.complete = 0;
     out.changed = true;
   }
   const budget = o.budget || FIRST_BATCH;
@@ -257,8 +257,11 @@ async function syncFolder(gc, a, s, f, o) {
   // 1.13.1: a folder as it was (the usual sync — every folder every 15 minutes, the posteingang every 5) writes nothing:
   // only „synced“ would change, and that is kept in memory (syncedAt) and written once it is older than SYNCED_WRITE_MS.
   // On a slow disk each of these writes took 0.2 … 0.9 s.
+  // `complete` (nothing older on the server than what is here): without a retention once the first sync is through;
+  // with one as older() found it — 1.17.2: before, every sync with a retention wrote 0 again (the list asked the server
+  // for older mail at its end each time and showed „more“ where nothing was)
   const row = [st.uidValidity == null ? null : Number(st.uidValidity), uidNext, lowUid || 0, st.highestModseq == null ? null : String(st.highestModseq),
-    Number(st.exists) || 0, lowUid ? 0 : (since ? 0 : 1)];
+    Number(st.exists) || 0, lowUid ? 0 : (since ? (f.complete ? 1 : 0) : 1)];
   const same = f.synced_at && now - f.synced_at < SYNCED_WRITE_MS && (f.uid_validity == null ? null : Number(f.uid_validity)) === row[0] && f.uid_next === row[1]
     && (f.low_uid || 0) === row[2] && (f.modseq == null ? null : String(f.modseq)) === row[3] && (f.remote_total || 0) === row[4] && (f.complete || 0) === row[5];
   if (same) synced.set(f.id, now);
@@ -271,20 +274,73 @@ async function syncFolder(gc, a, s, f, o) {
   return out;
 }
 
-/** Headers older than `before` (ms) the server keeps beyond the retention → created ids (≤ count). */
+const DAY = 86400000;
+const WINDOWS_MAX = 48;              // 1.17.2: the searches of one batch of older mail at most (days back, then halved)
+/** Midnight (UTC) of the day of `ms` — IMAP's dates are whole days (imapflow sends the UTC day). */
+const dayOf = (ms) => Math.floor(ms / DAY) * DAY;
+
+/**
+ * Headers older than `before` (ms) the server keeps beyond the retention → created ids (about `count`; whole days).
+ *
+ * 1.17.2: the newest by their date — the Date header, as the list sorts (SENTBEFORE / SENTSINCE), not by UID. Before,
+ * the `count` highest UIDs came: in a folder that was imported or filled from elsewhere (the UIDs follow the moment a
+ * mail came into the folder, not its date) they were mails of years ago; the list moved its cursor down to them, and
+ * the newer mails that came later lay above the cursor — the person never saw them, or the list jumped.
+ * Now: one search for the mails older than `before` not known here (as before; nothing left → the folder is
+ * complete). Are there more than `count`, windows of whole days back from `before` (each twice as long as the one
+ * before — a few searches on a folder of any size, no header of all of them fetched) until they hold `count`; the
+ * last window halved again while it holds far more. One day more below it: the Date header's zone shifts its day.
+ */
 async function older(gc, a, s, f, before, count) {
   await s.open(f.path, { readOnly: true });
-  // IMAP's BEFORE counts whole days: the day of `before` too (the mails known here are left out below) — else the
-  // older mails of that day never loaded (1.17.1)
-  const uids = ((await s.search({ before: sinceArg(Math.min(before + 86400000, 8.64e15)) })) || []).filter(Number.isSafeInteger).sort((x, y) => y - x);
   const known = new Set((await store.all(gc, 'SELECT uid FROM messages WHERE folder_id = ? AND uid IS NOT NULL', [f.id])).map((r) => r.uid));
-  const take = uids.filter((u) => !known.has(u)).slice(0, count);
+  const fresh = (list) => (list || []).filter((u) => Number.isSafeInteger(u) && !known.has(u));
+  const between = async (lo, hi) => fresh(await s.search(lo > 0 ? { sentSince: sinceArg(lo), sentBefore: sinceArg(hi) } : { sentBefore: sinceArg(hi) }));
+  // the day of `before` too (the mails known here are left out): else the older mails of that day never loaded (1.17.1)
+  const top = Math.min(dayOf(before) + DAY, dayOf(8.64e15 - DAY));
+  const all = await between(0, top);
+  let take = all;
+  if (all.length > count) {
+    take = [];
+    let hi = top;
+    let span = DAY;
+    let n = 1;
+    for (;;) {
+      const lo = Math.max(hi - span, 0);
+      let w = await between(lo, hi);
+      n++;
+      if (take.length + w.length >= count || lo <= 0 || n >= WINDOWS_MAX) {
+        // the last window: halved (the newer half kept when it holds enough) while it holds far more than needed
+        let wlo = lo;
+        while (hi - wlo > DAY && take.length + w.length > 2 * count && n < WINDOWS_MAX) {
+          const mid = hi - Math.floor((hi - wlo) / DAY / 2) * DAY;
+          const upper = await between(mid, hi);
+          n++;
+          if (take.length + upper.length >= count) { wlo = mid; w = upper; } else {
+            const up = new Set(upper);
+            take.push(...upper);
+            w = w.filter((u) => !up.has(u));
+            hi = mid;
+          }
+        }
+        take.push(...w);
+        if (wlo > 0) take.push(...await between(Math.max(wlo - DAY, 0), wlo));
+        break;
+      }
+      take.push(...w);
+      hi = lo;
+      span *= 2;
+    }
+    take = [...new Set(take)];
+  }
   const created = [];
-  for (const x of await fetchUids(s, take)) {
+  for (const x of await fetchUids(s, take.sort((x, y) => y - x))) {
     const r = await mailstore.upsert(gc, a, f, headerOf(x), { arrival: false });
     if (r.created) created.push(r.id);
   }
-  if (!take.length) await store.run(gc, 'UPDATE folders SET complete = 1 WHERE id = ?', [f.id]);
+  // nothing older left on the server than what is here now (1.17.2: known at once, not one batch later)
+  const took = new Set(take);
+  if (all.every((u) => took.has(u))) await store.run(gc, 'UPDATE folders SET complete = 1 WHERE id = ?', [f.id]);
   return created;
 }
 

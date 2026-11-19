@@ -200,7 +200,9 @@ async function syncFolder(gc, a, f, o) {
   // 1.13.1: a round that brought nothing (the usual one, per folder every 15 minutes) writes nothing — the deltaLink of
   // before asks for the same changes as the new one, `complete` is as stored; „synced“ is kept in memory (syncedAt)
   // and written once it is older than SYNCED_WRITE_MS. Anything that came or went, a first round, pages left: written.
-  const complete = done && !o.since ? 1 : 0;
+  // `complete`: without a retention once a delta round is through; with one as older() found it (1.17.2: before, 0 at
+  // every sync with a retention)
+  const complete = o.since ? (f.complete ? 1 : 0) : (done ? 1 : 0);
   const idle = done && pages === 1 && !touched && /deltatoken/i.test(f.delta || '') && !!f.synced_at && f.complete === complete && now - f.synced_at < SYNCED_WRITE_MS;
   if (idle) synced.set(f.id, now);
   else {
