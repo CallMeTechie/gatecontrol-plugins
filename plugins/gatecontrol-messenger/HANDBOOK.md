@@ -1,4 +1,4 @@
-<!-- version: 1.28.0 -->
+<!-- version: 1.28.1 -->
 # Messenger
 
 ## What the plugin does
@@ -73,6 +73,10 @@ It only comes when linking and appears at night. When “Load older history” i
 
 **Old messages are gone.**
 The administrator set a retention, or the chat is a disappearing chat.
+
+## New in 1.28.1
+
+- **Virus scan after an outage:** when the virus scanner was away for a while and then checked many files at once, not every result reached the chat – some pictures and files stayed at “Being checked …”. Now every result arrives, and the chats show it at once.
 
 ## New in 1.28.0
 

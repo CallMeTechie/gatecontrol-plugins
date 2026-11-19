@@ -375,6 +375,9 @@ contract: GateControl's `docs/feature-malware-scan-contract.md`). The Messenger 
 * **Later results** (the check of a big file ends, the nightly re-check with new signatures, an administrator releases
   or deletes the file — hook `mediaScanned`): the message's `updated_at` moves and the members get `message.update {
   conversationId, messageId, editedAt, scan }` — fetch `messages?changedSince=` as for an edit.
+  Since 1.28.1 the results are queued and written in batches (up to 200, one transaction each, one batch at a time); a
+  result that changes nothing writes nothing and sends no event. A busy database (`ERR_BUSY`, `SQLITE_BUSY`) is tried
+  again after 250 ms, 1 s and 3 s, then in the next run 30 s later; one log line per run, none per file.
 * **Hand-overs** (`send_file` of GateDrop) keep the state; GateControl never hands over a held-back file.
 
 ### Push
