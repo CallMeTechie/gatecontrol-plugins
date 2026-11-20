@@ -1,4 +1,4 @@
-<!-- version: 1.4.3 -->
+<!-- version: 1.5.0 -->
 # Vault
 
 ## What the plugin does
@@ -34,6 +34,7 @@ Administrators have nothing to set up. The admin page **“Overview”** only sh
 - **“New”** creates an entry: login, 2FA code, note, card, Wi-Fi or identity, with custom fields and the password generator.
 - Secret fields stay hidden until you click **“Show”**. **“Copy”** puts the value on the clipboard.
 - 2FA: next to the 2FA key, **“QR code from picture”** (choose a picture, paste a screenshot with Ctrl+V or drop it in) or **“Scan with camera”**. Google Authenticator's export is recognised too.
+- **“Matches”** (under the websites): “Whole domain (default)” suggests the entry on every address of the same domain, “Only this exact address” only on exactly the host entered (port ignored, `www.` counts as its own host). Useful when several services run under one domain, e.g. `nas.example.test` and `cloud.example.test`. An entry whose host fits exactly comes before those with only the same domain.
 - Wi-Fi entries show a **QR code** to connect; “Hidden network” for a network that does not broadcast its name.
 - **Trash:** deleted entries stay 30 days. **History:** the last 10 versions of an entry.
 - **Import / export:** import from other password managers; the CSV export is **not encrypted** – the portal warns first and asks for the master password once more.
@@ -84,6 +85,10 @@ Someone changed the entry in the meantime. Choose to save your version (the othe
 
 **The Wi-Fi card on the tablet shows an old password.**
 A share is a copy. After changing the entry, the entry offers to update the share.
+
+## New in 1.5.0
+
+- **“Matches”** per entry: whole domain or only this exact address. The Bitwarden import takes over “Host” and “Exact”. The apps follow.
 
 ## New in 1.4.3
 

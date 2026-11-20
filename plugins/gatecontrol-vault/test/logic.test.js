@@ -353,3 +353,51 @@ test('export: spreadsheet formulas are defused (\'), passwords and 2FA keys stay
   // another program's CSV is read as it is
   assert.equal(L.parseImport("name,url,username,password,note\n'=x,https://a.de,u,p,\n").entries[0].title, "'=x");
 });
+
+test('„Passt zu“ (1.5.0): match "exact" kept, "domain" not written, another value kept; drafts; Bitwarden host / exact', () => {
+  const base = { type: 'login', title: 'NAS', urls: ['https://nas.example.test:5001/'] };
+  assert.equal(L.normalizeEntry({ ...base, match: 'exact' }).match, 'exact');
+  assert.equal('match' in L.normalizeEntry({ ...base, match: 'domain' }), false, 'the default is not written');
+  assert.equal('match' in L.normalizeEntry(base), false);
+  assert.equal(L.normalizeEntry({ ...base, match: 'starts' }).match, 'starts', 'a later version\'s value stays');
+  // drafts: exact round trip, back to the default removes the key, an unknown value survives an edit
+  const ex = L.draftFrom({ id: A, vaultId: VID, data: L.normalizeEntry({ ...base, match: 'exact' }) });
+  assert.equal(ex.match, 'exact');
+  assert.deepEqual(ex.extra, {}, 'match is a known key, not an extra');
+  assert.equal(L.draftToData(ex).match, 'exact');
+  ex.match = null;
+  assert.equal('match' in L.draftToData(ex), false, 'back to „Ganzer Domain“: the key goes');
+  const later = L.draftFrom({ id: A, vaultId: VID, data: L.normalizeEntry({ ...base, match: 'starts' }) });
+  later.title = 'NAS 2';
+  assert.equal(L.draftToData(later).match, 'starts');
+  assert.equal('match' in L.draftToData(L.emptyDraft('login', VID)), false);
+  assert.ok(L.draftChanged(ex, L.draftFrom({ id: A, vaultId: VID, data: L.normalizeEntry({ ...base, match: 'exact' }) })));
+  // which entries fit a page, and in which order
+  const nas = L.normalizeEntry({ type: 'login', title: 'NAS', urls: ['https://nas.example.test:5001'], match: 'exact' });
+  const cloud = L.normalizeEntry({ type: 'login', title: 'Cloud', urls: ['cloud.example.test'] });
+  const root = L.normalizeEntry({ type: 'login', title: 'Root', urls: ['https://example.test'] });
+  const www = L.normalizeEntry({ type: 'login', title: 'WWW', urls: ['https://www.example.test'], match: 'exact' });
+  const odd = L.normalizeEntry({ type: 'login', title: 'Odd', urls: ['https://other.example.test'], match: 'starts' });
+  const app = L.normalizeEntry({ type: 'login', title: 'App', urls: ['androidapp://test.example.app'], apps: ['test.example.app'] });
+  assert.equal(L.exactHost('HTTPS://user@NAS.Example.Test.:5001/x?y#z'), 'nas.example.test');
+  assert.equal(L.exactHost('https://www.example.test'), 'www.example.test', '"www." is not dropped');
+  assert.equal(L.pageMatch(nas, 'https://nas.example.test/login'), 'host', 'no port, no case');
+  assert.equal(L.pageMatch(nas, 'https://NAS.example.test.'), 'host', 'trailing dot');
+  assert.equal(L.pageMatch(nas, 'https://cloud.example.test'), null, 'exact: not on another host of the domain');
+  assert.equal(L.pageMatch(www, 'https://example.test'), null, 'exact: www. is another host');
+  assert.equal(L.pageMatch(cloud, 'https://nas.example.test'), 'domain');
+  assert.equal(L.pageMatch(odd, 'https://nas.example.test'), 'domain', 'another value counts as domain');
+  assert.equal(L.pageMatch(cloud, 'https://example.org'), null);
+  assert.equal(L.pageMatch(app, 'https://example.test'), null, 'app links are no web addresses');
+  const list = [cloud, root, nas, www, odd, app].map((data, i) => ({ id: String(i), data }));
+  assert.deepEqual(L.forPage(list, 'https://nas.example.test').map((x) => x.data.title), ['NAS', 'Cloud', 'Root', 'Odd'], 'host first, then domain in the given order');
+  assert.deepEqual(L.forPage(list, 'https://example.test').map((x) => x.data.title), ['Root', 'Cloud', 'Odd']);
+  assert.deepEqual(L.forPage([cloud, nas], 'nas.example.test').map((x) => x.title), ['NAS', 'Cloud'], 'plain data too');
+  // Bitwarden: 1 (host) and 3 (exact) → "exact"; 0 (domain), null, mixed → the default
+  const bw = (uris) => L.parseImport(JSON.stringify({ items: [{ type: 1, name: 'x', login: { uris } }] })).entries[0];
+  assert.equal(bw([{ uri: 'https://nas.example.test', match: 1 }]).match, 'exact');
+  assert.equal(bw([{ uri: 'https://nas.example.test/a', match: 3 }, { uri: 'androidapp://test.example.app', match: null }]).match, 'exact');
+  assert.equal('match' in bw([{ uri: 'https://nas.example.test', match: 0 }]), false);
+  assert.equal('match' in bw([{ uri: 'https://nas.example.test', match: null }]), false);
+  assert.equal('match' in bw([{ uri: 'https://nas.example.test', match: 3 }, { uri: 'https://cloud.example.test', match: 0 }]), false, 'mixed: the whole domain');
+});

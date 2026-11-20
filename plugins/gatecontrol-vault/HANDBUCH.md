@@ -1,4 +1,4 @@
-<!-- version: 1.4.3 -->
+<!-- version: 1.5.0 -->
 # Vault
 
 ## Was das Plugin kann
@@ -34,6 +34,7 @@ Für Administratoren gibt es nichts einzurichten. Die Admin-Seite **„Übersich
 - **„Neu“** legt einen Eintrag an: Login, 2FA-Code, Notiz, Karte, WLAN oder Identität, mit eigenen Feldern und dem Passwort-Generator.
 - Geheime Felder bleiben verdeckt, bis du **„Anzeigen“** klickst. **„Kopieren“** legt den Wert in die Zwischenablage.
 - 2FA: neben dem 2FA-Schlüssel **„QR-Code aus Bild“** (Bild wählen, Screenshot mit Strg+V einfügen oder hineinziehen) oder **„Mit Kamera scannen“**. Auch der Export aus Google Authenticator wird erkannt.
+- **„Passt zu“** (unter den Websites): „Ganzer Domain (Standard)“ schlägt den Eintrag auf allen Adressen derselben Domain vor, „Nur genau dieser Adresse“ nur auf genau dem eingetragenen Host (ohne Port, `www.` zählt als eigener Host). Nützlich, wenn unter einer Domain mehrere Dienste laufen, z. B. `nas.example.test` und `cloud.example.test`. Passt ein Host genau, steht der Eintrag vor denen mit nur gleicher Domain.
 - WLAN-Einträge zeigen einen **QR-Code** zum Verbinden; „Verstecktes Netz“ für ein Netz, das seinen Namen nicht ausstrahlt.
 - **Papierkorb:** Gelöschtes bleibt 30 Tage. **Verlauf:** die letzten 10 Fassungen eines Eintrags.
 - **Importieren / Exportieren:** Import aus anderen Passwort-Managern; der Export als CSV ist **unverschlüsselt** – das Portal warnt vorher und fragt noch einmal nach dem Hauptpasswort.
@@ -84,6 +85,10 @@ Jemand hat den Eintrag inzwischen geändert. Wähle „Meine Fassung speichern�
 
 **Die WLAN-Karte auf dem Tablet zeigt ein altes Passwort.**
 Eine Freigabe ist eine Kopie. Nach einer Änderung am Eintrag bietet der Eintrag „Aktualisieren“ an.
+
+## Neu in 1.5.0
+
+- **„Passt zu“** pro Eintrag: ganzer Domain oder nur genau diese Adresse. Der Import aus Bitwarden übernimmt „Host“ und „Exakt“. Die Apps ziehen nach.
 
 ## Neu in 1.4.3
 
