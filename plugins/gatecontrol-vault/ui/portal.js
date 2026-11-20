@@ -1284,6 +1284,7 @@
     (data.urls || []).forEach(function (u, i) {
       rows.push(fieldRow(i ? '' : T('field.url'), h('span', { class: 'vp-url', text: u, attrs: { title: L.openableUrl(u) || u } }), [ibtn('copy', T('p.copy_label', { label: T('field.url') }), function () { copyText(u, T('field.url')); })]));
     });
+    if (data.match === 'exact' && (data.urls || []).length) rows.push(plainRow(T('field.match'), T('match.exact')));
     (data.apps || []).forEach(function (a, i) { rows.push(plainRow(i ? '' : T('field.apps'), a)); });
     (data.custom || []).forEach(function (c, i) {
       var label = c.name || T('custom.unnamed');
@@ -1926,6 +1927,13 @@
       };
       drawUrls();
       form.push(h('div', { class: 'vp-field' }, [h('span', { class: 'vp-label', text: T('field.urls') }), urlBox]));
+      // 1.5.0: „Passt zu“ — the whole domain (default, no key) or only this exact address (match "exact");
+      // a value of a later version shows as the default and stays until it is changed here
+      var matchSel = h('select', { class: 'vp-input', attrs: { 'data-field': 'match' }, on: { change: function () { dr.match = matchSel.value === 'exact' ? 'exact' : null; } } }, [
+        h('option', { value: 'domain', text: T('match.domain'), selected: dr.match !== 'exact' }),
+        h('option', { value: 'exact', text: T('match.exact'), selected: dr.match === 'exact' }),
+      ]);
+      form.push(inputRow(T('field.match'), matchSel, T('match.hint')));
     }
     var notes = h('textarea', { class: 'vp-input', rows: dr.type === 'note' ? 8 : 3, value: dr.notes, on: { input: function () { dr.notes = notes.value; } } });
     form.push(inputRow(T('field.notes'), notes));

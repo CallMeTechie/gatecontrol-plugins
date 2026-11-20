@@ -102,7 +102,7 @@ test('texts: every key the portal uses exists in de and en (with .one/.other for
 });
 
 test('plugin.json 1.4.1: the portal tab "Vault"; GateControl 1.197.0 (Start tiles with a QR code); portalVisible hides it on a kiosk device', async () => {
-  assert.equal(manifest.version, '1.4.3');
+  assert.equal(manifest.version, '1.5.0');
   assert.equal(manifest.gatecontrol, '>=1.197.0', 'the Wi-Fi share on the portal start page needs tiles with qr / secret / until (1.197.0); GC.scanQr (1.196.0) is feature-detected');
   assert.deepEqual(manifest.permissions.services, ['gatecontrol-familie:wall_wifi'], 'the wall tablet\'s Wi-Fi through the Familie plugin');
   assert.equal(manifest.ui.camera, undefined, 'no camera: a sandboxed frame (opaque origin) gets none in Chromium');
@@ -120,6 +120,7 @@ test('plugin.json 1.4.1: the portal tab "Vault"; GateControl 1.197.0 (Start tile
   assert.match(changelog, /^## 1\.3\.0$/m);
   assert.match(changelog, /^## 1\.4\.0$/m);
   assert.match(changelog, /^## 1\.4\.1$/m);
+  assert.match(changelog, /^## 1\.5\.0$/m);
   await withHost({}, async (host) => {
     assert.equal(await host.portalVisible({ ...ANNA, loggedIn: true }), true);
     assert.equal(await host.portalVisible({ ...WALL, loggedIn: true, kiosk: true }), false);
@@ -904,6 +905,44 @@ test('smoke (1.4.1): „Verstecktes Netz“ in the Wi-Fi editor → fields.hidde
       await until('saved again', toastIs(doc, 'Gespeichert.'));
       assert.ok(!text(detail).includes('Verstecktes Netz'));
       await until('stale (the share is the older state now)', () => text(detail).includes('Zeigt einen älteren Stand'));
+    } finally {
+      doc.getElementById('vp-lock-now') && doc.getElementById('vp-lock-now').click();
+    }
+  });
+});
+
+test('smoke (1.5.0): „Passt zu“ under the web addresses — „Nur genau dieser Adresse“ saved, shown, back to „Ganzer Domain“', async () => {
+  await withHost({}, async (host) => {
+    const { doc } = await openPortal(host, ANNA);
+    const detail = doc.getElementById('vp-detail');
+    const field = (label) => detail.querySelectorAll('.vp-field').find((x) => x.firstChild && x.firstChild.textContent === label);
+    try {
+      doc.getElementById('vp-new').click();
+      doc.querySelectorAll('.vp-type').find((b) => b.lastChild.textContent === 'Login').click();
+      const fields = detail.querySelectorAll('.vp-field').map((x) => x.firstChild && x.firstChild.textContent);
+      assert.equal(fields.indexOf('Passt zu'), fields.indexOf('Websites') + 1, 'right under the web addresses');
+      const sel = field('Passt zu').querySelectorAll('select')[0];
+      assert.equal(sel.getAttribute('data-field'), 'match');
+      assert.ok(sel.className.includes('vp-input'), 'the form\'s own select');
+      assert.deepEqual(sel.querySelectorAll('option').map((o) => [o.value, o.textContent]), [['domain', 'Ganzer Domain (Standard)'], ['exact', 'Nur genau dieser Adresse']]);
+      assert.equal(sel.value, 'domain', 'the default');
+      assert.ok(text(field('Passt zu')).includes('Wenn unter derselben Domain mehrere Dienste laufen, schlägt der Vault diesen Eintrag nur auf genau dieser Adresse vor.'));
+      type(field('Titel').querySelectorAll('input')[0], 'NAS');
+      type(field('Websites').querySelectorAll('input')[0], 'https://nas.example.test:5001');
+      sel.value = 'exact';
+      sel.dispatchEvent({ type: 'change' });
+      byText(doc, 'button', 'Speichern').click();
+      await until('saved', toastIs(doc, 'Gespeichert.'));
+      assert.ok(text(detail).includes('Passt zu') && text(detail).includes('Nur genau dieser Adresse'), 'the detail says so');
+      // edit: still exact; back to the whole domain → gone from the detail
+      byText(doc, 'button', 'Bearbeiten').click();
+      const again = field('Passt zu').querySelectorAll('select')[0];
+      assert.equal(again.value, 'exact');
+      again.value = 'domain';
+      again.dispatchEvent({ type: 'change' });
+      byText(doc, 'button', 'Speichern').click();
+      await until('saved again', () => !text(detail).includes('Passt zu') && text(detail).includes('nas.example.test'));
+      assert.ok(!text(detail).includes('Nur genau dieser Adresse'));
     } finally {
       doc.getElementById('vp-lock-now') && doc.getElementById('vp-lock-now').click();
     }

@@ -2,6 +2,21 @@
 
 Passwort-Manager auf dem eigenen GateControl-Server – Ende-zu-Ende verschlüsselt.
 
+## 1.5.0
+
+- **„Passt zu“ pro Eintrag:** Im Bearbeiten-Formular steht unter den Websites die Auswahl „Ganzer Domain (Standard)“ /
+  „Nur genau dieser Adresse“. Laufen unter einer Domain mehrere Dienste (z. B. `nas.example.test` und
+  `cloud.example.test`), schlagen die Apps einen so markierten Eintrag nur noch auf genau seinem Host vor. Gespeichert
+  im verschlüsselten Eintrag als `"match": "exact"`; „Ganzer Domain“ entfernt den Schlüssel wieder. Ein unbekannter
+  Wert (einer späteren Version) zählt wie „Ganzer Domain“ und bleibt beim Speichern erhalten. Die Ansicht zeigt
+  „Passt zu: Nur genau dieser Adresse“.
+- **Reihenfolge beim Vorschlagen:** zuerst Einträge, deren Host genau passt, dann die mit nur gleicher Domain
+  (`VaultLogic.pageMatch` / `forPage`, dieselbe Regel wie in den Apps). Host-Vergleich ohne Groß/Klein, Port und
+  abschließenden Punkt; `www.` ist ein eigener Host.
+- **Import aus Bitwarden:** Adressen mit Abgleich „Host“ (1) oder „Exakt“ (3) werden zu „Nur genau dieser Adresse“,
+  wenn alle Web-Adressen des Logins so eingestellt sind; sonst bleibt „Ganzer Domain“.
+- Die Apps (Desktop, Android) ziehen nach; ältere Apps behalten den Schlüssel unverändert.
+
 ## 1.4.3
 
 - **Weniger Schreibvorgänge:** die Person (`people`) und „zuletzt gesehen“ des Tresor-Kontos (`accounts.seen_at`) höchstens alle 10 Minuten (die Sprache sofort, wenn sie sich ändert), ein Wandtablet einmal als Kiosk-Gerät – vorher bei jeder Anfrage und jedem Abgleich der Apps (im Protokoll von GateControl 1.253.5 je ~300 ms auf einem langsamen Datenträger).

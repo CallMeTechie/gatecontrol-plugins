@@ -3,7 +3,9 @@
  * The same rules as the apps (gatecontrol-client-core src/utils/vault.js, the Windows view logic vault-state.js,
  * Android VaultJson / VaultTotp / VaultGenerator / VaultImport):
  *   - the server's answers → checked records (README "App-API"); a sync page merged into the tab's copy;
- *   - the entry JSON v1 { v: 1, type, title, fav, notes, urls, apps, fields, custom } (unknown keys kept);
+ *   - the entry JSON v1 { v: 1, type, title, fav, notes, urls, match, apps, fields, custom } (unknown keys kept);
+ *   - 1.5.0: "match" — "exact" (only the exact host of one of its urls) or missing (the whole domain); the order of
+ *     suggestions for a page: host equal before domain equal;
  *   - 2FA codes (TOTP, RFC 6238; HMAC from ui/vendor/noble.js), the password generator and its strength estimate;
  *   - 1.2.0: the text of a scanned 2FA QR code (otpauth://totp, Google Authenticator's otpauth-migration export);
  *   - import of other password managers' exports, the CSV export, the Wi-Fi QR text;
@@ -288,7 +290,7 @@
 
   // ── entry JSON v1 ────────────────────────────────────────
 
-  var ENTRY_KNOWN = new Set(['v', 'type', 'title', 'fav', 'notes', 'urls', 'apps', 'fields', 'custom']);
+  var ENTRY_KNOWN = new Set(['v', 'type', 'title', 'fav', 'notes', 'urls', 'match', 'apps', 'fields', 'custom']);
   var strings = function (a) { return Array.isArray(a) ? a.filter(function (x) { return typeof x === 'string' && x.trim() !== ''; }) : []; };
 
   /** An entry's plaintext in the shape every platform writes; unknown keys kept; null for another version / type. */
@@ -306,6 +308,8 @@
     if (input.fav === true) out.fav = true;
     if (typeof input.notes === 'string' && input.notes !== '') out.notes = input.notes;
     out.urls = strings(input.urls);
+    // 1.5.0: "exact" written, "domain" (the default) not; another value (a later version's) kept as it is
+    if (input.match !== undefined && input.match !== null && input.match !== 'domain') out.match = clone(input.match);
     out.apps = strings(input.apps);
     var fields = {};
     if (isObj(input.fields)) {
@@ -736,6 +740,45 @@
     return parts.slice(-n).join('.');
   }
 
+  /** The host of a web address as written: lower case, without port and trailing dot; "www." stays (match "exact"). */
+  function exactHost(url) {
+    if (typeof url !== 'string') return null;
+    var s = url.trim().toLowerCase();
+    if (!s) return null;
+    var i = s.indexOf('://');
+    if (i >= 0) s = s.slice(i + 3);
+    s = s.split('/')[0].split('?')[0].split('#')[0];
+    s = s.slice(s.lastIndexOf('@') + 1).split(':')[0].replace(/\.+$/, '');
+    if (!s || !/^[\p{L}\p{Nd}.-]+$/u.test(s)) return null;
+    return s;
+  }
+
+  /** 1.5.0: does an entry's data fit a page? 'host' (a url's host is the page's), 'domain' (only the registrable
+   *  domain is the same; never for match "exact"), or null. Another match value counts as "domain". */
+  function pageMatch(d, pageUrl) {
+    var page = exactHost(pageUrl);
+    if (!page || !d || !Array.isArray(d.urls)) return null;
+    var webs = d.urls.filter(function (u) { return typeof u === 'string' && u.indexOf('androidapp://') !== 0; });
+    if (webs.some(function (u) { return exactHost(u) === page; })) return 'host';
+    if (d.match === 'exact') return null;
+    var site = siteOf(urlHost(pageUrl) || page);
+    return webs.some(function (u) { var h = urlHost(u); return !!h && siteOf(h) === site; }) ? 'domain' : null;
+  }
+
+  /** 1.5.0: the entries that fit a page, host equal first, then domain equal; the given order kept in each group.
+   *  dataOf(x) gives an element's entry data (default: x.data, else x). */
+  function forPage(list, pageUrl, dataOf) {
+    var get = dataOf || function (x) { return x && x.data ? x.data : x; };
+    var host = [];
+    var domain = [];
+    (list || []).forEach(function (x) {
+      var m = pageMatch(get(x), pageUrl);
+      if (m === 'host') host.push(x);
+      else if (m === 'domain') domain.push(x);
+    });
+    return host.concat(domain);
+  }
+
   /** A web address with a scheme to show as a link (https:// added to a bare host), or null (javascript:, file: …). */
   function openableUrl(url) {
     var u = str(url).trim();
@@ -772,9 +815,15 @@
     switch (i.type) {
       case 1: {
         var l = isObj(i.login) ? i.login : {};
-        var urls = (Array.isArray(l.uris) ? l.uris : []).filter(isObj).map(function (u) { return sget(u, 'uri'); }).filter(Boolean);
+        var uris = (Array.isArray(l.uris) ? l.uris : []).filter(isObj).filter(function (u) { return sget(u, 'uri'); });
+        var urls = uris.map(function (u) { return sget(u, 'uri'); });
+        // 1.5.0: Bitwarden's match per address (0 domain, 1 host, 2 starts with, 3 exact, 4 regex, 5 never):
+        // "exact" when every web address is 1 (host) or 3 (exact)
+        var webUris = uris.filter(function (u) { return sget(u, 'uri').indexOf('androidapp://') !== 0; });
+        var exact = webUris.length > 0 && webUris.every(function (u) { return u.match === 1 || u.match === 3; });
         return entry('login', name.trim() ? name : (urls.map(urlHost).filter(Boolean)[0] || ''), assign(base, {
           urls: urls,
+          match: exact ? 'exact' : undefined,
           apps: urls.filter(function (u) { return u.indexOf('androidapp://') === 0; }).map(function (u) { return u.slice('androidapp://'.length); }),
           fields: nonEmpty({ username: sget(l, 'username') || '', password: sget(l, 'password') || '', totp: sget(l, 'totp') || '' }),
         }));
@@ -1091,7 +1140,7 @@
   /** A new entry's draft. */
   function emptyDraft(type, vaultId) {
     var tp = TYPES.indexOf(type) >= 0 ? type : 'login';
-    return { id: null, vaultId: vaultId || null, type: tp, title: '', fav: false, notes: '', urls: tp === 'login' ? [''] : [], apps: [], fields: {}, custom: [], extra: {} };
+    return { id: null, vaultId: vaultId || null, type: tp, title: '', fav: false, notes: '', urls: tp === 'login' ? [''] : [], match: null, apps: [], fields: {}, custom: [], extra: {} };
   }
 
   /** A decrypted entry ({ id, vaultId, data }) → draft (unknown keys kept in `extra`). */
@@ -1105,7 +1154,8 @@
     if (isObj(d.fields)) Object.keys(d.fields).forEach(function (k) { fields[k] = str(d.fields[k]); });
     return {
       id: e && e.id ? e.id : null, vaultId: e && e.vaultId ? e.vaultId : null, type: type, title: str(d.title), fav: d.fav === true,
-      notes: str(d.notes), urls: type === 'login' && !urls.length ? [''] : urls, apps: Array.isArray(d.apps) ? d.apps.map(str) : [],
+      notes: str(d.notes), urls: type === 'login' && !urls.length ? [''] : urls,
+      match: d.match === undefined || d.match === null || d.match === 'domain' ? null : clone(d.match), apps: Array.isArray(d.apps) ? d.apps.map(str) : [],
       fields: fields,
       custom: Array.isArray(d.custom) ? d.custom.filter(isObj).map(function (c) { return { name: str(c.name), value: str(c.value), secret: c.secret === true }; }) : [],
       extra: extra,
@@ -1123,6 +1173,7 @@
     if (d.fav) out.fav = true;
     if (str(d.notes).trim()) out.notes = str(d.notes);
     out.urls = (d.urls || []).map(function (u) { return str(u).trim(); }).filter(Boolean);
+    if (d.match !== undefined && d.match !== null && d.match !== 'domain') out.match = d.match;
     out.apps = (d.apps || []).map(function (u) { return str(u).trim(); }).filter(Boolean);
     var fields = {};
     Object.keys(d.fields || {}).forEach(function (k) {
@@ -1203,7 +1254,7 @@
     base32Encode: base32Encode, totpAccount: totpAccount, base64Bytes: base64Bytes, protoFields: protoFields, qrTotp: qrTotp,
     generatorOptions: generatorOptions, generatePassword: generatePassword, passwordBits: passwordBits,
     passwordStrength: passwordStrength, wordCount: wordCount, goodMasterPassword: goodMasterPassword, masterCheck: masterCheck,
-    urlHost: urlHost, siteOf: siteOf, openableUrl: openableUrl,
+    urlHost: urlHost, siteOf: siteOf, openableUrl: openableUrl, exactHost: exactHost, pageMatch: pageMatch, forPage: forPage,
     csvRows: csvRows, parseImport: parseImport, importCounts: importCounts, duplicateFlags: duplicateFlags,
     exportCsv: exportCsv, fieldOn: fieldOn, wifiQrText: wifiQrText, wifiOf: wifiOf, wifiText: wifiText, wifiSame: wifiSame, parseShares: parseShares, shareLeft: shareLeft, qrMatrix: qrMatrix,
     letter: letter, tone: tone, matches: matches, listSections: listSections, mask: mask, maskedNumber: maskedNumber,
