@@ -1,4 +1,4 @@
-<!-- version: 1.7.2 -->
+<!-- version: 1.8.0 -->
 # Tür & Kamera
 
 ## Was das Plugin kann
@@ -167,7 +167,7 @@ Wie in der Ring-App unter „Modi“: Welche Kameras in welchem Modus aufnehmen,
 
 Im Portal-Tab und im App-Tab **„Tür“** siehst du die Schlösser, die für dich freigegeben sind, mit Zustand, Batterie und Knöpfen für die Aktionen, die du darfst. Dazu die Kameras, den Verlauf und – mit Recht – den Ring-Modus. Ohne Anmeldung (z. B. ein Kiosk-Gerät) kannst du nur ansehen.
 
-Die App bietet außerdem Schnellaktionen und ein Widget für deine Schlösser und den Ring-Modus.
+Die App bietet außerdem Schnellaktionen und ein Widget für deine Schlösser und den Ring-Modus. Seit 1.8.0 zeigt die Karte eines Schlosses dort den Batteriestand als kleines Symbol mit Prozentwert neben dem Namen – gelb ab 30 %, rot ab 15 % oder wenn Nuki die Batterie als kritisch meldet, mit Blitz, solange der Akku lädt. Im Portal und auf der Seite „Geräte“ steht dasselbe Symbol neben dem Zustand.
 
 ### Kameras im Portal
 
@@ -236,6 +236,10 @@ Firefox spielt das Live-Bild ab GateControl 1.242.0 über den eingebauten Player
 
 **Es werden keine Clips aufgenommen.**
 Prüfe unter „Aufnahmen“ den Modus. Bei „nur wenn niemand zu Hause ist“ muss die Anwesenheit der Familie bekannt sein. Unter 1 GB freiem Platz nimmt das Gateway nichts auf.
+
+## Neu in 1.8.0
+
+- **Batteriestand in der App:** Schnellaktionen und Widget zeigen den Batteriestand deiner Nuki-Schlösser und -Opener als Symbol mit Prozentwert; im Portal und auf der Seite „Geräte“ steht ein kleines Batteriesymbol neben dem Zustand.
 
 ## Neu in 1.7.2
 

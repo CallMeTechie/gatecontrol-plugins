@@ -120,3 +120,8 @@ body{padding:2px 2px 24px}
 .dr-pushcard{border-color:color-mix(in srgb,var(--warn) 35%,var(--line))}
 .dr-push-row{display:flex;gap:10px;align-items:center}
 .dr-push-th{width:56px;height:56px}
+/* 1.8.0: the battery of a lock — a small symbol with its percentage beside the state */
+.dr-batt{display:inline-flex;align-items:center;gap:3px;margin-left:8px;vertical-align:middle;font-size:12px;font-weight:600;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.dr-batt svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.dr-batt[data-tone="warn"]{color:var(--warn)}
+.dr-batt[data-tone="crit"]{color:var(--crit)}

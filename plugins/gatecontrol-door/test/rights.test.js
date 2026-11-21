@@ -104,7 +104,9 @@ test('quick actions per right: zusperren / aufsperren / öffnen (opener: Summer)
   const lockDevice = { id: `lock:${lockId}`, title: 'Haustür', subtitle: null, icon: 'M7 11V7a5 5 0 0 1 10 0v4M5 11h14v10H5z' };
   const openerDevice = { id: `lock:${openerId}`, title: 'Hoftor', subtitle: null, icon: 'M5 21V4a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v17M3 21h18M15 12h.01' };
   assert.deepEqual(anna.map((a) => a.device), [lockDevice, lockDevice, lockDevice, openerDevice]);
-  assert.ok(anna.every((a) => a.look === null && a.confirmWhen === null && a.widget === null), 'buttons as before');
+  assert.ok(anna.every((a) => a.look === null && a.confirmWhen === null), 'buttons as before');
+  // 1.8.0: a lock that reports its battery carries a widget on its first action (the battery as the badge)
+  assert.deepEqual(anna.map((a) => a.widget && a.widget.badge && a.widget.badge.value), [80, null, null, 80]);
   // target states (GateControl ≥ 1.173.0) are for toggles: the lock's actions stay buttons — no verbs, no targets, no state
   assert.ok(anna.every((a) => a.verbs === null && a.targets === false && a.state === null));
   assert.deepEqual(await host.runQuickAction(ANNA, `${lockId}:lock`, 'de', { state: 'on' }), { status: 400, body: { ok: false, error: 'invalid_state' } });

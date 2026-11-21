@@ -122,7 +122,7 @@
     S.locks.forEach(function (l) {
       box.appendChild(el('div', { class: 'dr-item' }, [
         el('div', { class: 'dr-item-main' }, [
-          el('div', { class: 'dr-item-title' }, [l.name + ' ', el('span', { class: 'dr-badge', 'data-tone': D.tone(l), text: D.badgeText(l) })]),
+          el('div', { class: 'dr-item-title' }, [l.name + ' ', el('span', { class: 'dr-badge', 'data-tone': D.tone(l), text: D.badgeText(l) }), D.batteryChip(l)]),
           el('div', { class: 'dr-item-sub', text: [T('dev.type_' + l.type), l.source === 'web' ? T('dev.source_web') : T('dev.source_bridge'), l.actions.map(function (a) { return D.actLabel(l, a); }).join('/'), D.stateText(l)].join(' · ') }),
           el('div', { class: 'dr-item-sub dr-diag', text: diagText(l) }),
           rawText(l) ? el('div', { class: 'dr-item-sub dr-diag', text: rawText(l) }) : null,

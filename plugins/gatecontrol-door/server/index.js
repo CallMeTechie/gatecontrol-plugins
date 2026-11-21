@@ -33,6 +33,7 @@ const ring = require('./ring');
 const modes = require('./modes');
 const push = require('./push');
 const home = require('./home');
+const battery = require('./battery');
 const texts = require('./texts.json');
 const { STATUS, isKnown, clip } = require('./util');
 
@@ -124,6 +125,29 @@ function stateLabel(lang, shown) {
   return shown.state === 'unknown' ? t(lang, 'state.unclear') : t(lang, 'state.stale', { state: t(lang, 'state.' + shown.state) });
 }
 
+/**
+ * The widget of a lock (1.8.0), carried by its first action — only when the lock reports its battery: the state as
+ * the value, the door sensor (or "Zustand unklar") as the status, the battery as the badge right of the lock's name;
+ * nothing to control, no on / off.
+ */
+function lockWidget(lang, lock, shown) {
+  const s = lock.state || {};
+  const badge = battery.badge(t, lang, s);
+  if (!badge) return null;
+  const reachable = s.reachable !== false;
+  let state = null;
+  if (!reachable || shown.state === 'jammed') state = 'crit';
+  else if (shown.stale) state = 'warn';
+  else if (shown.state === 'locked') state = 'good';
+  else if (shown.state === 'unlocked' || shown.state === 'unlatched') state = 'warn';
+  return {
+    label: null, value: clip(reachable ? t(lang, shown.stale ? 'state.unclear' : 'state.' + shown.state) : t(lang, 'qa.unreachable'), 24) || null,
+    // the status: "Zustand unklar – zuletzt: …" when unclear, else the door sensor ("Tür zu") when the lock has one
+    status: clip(shown.stale ? stateLabel(lang, shown) : (lock.door_sensor && s.door ? t(lang, 'door.' + s.door) : ''), 60) || null,
+    state, readings: [], controls: [], power: false, badge,
+  };
+}
+
 async function quickActionsFor(gc, user, lang) {
   const kind = qaViewer(user);
   if (!kind) return [];
@@ -141,11 +165,15 @@ async function quickActionsFor(gc, user, lang) {
     const sub = clip(stateLabel(lang, shown), 60) || null;
     // the apps group a lock's actions (GateControl ≥ 1.172.0; older hosts drop the field)
     const device = { id: `lock:${lock.id}`, title: clip(lock.name, 40) || t(lang, opener ? 'qa.device_opener' : 'qa.device_lock'), icon: opener ? ICONS.open : ICONS.lock };
+    let widget = lockWidget(lang, lock, shown);
     for (const a of lock.actions) {
       if (!rights.atLeast(level, rights.NEEDS[a])) continue;
       if (kind === 'automation' && a === 'open') continue;
       const key = a === 'open' && opener ? 'buzz' : a;
-      out.push({ id: `${lock.id}:${a}`, title: clip(t(lang, 'qa.' + key, { name: lock.name }), 40), subtitle: sub, icon: ICONS[a], kind: 'button', confirm: a !== 'lock', device });
+      const action = { id: `${lock.id}:${a}`, title: clip(t(lang, 'qa.' + key, { name: lock.name }), 40), subtitle: sub, icon: ICONS[a], kind: 'button', confirm: a !== 'lock', device };
+      // the battery (1.8.0): on the lock's first action, like a device's widget
+      if (widget) { action.widget = widget; widget = null; }
+      out.push(action);
     }
   }
   return [...out.slice(0, QA_MAX - ringModes.length), ...ringModes];
