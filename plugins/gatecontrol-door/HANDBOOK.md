@@ -1,4 +1,4 @@
-<!-- version: 1.7.2 -->
+<!-- version: 1.8.0 -->
 # Door & Camera
 
 ## What the plugin does
@@ -167,7 +167,7 @@ As in the Ring app under “Modes”: which cameras record in which mode is set 
 
 The portal tab and the app tab **“Door”** show the locks shared with you, with state, battery and buttons for the actions you may use. Also the cameras, the history and – with the right – the Ring mode. Without signing in (e.g. a kiosk device) you can only look.
 
-The app also offers quick actions and a widget for your locks and the Ring mode.
+The app also offers quick actions and a widget for your locks and the Ring mode. Since 1.8.0 a lock's card there shows the battery as a small icon with the percentage beside the name – yellow from 30 %, red from 15 % or when Nuki reports the battery as critical, with a lightning bolt while it charges. The portal and the page “Devices” show the same icon beside the state.
 
 ### Cameras in the portal
 
@@ -237,6 +237,10 @@ Firefox plays the live picture from GateControl 1.242.0 through the built-in pla
 
 **No clips are recorded.**
 Check the mode under “Recordings”. With “only when nobody is at home” the Family presence must be known. With less than 1 GB free the gateway records nothing.
+
+## New in 1.8.0
+
+- **Battery level in the app:** quick actions and the widget show the battery of your Nuki locks and openers as an icon with the percentage; the portal and the page “Devices” show a small battery icon beside the state.
 
 ## New in 1.7.2
 

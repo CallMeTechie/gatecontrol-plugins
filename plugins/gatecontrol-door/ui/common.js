@@ -98,9 +98,30 @@
     var s = lock.state || {};
     var parts = [!s.reachable ? T('portal.unreachable') : (!s.stale ? T('state.' + s.lock) : (s.lock === 'unknown' ? T('state.unclear') : T('state.stale', { state: T('state.' + s.lock) })))];
     if (s.door) parts.push(T('door.' + s.door));
-    if (s.batteryCritical) parts.push(T('portal.battery_low'));
-    else if (s.batteryPercent != null) parts.push(s.batteryPercent + ' %');
+    // 1.8.0: the battery is a small symbol beside the name (batteryChip)
     return parts.join(' · ');
+  }
+  /**
+   * The battery of a lock as a small symbol with its percentage (1.8.0; the same steps as the badge of the apps,
+   * server/battery.js): crit when Nuki reports it critical or at ≤ 15 %, warn at ≤ 30 %; a lightning bolt while it
+   * charges. Null when the lock reports nothing about its battery.
+   */
+  function batteryChip(lock) {
+    var s = lock.state || {};
+    var pct = typeof s.batteryPercent === 'number' && isFinite(s.batteryPercent) ? Math.max(0, Math.min(100, Math.round(s.batteryPercent))) : null;
+    if (pct == null && !s.batteryCritical) return null;
+    var d = 'M2 7h16v10H2zM21 10v4';
+    if (s.batteryCharging) d += 'M11 9l-3 3h4l-3 3';
+    else if (pct == null) d += 'M10 9.5v2.5M10 14.5h.01';
+    else if (pct > 75) d += 'M6 10v4M10 10v4M14 10v4';
+    else if (pct > 40) d += 'M6 10v4M10 10v4';
+    else if (pct > 15) d += 'M6 10v4';
+    var tone = s.batteryCritical || (pct != null && pct <= 15) ? 'crit' : (pct != null && pct <= 30 ? 'warn' : '');
+    var title = pct == null ? T('portal.battery_low') : (s.batteryCharging ? T('portal.battery_charging', { n: pct }) : (s.batteryCritical ? T('portal.battery_low') + ' (' + pct + ' %)' : T('portal.battery', { n: pct })));
+    var chip = el('span', { class: 'dr-batt', 'data-tone': tone || null, role: 'img', title: title, 'aria-label': title });
+    chip.appendChild(icon(d));
+    if (pct != null) chip.appendChild(el('span', { 'aria-hidden': 'true', text: pct + ' %' }));
+    return chip;
   }
   function actLabel(lock, a) { return T(a === 'open' && lock.type === 'opener' ? 'act.buzz' : 'act.' + a); }
   /** A 24×24 stroke icon (SVG path data from the server). */
@@ -134,5 +155,5 @@
     buttons.forEach(function (b) { box.appendChild(b); });
     return box;
   }
-  window.DOOR = { CTX: CTX, T: T, $: $, el: el, clear: clear, api: api, toast: toast, warn: warn, errText: errText, dialog: dialog, confirmDialog: confirmDialog, imgUrl: imgUrl, showImage: showImage, when: when, tone: tone, badgeText: badgeText, stateText: stateText, actLabel: actLabel, icon: icon, MODES: MODES, modeText: modeText, modeTone: modeTone, modeSeg: modeSeg };
+  window.DOOR = { CTX: CTX, T: T, $: $, el: el, clear: clear, api: api, toast: toast, warn: warn, errText: errText, dialog: dialog, confirmDialog: confirmDialog, imgUrl: imgUrl, showImage: showImage, when: when, tone: tone, badgeText: badgeText, stateText: stateText, batteryChip: batteryChip, actLabel: actLabel, icon: icon, MODES: MODES, modeText: modeText, modeTone: modeTone, modeSeg: modeSeg };
 })();

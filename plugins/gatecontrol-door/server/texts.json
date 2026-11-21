@@ -476,7 +476,14 @@
   "home.my_push": "Push bei Personen an mich",
   "home.my_push_on": "Push an",
   "home.my_push_off": "Push für dich aus",
-  "home.days_word": "Tage"
+  "home.days_word": "Tage",
+  "qa.battery": "Batterie",
+  "qa.battery_critical": "Batterie fast leer",
+  "qa.battery_charging": "Akku lädt",
+  "qa.battery_low": "leer",
+  "qa.unreachable": "Nicht erreichbar",
+  "portal.battery": "Batterie {{n}} %",
+  "portal.battery_charging": "Akku {{n}} %, lädt"
  },
  "en": {
   "error.invalid": "Invalid input.",
@@ -955,6 +962,13 @@
   "home.my_push": "Push for people to me",
   "home.my_push_on": "Push on",
   "home.my_push_off": "Push off for you",
-  "home.days_word": "days"
+  "home.days_word": "days",
+  "qa.battery": "Battery",
+  "qa.battery_critical": "Battery almost empty",
+  "qa.battery_charging": "Charging",
+  "qa.battery_low": "empty",
+  "qa.unreachable": "Not reachable",
+  "portal.battery": "Battery {{n}} %",
+  "portal.battery_charging": "Battery {{n}} %, charging"
  }
 }

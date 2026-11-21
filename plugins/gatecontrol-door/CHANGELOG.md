@@ -8,6 +8,24 @@ bleibt auf dem eigenen Server. Einrichtung, Risiken, Datenschutz und die App-API
 an; das Plugin nutzt die, die auch die Open-Source-Projekte ring-client-api (Homebridge) und
 python-ring-doorbell (Home Assistant) verwenden. Sie kann sich jederzeit ändern oder wegfallen.
 
+## 1.8.0
+
+- **Nuki-Batteriestand in den Schnellaktionen/Widgets der Apps** (`widget.badge` von GateControl, ab 1.175.0; ältere
+  Hosts lassen ihn weg): die erste Schnellaktion eines Schlosses/Openers, das seinen Batteriestand meldet, trägt ein
+  Widget – Zustand als Wert („Zugesperrt“), Türsensor bzw. „Zustand unklar – zuletzt: …“ als Status, Ton wie die
+  Portal-Plakette, `power: false`, keine Regler – mit dem Badge `{ icon, value, unit: '%', state, label }`:
+  Batterie mit 0–3 Balken (SVG-Pfad 24×24), Blitz beim Laden (`batteryCharging`), Ausrufezeichen ohne Prozentwert;
+  `state` `crit` bei `batteryCritical` oder ≤ 15 %, `warn` ≤ 30 %, sonst `good`; `label` „Batterie“, „Batterie fast
+  leer“ oder „Akku lädt“; ohne Prozentwert, aber kritisch `value: 'leer'`/`'empty'`. Gelesen wird, was schon da war:
+  Bridge `batteryChargeState`/`batteryCritical`/`batteryCharging`, Nuki Web `batteryCharge`/`batteryCritical`/
+  `batteryCharging`. Ein Schloss, das nichts meldet (ältere Bridge, nicht kritisch), bleibt bei reinen Knöpfen.
+  Neu `server/battery.js`.
+- **Portal und Seite „Geräte“:** kleines Batteriesymbol mit Prozentwert neben der Zustands-Plakette (gleiche Stufen,
+  `DOOR.batteryChip`) statt „· 80 %“ bzw. „Batterie fast leer“ im Text.
+- Tests (`battery.test.js`): Stufen, Laden, kritisch ohne Prozentwert, Länge und Symbol nach Hostprüfung, Widget nur
+  an der ersten Aktion je Schloss, „kritisch“ von der Bridge, Opener; `rights.test.js` angepasst.
+- Braucht weiterhin **GateControl ≥ 1.169.0**.
+
 ## 1.7.2
 
 - **Aufräumen der Bilder liest keine Bilder mehr:** `media` hält das Bild (`data`) in der Zeile und `expires_at` dahinter – eine Anweisung, die `expires_at` aus der Zeile nimmt, liest das ganze Bild (seine Überlaufseiten) mit. Das stündliche `DELETE FROM media WHERE expires_at <= ? OR at < ?` hatte für `at` keinen Index, ging durch die Tabelle und las so jede Stunde alle Bilder (Protokoll von GateControl vom 12./13. 11.: unter den langsamen Anweisungen). Gemessen mit 3000 Bildern von 100–300 kB (Datenbank 600 MB): 147 000 Seiten (574 MB) je Lauf, auch wenn nichts zu löschen war – jetzt 4 Seiten, mit 18 abgelaufenen Bildern 818 Seiten (3 MB: die gelöschten Bilder selbst).
