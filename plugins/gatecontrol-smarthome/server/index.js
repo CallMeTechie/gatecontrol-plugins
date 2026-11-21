@@ -11,6 +11,9 @@
 //     GET  /rules?gateway_id[&source=edge] · /rules/gateway-count?gateway_id
 //     POST /rules { …, source? } · /rules/:id/enabled   PUT /rules/:id   DELETE /rules/:id
 //          source 'edge': logic chains of the Shelly / Tasmota devices of a GateControl gateway (server/edgerules.js)
+//     POST /rules/check { gateway_id, id?, definition }   loops and shared devices of an edge chain (before saving)
+//     POST /rules/test { gateway_id, id? | definition, run? }   Testlauf on the gateway; run: "Trotzdem ausführen"
+//     GET  /rules/runs[?gateway_id][&rule_id][&problems=1]   the protocol of the edge chains (last 200 per gateway)
 //     PUT  /resources/:id { area }      the area ("Bereich") of any resource
 //     PUT  /resources/:id { name }      "In Smart Home benennen": lights / sensors (in deCONZ), Bluetooth sensors
 //     GET  /find?focus=zigbee:<mac>|ble:<mac>   where the page's deep link points to
@@ -48,6 +51,7 @@ const deconzCaps = require('./caps');
 const edge = require('./edge');
 const radio = require('./radio');
 const zigbee = require('./zigbee');
+const edgerules = require('./edgerules');
 const { validApiKey } = require('./deconz');
 const texts = require('./texts.json');
 
@@ -80,6 +84,9 @@ const ERRORS = {
   SMARTHOME_RULE_NOT_FOUND: [404, 'error.rule_not_found'],
   DECONZ_RULE_LIMIT_REACHED: [409, 'error.rule_limit_reached'],
   SMARTHOME_EDGE_RULE_LIMIT: [409, 'error.edge_rule_limit'],
+  SMARTHOME_RULE_LOOP: [409, 'error.rule_loop'],
+  SMARTHOME_RULE_STOPPED: [409, 'error.rule_stopped'],
+  SMARTHOME_EDGE_RULE_PENDING: [409, 'error.edge_rule_pending'],
   DECONZ_UNREACHABLE: [502, 'error.unreachable'],
   SMARTHOME_EDGE_UNAVAILABLE: [409, 'error.edge_unavailable'],
   SMARTHOME_EDGE_UNREACHABLE: [502, 'error.edge_unreachable'],
@@ -99,6 +106,7 @@ function errorResponse(e, lang) {
   const [status, key] = known || [502, 'common.error'];
   const json = { ok: false, code: (e && e.code) || null, error: t(lang, key) };
   if (e && e.code === 'SMARTHOME_RULE_INVALID' && typeof e.detail === 'string') json.detail = e.detail;
+  if (e && e.code === 'SMARTHOME_RULE_LOOP' && Array.isArray(e.chains)) json.chains = e.chains.slice(0, 20);
   return { status, json };
 }
 
@@ -623,6 +631,36 @@ async function adminRoute(req, gc, seg) {
       return { json: { ok: true, rules: list, gc_rule_count: list.length, limit_warn: rules.limitWarn(list.length), cancelSupported: deconzCaps.cancelSupported } };
     }
     if (seg.length === 2 && b === 'gateway-count' && m === 'GET') return { json: { ok: true, ...(await rules.gatewayRuleCount(gc, gatewayIdQuery(req))) } };
+    if (seg.length === 2 && b === 'runs' && m === 'GET') {
+      const q = req.query || {};
+      const gid = q.gateway_id ? posInt(q.gateway_id) : null;
+      // what the gateway kept while it was away, before the list is read (best effort, the gateway may be away)
+      if (edge.available(gc)) {
+        const gws = gid ? [gid] : (await gc.edge.gateways().catch(() => [])).filter((g) => g.state === 'running').map((g) => g.id);
+        await Promise.all(gws.map((g) => edge.catchUp(gc, g)));
+      }
+      return { json: { ok: true, runs: await edgerules.listRuns(gc, { gatewayId: gid, ruleId: q.rule_id ? posInt(q.rule_id) : null, problems: q.problems === '1' }) } };
+    }
+    if (seg.length === 2 && b === 'check' && m === 'POST') {
+      const gid = posInt(body.gateway_id);
+      if (!gid || !body.definition || typeof body.definition !== 'object') throw fail('SMARTHOME_RULE_INVALID', 'missing_fields');
+      const a = await edgerules.analyse(gc, gid, posInt(body.id), body.definition);
+      return { json: { ok: true, loop: a.loop, chains: a.chains, shared: a.shared } };
+    }
+    if (seg.length === 2 && b === 'test' && m === 'POST') {
+      const gid = posInt(body.gateway_id);
+      if (!gid) throw fail('SMARTHOME_RULE_INVALID', 'missing_gateway_id');
+      const id = posInt(body.id);
+      if (id) {
+        const row = await rules.get(gc, id);
+        if (!row || row.source !== 'edge' || row.gateway_id !== gid) throw fail('SMARTHOME_RULE_NOT_FOUND');
+        if (!row.enabled) throw fail(row.stopped ? 'SMARTHOME_RULE_STOPPED' : 'SMARTHOME_EDGE_RULE_PENDING');
+        return { json: { ok: true, test: await edge.testRule(gc, gid, { id, ...(body.run === true ? { run: true } : {}) }) } };
+      }
+      if (!body.definition || typeof body.definition !== 'object') throw fail('SMARTHOME_RULE_INVALID', 'missing_fields');
+      const compiled = edgerules.compileRule(1, body.definition, await edgerules.resourcesOf(gc, gid), await edgerules.devicesOf(gc, gid));
+      return { json: { ok: true, test: await edge.testRule(gc, gid, { rule: compiled }) } };
+    }
     if (seg.length === 1 && m === 'POST') {
       const gid = posInt(body.gateway_id);
       if (!gid || typeof body.name !== 'string' || !body.name || !body.definition || typeof body.definition !== 'object') throw fail('SMARTHOME_RULE_INVALID', 'missing_fields');

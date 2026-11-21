@@ -8,6 +8,8 @@
 // Since 1.10.0 a rule has a source: 'deconz' (as before, gateway_id = a deCONZ gateway of this plugin) or 'edge' —
 // Shelly and Tasmota devices behind a GateControl gateway (gateway_id = that gateway). An edge rule has no deCONZ
 // objects: server/edgerules.js compiles it and the plugin's edge part on the gateway runs it (edge/rules.js).
+// Since 1.11.0 an edge rule may be a version 2 definition (WENN · NUR WENN · DANN, server/edgerules.js); deCONZ
+// rules stay version 1. An edge rule the brake stopped carries stopped { at, reason } until it is started again.
 
 const store = require('./store');
 const service = require('./service');
@@ -44,6 +46,7 @@ function parseRow(row) {
     source: row.source === 'edge' ? 'edge' : 'deconz', last_fired_at: row.last_fired_at || null,
     deconz_rule_id: row.deconz_rule_id, deconz_schedule_id: row.deconz_schedule_id, deconz_clip_sensor_id: row.deconz_clip_sensor_id,
     synced: row.source === 'edge' || row.deconz_rule_id != null,
+    stopped: row.source === 'edge' && row.stopped_at ? { at: row.stopped_at, reason: row.stopped_reason || 'rate' } : null,
   };
 }
 
@@ -55,10 +58,16 @@ function idsOf(def) {
 async function list(gc, gatewayId, source = 'deconz') {
   if (source === 'edge') {
     const byId = await edgerules.resourcesOf(gc, gatewayId);
+    const devById = await edgerules.devicesOf(gc, gatewayId);
+    const today = await edgerules.runsToday(gc, gatewayId);
     const rows = (await gc.db.query("SELECT * FROM rules WHERE source = 'edge' AND gateway_id = ? ORDER BY id", [gatewayId])).rows;
     return rows.map((row) => {
       const r = parseRow(row);
-      r.orphaned = !idsOf(r.definition).every((id) => byId.has(Number(id)));
+      const refs = edgerules.refsOf(r.definition);
+      r.orphaned = !refs.resources.every((id) => byId.has(Number(id))) || !refs.devices.every((id) => devById.has(Number(id)));
+      // the new editor edits version 2: a version 1 chain is shown as one ("wird wahr: A und B")
+      r.v2 = edgerules.toV2(r.definition);
+      r.runs_today = today.get(r.id) || 0;
       return r;
     });
   }
@@ -76,16 +85,23 @@ async function get(gc, id) {
   return parseRow((await gc.db.get('SELECT * FROM rules WHERE id = ?', [Number(id)])).row);
 }
 
-function checkDefinition(def) {
+function checkDefinition(def, source = 'deconz') {
   if (!def || typeof def !== 'object' || Array.isArray(def)) throw invalid('definition');
   if (def.triggers != null && !Array.isArray(def.triggers)) throw invalid('triggers');
   if (def.actions != null && !Array.isArray(def.actions)) throw invalid('actions');
   if ((def.triggers || []).length > 20 || (def.actions || []).length > 20) throw invalid('too_many');
+  if (def.version === undefined) return;
+  // version 2 (WENN · NUR WENN · DANN): the chains on a GateControl gateway only, for now
+  if (def.version !== 2 || source !== 'edge') throw invalid('bad_version');
+  if (def.steps != null && !Array.isArray(def.steps)) throw invalid('steps');
+  if (def.conditions != null && (typeof def.conditions !== 'object' || Array.isArray(def.conditions) || (def.conditions.list != null && !Array.isArray(def.conditions.list)))) throw invalid('conditions');
+  if ((def.steps || []).length > edgerules.MAX_STEPS) throw invalid('too_many_steps');
+  if (((def.conditions && def.conditions.list) || []).length > 20) throw invalid('too_many');
 }
 
-function checkName(name) {
-  // deCONZ rule names are ~32 characters including the GC:<id>: prefix
-  if (!name || typeof name !== 'string' || name.length > 20) throw invalid('name_too_long', 'name too long');
+function checkName(name, source = 'deconz') {
+  // deCONZ rule names are ~32 characters including the GC:<id>: prefix; a chain on a GateControl gateway has 40
+  if (!name || typeof name !== 'string' || name.length > (source === 'edge' ? 40 : 20)) throw invalid('name_too_long', 'name too long');
 }
 
 /** Create the deCONZ objects of a plan; placeholders resolved; compensation on failure. */
@@ -145,8 +161,8 @@ async function createEdge(gc, gatewayId, name, definition) {
 }
 
 async function create(gc, gatewayId, name, definition, source = 'deconz') {
-  checkName(name);
-  checkDefinition(definition);
+  checkName(name, source);
+  checkDefinition(definition, source);
   if (source === 'edge') return createEdge(gc, gatewayId, name, definition);
   const gw = await store.getGateway(gc, gatewayId);
   if (!gw) throw codeError('SMARTHOME_GATEWAY_NOT_FOUND', 'gateway not found');
@@ -164,10 +180,10 @@ async function create(gc, gatewayId, name, definition, source = 'deconz') {
 }
 
 async function update(gc, id, name, definition) {
-  checkName(name);
-  checkDefinition(definition);
   const row = await get(gc, id);
   if (!row) throw codeError('SMARTHOME_RULE_NOT_FOUND', 'rule not found');
+  checkName(name, row.source);
+  checkDefinition(definition, row.source);
   if (row.source === 'edge') {
     await edgerules.check(gc, row.gateway_id, row.id, definition);
     await gc.db.run("UPDATE rules SET name = ?, definition_json = ?, updated_at = datetime('now') WHERE id = ?", [name, JSON.stringify(definition), row.id]);
@@ -197,6 +213,7 @@ async function remove(gc, id) {
   if (!row) return;
   if (row.source === 'edge') {
     await gc.db.run('DELETE FROM rules WHERE id = ?', [row.id]);
+    await gc.db.run('DELETE FROM rule_runs WHERE rule_id = ?', [row.id]);
     await edge.configureGateway(gc, row.gateway_id);
     return;
   }
@@ -208,7 +225,9 @@ async function setEnabled(gc, id, on) {
   const row = await get(gc, id);
   if (!row) throw codeError('SMARTHOME_RULE_NOT_FOUND', 'rule not found');
   if (row.source === 'edge') {
-    await gc.db.run('UPDATE rules SET enabled = ? WHERE id = ?', [on ? 1 : 0, row.id]);
+    // on again ("Wieder starten"): the stop of the brake is over
+    if (on) await gc.db.run('UPDATE rules SET enabled = 1, stopped_at = NULL, stopped_reason = NULL, resumed_at = ? WHERE id = ?', [new Date().toISOString(), row.id]);
+    else await gc.db.run('UPDATE rules SET enabled = 0 WHERE id = ?', [row.id]);
     await edge.configureGateway(gc, row.gateway_id);
     return get(gc, row.id);
   }

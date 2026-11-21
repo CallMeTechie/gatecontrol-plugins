@@ -16,13 +16,18 @@
 //   info      gc.handle('info') → { version, startedAt, mqtt, lan, devices, found }
 //   refresh   gc.handle('refresh') → every configured device reports its whole state, discovery starts over
 //   rules     the logic chains of this gateway's devices (gc.edge.configure { rules, tz }) run here (edge/rules.js):
-//             a device's message → the chains it triggers → MQTT; event `fired` { rules: [{ id, at }] }
+//             a device's message or a button press → the chains it triggers → MQTT; event `fired` { rules: [{ id, at }] }
+//   runs      what the chains did (since 1.11.0): the last 200 runs in a ring (gc.store `runs`, written at most once
+//             a minute), event `runs` { runs: [run] } with the next bundle; gc.handle('runs', { epoch, after }) →
+//             { epoch, runs, more } — what the server part missed while it was away (seq after `after`, 40 a call)
+//   test      gc.handle('test', { id } | { rule }, run?) → what a chain would do now (edge/rules.js test)
 //
 // Capabilities (plugin.json edge.capabilities): mdns _shelly._tcp and _http._tcp, http.lan, mqtt shellies/# and
 // tasmota/#. On disk (gc.store) only the last list of logic chains, so they run after a restart of the gateway
-// while the server is away — no device password, no MQTT password.
+// while the server is away, and the last runs of the chains — no device password, no MQTT password.
 
 const os = require('node:os');
+const crypto = require('node:crypto');
 const normalize = require('./normalize');
 const commands = require('./commands');
 const devices = require('./devices');
@@ -39,6 +44,12 @@ const PER_EVENT = 20;
 const TOPICS = ['shellies/#', 'tasmota/#'];
 const SERVICES = ['_shelly._tcp', '_http._tcp'];
 const RULES_KEY = 'rules';
+const RUNS_KEY = 'runs';
+const MAX_RUNS = 200;
+const RUNS_PAGE = 40;
+const RUNS_PER_EVENT = 10;
+const RUNS_SAVE_MS = 60 * 1000;
+const UID_RE = /^[A-Za-z0-9]{1,16}:\d{1,12}$/;
 
 const st = {
   gc: null,
@@ -62,6 +73,11 @@ const st = {
   stored: null,              // promise chain of the gc.store reads and writes
   storedKey: null,           // what gc.store holds (JSON)
   fired: [],                 // { id, at } for the next flush
+  runs: null,                // { epoch, seq, n, list: [run] } — the ring of the last runs (gc.store `runs`)
+  runsOut: [],               // runs for the next flush
+  runsDirty: false,          // the ring changed since it was last written
+  stoppedKey: '[]',          // the chains the brake stopped, as last written
+  presses: new Map(),        // base → { input → event_cnt } (Shelly Gen1 repeats a press with the same counter)
 };
 
 /** For tests: where the gateway's network interfaces come from. */
@@ -79,7 +95,7 @@ function lan() {
 
 // ─── MQTT ───────────────────────────────────────
 
-function onMessage(topic, payload) {
+function onMessage(topic, payload, meta) {
   const r = normalize.parse(topic, payload);
   if (!r) return;
   let dev = st.devices.get(r.base);
@@ -93,6 +109,18 @@ function onMessage(topic, payload) {
   dev.seenAt = new Date().toISOString();
   if (st.configured && st.configured.has(r.base)) st.dirty.add(r.base);
   if (st.engine) st.engine.onDevice(r.base);
+  // a button press is an event for the chains, never a state; a retained one is an old press
+  if (r.events && st.engine && !(meta && meta.retain)) {
+    const seen = st.presses.get(r.base) || {};
+    const fresh = r.events.filter((e) => {
+      if (e.cnt == null) return true;
+      const dup = seen[e.input] === e.cnt;
+      seen[e.input] = e.cnt;
+      return !dup;
+    });
+    if (st.presses.size < MAX_DEVICES) st.presses.set(r.base, seen);
+    if (fresh.length) st.engine.onEvent(r.base, fresh);
+  }
 }
 
 function subscribe() {
@@ -138,6 +166,7 @@ function refreshAll() {
 
 function flush() {
   if (st.fired.length) st.gc.emit('fired', { rules: st.fired.splice(0, PER_EVENT) });
+  if (st.runsOut.length) st.gc.emit('runs', { runs: st.runsOut.splice(0, RUNS_PER_EVENT) });
   if (!st.dirty.size || !st.configured) return;
   const out = [];
   for (const base of st.dirty) {
@@ -192,16 +221,72 @@ function setRules(cfg, fromServer) {
   }).catch(() => warnOnce('store', 'the logic chains could not be kept for a restart of the gateway'));
 }
 
-/** After a restart: the last list, until the server part sends its own. */
+/** After a restart: the last list, until the server part sends its own; the ring of runs and what was stopped. */
 function restoreRules() {
   if (!st.gc.store) return;
   const gc = st.gc;
-  st.stored = Promise.resolve().then(() => gc.store.get(RULES_KEY)).then((v) => {
+  st.stored = Promise.resolve().then(async () => {
+    const runs = await gc.store.get(RUNS_KEY).catch(() => null);
+    if (st.gc !== gc) return;
+    restoreRuns(runs);
+    const v = await gc.store.get(RULES_KEY);
     if (st.gc !== gc) return;
     const ok = v && typeof v === 'object' && Array.isArray(v.rules);
     st.storedKey = ok ? JSON.stringify({ rules: v.rules, tz: typeof v.tz === 'string' ? v.tz : null }) : EMPTY_RULES;
     if (ok && !st.rulesFromServer) setRules(v, false);
+    if (runs && Array.isArray(runs.stopped) && st.engine) st.engine.restoreStopped(runs.stopped);
+    st.stoppedKey = JSON.stringify(st.engine ? st.engine.stoppedList() : []);
   }).catch(() => null);
+}
+
+// ─── Runs (the protocol of the chains) ──────────
+
+function newEpoch() { return crypto.randomBytes(6).toString('hex'); }
+
+function restoreRuns(v) {
+  const ok = v && typeof v === 'object' && typeof v.epoch === 'string' && /^[A-Za-z0-9]{1,16}$/.test(v.epoch) && Array.isArray(v.list);
+  if (!ok) return;
+  // a run of the store that had not finished before the restart did not finish: it was cut off
+  const list = v.list.filter((r) => r && typeof r === 'object' && UID_RE.test(r.u)).slice(-MAX_RUNS);
+  let seq = Number.isSafeInteger(v.seq) ? v.seq : 0;
+  for (const r of list) {
+    if (r.res === 'running') { r.res = 'cancel'; r.why = 'restart'; r.end = r.end || new Date().toISOString(); r.s = ++seq; st.runsDirty = true; }
+  }
+  st.runs = { epoch: v.epoch, seq, n: Number.isSafeInteger(v.n) ? v.n : list.length, list };
+}
+
+function ring() {
+  if (!st.runs) st.runs = { epoch: newEpoch(), seq: 0, n: 0, list: [] };
+  return st.runs;
+}
+
+/** A run of edge/rules.js (new or finished): into the ring with the next sequence number, to the server with the next bundle. */
+function record(run) {
+  const r = ring();
+  run.s = ++r.seq;
+  const i = r.list.findIndex((x) => x.u === run.u);
+  if (i >= 0) r.list[i] = run;
+  else {
+    r.list.push(run);
+    if (r.list.length > MAX_RUNS) r.list.splice(0, r.list.length - MAX_RUNS);
+  }
+  const j = st.runsOut.findIndex((x) => x.u === run.u);
+  if (j >= 0) st.runsOut[j] = run;
+  else if (st.runsOut.length < MAX_RUNS) st.runsOut.push(run);
+  st.runsDirty = true;
+}
+
+/** At most once a minute: the ring (and the stopped chains) into gc.store — the gateway's card is spared. */
+function saveRuns() {
+  if (!st.gc || !st.gc.store) return Promise.resolve();
+  const stopped = st.engine ? st.engine.stoppedList() : [];
+  const sk = JSON.stringify(stopped);
+  if (!st.runsDirty && sk === st.stoppedKey) return Promise.resolve();
+  const r = ring();
+  st.runsDirty = false;
+  st.stoppedKey = sk;
+  const gc = st.gc;
+  return gc.store.set(RUNS_KEY, { epoch: r.epoch, seq: r.seq, n: r.n, list: r.list, stopped }).catch(() => warnOnce('store-runs', 'the protocol of the logic chains could not be kept for a restart of the gateway'));
 }
 
 // ─── Discovery ──────────────────────────────────
@@ -266,6 +351,11 @@ module.exports = {
     st.stored = null;
     st.storedKey = null;
     st.fired = [];
+    st.runs = null;
+    st.runsOut = [];
+    st.runsDirty = false;
+    st.stoppedKey = '[]';
+    st.presses.clear();
     st.engine = rules.create({
       device: (base) => st.devices.get(base) || null,
       publish: async (list) => {
@@ -273,6 +363,8 @@ module.exports = {
         await publishAll(list);
       },
       fired: (id, at) => { if (st.fired.length < 200) st.fired.push({ id, at }); },
+      record,
+      runId: () => { const r = ring(); r.n += 1; return `${r.epoch}:${r.n}`; },
       log: gc.log,
     });
 
@@ -306,7 +398,7 @@ module.exports = {
       const o = p && typeof p === 'object' ? p : {};
       const host = devices.addressFor(o.ip, lan());
       if (!host) throw Object.assign(new Error('the gateway has no private LAN address'), { code: 'no_lan_address' });
-      await devices.setup(gc.lan.http, { ip: str(o.ip, 15), family: o.family, host, port: 1883, user: str(o.user, 64), pass: str(o.pass, 128), prefix: str(o.prefix, 24), password: str(o.password, 128), httpUser: o.httpUser == null ? null : o.httpUser });
+      await devices.setup(gc.lan.http, { ip: str(o.ip, 15), family: o.family, host, port: 1883, user: str(o.user, 64), pass: str(o.pass, 128), prefix: str(o.prefix, 24), password: str(o.password, 128), httpUser: o.httpUser == null ? null : o.httpUser, buttons: o.buttons === true });
       if (st.mqtt !== 'ok') subscribe();
       return { ok: true, host, port: 1883 };
     });
@@ -317,6 +409,22 @@ module.exports = {
       return { sent: n };
     });
 
+    // the runs the server part missed: everything after `after` of this ring (all of it for another epoch)
+    gc.handle('runs', (p) => {
+      const r = ring();
+      const o = p && typeof p === 'object' ? p : {};
+      const after = o.epoch === r.epoch && Number.isSafeInteger(o.after) ? o.after : 0;
+      const list = r.list.filter((x) => x.s > after).sort((a, b) => a.s - b.s);
+      return { epoch: r.epoch, runs: list.slice(0, RUNS_PAGE), more: list.length > RUNS_PAGE };
+    });
+
+    // Testlauf: what a chain would do now ({ id } or a draft { rule }), or { id, run: true } — run it by hand
+    gc.handle('test', (p) => {
+      const o = p && typeof p === 'object' ? p : {};
+      if (o.id !== undefined && !Number.isSafeInteger(o.id)) throw badRequest('id: a logic chain');
+      return st.engine.test(o.id !== undefined ? { id: o.id } : { rule: o.rule }, { run: o.run === true });
+    });
+
     restoreRules();
     gc.onConfig((cfg) => onConfig(cfg));
     if (gc.config()) onConfig(gc.config());
@@ -325,6 +433,7 @@ module.exports = {
     every(flush, FLUSH_MS);
     every(refreshAll, REFRESH_MS);
     every(() => { if (st.mqtt !== 'ok') subscribe(); }, RETRY_MQTT_MS);
+    every(() => { saveRuns(); }, RUNS_SAVE_MS);
 
     subscribe();
     browse();
@@ -334,6 +443,7 @@ module.exports = {
     for (const t of st.timers.splice(0)) clearInterval(t);
     for (const b of st.browses.splice(0)) b.stop();
     for (const s of st.subs.splice(0)) s.unsubscribe().catch(() => null);
+    if (st.gc) saveRuns();
     if (st.engine) st.engine.stop();
     st.engine = null;
     st.rulesKey = null;
@@ -341,6 +451,9 @@ module.exports = {
     st.stored = null;
     st.storedKey = null;
     st.fired = [];
+    st.runs = null;
+    st.runsOut = [];
+    st.presses.clear();
     st.devices.clear();
     st.dirty.clear();
     st.found.clear();
@@ -352,5 +465,5 @@ module.exports = {
     st.gc = null;
   },
 
-  _test: { st, hooks, flush },
+  _test: { st, hooks, flush, saveRuns },
 };

@@ -160,7 +160,9 @@ async function setup(http, o) {
   }
   if (family === 'tasmota') {
     if (/[;\s]/.test(pass) || /[;\s]/.test(user)) throw fail('bad_request', 'invalid MQTT settings');
-    const cmnd = `Backlog SetOption3 1; MqttHost ${host}; MqttPort ${port}; MqttUser ${user}; MqttPassword ${pass}; Topic ${prefix}; FullTopic tasmota/%topic%/%prefix%/`;
+    // buttons (on request): SetOption73 1 — the buttons report presses (single, double, hold) for the logic chains
+    // instead of switching the relay themselves
+    const cmnd = `Backlog SetOption3 1;${o.buttons === true ? ' SetOption73 1;' : ''} MqttHost ${host}; MqttPort ${port}; MqttUser ${user}; MqttPassword ${pass}; Topic ${prefix}; FullTopic tasmota/%topic%/%prefix%/`;
     const body = form(password ? { user: httpUser, password, cmnd } : { cmnd });
     const res = await request(http, { method: 'POST', url: `http://${ip}/cm`, headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
     const j = jsonOf(res);

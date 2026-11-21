@@ -13,7 +13,8 @@
 //
 // Events of the edge part: `states` { devices: [snapshot] } (bundled every 2 s) → resources and their cached
 // state; `found` { devices: [candidate] } → the "new devices" hint. $started / $online → the device list again
-// (gc.edge.configure { devices: [{ base, family }], rules, tz }); `fired` { rules: [{ id, at }] } → a logic chain ran
+// (gc.edge.configure { devices: [{ base, family }], rules, tz }) and the runs the server part missed (gc.edge.call
+// 'runs'); `fired` { rules: [{ id, at }] } → a logic chain ran, `runs` { runs: [run] } → its protocol
 // (server/edgerules.js).
 
 const crypto = require('node:crypto');
@@ -121,6 +122,26 @@ async function configureGateway(gc, gatewayId) {
   } catch (e) {
     gc.log.debug('edge configure failed', gatewayId, edgeErr(e));
     return false;
+  }
+}
+
+/** The runs of the logic chains the gateway kept while the server part did not hear it. */
+async function catchUp(gc, gatewayId) {
+  try {
+    if (await edgerules.pullRuns(gc, gatewayId)) await configureGateway(gc, gatewayId);
+  } catch (e) { gc.log.debug('edge rule runs not fetched', gatewayId, (e && (e.code || e.message)) || e); }
+}
+
+/** Testlauf of a logic chain on its gateway (edge/rules.js test). */
+async function testRule(gc, gatewayId, params) {
+  if (!available(gc)) throw codeError('SMARTHOME_EDGE_UNAVAILABLE');
+  try {
+    return await gc.edge.call(Number(gatewayId), 'test', params, { timeoutMs: CALL_MS });
+  } catch (e) {
+    const code = edgeErr(e);
+    if (code === 'stopped') throw codeError('SMARTHOME_RULE_STOPPED');
+    if (code === 'not_found') throw codeError('SMARTHOME_EDGE_RULE_PENDING');
+    throw codeError('SMARTHOME_EDGE_UNREACHABLE', code);
   }
 }
 
@@ -333,8 +354,11 @@ function setup(gc) {
   mem.orphanAt = 0;
   mem.ready = available(gc);
   if (!gc.edge) return false;
-  gc.edge.on('$started', ({ gatewayId }) => configureGateway(gc, gatewayId));
-  gc.edge.on('$online', ({ gatewayId }) => configureGateway(gc, gatewayId));
+  gc.edge.on('$started', ({ gatewayId }) => configureGateway(gc, gatewayId).then(() => catchUp(gc, gatewayId)));
+  gc.edge.on('$online', ({ gatewayId }) => configureGateway(gc, gatewayId).then(() => catchUp(gc, gatewayId)));
+  gc.edge.on('runs', ({ gatewayId, data }) => edgerules.storeRuns(gc, gatewayId, data && data.runs)
+    .then((stopped) => (stopped ? configureGateway(gc, gatewayId) : null))
+    .catch((e) => gc.log.warn('edge rule runs failed', (e && (e.code || e.message)) || e)));
   gc.edge.on('states', (ev) => onStates(gc, ev));
   gc.edge.on('found', ({ gatewayId, data }) => rememberFound(gatewayId, data && data.devices));
   gc.edge.on('fired', ({ gatewayId, data }) => edgerules.markFired(gc, gatewayId, data).catch((e) => gc.log.warn('edge rule mark failed', (e && (e.code || e.message)) || e)));
@@ -600,7 +624,8 @@ async function runJob(gc, job, password) {
     const dev = await es.getDevice(gc, job.deviceId);
     const httpUser = dev.family === 'shelly2' ? HTTP_USER_DEFAULT : (job.httpUser || httpUserOf(dev));
     try {
-      await gc.edge.call(job.gatewayId, 'setup', { ip: job.ip, family: dev.family, user: dev.mqtt_user, pass: job.secret, prefix: dev.prefix, ...(password ? { password, ...(httpUser !== HTTP_USER_DEFAULT ? { httpUser } : {}) } : {}) }, { timeoutMs: SETUP_CALL_MS });
+      // buttons: Tasmota's SetOption73 1 on request (the buttons report presses for the logic chains)
+      await gc.edge.call(job.gatewayId, 'setup', { ip: job.ip, family: dev.family, user: dev.mqtt_user, pass: job.secret, prefix: dev.prefix, ...(password ? { password, ...(httpUser !== HTTP_USER_DEFAULT ? { httpUser } : {}) } : {}), ...(job.buttons && dev.family === 'tasmota' ? { buttons: true } : {}) }, { timeoutMs: SETUP_CALL_MS });
     } catch (e) {
       const code = edgeErr(e);
       if (code === 'auth_required' || code === 'auth_failed') {
@@ -635,7 +660,7 @@ async function runJob(gc, job, password) {
 function newJob(o) {
   const job = {
     id: crypto.randomBytes(9).toString('base64url'), createdAt: Date.now(), configuredAt: 0, state: 'running', error: null, reason: null, secret: null, auth: false, httpUser: null,
-    deviceId: o.deviceId || null, gatewayId: o.gatewayId, name: o.name, area: o.area, ip: o.ip, family: o.family, model: o.model || null, candidate: o.candidate || null,
+    deviceId: o.deviceId || null, gatewayId: o.gatewayId, buttons: o.buttons === true, name: o.name, area: o.area, ip: o.ip, family: o.family, model: o.model || null, candidate: o.candidate || null,
     steps: { account: { state: 'pending' }, reach: { state: 'pending' }, auth: { state: 'pending' }, configure: { state: 'pending' }, online: { state: 'pending' } },
   };
   mem.jobs.set(job.id, job);
@@ -783,7 +808,7 @@ async function route(req, gc, seg, body, usersById) {
     const gw = await edgeGatewayOk(gc, body.gateway_id);
     const cand = cleanCandidate(body.candidate);
     if (!cand) throw codeError('INVALID');
-    const job = newJob({ gatewayId: gw, name: bodyName(body), area: bodyArea(body), ip: cand.ip, family: cand.family, model: cand.model, candidate: cand });
+    const job = newJob({ gatewayId: gw, name: bodyName(body), area: bodyArea(body), ip: cand.ip, family: cand.family, model: cand.model, candidate: cand, buttons: cand.family === 'tasmota' && body.buttons === true });
     runJob(gc, job, null);
     return { json: { ok: true, job: jobView(job) } };
   }
@@ -841,6 +866,6 @@ async function tick(gc, now = Date.now()) {
 }
 
 module.exports = {
-  available, setup, gateways, configureGateway, route, tick, setState, applySnapshot, syncResources, reachableOf, sleeperOf, httpUserOf, slugify, semverAtLeast,
+  available, setup, gateways, configureGateway, catchUp, testRule, route, tick, setState, applySnapshot, syncResources, reachableOf, sleeperOf, httpUserOf, slugify, semverAtLeast,
   jobView, MIN_GATEWAY, STALE_MS, SENSOR_STALE_MS, _mem: mem,
 };

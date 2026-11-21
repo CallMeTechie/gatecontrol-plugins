@@ -163,7 +163,8 @@ test('what does not fit is refused with a reason and changes nothing', () => wit
     const r = await post(def);
     assert.deepEqual([r.status, r.json.code, r.json.detail], [400, 'SMARTHOME_RULE_INVALID', detail], detail);
   }
-  assert.equal((await post(ok, { name: 'ein viel zu langer Name für eine Regel' })).json.detail, 'name_too_long');
+  // a chain on a GateControl gateway takes 40 characters (deCONZ: 20)
+  assert.equal((await post(ok, { name: 'ein viel zu langer Name für eine Logikkette im Keller' })).json.detail, 'name_too_long');
   assert.equal((await post(ok, { source: 'cloud' })).json.detail, 'bad_source');
   assert.equal((await host.gc.db.query('SELECT COUNT(*) AS n FROM rules')).rows[0].n, 0);
   assert.deepEqual(host.edgeConfigs.get(7).rules, []);

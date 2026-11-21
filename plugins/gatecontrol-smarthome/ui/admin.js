@@ -816,6 +816,11 @@
     var ok = !!g && g.state === 'running';
     $('#sh-a-auto').disabled = !ok || !addCandidate();
     $('#sh-a-manual').disabled = !ok;
+    // Tasmota: on request the buttons report presses for the logic chains (SetOption73 1, automatic set-up only)
+    var c = addCandidate();
+    var tas = !!(c && c.family === 'tasmota');
+    $('#sh-a-buttons-row').hidden = !tas;
+    if (!tas) $('#sh-a-buttons').checked = false;
   }
   function renderAddFound(searching) {
     var host = S.clear($('#sh-a-found'));
@@ -866,7 +871,10 @@
     var err = $('#sh-a-error');
     if (!name) { err.textContent = T('add.name_required'); err.hidden = false; $('#sh-a-name').focus(); return null; }
     err.hidden = true;
-    return { gateway_id: Number($('#sh-a-gateway').value), name: name, area: $('#sh-a-area').value.trim() || null, candidate: addCandidate() };
+    var c = addCandidate();
+    var f = { gateway_id: Number($('#sh-a-gateway').value), name: name, area: $('#sh-a-area').value.trim() || null, candidate: c };
+    if (c && c.family === 'tasmota' && $('#sh-a-buttons').checked) f.buttons = true;
+    return f;
   }
   $('#sh-a-auto').addEventListener('click', function () {
     var f = addForm();

@@ -1,4 +1,4 @@
-<!-- version: 1.10.0 -->
+<!-- version: 1.11.0 -->
 # Smart Home
 
 ## Was das Plugin kann
@@ -8,7 +8,7 @@
 - **Bluetooth-Sensoren** über ein GateControl-Gateway (ab 1.8.0): Thermometer und Sensoren, die du in GateControl unter Funk übernommen hast – auch verschlüsselte, wenn ihr Schlüssel dort eingetragen ist.
 - **Zigbee-Geräte von zigbee2mqtt** über ein GateControl-Gateway (ab 1.9.0): Lichter, Steckdosen, Rollläden, Sensoren und Taster, die du in GateControl unter Funk mit zigbee2mqtt angelernt hast. Ab 1.10.0 auch Schalter mit mehreren Kanälen, Thermostate und Firmware-Updates.
 - **Besitzer und Bereiche:** Du weist Geräte Personen zu. Diese Personen bedienen sie im Portal „Zuhause“ und in der App.
-- **Logikketten:** Auslöser, Zeitfenster, Verzögerung – für deCONZ auf dem deCONZ-Gateway, für Shelly und Tasmota (ab 1.10.0) auf dem GateControl-Gateway.
+- **Logikketten:** für deCONZ auf dem deCONZ-Gateway; für Shelly und Tasmota auf dem GateControl-Gateway (ab 1.10.0) – seit 1.11.0 mit Tastern, Uhrzeit, Bedingungen mit UND/ODER, Schritten mit Wartezeiten, Testlauf und Protokoll.
 - **Mitteilungen:** Alarm (Wasser, Rauch, CO), Fenster lange offen, Batterie schwach, Gateway nicht erreichbar.
 - **Schnellaktionen und Widgets** in den GateControl-Apps für die eigenen Geräte.
 
@@ -73,19 +73,34 @@ Unter **Einstellungen › Plugins › Smart Home › Einstellungen**: Abfrageint
 
 - **Portal „Zuhause“:** Jede Person sieht dort die Geräte, die ihr zugewiesen sind – schalten, dimmen, Farbe, Szenen, Rollläden mit Auf / Stopp / Zu. Wer keine Geräte hat, sieht den Abschnitt nicht.
 - **App:** Schnellaktionen (Startbildschirm, Schnelleinstellungen, Widget) für die eigenen Lampen, Steckdosen, Gruppen und Szenen, Rollläden mit Positionsregler, Leistung im Widget.
-- **Logikketten** (Seite „Logikketten“): Wähle oben die Quelle. Regeln eines deCONZ-Gateways laufen auf diesem Gateway. Regeln für Shelly und Tasmota laufen auf dem GateControl-Gateway, an dem die Geräte hängen – siehe [Logikketten für Shelly und Tasmota](#logikketten-edge).
+- **Logikketten** (Seite „Logikketten“): Die Liste zeigt alle Quellen, nach Ort gruppiert. Regeln eines deCONZ-Gateways laufen auf diesem Gateway. Ketten für Shelly und Tasmota laufen auf dem GateControl-Gateway, an dem die Geräte hängen – siehe [Logikketten für Shelly und Tasmota](#logikketten-edge).
 - **Regeln anderer Plugins** (z. B. Familie: „Alle weg → Licht aus“) schalten genau den gewünschten Zustand.
 
 ### Logikketten für Shelly und Tasmota {#logikketten-edge}
 
-1. Seite **„Logikketten“** › oben das GateControl-Gateway wählen › **„Neue Regel“**.
-2. **WENN:** ein Gerät und was auslöst – ein Ausgang geht **an** oder **aus**, ein Rollladen ist **offen** oder **geschlossen**, die **Leistung** liegt über oder unter einem Wert (Watt), **Temperatur** oder **Feuchte** eines Sensors liegt über oder unter einem Wert.
-3. **DANN:** schalten (an, aus), dimmen (Helligkeit) oder einen Rollladen fahren (Auf, Zu, Stopp, Position).
-4. Optional: Zeitfenster, Verzögerung in Minuten und was bei erneuter Auslösung passiert (ignorieren, Timer zurücksetzen, abbrechen).
+Die Seite **„Logikketten“** zeigt zuerst **alle Quellen**, nach Ort gruppiert. An jeder Kette steht, wo sie läuft: grün **„läuft am Gateway“** (Shelly und Tasmota, auch ohne Server), blau **„läuft auf deCONZ“** (wie bisher). Oben wählst du eine einzelne Quelle.
 
-Die Regel feuert, wenn die Bedingungen **eintreten** – nicht, solange sie schon gelten. Bei mehreren Bedingungen müssen alle zugleich erfüllt sein. Beispiel „Wäsche fertig“: Waschmaschine ist an **und** Leistung unter 5 W.
+Eine Kette hat drei Teile:
 
-Die Regeln laufen im Edge-Teil auf dem Gateway, auch wenn der Server gerade nicht erreichbar ist. Das Zeitfenster gilt in der Zeitzone des Servers. Unter jeder Regel steht, wann sie zuletzt ausgelöst hat. Je Gateway gehen höchstens 40 Regeln. Auslöser und Aktionen einer Regel müssen am selben Gateway hängen; deCONZ-Geräte und Shelly/Tasmota lassen sich nicht in einer Regel mischen.
+1. **WENN – eines davon passiert** (ein Ereignis genügt): ein **Taster** (Taste 1–4: kurz, doppelt, dreifach, lang), ein Ausgang **geht an** oder **aus**, ein Rollladen **wird geöffnet** oder **geschlossen**, **Leistung**, **Temperatur** oder **Feuchte** steigen über oder fallen unter einen Wert, eine **Uhrzeit**.
+2. **NUR WENN** (optional) – **alle (UND)** oder **eine (ODER)** dieser Bedingungen gilt gerade: ein Gerät ist an/aus/offen/geschlossen, ein Wert liegt über/unter, **Zeit zwischen** zwei Uhrzeiten, **Wochentage**.
+3. **DANN – der Reihe nach:** **Schalten** (an, aus, Helligkeit, Rollladen Auf/Zu/Stopp/Position) und **Warten** (Sekunden, Minuten, Stunden; höchstens 24 Stunden je Schritt). Höchstens 20 Schritte.
+
+Darunter legst du fest, was passiert, wenn die Kette **ausgelöst wird, während sie noch läuft**: von vorn starten (die Wartezeit beginnt neu – gut für „Licht 3 Minuten an“), ignorieren, oder ignorieren und **abbrechen, sobald „Nur wenn“ nicht mehr gilt**.
+
+**Taster:** Shelly Gen1 (`input_event`) und Shelly ab Gen2 (Plus i4 und andere) melden Tastendrücke von selbst. **Tasmota** meldet sie nur mit `SetOption73 1` – wähle beim automatischen Einrichten **„Tasten als Taster für Logikketten melden“** oder setze es in der Konsole des Geräts. Die Taste schaltet das Relais dann nicht mehr selbst.
+
+**Prüfung beim Speichern:** Würden sich zwei Ketten sicher gegenseitig hin- und herschalten (A schaltet X aus, B schaltet X wieder an, ohne „Nur wenn“), lässt sich die Kette nicht speichern. Eine mögliche Schleife wird als Hinweis gezeigt, ebenso andere Ketten, die dasselbe Gerät schalten.
+
+**Bremsen am Gateway:** Läuft eine Kette mehr als 10-mal in einer Minute, hält das Gateway sie an. Sie steht dann rot umrandet mit dem Grund in der Liste; **„Wieder starten“** schaltet sie wieder ein. Auf ihre eigene Rückmeldung reagiert eine Kette 2 Sekunden lang nicht. Je Gateway gehen höchstens 60 Befehle pro Minute hinaus.
+
+**Testlauf:** „Testen“ an einer Kette (oder „Testlauf“ im Editor) zeigt, ob die Bedingungen gerade gelten – mit den Werten vom Gateway. Er schaltet nichts. **„Trotzdem ausführen“** schaltet wirklich und überspringt „Nur wenn“; im Protokoll steht das als „von Hand“.
+
+**Protokoll:** die letzten 200 Läufe je Gateway – Zeit, Kette, Auslöser, Ergebnis (ausgeführt, übersprungen, teilweise, abgebrochen, angehalten) und der Ablauf eines Laufs. Läufe, während der Server nicht erreichbar war, kommen nach („nachgereicht“), sobald das Gateway wieder verbunden ist.
+
+Die Ketten laufen im Edge-Teil auf dem Gateway, auch wenn der Server gerade nicht erreichbar ist. Uhrzeiten gelten in der Zeitzone des Servers; das Gateway rechnet sie selbst. Je Gateway gehen höchstens 40 Ketten. Alle Geräte einer Kette müssen am selben Gateway hängen.
+
+**Bestehende Regeln (bis 1.10)** laufen unverändert weiter. Im Editor erscheinen ihre Auslöser als **„wird wahr: A und B“**; beim Speichern wird daraus eine Kette im neuen Format.
 
 ## Berechtigungen
 
@@ -113,8 +128,14 @@ Das Gerät hat sich abgemeldet oder seit 30 Minuten nichts gemeldet. Strom und W
 **Ein Shelly H&T zeigt „schläft“.**
 Das ist richtig so: Batteriegeräte wachen nur alle paar Stunden auf oder wenn sich der Wert ändert. Die Karte zeigt den letzten Wert und wann er kam. Meldet sich das Gerät länger als 26 Stunden nicht, fragt die Karte „Batterie leer?“. Unter dem Wert der Einstellung „Batterie schwach“ (Standard 15 %) steht ein Hinweis auf der Karte.
 
-**Eine Regel für Shelly oder Tasmota löst nicht aus.**
-Steht bei der Quelle „Gateway nicht verbunden“, kommen Änderungen erst an, wenn es wieder da ist. Ist MQTT auf dem Gateway aus, kann die Regel nicht schalten. Eine Regel feuert nur beim Wechsel: Ist die Bedingung beim Anlegen schon erfüllt, wartet sie auf das nächste Mal.
+**Eine Kette für Shelly oder Tasmota löst nicht aus.**
+Steht beim Gateway „nicht verbunden“, kommen Änderungen erst an, wenn es wieder da ist. Ist MQTT auf dem Gateway aus, kann die Kette nicht schalten. Ein Zustand löst nur beim Wechsel aus: Gilt er beim Anlegen schon, wartet die Kette auf das nächste Mal. Der **Testlauf** und das **Protokoll** zeigen, welche Bedingung gerade nicht gilt.
+
+**Ein Tasmota-Taster löst nichts aus.**
+Tasmota meldet Tasten nur mit `SetOption73 1` (siehe [Logikketten](#logikketten-edge)).
+
+**Eine Kette ist „angehalten“.**
+Sie lief mehr als 10-mal in einer Minute – meist schaltet eine andere Kette dasselbe Gerät zurück. Prüfe die Ketten, dann „Wieder starten“.
 
 **„Nach Update suchen“ meldet „Suche fehlgeschlagen“.**
 Das Gerät schläft (Batteriegerät: einmal betätigen) oder zigbee2mqtt erreicht den Update-Server nicht – das Gateway braucht dafür Internet.
@@ -124,6 +145,11 @@ Richte das Gerät „Von Hand …“ ein. Die Anleitung steht im Fenster.
 
 **Ein Gerät von zigbee2mqtt lässt sich nicht schalten („zigbee2mqtt auf dem Gateway antwortet gerade nicht“).**
 Im Reiter „Funk“ des Gateways nachsehen: Läuft zigbee2mqtt, sind Edge und MQTT an? Neue Geräte erscheinen spätestens nach einer halben Minute.
+
+## Neu in 1.11.0
+
+- **Logikketten, Stufe 1** (Shelly und Tasmota am GateControl-Gateway): Taster, Uhrzeit, Bedingungen mit UND/ODER, Schritte der Reihe nach mit Wartezeiten, Testlauf, Protokoll, Schutz vor Schleifen. Die Liste zeigt alle Quellen auf einen Blick ([Logikketten](#logikketten-edge)).
+- Beim automatischen Einrichten eines Tasmota kannst du die Tasten als Taster melden lassen (`SetOption73`).
 
 ## Neu in 1.10.0
 
