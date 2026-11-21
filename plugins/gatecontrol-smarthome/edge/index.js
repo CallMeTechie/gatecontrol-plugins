@@ -20,7 +20,11 @@
 //   runs      what the chains did (since 1.11.0): the last 200 runs in a ring (gc.store `runs`, written at most once
 //             a minute), event `runs` { runs: [run] } with the next bundle; gc.handle('runs', { epoch, after }) →
 //             { epoch, runs, more } — what the server part missed while it was away (seq after `after`, 40 a call)
-//   test      gc.handle('test', { id } | { rule }, run?) → what a chain would do now (edge/rules.js test)
+//   test      gc.handle('test', { id } | { rule }, run?, by?) → what a chain would do now (edge/rules.js test); by
+//             'app': its trigger "Von Hand (App)" (a quick action of the apps, NUR WENN checked)
+//   notes     a step "Mitteilung senden" (since 1.12.0): event `notify` { notes: [{ r, i, at, u }] } — the server part
+//             sends the notification (the gateway keeps events up to an hour while the server is away)
+//   sun       gc.edge.configure { sun: { lat, lon } } — sunrise and sunset of the chains, computed here (edge/sun.js)
 //
 // Capabilities (plugin.json edge.capabilities): mdns _shelly._tcp and _http._tcp, http.lan, mqtt shellies/# and
 // tasmota/#. On disk (gc.store) only the last list of logic chains, so they run after a restart of the gateway
@@ -78,6 +82,7 @@ const st = {
   runsDirty: false,          // the ring changed since it was last written
   stoppedKey: '[]',          // the chains the brake stopped, as last written
   presses: new Map(),        // base → { input → event_cnt } (Shelly Gen1 repeats a press with the same counter)
+  notes: [],                 // { r, i, at, u } for the next flush
 };
 
 /** For tests: where the gateway's network interfaces come from. */
@@ -166,6 +171,7 @@ function refreshAll() {
 
 function flush() {
   if (st.fired.length) st.gc.emit('fired', { rules: st.fired.splice(0, PER_EVENT) });
+  if (st.notes.length) st.gc.emit('notify', { notes: st.notes.splice(0, PER_EVENT) });
   if (st.runsOut.length) st.gc.emit('runs', { runs: st.runsOut.splice(0, RUNS_PER_EVENT) });
   if (!st.dirty.size || !st.configured) return;
   const out = [];
@@ -194,18 +200,23 @@ function onConfig(cfg) {
   // forget what is no longer configured and has not reported for a while
   for (const base of [...st.devices.keys()]) if (!next.has(base) && st.devices.size > MAX_DEVICES / 2) st.devices.delete(base);
   // the server part's list is the truth (an older server part sends none: no chains)
-  setRules({ rules: cfg && cfg.rules, tz: cfg && cfg.tz }, true);
+  setRules({ rules: cfg && cfg.rules, tz: cfg && cfg.tz, sun: cfg && cfg.sun }, true);
 }
 
 // ─── Logic chains ───────────────────────────────
 
 const EMPTY_RULES = JSON.stringify({ rules: [], tz: null });
 
+function cleanSun(v) {
+  return v && typeof v === 'object' && Number.isFinite(v.lat) && Number.isFinite(v.lon) ? { lat: v.lat, lon: v.lon } : null;
+}
+
 /** Hand a list to the engine; the server part's list is kept in gc.store (written only when it differs from what is there). */
 function setRules(cfg, fromServer) {
   if (!st.engine) return;
   const rl = Array.isArray(cfg.rules) ? cfg.rules.slice(0, rules.MAX_RULES) : [];
-  const list = { rules: rl, tz: rl.length && typeof cfg.tz === 'string' ? cfg.tz : null };
+  const sunAt = rl.length ? cleanSun(cfg.sun) : null;
+  const list = { rules: rl, tz: rl.length && typeof cfg.tz === 'string' ? cfg.tz : null, ...(sunAt ? { sun: sunAt } : {}) };
   const key = JSON.stringify(list);
   if (fromServer) st.rulesFromServer = true;
   if (key !== st.rulesKey) {
@@ -232,7 +243,7 @@ function restoreRules() {
     const v = await gc.store.get(RULES_KEY);
     if (st.gc !== gc) return;
     const ok = v && typeof v === 'object' && Array.isArray(v.rules);
-    st.storedKey = ok ? JSON.stringify({ rules: v.rules, tz: typeof v.tz === 'string' ? v.tz : null }) : EMPTY_RULES;
+    st.storedKey = ok ? JSON.stringify({ rules: v.rules, tz: typeof v.tz === 'string' ? v.tz : null, ...(cleanSun(v.sun) ? { sun: cleanSun(v.sun) } : {}) }) : EMPTY_RULES;
     if (ok && !st.rulesFromServer) setRules(v, false);
     if (runs && Array.isArray(runs.stopped) && st.engine) st.engine.restoreStopped(runs.stopped);
     st.stoppedKey = JSON.stringify(st.engine ? st.engine.stoppedList() : []);
@@ -356,6 +367,7 @@ module.exports = {
     st.runsDirty = false;
     st.stoppedKey = '[]';
     st.presses.clear();
+    st.notes = [];
     st.engine = rules.create({
       device: (base) => st.devices.get(base) || null,
       publish: async (list) => {
@@ -363,6 +375,7 @@ module.exports = {
         await publishAll(list);
       },
       fired: (id, at) => { if (st.fired.length < 200) st.fired.push({ id, at }); },
+      notify: (n) => { if (st.notes.length >= 50) return false; st.notes.push(n); return true; },
       record,
       runId: () => { const r = ring(); r.n += 1; return `${r.epoch}:${r.n}`; },
       log: gc.log,
@@ -422,7 +435,7 @@ module.exports = {
     gc.handle('test', (p) => {
       const o = p && typeof p === 'object' ? p : {};
       if (o.id !== undefined && !Number.isSafeInteger(o.id)) throw badRequest('id: a logic chain');
-      return st.engine.test(o.id !== undefined ? { id: o.id } : { rule: o.rule }, { run: o.run === true });
+      return st.engine.test(o.id !== undefined ? { id: o.id } : { rule: o.rule }, { run: o.run === true, by: o.by === 'app' ? 'app' : 'manual' });
     });
 
     restoreRules();
@@ -454,6 +467,7 @@ module.exports = {
     st.runs = null;
     st.runsOut = [];
     st.presses.clear();
+    st.notes = [];
     st.devices.clear();
     st.dirty.clear();
     st.found.clear();

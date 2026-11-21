@@ -13,7 +13,14 @@
 //          source 'edge': logic chains of the Shelly / Tasmota devices of a GateControl gateway (server/edgerules.js)
 //     POST /rules/check { gateway_id, id?, definition }   loops and shared devices of an edge chain (before saving)
 //     POST /rules/test { gateway_id, id? | definition, run? }   Testlauf on the gateway; run: "Trotzdem ausführen"
-//     GET  /rules/runs[?gateway_id][&rule_id][&problems=1]   the protocol of the edge chains (last 200 per gateway)
+//     GET  /rules/runs[?gateway_id | ?server=1][&rule_id][&problems=1]   the protocol of the chains (last 200 per place)
+//          since 1.12.0 source 'server': chains with devices of several gateways / of deCONZ, run by the server part
+//          (server/serverchains.js; POST /rules { source: 'server', … } without gateway_id, GET /rules?source=server);
+//          quick_users [ids] in POST / PUT /rules: the portal viewers a chain with "Von Hand (App)" is released for
+//     GET  /rules/devices?gateway_id | ?server=1   what the editor offers for a place (resources, buttons)
+//     GET  /rules/people               the people for "freigegeben für" / "Mitteilung an" ({ id, username, admin })
+//     GET  /rules/location?gateway_id | ?server=1 · PUT /rules/location { gateway_id | server: true, lat, lon } | { …, location: null }
+//          where a place is (sunrise / sunset)
 //     PUT  /resources/:id { area }      the area ("Bereich") of any resource
 //     PUT  /resources/:id { name }      "In Smart Home benennen": lights / sensors (in deCONZ), Bluetooth sensors
 //     GET  /find?focus=zigbee:<mac>|ble:<mac>   where the page's deep link points to
@@ -29,12 +36,16 @@
 //   portal API  (the identified portal viewer — owner-scoped)
 //     GET  /portal                     own devices and sensors
 //     POST /portal/resources/:id/state control (the host lets only signed-in viewers change things)
+//     GET  /portal/chains              the chains this viewer may start (since 1.12.0: "Von Hand (App)"; administrators
+//                                      all of them, anybody else those an administrator released for them)
+//     POST /portal/chains/:id/run      start one (its NUR WENN is checked) → { ok, result, message }
 //   quick actions of the GateControl apps (hooks quickActions / runQuickAction)
 //     the same owner scope as the portal: a toggle per own light, plug and
 //     group, a button per scene of an own group; dimmable lights and groups
 //     carry a widget (brightness as the value, a brightness slider); the toggles
 //     declare their verbs and honour a target state (GateControl ≥ 1.173.0:
 //     `target` 'on'|'off' sets that state, never switches over)
+//     since 1.12.0 first: a button chain:<id> per logic chain with "Von Hand (App)" the viewer may start (at most 8)
 //
 // Requests run with the requesting user's rights: req.user.portal = a portal
 // viewer, who only ever sees and controls what an administrator assigned to
@@ -52,6 +63,7 @@ const edge = require('./edge');
 const radio = require('./radio');
 const zigbee = require('./zigbee');
 const edgerules = require('./edgerules');
+const serverchains = require('./serverchains');
 const { validApiKey } = require('./deconz');
 const texts = require('./texts.json');
 
@@ -270,6 +282,71 @@ function sensorTile(s, lang) {
   }
 }
 
+// ─── Logic chains from the apps ("Von Hand (App)") ──
+
+const CHAIN_ICON = 'M6 3v12M18 9c0 7-12 5-12 9M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0zM21 6a3 3 0 1 1-6 0 3 3 0 0 1 6 0z';
+const CHAINS_MAX = 8;
+
+/** Who may start a chain: an administrator always, anybody else when an administrator released it for them. */
+function mayStart(user, row) {
+  if (!user || !Number.isInteger(user.id) || user.loggedIn === false) return false;
+  if (user.role === 'admin') return true;
+  return rules.quickUsersOf(row).includes(user.id);
+}
+
+/** The enabled chains with the trigger "Von Hand (App)" this viewer may start, with the name of their place. */
+async function startableChains(gc, user) {
+  if (!user || !Number.isInteger(user.id) || user.loggedIn === false) return [];
+  const list = (await gc.db.query("SELECT * FROM rules WHERE source IN ('edge', 'server') AND enabled = 1 ORDER BY name, id")).rows;
+  const out = [];
+  let gws = null;
+  for (const row of list) {
+    const def = store.parseJson(row.definition_json) || {};
+    if (def.version !== 2 || !Array.isArray(def.triggers) || !def.triggers.some((t) => t && t.kind === 'manual')) continue;
+    if (!mayStart(user, row)) continue;
+    let place = null;
+    if (row.source === 'edge') {
+      if (!gws) gws = new Map((edge.available(gc) ? await gc.edge.gateways().catch(() => []) : []).map((g) => [g.id, g.name]));
+      place = gws.get(row.gateway_id) || null;
+    }
+    out.push({ row, place });
+  }
+  return out;
+}
+
+function chainView(x, lang) {
+  return { id: x.row.id, name: clip(x.row.name, 40), place: x.row.source, place_name: x.place, offline: x.row.source === 'edge' };
+}
+
+function chainAction(x, lang) {
+  const sub = x.row.source === 'server' ? t(lang, 'qa.chain_server') : t(lang, 'qa.chain_gateway', { gw: x.place || t(lang, 'qa.chain_gw') });
+  return { id: `chain:${x.row.id}`, title: clip(x.row.name, 40) || t(lang, 'qa.chain'), subtitle: clip(sub, 60), icon: CHAIN_ICON, kind: 'button',
+    device: { id: 'chains', title: clip(t(lang, 'qa.chains'), 40), icon: CHAIN_ICON } };
+}
+
+/** Start one chain for a viewer (its NUR WENN is checked): { ok, result, message }. */
+async function startChainFor(gc, user, lang, id) {
+  const row = (await gc.db.get("SELECT * FROM rules WHERE id = ? AND source IN ('edge', 'server')", [Number(id)])).row;
+  const def = row ? store.parseJson(row.definition_json) || {} : {};
+  if (!row || !row.enabled || def.version !== 2 || !(def.triggers || []).some((x) => x && x.kind === 'manual') || !mayStart(user, row)) {
+    return { ok: false, result: 'not_found', message: t(lang, 'qa.unknown') };
+  }
+  const name = clip(row.name, 40);
+  try {
+    const res = row.source === 'server'
+      ? await serverchains.test(gc, { id: row.id }, { run: true, by: 'app' })
+      : await edge.testRule(gc, row.gateway_id, { id: row.id, run: true, by: 'app' });
+    const result = res && typeof res.result === 'string' ? res.result : (res && res.started ? 'started' : 'skip');
+    if (result === 'started') return { ok: true, result, message: clip(t(lang, 'qa.chain_started', { name }), 120) };
+    if (result === 'running') return { ok: true, result, message: clip(t(lang, 'qa.chain_running', { name }), 120) };
+    if (result === 'stopped') return { ok: false, result, message: t(lang, 'error.rule_stopped') };
+    return { ok: false, result: result === 'unknown' ? 'unknown' : 'skip', message: clip(t(lang, 'qa.chain_skipped', { name }), 120) };
+  } catch (e) {
+    if (!ERRORS[e && e.code]) gc.log.warn('chain start failed', row.id, (e && (e.code || e.message)) || e);
+    return { ok: false, result: 'error', message: errorResponse(e, lang).json.error };
+  }
+}
+
 // ─── Quick actions of the apps (declarative; the host checks and caps them) ──
 
 const QA_MAX = 16;
@@ -407,7 +484,9 @@ async function quickActionsFor(gc, user, lang) {
   const toggles = devices.filter((d) => d.kind !== 'scene' && d.kind !== 'cover');
   const covers = devices.filter((d) => d.kind === 'cover');
   const scenes = devices.filter((d) => d.kind === 'scene');
-  const out = toggles.map((d) => quickAction(d, lang, null));
+  // the chains the viewer may start come first (at most 8), then the devices
+  const out = (await startableChains(gc, user)).slice(0, CHAINS_MAX).map((x) => chainAction(x, lang));
+  out.push(...toggles.map((d) => quickAction(d, lang, null)));
   for (const c of covers) if (out.length + 3 <= QA_MAX) out.push(...coverActions(c, lang));
   for (const d of scenes) {
     const group = groups.get(sceneGroupKey(d));
@@ -433,6 +512,12 @@ async function widgetAfter(gc, r, lang) {
  * or close it. A resource with a widget answers with it.
  */
 async function runQuickActionFor(gc, user, lang, id, control, value, target) {
+  const cm = typeof id === 'string' ? /^chain:([1-9][0-9]{0,9})$/.exec(id) : null;
+  if (cm) {
+    if (control !== undefined || target !== undefined) return { ok: false, message: t(lang, 'qa.unknown') };
+    const r = await startChainFor(gc, user, lang, Number(cm[1]));
+    return { ok: r.ok, message: r.message };
+  }
   const m = typeof id === 'string' ? QA_ID_RE.exec(id) : null;
   if (!m || !user || !Number.isInteger(user.id) || user.loggedIn === false) return { ok: false, message: t(lang, 'qa.unknown') };
   if ((m[1] === 'cover') !== (m[3] !== undefined)) return { ok: false, message: t(lang, 'qa.unknown') };
@@ -485,6 +570,17 @@ async function runQuickActionFor(gc, user, lang, id, control, value, target) {
 async function portalRoute(req, gc, seg) {
   const user = req.user;
   if (req.method === 'GET' && seg.length === 1) return { json: { ok: true, ...(await portalData(gc, user.id)) } };
+  if (seg[1] === 'chains') {
+    if (req.method === 'GET' && seg.length === 2) return { json: { ok: true, chains: (await startableChains(gc, user)).map((x) => chainView(x, req.lang)) } };
+    if (req.method === 'POST' && seg.length === 4 && seg[3] === 'run') {
+      const id = posInt(seg[2]);
+      if (!id) throw fail('NOT_FOUND');
+      const r = await startChainFor(gc, user, req.lang, id);
+      if (r.result === 'not_found') throw fail('SMARTHOME_RULE_NOT_FOUND');
+      return { json: { ok: r.ok, result: r.result, message: r.message } };
+    }
+    throw fail('NOT_FOUND');
+  }
   if (req.method === 'POST' && seg[1] === 'resources' && seg[3] === 'state' && seg.length === 4) {
     const id = posInt(seg[2]);
     if (!id) throw fail('NOT_FOUND');
@@ -504,6 +600,29 @@ function gatewayIdQuery(req) {
   const id = posInt(req.query && req.query.gateway_id);
   if (!id) throw fail('SMARTHOME_RULE_INVALID', 'missing_gateway_id');
   return id;
+}
+
+/** What the editor of a chain offers for a place: { resources, devices (buttons of Shelly / Tasmota) }. */
+async function editorDevices(gc, place) {
+  const view = (r, placeName) => ({ id: r.id, kind: r.kind, name: r.name, area: r.area || null, enabled: !!r.enabled, capabilities: r.capabilities || {}, state: r.state || {}, place: placeName || null,
+    source: (r.capabilities && r.capabilities.source) || (r.deconz_type === 'edge' ? 'edge' : 'deconz') });
+  if (place === 0) {
+    const gwNames = new Map((await store.listGateways(gc)).map((g) => [g.id, g.name]));
+    const edgeNames = new Map((edge.available(gc) ? await gc.edge.gateways().catch(() => []) : []).map((g) => [g.id, g.name]));
+    const devGw = new Map((await require('./edgestore').listDevices(gc)).map((d) => [d.id, d.gateway_id]));
+    const byId = await edgerules.resourcesOf(gc, 0);
+    const resources = [...byId.values()].map(({ resource: r }) => {
+      let pn = null;
+      if (r.deconz_type === 'edge') pn = edgeNames.get(devGw.get(r.edge_device_id)) || null;
+      else if (r.gateway_id) pn = gwNames.get(r.gateway_id) || null;
+      else pn = (r.capabilities && r.capabilities.gateway) || null;
+      return view(r, pn);
+    });
+    return { resources, devices: [] };
+  }
+  const byId = await edgerules.resourcesOf(gc, place);
+  const devices = (await require('./edgestore').listDevices(gc, place)).map((d) => ({ id: d.id, name: d.name, family: d.family }));
+  return { resources: [...byId.values()].map(({ resource: r }) => view(r, null)), devices };
 }
 
 async function adminRoute(req, gc, seg) {
@@ -622,56 +741,85 @@ async function adminRoute(req, gc, seg) {
   if (a === 'edge') return edge.route(req, gc, seg.slice(1), body, usersById);
 
   if (a === 'rules') {
+    const serverPlace = (q) => q && (q.server === '1' || q.server === true || q.source === 'server');
     if (seg.length === 1 && m === 'GET') {
+      if (req.query && req.query.source === 'server') {
+        const list = await rules.list(gc, 0, 'server');
+        return { json: { ok: true, rules: list, gc_rule_count: list.length, limit_warn: false, cancelSupported: true, location: await edgerules.locationOf(gc, 0) } };
+      }
       if (req.query && req.query.source === 'edge') {
-        const list = await rules.list(gc, gatewayIdQuery(req), 'edge');
-        return { json: { ok: true, rules: list, gc_rule_count: list.length, limit_warn: false, cancelSupported: true } };
+        const gid = gatewayIdQuery(req);
+        const list = await rules.list(gc, gid, 'edge');
+        return { json: { ok: true, rules: list, gc_rule_count: list.length, limit_warn: false, cancelSupported: true, location: await edgerules.locationOf(gc, gid) } };
       }
       const list = await rules.list(gc, gatewayIdQuery(req));
       return { json: { ok: true, rules: list, gc_rule_count: list.length, limit_warn: rules.limitWarn(list.length), cancelSupported: deconzCaps.cancelSupported } };
     }
     if (seg.length === 2 && b === 'gateway-count' && m === 'GET') return { json: { ok: true, ...(await rules.gatewayRuleCount(gc, gatewayIdQuery(req))) } };
+    if (seg.length === 2 && b === 'people' && m === 'GET') {
+      // who a chain may be released for ("Von Hand (App)": administrators need no release) and who gets a notification
+      let list = [];
+      try { list = await gc.users.list(); } catch { /* users unavailable */ }
+      return { json: { ok: true, users: list.map((u) => ({ id: u.id, username: u.name, admin: u.role === 'admin' })) } };
+    }
+    if (seg.length === 2 && b === 'devices' && m === 'GET') return { json: { ok: true, ...(await editorDevices(gc, serverPlace(req.query) ? 0 : gatewayIdQuery(req))) } };
+    if (seg.length === 2 && b === 'location') {
+      const q = m === 'GET' ? (req.query || {}) : body;
+      const place = serverPlace(q) ? 0 : posInt(q.gateway_id);
+      if (place == null) throw fail('SMARTHOME_RULE_INVALID', 'missing_gateway_id');
+      if (m === 'GET') return { json: { ok: true, location: await edgerules.locationOf(gc, place) } };
+      if (m !== 'PUT') throw fail('NOT_FOUND');
+      const loc = await edgerules.setLocation(gc, place, body.location === null ? null : { lat: body.lat, lon: body.lon });
+      // the chains of the place (and the server's, which may fall back to a gateway's place) get the sun
+      if (place) await edge.configureGateway(gc, place);
+      await serverchains.reload(gc);
+      return { json: { ok: true, location: loc } };
+    }
     if (seg.length === 2 && b === 'runs' && m === 'GET') {
       const q = req.query || {};
-      const gid = q.gateway_id ? posInt(q.gateway_id) : null;
+      const gid = serverPlace(q) ? 0 : (q.gateway_id ? posInt(q.gateway_id) : null);
       // what the gateway kept while it was away, before the list is read (best effort, the gateway may be away)
       if (edge.available(gc)) {
-        const gws = gid ? [gid] : (await gc.edge.gateways().catch(() => [])).filter((g) => g.state === 'running').map((g) => g.id);
+        const gws = gid ? [gid] : (gid === 0 ? [] : (await gc.edge.gateways().catch(() => [])).filter((g) => g.state === 'running').map((g) => g.id));
         await Promise.all(gws.map((g) => edge.catchUp(gc, g)));
       }
       return { json: { ok: true, runs: await edgerules.listRuns(gc, { gatewayId: gid, ruleId: q.rule_id ? posInt(q.rule_id) : null, problems: q.problems === '1' }) } };
     }
     if (seg.length === 2 && b === 'check' && m === 'POST') {
-      const gid = posInt(body.gateway_id);
-      if (!gid || !body.definition || typeof body.definition !== 'object') throw fail('SMARTHOME_RULE_INVALID', 'missing_fields');
+      const gid = body.source === 'server' ? 0 : posInt(body.gateway_id);
+      if (gid == null || !body.definition || typeof body.definition !== 'object') throw fail('SMARTHOME_RULE_INVALID', 'missing_fields');
       const a = await edgerules.analyse(gc, gid, posInt(body.id), body.definition);
       return { json: { ok: true, loop: a.loop, chains: a.chains, shared: a.shared } };
     }
     if (seg.length === 2 && b === 'test' && m === 'POST') {
-      const gid = posInt(body.gateway_id);
-      if (!gid) throw fail('SMARTHOME_RULE_INVALID', 'missing_gateway_id');
+      const server = body.source === 'server';
+      const gid = server ? 0 : posInt(body.gateway_id);
+      if (gid == null) throw fail('SMARTHOME_RULE_INVALID', 'missing_gateway_id');
       const id = posInt(body.id);
       if (id) {
         const row = await rules.get(gc, id);
-        if (!row || row.source !== 'edge' || row.gateway_id !== gid) throw fail('SMARTHOME_RULE_NOT_FOUND');
+        if (!row || row.source !== (server ? 'server' : 'edge') || row.gateway_id !== gid) throw fail('SMARTHOME_RULE_NOT_FOUND');
         if (!row.enabled) throw fail(row.stopped ? 'SMARTHOME_RULE_STOPPED' : 'SMARTHOME_EDGE_RULE_PENDING');
+        if (server) return { json: { ok: true, test: await serverchains.test(gc, { id }, { run: body.run === true }) } };
         return { json: { ok: true, test: await edge.testRule(gc, gid, { id, ...(body.run === true ? { run: true } : {}) }) } };
       }
       if (!body.definition || typeof body.definition !== 'object') throw fail('SMARTHOME_RULE_INVALID', 'missing_fields');
-      const compiled = edgerules.compileRule(1, body.definition, await edgerules.resourcesOf(gc, gid), await edgerules.devicesOf(gc, gid));
+      const compiled = edgerules.compileRule(1, body.definition, await edgerules.resourcesOf(gc, gid), server ? new Map() : await edgerules.devicesOf(gc, gid),
+        { server, chains: await edgerules.chainIds(gc, gid) });
+      if (server) return { json: { ok: true, test: await serverchains.test(gc, { rule: compiled }) } };
       return { json: { ok: true, test: await edge.testRule(gc, gid, { rule: compiled }) } };
     }
     if (seg.length === 1 && m === 'POST') {
-      const gid = posInt(body.gateway_id);
-      if (!gid || typeof body.name !== 'string' || !body.name || !body.definition || typeof body.definition !== 'object') throw fail('SMARTHOME_RULE_INVALID', 'missing_fields');
-      if (body.source !== undefined && body.source !== 'deconz' && body.source !== 'edge') throw fail('SMARTHOME_RULE_INVALID', 'bad_source');
-      return { json: { ok: true, rule: await rules.create(gc, gid, body.name, body.definition, body.source === 'edge' ? 'edge' : 'deconz') } };
+      if (body.source !== undefined && !['deconz', 'edge', 'server'].includes(body.source)) throw fail('SMARTHOME_RULE_INVALID', 'bad_source');
+      const gid = body.source === 'server' ? 0 : posInt(body.gateway_id);
+      if (gid == null || typeof body.name !== 'string' || !body.name || !body.definition || typeof body.definition !== 'object') throw fail('SMARTHOME_RULE_INVALID', 'missing_fields');
+      return { json: { ok: true, rule: await rules.create(gc, gid, body.name, body.definition, body.source || 'deconz', { quickUsers: body.quick_users }) } };
     }
     const id = posInt(b);
     if (!id) throw fail('NOT_FOUND');
     if (seg.length === 2 && m === 'PUT') {
       if (typeof body.name !== 'string' || !body.name || !body.definition || typeof body.definition !== 'object') throw fail('SMARTHOME_RULE_INVALID', 'missing_fields');
-      return { json: { ok: true, rule: await rules.update(gc, id, body.name, body.definition) } };
+      return { json: { ok: true, rule: await rules.update(gc, id, body.name, body.definition, { quickUsers: body.quick_users }) } };
     }
     if (seg.length === 2 && m === 'DELETE') { await rules.remove(gc, id); return { json: { ok: true } }; }
     if (seg.length === 3 && c === 'enabled' && m === 'POST') {
@@ -690,7 +838,12 @@ module.exports = {
     state.resynced = false;
     alerts.reset();
     edge.setup(gc);
+    serverchains.start(gc);
     gc.log.info('smarthome started', gc.plugin.version);
+  },
+
+  async stop() {
+    serverchains.stop();
   },
 
   async request(req, gc) {
@@ -767,6 +920,7 @@ module.exports = {
     await edge.tick(gc).catch((e) => gc.log.warn('edge tick failed', (e && (e.code || e.message)) || e));
     await radio.sync(gc).catch((e) => gc.log.warn('radio sync failed', (e && (e.code || e.message)) || e));
     await zigbee.sync(gc).catch((e) => gc.log.warn('zigbee sync failed', (e && (e.code || e.message)) || e));
+    await serverchains.refresh(gc).catch(() => null);
     const s = await gc.settings.all();
     const interval = Math.max(30, Math.min(3600, Number(s.interval) || 30));
     if (Date.now() - state.lastSync < interval * 1000 - 2000) return;

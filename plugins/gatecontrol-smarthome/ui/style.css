@@ -256,6 +256,17 @@ h2.sh-section-title{margin:6px 0 14px}
 .two{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 .where{display:flex;gap:10px;align-items:flex-start;padding:11px 14px;border-radius:12px;background:color-mix(in srgb,var(--good) 10%,transparent);border:1px solid var(--good);font-size:13px}
 .where svg{flex:none;color:var(--good);margin-top:2px}
+.where.is-server{background:rgba(245,196,81,.14);border-color:var(--warn)}
+.where.is-server svg{color:var(--warn)}
+.rule-note{font-size:12px;color:var(--muted);margin-top:6px}
+.sun-box{display:flex;flex-direction:column;gap:8px;padding:10px 12px;border-radius:10px;border:1px solid var(--warn);background:var(--surface-2);font-size:12.5px}
+.sun-box.is-set{border-color:var(--line-2)}
+.sun-box .row .form-input{flex:0 1 120px;width:120px}
+.f-off{flex:0 1 84px;width:84px;min-width:64px}
+.f-text{flex:1 1 220px;width:auto;min-width:0}
+.who{display:flex;gap:6px 12px;flex-wrap:wrap;font-size:12.5px;width:100%}
+.who label{display:inline-flex;gap:5px;align-items:center}
+.who-title{font-size:11.5px;font-weight:700;color:var(--muted);width:100%}
 .chain-rows{display:flex;flex-direction:column;gap:8px}
 .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .row .dev,.step .dev{flex:1 1 210px;width:auto;min-width:0}

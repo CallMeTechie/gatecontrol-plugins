@@ -84,9 +84,23 @@
           <div class="add-row">
             <button class="btn btn-sm btn-ghost" type="button" id="shr-e-add-dev">{{t:chain.add_device}}</button>
             <button class="btn btn-sm btn-ghost" type="button" id="shr-e-add-time">{{t:chain.add_time}}</button>
+            <button class="btn btn-sm btn-ghost" type="button" id="shr-e-add-manual">{{t:chain.add_manual}}</button>
           </div>
           <div class="form-hint">{{t:chain.when_hint}}</div>
           <div class="form-hint is-warn" id="shr-e-tasmota" hidden>{{t:chain.tasmota_hint}}</div>
+        </div>
+
+        <!-- sunrise / sunset: where the place is (no location yet: the hint and two fields) -->
+        <div class="sun-box" id="shr-e-sun" role="note" hidden>
+          <div><span id="shr-e-sun-text"></span> <button class="btn btn-sm btn-ghost" type="button" id="shr-e-sun-change" hidden>{{t:chain.sun_change}}</button></div>
+          <div class="row" id="shr-e-sun-form">
+            <label class="form-hint" for="shr-e-lat">{{t:chain.sun_lat}}</label>
+            <input class="form-input" id="shr-e-lat" type="text" inputmode="decimal" autocomplete="off" placeholder="52.52">
+            <label class="form-hint" for="shr-e-lon">{{t:chain.sun_lon}}</label>
+            <input class="form-input" id="shr-e-lon" type="text" inputmode="decimal" autocomplete="off" placeholder="13.40">
+            <button class="btn btn-sm" type="button" id="shr-e-sun-save">{{t:chain.sun_save}}</button>
+            <span class="form-hint">{{t:chain.sun_round}}</span>
+          </div>
         </div>
 
         <div class="builder-block">
@@ -106,6 +120,8 @@
           <div class="add-row">
             <button class="btn btn-sm btn-ghost" type="button" id="shr-e-add-act">{{t:chain.add_action}}</button>
             <button class="btn btn-sm btn-ghost" type="button" id="shr-e-add-wait">{{t:chain.add_wait}}</button>
+            <button class="btn btn-sm btn-ghost" type="button" id="shr-e-add-chain">{{t:chain.add_chain}}</button>
+            <button class="btn btn-sm btn-ghost" type="button" id="shr-e-add-note">{{t:chain.add_notify}} <span class="sh-pill">{{t:chain.needs_server}}</span></button>
           </div>
         </div>
 

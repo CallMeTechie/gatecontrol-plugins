@@ -60,6 +60,9 @@ function messages(cmd) {
   throw bad('unknown device family');
 }
 
+/** The checks of messages() without the messages (the logic chains check their steps before they run). */
+function check(cmd) { messages(cmd); }
+
 function refresh(dev) {
   if (!dev || typeof dev.base !== 'string' || !BASE_RE.test(dev.base)) return [];
   if (dev.family === 'shelly2') return [{ topic: `${dev.base}/command`, payload: 'status_update' }];
@@ -68,4 +71,4 @@ function refresh(dev) {
   return [];
 }
 
-module.exports = { messages, refresh, BASE_RE };
+module.exports = { messages, check, refresh, BASE_RE };

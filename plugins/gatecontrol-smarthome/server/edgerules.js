@@ -32,6 +32,24 @@
 // a loop that surely swings (A switches X off, B switches it on again, …, without NUR WENN) is refused, one that
 // might is a warning, other chains switching the same devices are named.
 //
+// Version 2, Stufe 2 (1.12.0):
+//   t  { kind: 'sun', event: 'sunrise' | 'sunset', offset: −180…180 } · { kind: 'manual' } ("Von Hand (App)": a quick
+//      action of the apps; who may run it: rules.quick_users) · a device trigger with for: 1…1440 ("seit X min") ·
+//      { kind: 'contact', resourceId, event: 'open' | 'closed' } · { kind: 'motion', resourceId, event: 'detected' |
+//      'ended' } · { kind: 'water', resourceId, event: 'wet' | 'dry' } (sensors of zigbee2mqtt / deCONZ / Bluetooth —
+//      in the chains on the server)
+//   c  { kind: 'time', from, to } — from / to also { sun: 'sunrise' | 'sunset', offset } · a device condition with for ·
+//      contact / motion / water with is
+//   s  { kind: 'chain', ruleId } (another chain of the same place, never itself) · { kind: 'notify', text ≤ 200, users? }
+//      (sent by the server part: topic `chains`, only to `users` when given)
+// Places: source 'edge' (gateway_id = a GateControl gateway; its Shelly / Tasmota devices, run by the edge part) and
+// source 'server' (gateway_id 0: devices of several gateways, of deCONZ, zigbee2mqtt or Bluetooth — run by the server
+// part, server/serverchains.js; not without the server). zigbee2mqtt devices are not part of the chains on a gateway:
+// the edge part would need the capability mqtt.topic zigbee2mqtt/# for that, and GateControl keeps an edge part off
+// (update_pending) until an administrator confirms a new capability — there are no optional ones yet.
+// The sun: per place a location { lat, lon } (gc.settings `sun.<gateway id>` / `sun.server`, rounded to 0.01°); a
+// chain with the sun needs one (the page says so), the server place falls back to the first gateway that has one.
+//
 // Runs: the edge part's run records (event `runs`, and gc.edge.call 'runs' for what was missed while the gateway
 // was away) → rule_runs, the last 200 per gateway (migrations/004_rule_runs.sql). A run with result 'stopped' (the
 // brake: more than 10 runs a minute) switches the chain off here and keeps why.
@@ -52,7 +70,19 @@ const MODES = ['ignore', 'reset', 'cancel'];
 const RETRIGGER = ['restart', 'ignore', 'cancel'];
 const BUTTON_EVENTS = ['single', 'double', 'triple', 'long'];
 const RESULTS = ['running', 'ok', 'skip', 'partial', 'cancel', 'stopped', 'error'];
-const EV_CODES = ['trig', 'manual', 'cond', 'act', 'ack', 'noack', 'fail', 'limit', 'wait', 'waited', 'restart', 'cancel', 'stop'];
+const EV_CODES = ['trig', 'manual', 'app', 'chain', 'note', 'cond', 'act', 'ack', 'noack', 'fail', 'limit', 'wait', 'waited', 'restart', 'cancel', 'stop'];
+const BY = ['event', 'manual', 'app', 'chain'];
+const SUN = { sunrise: 'rise', sunset: 'set' };
+const MAX_OFFSET = 180;
+const MAX_FOR = 1440;
+const MAX_NOTE = 200;
+const SERVER = 'server';
+// sensor readings → the trigger kinds of a contact, a motion sensor, water (event values → the edge field)
+const BOOL_KINDS = {
+  contact: { reading: 'open', field: 'open', yes: 'open', no: 'closed' },
+  motion: { reading: 'presence', field: 'presence', yes: 'detected', no: 'ended' },
+  water: { reading: 'water', field: 'water', yes: 'wet', no: 'dry' },
+};
 const UID_RE = /^([A-Za-z0-9]{1,16}):(\d{1,12})$/;
 const WHY_RE = /^[a-z0-9_:.-]{1,40}$/;
 
@@ -62,9 +92,21 @@ const finite = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 const arr = (v) => (Array.isArray(v) ? v : []);
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 
-/** The edge resources of one GateControl gateway with their device: id → { resource, device, ch }. */
+/**
+ * The resources of a place with how its engine knows them: id → { resource, device: { base, family }, ch }.
+ * A GateControl gateway: its Shelly / Tasmota channels; the server (gatewayId 0 / SERVER):
+ * every enabled resource as res/<id> (switched through the plugin, like the page does).
+ */
 async function resourcesOf(gc, gatewayId) {
   const out = new Map();
+  if (isServer(gatewayId)) {
+    for (const r of await store.listResources(gc)) {
+      if (!r.enabled) continue;
+      const ch = serverCh(r);
+      if (ch) out.set(r.id, { resource: { ...r, capabilities: r.capabilities || {}, state: r.state || {} }, device: { base: `res/${r.id}`, family: 'res' }, ch });
+    }
+    return out;
+  }
   for (const dev of await es.listDevices(gc, gatewayId)) {
     for (const r of await es.deviceResources(gc, dev.id)) {
       out.set(r.id, { resource: r, device: dev, ch: String(r.deconz_id).split('/')[1] || '' });
@@ -73,17 +115,40 @@ async function resourcesOf(gc, gatewayId) {
   return out;
 }
 
+const isServer = (g) => g === SERVER || Number(g) === 0;
+
+/** The channel key of any resource on the server: a switched output, a light, a cover, a sensor, a scene. */
+function serverCh(r) {
+  if (r.deconz_type === 'edge') return String(r.deconz_id).split('/')[1] || null;
+  if (r.kind === 'light' || r.kind === 'group') return 'light:0';
+  if (r.kind === 'plug' || r.kind === 'relay') return 'switch:0';
+  if (r.kind === 'cover') return 'cover:0';
+  if (r.kind === 'sensor' || r.kind === 'thermostat') return 'sensor';
+  if (r.kind === 'scene') return 'scene';
+  return null;
+}
+
+/** The reading of a sensor resource (capabilities.reading, else its state's type). */
+function readingOf(r) {
+  return (r.capabilities && r.capabilities.reading) || (r.state && r.state.type) || null;
+}
+
 /** The devices of one GateControl gateway: id → device (buttons are a device's, not a channel's). */
 async function devicesOf(gc, gatewayId) {
   return new Map((await es.listDevices(gc, gatewayId)).map((d) => [d.id, d]));
 }
 
-function compileTrigger(t, byId) {
+function compileTrigger(t, byId, v2 = true) {
   const hit = t && typeof t === 'object' ? byId.get(Number(t.resourceId)) : null;
   if (!hit) throw invalid('foreign_resource');
   const { resource: r, device, ch } = hit;
   const type = ch === 'sensor' ? 'sensor' : ((CH_RE.exec(ch) || [])[1] || null);
   const base = { base: device.base, ch };
+  const bool = v2 ? BOOL_KINDS[t.kind] : null; // contacts, motion, water: version 2 only
+  if (bool) {
+    if (type !== 'sensor' || readingOf(r) !== bool.reading || (t.event !== bool.yes && t.event !== bool.no)) throw invalid(`bad_${t.kind}_trigger`);
+    return { ...base, field: bool.field, op: 'eq', value: t.event === bool.yes };
+  }
   if (t.kind === 'state') {
     if ((type !== 'switch' && type !== 'light') || (t.event !== 'on' && t.event !== 'off')) throw invalid('bad_state_trigger');
     return { ...base, field: 'on', op: 'eq', value: t.event === 'on' };
@@ -106,10 +171,27 @@ function compileTrigger(t, byId) {
   throw invalid('not_edge_trigger');
 }
 
+/** "seit X min" of a device trigger / condition. */
+function withFor(compiled, x) {
+  if (x.for === undefined || x.for === null) return compiled;
+  if (!Number.isInteger(x.for) || x.for < 1 || x.for > MAX_FOR) throw invalid('bad_for');
+  return { ...compiled, for: x.for };
+}
+
+function compileSunBound(b) {
+  if (typeof b === 'string') {
+    if (!TIME_RE.test(b)) throw invalid('bad_time_condition');
+    return b;
+  }
+  if (!isObj(b) || !SUN[b.sun] || !Number.isInteger(b.offset || 0) || Math.abs(b.offset || 0) > MAX_OFFSET) throw invalid('bad_time_condition');
+  return { sun: SUN[b.sun], off: b.offset || 0 };
+}
+
 function compileAction(a, byId) {
   const hit = a && typeof a === 'object' ? byId.get(Number(a.resourceId)) : null;
   if (!hit) throw invalid('foreign_resource');
   const { resource: r, device, ch } = hit;
+  if (ch === 'scene') return { base: device.base, family: device.family, ch, op: 'scene' };
   const m = CH_RE.exec(ch);
   if (!m) throw invalid('not_controllable');
   const set = a.set && typeof a.set === 'object' ? a.set : {};
@@ -122,7 +204,7 @@ function compileAction(a, byId) {
   }
   if ('bri' in set) {
     const bri = finite(set.bri);
-    if (m[1] !== 'light' || bri == null || bri < 1 || bri > 100) throw invalid('no_bri_capability');
+    if (m[1] !== 'light' || bri == null || bri < 1 || bri > 100 || (r.capabilities && r.capabilities.bri === false)) throw invalid('no_bri_capability');
     return { ...out, op: 'bri', value: Math.round(bri) };
   }
   if (typeof set.on !== 'boolean') throw invalid('bad_action');
@@ -130,7 +212,7 @@ function compileAction(a, byId) {
 }
 
 function compileV1(id, d, byId) {
-  const triggers = arr(d.triggers).map((t) => compileTrigger(t, byId));
+  const triggers = arr(d.triggers).map((t) => compileTrigger(t, byId, false));
   const actions = arr(d.actions).map((a) => compileAction(a, byId));
   if (!triggers.length) throw invalid('no_trigger');
   if (!actions.length) throw invalid('no_action');
@@ -147,14 +229,22 @@ function compileV1(id, d, byId) {
   return { id, triggers, actions, window, delay };
 }
 
-function compileWhen(t, byId, devById) {
+function compileWhen(t, byId, devById, ctx = {}) {
   if (!isObj(t)) throw invalid('bad_trigger');
   if (t.kind === 'button') {
+    if (ctx.server) throw invalid('button_on_server'); // presses stay on their gateway
     const dev = devById.get(Number(t.deviceId));
     if (!dev) throw invalid('foreign_device');
+    const base = dev.base;
     if (!Number.isInteger(t.input) || t.input < 0 || t.input > 7 || !BUTTON_EVENTS.includes(t.event)) throw invalid('bad_button_trigger');
-    return { k: 'btn', base: dev.base, input: t.input, ev: t.event };
+    return { k: 'btn', base, input: t.input, ev: t.event };
   }
+  if (t.kind === 'sun') {
+    const off = t.offset == null ? 0 : t.offset;
+    if (!SUN[t.event] || !Number.isInteger(off) || Math.abs(off) > MAX_OFFSET) throw invalid('bad_sun_trigger');
+    return { k: 'sun', ev: SUN[t.event], off };
+  }
+  if (t.kind === 'manual') return { k: 'man' };
   if (t.kind === 'time') {
     if (!TIME_RE.test(t.at)) throw invalid('bad_time_trigger');
     return { k: 'time', at: t.at };
@@ -164,54 +254,68 @@ function compileWhen(t, byId, devById) {
     if (!parts.length || parts.length > MAX_PARTS) throw invalid('bad_all_trigger');
     return { k: 'all', parts: parts.map((p) => compileTrigger(p, byId)) };
   }
-  return { k: 'dev', ...compileTrigger(t, byId) };
+  return withFor({ k: 'dev', ...compileTrigger(t, byId) }, t);
 }
 
 function compileCond(c, byId) {
   if (!isObj(c)) throw invalid('bad_condition');
-  if (c.kind === 'time') {
-    if (!TIME_RE.test(c.from) || !TIME_RE.test(c.to)) throw invalid('bad_time_condition');
-    return { k: 'time', from: c.from, to: c.to };
-  }
+  if (c.kind === 'time') return { k: 'time', from: compileSunBound(c.from), to: compileSunBound(c.to) };
   if (c.kind === 'days') {
     const days = arr(c.days);
     if (!days.length || days.length > 7 || !days.every((x) => Number.isInteger(x) && x >= 1 && x <= 7) || new Set(days).size !== days.length) throw invalid('bad_days_condition');
     return { k: 'days', days: [...days].sort((a, b) => a - b) };
   }
-  if (c.kind === 'state' || c.kind === 'cover') return { k: 'dev', ...compileTrigger({ kind: c.kind, resourceId: c.resourceId, event: c.is }, byId) };
-  return { k: 'dev', ...compileTrigger(c, byId) };
+  if (c.kind === 'state' || c.kind === 'cover' || BOOL_KINDS[c.kind]) return withFor({ k: 'dev', ...compileTrigger({ kind: c.kind, resourceId: c.resourceId, event: c.is }, byId) }, c);
+  return withFor({ k: 'dev', ...compileTrigger(c, byId) }, c);
 }
 
-function compileStep(s, byId) {
+function compileStep(s, byId, ctx = {}) {
   if (!isObj(s)) throw invalid('bad_step');
   if (s.kind === 'wait') {
     if (!Number.isInteger(s.seconds) || s.seconds < 1 || s.seconds > 86400) throw invalid('bad_wait');
     return { k: 'wait', s: s.seconds };
   }
   if (s.kind === 'action') return { k: 'act', ...compileAction(s, byId) };
+  if (s.kind === 'chain') {
+    const target = Number(s.ruleId);
+    if (!Number.isSafeInteger(target) || target <= 0) throw invalid('bad_chain_step');
+    if (ctx.id && target === ctx.id) throw invalid('self_chain');
+    if (ctx.chains && !ctx.chains.has(target)) throw invalid('foreign_chain');
+    return { k: 'chain', id: target };
+  }
+  if (s.kind === 'notify') {
+    const text = typeof s.text === 'string' ? s.text.replace(/[\0-\x1f\x7f]/g, ' ').trim() : '';
+    if (!text || text.length > MAX_NOTE) throw invalid('bad_notify_step');
+    if (s.users != null && !(Array.isArray(s.users) && s.users.length <= 50 && s.users.every((u) => Number.isSafeInteger(u) && u > 0))) throw invalid('bad_notify_step');
+    return { k: 'note' };
+  }
   throw invalid('bad_step');
 }
 
-function compileV2(id, d, byId, devById) {
+function compileV2(id, d, byId, devById, ctx = {}) {
   const tl = arr(d.triggers);
   const cl = isObj(d.conditions) ? arr(d.conditions.list) : [];
   const sl = arr(d.steps);
   if (!tl.length) throw invalid('no_trigger');
   if (tl.length > MAX_PARTS || cl.length > MAX_PARTS) throw invalid('too_many');
   if (sl.length > MAX_STEPS) throw invalid('too_many_steps');
-  const when = tl.map((t) => compileWhen(t, byId, devById));
+  const when = tl.map((t) => compileWhen(t, byId, devById, ctx));
   const list = cl.map((c) => compileCond(c, byId));
-  const steps = sl.map((s) => compileStep(s, byId));
-  if (!steps.some((s) => s.k === 'act')) throw invalid('no_action');
+  const steps = sl.map((s) => compileStep(s, byId, { ...ctx, id }));
+  if (!steps.some((s) => s.k === 'act' || s.k === 'chain' || s.k === 'note')) throw invalid('no_action');
   const mode = isObj(d.conditions) && d.conditions.mode === 'any' ? 'any' : 'all';
   return { id, v: 2, when, cond: { mode, list }, steps, re: RETRIGGER.includes(d.retrigger) ? d.retrigger : 'restart' };
 }
 
-/** A stored definition → the rule the edge part runs (throws SMARTHOME_RULE_INVALID with a detail). */
-function compileRule(id, def, byId, devById = new Map()) {
+/**
+ * A stored definition → the rule the edge part (or the server's engine) runs (throws SMARTHOME_RULE_INVALID with a
+ * detail). ctx { server: a chain on the server, chains: Set of the ids "andere Kette starten" may name }.
+ */
+function compileRule(id, def, byId, devById = new Map(), ctx = {}) {
   const d = def && typeof def === 'object' ? def : {};
-  if (d.version === 2) return compileV2(id, d, byId, devById);
+  if (d.version === 2) return compileV2(id, d, byId, devById, ctx);
   if (d.version != null) throw invalid('bad_version');
+  if (ctx.server) throw invalid('bad_version');
   return compileV1(id, d, byId);
 }
 
@@ -237,11 +341,12 @@ function toV2(def) {
   return { version: 2, triggers: tl.length > 1 ? [{ kind: 'all', parts: tl }] : tl.slice(), conditions: { mode: 'all', list }, steps, retrigger };
 }
 
-/** The resources and devices a definition uses (for "Gerät fehlt"). */
+/** The resources, devices and chains a definition uses (for "Gerät fehlt"). */
 function refsOf(def) {
   const d = isObj(def) ? def : {};
   const resources = [];
   const devices = [];
+  const chains = [];
   const trig = (t) => {
     if (!isObj(t)) return;
     if (t.kind === 'button') devices.push(t.deviceId);
@@ -251,8 +356,16 @@ function refsOf(def) {
   arr(d.triggers).forEach(trig);
   arr(d.actions).forEach((a) => { if (isObj(a) && a.resourceId != null) resources.push(a.resourceId); });
   if (isObj(d.conditions)) arr(d.conditions.list).forEach((c) => { if (isObj(c) && c.resourceId != null) resources.push(c.resourceId); });
-  arr(d.steps).forEach((s) => { if (isObj(s) && s.kind === 'action' && s.resourceId != null) resources.push(s.resourceId); });
-  return { resources, devices };
+  arr(d.steps).forEach((s) => {
+    if (isObj(s) && s.kind === 'action' && s.resourceId != null) resources.push(s.resourceId);
+    if (isObj(s) && s.kind === 'chain' && s.ruleId != null) chains.push(s.ruleId);
+  });
+  return { resources, devices, chains };
+}
+
+/** The chains "andere Kette starten" may name from a chain of this place: every chain of it. */
+async function chainIds(gc, gatewayId) {
+  return new Set((await rows(gc, gatewayId)).map((r) => r.id));
 }
 
 /** The server's time zone (the plugin process runs in it): "Nur in Zeitfenster" means the clock of the house. */
@@ -260,22 +373,53 @@ function timeZone() {
   try { return Intl.DateTimeFormat().resolvedOptions().timeZone || null; } catch { return null; }
 }
 
+/** The chains of a place: a GateControl gateway (source 'edge') or the server (source 'server', gateway_id 0). */
 async function rows(gc, gatewayId) {
+  if (isServer(gatewayId)) return (await gc.db.query("SELECT * FROM rules WHERE source = 'server' ORDER BY id")).rows;
   return (await gc.db.query("SELECT * FROM rules WHERE source = 'edge' AND gateway_id = ? ORDER BY id", [Number(gatewayId)])).rows;
 }
 
-/** What configureGateway adds to the device list: the enabled, complete rules of the gateway. */
+const placeKey = (gatewayId) => (isServer(gatewayId) ? 'sun.server' : `sun.${Number(gatewayId)}`);
+
+/** Where a place is (for the sun): { lat, lon } or null. The server falls back to a gateway that has one. */
+async function locationOf(gc, gatewayId) {
+  const ok = (v) => (v && typeof v === 'object' && Number.isFinite(v.lat) && Number.isFinite(v.lon) ? { lat: v.lat, lon: v.lon } : null);
+  const own = ok(await gc.settings.get(placeKey(gatewayId)).catch(() => null));
+  if (own || !isServer(gatewayId)) return own;
+  const all = await gc.settings.all().catch(() => ({}));
+  for (const [k, v] of Object.entries(all || {})) if (/^sun\.\d+$/.test(k) && ok(v)) return ok(v);
+  return null;
+}
+
+/** Set (or clear with null) where a place is; rounded to 0.01° (about 1 km — enough for the sun). */
+async function setLocation(gc, gatewayId, loc) {
+  if (loc == null) { await gc.settings.set(placeKey(gatewayId), null); return null; }
+  const lat = Number(loc.lat);
+  const lon = Number(loc.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180 || (lat === 0 && lon === 0)) throw codeError('INVALID');
+  const v = { lat: Math.round(lat * 100) / 100, lon: Math.round(lon * 100) / 100 };
+  await gc.settings.set(placeKey(gatewayId), v);
+  return v;
+}
+
+/**
+ * What configureGateway adds to the device list: the enabled, complete rules of the gateway and where the gateway
+ * is (the sun). For the server (gatewayId 0) the same for its engine.
+ */
 async function configFor(gc, gatewayId) {
   const list = await rows(gc, gatewayId);
-  if (!list.length) return { rules: [], tz: timeZone() };
+  const server = isServer(gatewayId);
+  if (!list.length) return { rules: [], tz: timeZone(), sun: null };
   const byId = await resourcesOf(gc, gatewayId);
-  const devById = await devicesOf(gc, gatewayId);
+  const devById = server ? new Map() : await devicesOf(gc, gatewayId);
+  const chains = new Set(list.map((r) => r.id)); // a chain that is off: the step fails there, the chain stays
   const out = [];
   for (const row of list) {
     if (!row.enabled) continue;
-    try { out.push(compileRule(row.id, store.parseJson(row.definition_json), byId, devById)); } catch { /* a device is gone: the page shows it */ }
+    try { out.push(compileRule(row.id, store.parseJson(row.definition_json), byId, devById, { server, chains })); } catch { /* a device is gone: the page shows it */ }
   }
-  return { rules: out.slice(0, MAX_RULES), tz: timeZone() };
+  const rules = out.slice(0, MAX_RULES);
+  return { rules, tz: timeZone(), sun: await locationOf(gc, gatewayId) };
 }
 
 // ─── Loops ──────────────────────────────────────
@@ -287,19 +431,21 @@ function chainIo(c) {
   const listens = [];
   let effects;
   let uncond;
+  let starts = [];
   if (c.v === 2) {
     for (const w of c.when) {
       if (w.k === 'dev') listens.push({ ...w, single: true });
       if (w.k === 'all') for (const p of w.parts) listens.push({ ...p, single: w.parts.length === 1 });
     }
-    effects = c.steps.filter((s) => s.k === 'act');
+    effects = c.steps.filter((s) => s.k === 'act' && s.op !== 'scene');
+    starts = c.steps.filter((s) => s.k === 'chain').map((s) => s.id);
     uncond = !c.cond.list.length;
   } else {
     for (const t of c.triggers) listens.push({ ...t, single: c.triggers.length === 1 });
     effects = c.actions;
     uncond = !c.window;
   }
-  return { id: c.id, listens, effects, uncond };
+  return { id: c.id, listens, effects, uncond, starts };
 }
 
 /** Does this command surely make that trigger true? */
@@ -343,11 +489,20 @@ function analyseCompiled(compiled, others) {
   const io = new Map(all.map((c) => [c.id, chainIo(c)]));
   const possible = new Map();
   const sure = new Map();
+  const chainEdge = new Set();
+  // chains that start each other unconditionally run for ever — no device has to swing for that
+  const onlyChains = (cycle) => cycle.every((id, i) => chainEdge.has(`${id}>${cycle[(i + 1) % cycle.length]}`));
   for (const a of io.values()) {
     possible.set(a.id, []);
     sure.set(a.id, []);
     for (const b of io.values()) {
       if (a.id === b.id) continue;
+      // "andere Kette starten": b runs for sure — unless its NUR WENN may say no
+      if (a.starts.includes(b.id)) {
+        possible.get(a.id).push(b.id);
+        if (b.uncond) { sure.get(a.id).push(b.id); chainEdge.add(`${a.id}>${b.id}`); }
+        continue;
+      }
       const hit = a.effects.some((e) => b.listens.some((l) => keyOf(e) === keyOf(l)));
       if (!hit) continue;
       possible.get(a.id).push(b.id);
@@ -360,7 +515,7 @@ function analyseCompiled(compiled, others) {
   const dfs = (node, path, seen) => {
     if (sureCycle || budget-- <= 0) return;
     for (const n of sure.get(node)) {
-      if (n === self.id) { if (swings(path, io)) { sureCycle = path.slice(); return; } continue; }
+      if (n === self.id) { if (onlyChains(path) || swings(path, io)) { sureCycle = path.slice(); return; } continue; }
       if (seen.has(n)) continue;
       seen.add(n); path.push(n);
       dfs(n, path, seen);
@@ -400,7 +555,8 @@ function analyseCompiled(compiled, others) {
 /** The loop check of the page and of saving: names instead of ids and keys. */
 async function analyse(gc, gatewayId, id, definition) {
   const byId = await resourcesOf(gc, gatewayId);
-  const compiled = compileRule(id || 0, definition, byId, await devicesOf(gc, gatewayId));
+  const server = isServer(gatewayId);
+  const compiled = compileRule(id || 0, definition, byId, server ? new Map() : await devicesOf(gc, gatewayId), { server, chains: await chainIds(gc, gatewayId) });
   const others = (await configFor(gc, gatewayId)).rules.filter((r) => r.id !== id);
   const a = analyseCompiled(compiled, others);
   const names = new Map((await rows(gc, gatewayId)).map((r) => [r.id, r.name]));
@@ -436,7 +592,8 @@ async function markFired(gc, gatewayId, data, now = Date.now()) {
     if (!(latest.get(f.id) >= ms)) latest.set(f.id, ms);
   }
   for (const [id, ms] of latest) {
-    await gc.db.run("UPDATE rules SET last_fired_at = ? WHERE id = ? AND source = 'edge' AND gateway_id = ?", [new Date(ms).toISOString(), id, Number(gatewayId)]);
+    if (isServer(gatewayId)) await gc.db.run("UPDATE rules SET last_fired_at = ? WHERE id = ? AND source = 'server'", [new Date(ms).toISOString(), id]);
+    else await gc.db.run("UPDATE rules SET last_fired_at = ? WHERE id = ? AND source = 'edge' AND gateway_id = ?", [new Date(ms).toISOString(), id, Number(gatewayId)]);
   }
   return latest.size;
 }
@@ -463,7 +620,7 @@ function cleanRun(x, now = Date.now()) {
   }
   return {
     uid: x.u, epoch: UID_RE.exec(x.u)[1], seq: x.s, rule: x.r, at, end: x.end == null ? null : isoOf(x.end, now),
-    by: x.by === 'manual' ? 'manual' : 'event', tr: Number.isInteger(x.tr) && x.tr >= 0 && x.tr < 64 ? x.tr : null,
+    by: BY.includes(x.by) ? x.by : 'event', tr: Number.isInteger(x.tr) && x.tr >= 0 && x.tr < 64 ? x.tr : null,
     res: x.res, why: typeof x.why === 'string' && WHY_RE.test(x.why) ? x.why : null, ev,
   };
 }
@@ -492,7 +649,7 @@ async function storeRuns(gc, gatewayId, list, { live = true, now = Date.now() } 
     changed = true;
     // the brake of the edge part: the chain is switched off here, with why — unless it was started again since
     if (r.res === 'stopped' && (!before || before.result !== 'stopped') && rule.enabled && !(rule.resumed_at && rule.resumed_at >= r.at)) {
-      await gc.db.run("UPDATE rules SET enabled = 0, stopped_at = ?, stopped_reason = ? WHERE id = ? AND source = 'edge'", [r.end || r.at, r.why || 'rate', rule.id]);
+      await gc.db.run("UPDATE rules SET enabled = 0, stopped_at = ?, stopped_reason = ? WHERE id = ? AND source IN ('edge', 'server')", [r.end || r.at, r.why || 'rate', rule.id]);
       rule.enabled = 0;
       stopped = true;
     }
@@ -526,7 +683,7 @@ async function pullRuns(gc, gatewayId, { pages = 10 } = {}) {
 async function listRuns(gc, { gatewayId = null, ruleId = null, problems = false } = {}) {
   const where = [];
   const params = [];
-  if (gatewayId) { where.push('gateway_id = ?'); params.push(Number(gatewayId)); }
+  if (gatewayId != null) { where.push('gateway_id = ?'); params.push(isServer(gatewayId) ? 0 : Number(gatewayId)); }
   if (ruleId) { where.push('rule_id = ?'); params.push(Number(ruleId)); }
   if (problems) where.push("result IN ('partial', 'cancel', 'stopped', 'error')");
   const sql = `SELECT * FROM rule_runs${where.length ? ' WHERE ' + where.join(' AND ') : ''} ORDER BY started_at DESC, id DESC LIMIT ?`;
@@ -535,7 +692,7 @@ async function listRuns(gc, { gatewayId = null, ruleId = null, problems = false 
     const d = store.parseJson(r.detail_json) || {};
     return {
       uid: r.uid, gateway_id: r.gateway_id, rule_id: r.rule_id, at: r.started_at, end: r.finished_at || null, result: r.result, reason: r.reason || null,
-      by: d.by === 'manual' ? 'manual' : 'event', trigger: Number.isInteger(d.tr) ? d.tr : null, ev: Array.isArray(d.ev) ? d.ev : [], late: !!r.late,
+      by: BY.includes(d.by) ? d.by : 'event', trigger: Number.isInteger(d.tr) ? d.tr : null, ev: Array.isArray(d.ev) ? d.ev : [], late: !!r.late,
     };
   });
 }
@@ -549,6 +706,6 @@ async function runsToday(gc, gatewayId, now = Date.now()) {
 }
 
 module.exports = {
-  SOURCE, MAX_RULES, MAX_STEPS, resourcesOf, devicesOf, compileRule, toV2, refsOf, configFor, check, analyse, analyseCompiled, markFired, timeZone,
-  cleanRun, storeRuns, pullRuns, listRuns, runsToday,
+  SOURCE, SERVER, MAX_RULES, MAX_STEPS, resourcesOf, devicesOf, compileRule, toV2, refsOf, configFor, check, analyse, analyseCompiled, markFired, timeZone,
+  cleanRun, storeRuns, pullRuns, listRuns, runsToday, isServer, locationOf, setLocation, chainIds, serverCh, readingOf,
 };

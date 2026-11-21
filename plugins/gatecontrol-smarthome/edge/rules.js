@@ -6,12 +6,15 @@
 // is away (edge/index.js keeps the last list in gc.store).
 //
 //   create({ publish(messages), device(base), now(), setTimer(fn, ms), clearTimer(t), log, fired(id, at),
-//            record(run), runId() })
-//     .set({ rules, tz })   the server part's list (server/edgerules.js compiles the definitions); everything in
+//            record(run), runId(), act(step), notify(note) })
+//     .set({ rules, tz, sun })   the server part's list (server/edgerules.js compiles the definitions); everything in
 //                           it is checked again here. A rule that did not change keeps its state and its timer.
+//                           sun { lat, lon }: where the house is (sunrise / sunset, since 1.12.0), or none.
 //     .onDevice(base)       a device's state changed (edge/index.js, after normalize.apply)
 //     .onEvent(base, evs)   a button was pressed (normalize.parse `events`: [{ input, ev }]) — an event, no state
-//     .test(spec, { run })  what a chain would do now ({ id } of the list or { rule } — a draft), or run it by hand
+//     .test(spec, { run, by })  what a chain would do now ({ id } of the list or { rule } — a draft), or run it by
+//                           hand: by 'manual' ("Trotzdem ausführen", NUR WENN skipped) or 'app' (its trigger "Von Hand
+//                           (App)", a quick action of the apps: NUR WENN is checked)
 //     .stoppedList() / .restoreStopped(list)   chains the brake stopped (kept by edge/index.js for a restart)
 //     .stop()               every timer goes
 //
@@ -39,6 +42,18 @@
 //   re while a run is still going a new firing restarts it from the first step (restart), is ignored (ignore), or
 //      is ignored and the run stops as soon as NUR WENN no longer holds (cancel).
 //
+// Since 1.12.0 (Stufe 2):
+//   w  { k: 'sun', ev: 'rise' | 'set', off: −180…180 }   sunrise / sunset of the day plus off minutes (sun of set())
+//      { k: 'man' }                                       "Von Hand (App)": never by itself, only test(…, { by: 'app' })
+//      { k: 'dev', …, for: 1…1440 }                       the state holds for <for> minutes ("seit 3 min")
+//   c  { k: 'time', from, to } — from / to also { sun: 'rise' | 'set', off } ("Sonnenuntergang–23:30")
+//      { k: 'dev', …, for }                               holds and has held for <for> minutes
+//      fields open / presence / water (eq true | false) on 'sensor': contacts, motion, water (chains on the server)
+//   s  { k: 'chain', id }   start another chain of this list (its NUR WENN is checked; at most 4 chains deep)
+//      { k: 'note' }        a notification: io.notify({ r, i, at, u }) — the server part sends it (needs the server)
+//   act steps of the chains that run on the server (server/serverchains.js): family 'res' with base 'res/<resource
+//   id>' and io.act(step) instead of MQTT (op 'scene' activates a scene).
+//
 // Brakes (both kinds): a chain that starts more than 10 times within a minute is stopped (a run record with result
 // 'stopped', the server part switches it off and shows why); at most 60 commands a minute leave this gateway; a
 // version 2 chain does not react to what it switched itself in the 2 s after the command (the device's report).
@@ -49,6 +64,7 @@
 //   limit, wait, waited, restart, cancel, stop.
 
 const commands = require('./commands');
+const sun = require('./sun');
 
 const MAX_RULES = 64;
 const MAX_PARTS = 20;
@@ -61,13 +77,22 @@ const ACK_MS = 5000;
 const MAX_EV = 40;
 const CH_RE = /^(switch|light|cover):(\d{1,2})$/;
 const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
+const RES_RE = /^res\/[1-9]\d{0,9}$/;
 const FIELDS = {
   on: { ops: ['eq'], on: ['switch', 'light'] },
   power: { ops: ['lt', 'gt'], on: ['switch', 'light', 'cover'] },
   pos: { ops: ['lt', 'gt'], on: ['cover'] },
   temperature: { ops: ['lt', 'gt'], on: ['sensor'] },
   humidity: { ops: ['lt', 'gt'], on: ['sensor'] },
+  open: { ops: ['eq'], on: ['sensor'] },
+  presence: { ops: ['eq'], on: ['sensor'] },
+  water: { ops: ['eq'], on: ['sensor'] },
 };
+const SUN_EVENTS = ['rise', 'set'];
+const MAX_OFF = 180;
+const MAX_FOR = 1440;
+const MAX_DEPTH = 4;
+const RES_OPS = { switch: ['on', 'off'], light: ['on', 'off', 'bri'], cover: ['open', 'close', 'stop', 'pos'] };
 const MODES = ['ignore', 'reset', 'cancel'];
 const RETRIGGER = ['restart', 'ignore', 'cancel'];
 const BUTTON_EVENTS = ['single', 'double', 'triple', 'long'];
@@ -77,27 +102,57 @@ const finite = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const keyOf = (x) => `${x.base}|${x.ch}`;
 
+const baseOk = (b) => typeof b === 'string' && (commands.BASE_RE.test(b) || RES_RE.test(b));
+const forOk = (v) => v === undefined || (Number.isInteger(v) && v >= 1 && v <= MAX_FOR);
+
 function cleanTrigger(t) {
-  if (!t || typeof t !== 'object' || typeof t.base !== 'string' || !commands.BASE_RE.test(t.base)) return null;
+  if (!t || typeof t !== 'object' || !baseOk(t.base)) return null;
   const f = FIELDS[t.field];
   const type = t.ch === 'sensor' ? 'sensor' : ((CH_RE.exec(String(t.ch)) || [])[1] || null);
   if (!f || !type || !f.on.includes(type) || !f.ops.includes(t.op)) return null;
-  const value = t.field === 'on' ? (typeof t.value === 'boolean' ? t.value : null) : finite(t.value);
+  const value = t.op === 'eq' ? (typeof t.value === 'boolean' ? t.value : null) : finite(t.value);
   if (value == null) return null;
   return { base: t.base, ch: t.ch, field: t.field, op: t.op, value };
+}
+
+/** An action of the chains that run on the server: a resource (res/<id>), switched by io.act. */
+function checkRes(c) {
+  if (!RES_RE.test(c.base)) return false;
+  if (c.op === 'scene') return c.ch === 'scene' && c.value === undefined;
+  const m = CH_RE.exec(String(c.ch));
+  if (!m || !RES_OPS[m[1]].includes(c.op)) return false;
+  if (c.op === 'bri' || c.op === 'pos') return Number.isInteger(c.value) && c.value >= (c.op === 'bri' ? 1 : 0) && c.value <= 100;
+  return c.value === undefined;
 }
 
 function cleanAction(a) {
   if (!a || typeof a !== 'object') return null;
   const c = { base: a.base, family: a.family, ch: a.ch, op: a.op };
   if (a.value !== undefined) c.value = a.value;
-  try { commands.messages(c); } catch { return null; }
+  if (c.family === 'res') return checkRes(c) ? c : null;
+  try { commands.check(c); } catch { return null; }
   return c;
+}
+
+/** 'HH:MM' or { sun: 'rise' | 'set', off } — a bound of a time window. */
+function cleanBound(v) {
+  if (typeof v === 'string') return TIME_RE.test(v) ? v : null;
+  if (!isObj(v) || !SUN_EVENTS.includes(v.sun) || !Number.isInteger(v.off) || Math.abs(v.off) > MAX_OFF) return null;
+  return { sun: v.sun, off: v.off };
+}
+
+/** A device trigger / condition with "seit … min" (for) kept. */
+function cleanDev(x) {
+  const t = cleanTrigger(x);
+  if (!t || !forOk(x.for)) return null;
+  return x.for === undefined ? { k: 'dev', ...t } : { k: 'dev', ...t, for: x.for };
 }
 
 function cleanWhen(w) {
   if (!isObj(w)) return null;
-  if (w.k === 'dev') { const t = cleanTrigger(w); return t && { k: 'dev', ...t }; }
+  if (w.k === 'dev') return cleanDev(w);
+  if (w.k === 'sun') return SUN_EVENTS.includes(w.ev) && Number.isInteger(w.off) && Math.abs(w.off) <= MAX_OFF ? { k: 'sun', ev: w.ev, off: w.off } : null;
+  if (w.k === 'man') return { k: 'man' };
   if (w.k === 'btn') {
     if (typeof w.base !== 'string' || !commands.BASE_RE.test(w.base) || !Number.isInteger(w.input) || w.input < 0 || w.input > 7 || !BUTTON_EVENTS.includes(w.ev)) return null;
     return { k: 'btn', base: w.base, input: w.input, ev: w.ev };
@@ -112,8 +167,12 @@ function cleanWhen(w) {
 
 function cleanCond(c) {
   if (!isObj(c)) return null;
-  if (c.k === 'dev') { const t = cleanTrigger(c); return t && { k: 'dev', ...t }; }
-  if (c.k === 'time') return TIME_RE.test(c.from) && TIME_RE.test(c.to) ? { k: 'time', from: c.from, to: c.to } : null;
+  if (c.k === 'dev') return cleanDev(c);
+  if (c.k === 'time') {
+    const from = cleanBound(c.from);
+    const to = cleanBound(c.to);
+    return from && to ? { k: 'time', from, to } : null;
+  }
   if (c.k === 'days') {
     const days = Array.isArray(c.days) ? c.days : [];
     if (!days.length || days.length > 7 || !days.every((d) => Number.isInteger(d) && d >= 1 && d <= 7) || new Set(days).size !== days.length) return null;
@@ -125,9 +184,13 @@ function cleanCond(c) {
 function cleanStep(s) {
   if (!isObj(s)) return null;
   if (s.k === 'wait') return Number.isInteger(s.s) && s.s >= 1 && s.s <= MAX_WAIT_S ? { k: 'wait', s: s.s } : null;
-  if (s.k === 'act') { const a = cleanAction({ base: s.base, family: s.family, ch: s.ch, op: s.op, ...(s.value !== undefined ? { value: s.value } : {}) }); return a && { k: 'act', ...a }; }
+  if (s.k === 'act') { const a = cleanAction(s); return a && { k: 'act', ...a }; }
+  if (s.k === 'chain') return Number.isSafeInteger(s.id) && s.id > 0 ? { k: 'chain', id: s.id } : null;
+  if (s.k === 'note') return { k: 'note' };
   return null;
 }
+
+const DOES = ['act', 'chain', 'note'];
 
 function cleanRuleV2(r) {
   const wl = Array.isArray(r.when) ? r.when : [];
@@ -137,7 +200,8 @@ function cleanRuleV2(r) {
   const when = wl.map(cleanWhen);
   const list = cl.map(cleanCond);
   const steps = sl.map(cleanStep);
-  if (when.includes(null) || list.includes(null) || steps.includes(null) || !steps.some((s) => s.k === 'act')) return null;
+  if (when.includes(null) || list.includes(null) || steps.includes(null) || !steps.some((s) => DOES.includes(s.k))) return null;
+  if (steps.some((s) => s.k === 'chain' && s.id === r.id)) return null; // a chain does not start itself
   const mode = isObj(r.cond) && r.cond.mode === 'any' ? 'any' : 'all';
   return { id: r.id, v: 2, when, cond: { mode, list }, steps, re: RETRIGGER.includes(r.re) ? r.re : 'restart' };
 }
@@ -176,7 +240,7 @@ function valueOf(t, dev) {
 /** Does one trigger hold for the device as edge/normalize.js keeps it? true | false | null (not known yet). */
 function holds(t, dev) {
   const v = valueOf(t, dev);
-  if (t.field === 'on') return typeof v === 'boolean' ? v === t.value : null;
+  if (t.op === 'eq') return typeof v === 'boolean' ? v === t.value : null;
   const n = finite(v);
   if (n == null) return null;
   return t.op === 'lt' ? n < t.value : n > t.value;
@@ -203,19 +267,37 @@ function minuteOfDay(ms, tz) { return clockOf(ms, tz).min; }
 
 const hhmm = (min) => `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
 
-/** from ≤ now < to; a window over midnight (22:00–06:00) wraps; from = to is the whole day. */
-function inWindow(window, ms, tz) {
+const minOf = (s) => { const m = TIME_RE.exec(s); return Number(m[1]) * 60 + Number(m[2]); };
+
+/** Minute of the day of sunrise / sunset (+ off) at `place` { lat, lon } on the house's day `clock` — or null. */
+function sunMinute(ev, off, clock, place, tz) {
+  if (!place) return null;
+  const t = sun.times(clock.date, place.lat, place.lon);
+  const at = ev === 'rise' ? t.rise : t.set;
+  if (at == null) return null;
+  return Math.max(0, Math.min(1439, clockOf(at, tz).min + off));
+}
+
+/** A bound of a window as a minute of the day (null: a sun bound without a place, or polar day / night). */
+function boundMinute(b, clock, place, tz) {
+  return typeof b === 'string' ? minOf(b) : sunMinute(b.sun, b.off, clock, place, tz);
+}
+
+/** from ≤ now < to; a window over midnight (22:00–06:00) wraps; from = to is the whole day. null: not known. */
+function inWindow(window, ms, tz, place) {
   if (!window) return true;
-  const min = (s) => { const m = TIME_RE.exec(s); return Number(m[1]) * 60 + Number(m[2]); };
-  const from = min(window.from);
-  const to = min(window.to);
-  const now = minuteOfDay(ms, tz);
+  const clock = clockOf(ms, tz);
+  const from = boundMinute(window.from, clock, place, tz);
+  const to = boundMinute(window.to, clock, place, tz);
+  if (from == null || to == null) return null;
+  const now = clock.min;
   if (from === to) return true;
   return from < to ? (now >= from && now < to) : (now >= from || now < to);
 }
 
 /** Has the device reached what an action asked for? (the device's report after the command) */
 function reached(s, dev, loose) {
+  if (s.op === 'scene') return true;
   const src = dev && dev.ch && dev.ch[s.ch];
   if (!src) return false;
   if (s.op === 'on') return src.on === true;
@@ -230,13 +312,16 @@ function reached(s, dev, loose) {
 }
 
 function create(io) {
-  const st = { rules: new Map(), tz: null, cmds: [], ticker: null, seq: 0, warned: new Set() }; // id → runtime
+  const st = { rules: new Map(), tz: null, sun: null, cmds: [], ticker: null, seq: 0, warned: new Set() }; // id → runtime
   const now = () => (io.now ? io.now() : Date.now());
   const setTimer = io.setTimer || ((fn, ms) => { const t = setTimeout(fn, ms); if (t.unref) t.unref(); return t; });
   const clearTimer = io.clearTimer || clearTimeout;
   const runId = io.runId || (() => `run:${++st.seq}`);
   const iso = (ms) => new Date(ms).toISOString();
   const warnOnce = (key, line) => { if (st.warned.has(key) || !io.log) return; st.warned.add(key); io.log.warn(line); };
+
+  /** The MQTT messages of a command. */
+  function messagesOf(a) { return commands.messages(a); }
 
   function emit(rec) { if (io.record) { try { io.record(JSON.parse(JSON.stringify(rec))); } catch { /* the record is information only */ } } }
   function newRecord(rt, ms, by, tr) { return { u: runId(), r: rt.def.id, at: iso(ms), by, tr: tr == null ? null : tr, res: 'running', why: null, ev: [], end: null }; }
@@ -300,7 +385,7 @@ function create(io) {
     for (const a of rt.def.actions) {
       // the family the device reports itself (a Gen1 ↔ Gen2 mix-up at set-up is corrected by its first message)
       const dev = io.device(a.base);
-      try { list.push(...commands.messages({ ...a, family: (dev && dev.family) || a.family })); } catch { /* checked in cleanRule */ }
+      try { list.push(...messagesOf({ ...a, family: (dev && dev.family) || a.family })); } catch { /* checked in cleanRule */ }
     }
     const rec = newRecord(rt, ms, by, null);
     const allowed = list.filter(() => mayCommand(ms));
@@ -346,14 +431,24 @@ function create(io) {
   // ─── version 2 ───
 
   /** The conditions now: { ok: true | false | null, checks: [{ ok, v }] } (null: a device has not reported yet). */
-  function conditions(def, ms) {
+  function conditions(def, ms, rt) {
     const clock = clockOf(ms, st.tz);
-    const checks = def.cond.list.map((c) => {
-      if (c.k === 'time') return { ok: inWindow(c, ms, st.tz), v: hhmm(clock.min) };
+    const checks = def.cond.list.map((c, i) => {
+      if (c.k === 'time') {
+        const range = [boundMinute(c.from, clock, st.sun, st.tz), boundMinute(c.to, clock, st.sun, st.tz)].map((m) => (m == null ? null : hhmm(m)));
+        return { ok: inWindow(c, ms, st.tz, st.sun), v: hhmm(clock.min), range };
+      }
       if (c.k === 'days') return { ok: c.days.includes(clock.day), v: clock.day };
       const dev = io.device(c.base);
       const v = valueOf(c, dev);
-      return { ok: holds(c, dev), v: v === undefined ? null : v };
+      let ok = holds(c, dev);
+      // "seit … min": it has to have held for that long (since it was last seen to become true)
+      if (ok === true && c.for) {
+        const since = rt && rt.since[i] != null ? rt.since[i] : ms;
+        ok = ms - since >= c.for * 60000;
+        return { ok, v: v === undefined ? null : v, since: Math.floor((ms - since) / 60000) };
+      }
+      return { ok, v: v === undefined ? null : v };
     });
     let ok;
     if (!checks.length) ok = true;
@@ -418,7 +513,7 @@ function create(io) {
           if (run.gen !== gen || run.done) return;
           const ms = now();
           ev(run.rec, ms, 'waited', idx);
-          if (rt.def.re === 'cancel' && run.by !== 'manual' && conditions(rt.def, ms).ok !== true) { finish(rt, run, ms, 'cancel', 'cond'); return; }
+          if (rt.def.re === 'cancel' && run.by !== 'manual' && conditions(rt.def, ms, rt).ok !== true) { finish(rt, run, ms, 'cancel', 'cond'); return; }
           run.step = idx + 1;
           advance(rt, run);
         }, s.s * 1000);
@@ -426,16 +521,34 @@ function create(io) {
       }
       run.step = idx + 1;
       const ms = now();
+      if (s.k === 'chain') {
+        // another chain of this list: it checks its own NUR WENN; a chain that starts chains that start chains … stops
+        const target = st.rules.get(s.id);
+        ev(run.rec, ms, 'chain', idx);
+        if (!target) { ev(run.rec, ms, 'fail', idx); run.partial = run.partial || 'fail'; continue; }
+        if (run.depth >= MAX_DEPTH) { ev(run.rec, ms, 'limit', idx); run.partial = run.partial || 'limit'; warnOnce('depth', 'logic chains: chains that start chains — stopped after 4'); continue; }
+        fire2(target, null, 'chain', run.depth + 1);
+        continue;
+      }
+      if (s.k === 'note') {
+        ev(run.rec, ms, 'note', idx);
+        let sent = false;
+        try { sent = !!(io.notify && io.notify({ r: rt.def.id, i: idx, at: iso(ms), u: run.rec.u }) !== false); } catch { sent = false; }
+        if (!sent) { ev(run.rec, ms, 'fail', idx); run.partial = run.partial || 'fail'; }
+        continue;
+      }
       if (!mayCommand(ms)) { ev(run.rec, ms, 'limit', idx); run.partial = 'limit'; continue; }
       const dev = io.device(s.base);
       let list = [];
-      try { list = commands.messages({ ...s, family: (dev && dev.family) || s.family }); } catch { /* checked in cleanRule */ }
+      if (!io.act) { try { list = messagesOf({ ...s, family: (dev && dev.family) || s.family }); } catch { /* checked in cleanRule */ } }
       rt.echo.set(keyOf(s), ms + ECHO_MS);
       ev(run.rec, ms, 'act', idx);
       if (reached(s, dev, false)) ev(run.rec, ms, 'ack', idx);
       else run.acks.set(keyOf(s), { idx, s, at: ms });
       try {
-        await io.publish(list);
+        if (io.act) await io.act(s);
+        else if (!list.length) throw Object.assign(new Error('the device is not known on this gateway'), { code: 'unknown_device' });
+        else await io.publish(list);
       } catch (e) {
         ev(run.rec, now(), 'fail', idx);
         run.acks.delete(keyOf(s));
@@ -447,18 +560,22 @@ function create(io) {
     finish(rt, run, now(), run.partial ? 'partial' : 'ok', run.partial || null);
   }
 
-  /** A trigger of a version 2 chain occurred (tr = its index), or the chain is run by hand (by 'manual'). */
-  function fire2(rt, tr, by = 'event') {
-    if (rt.stopped) return false;
+  /**
+   * A trigger of a version 2 chain occurred (tr = its index), the chain is run by hand (by 'manual': NUR WENN skipped),
+   * from the apps (by 'app', its trigger "Von Hand (App)") or by another chain (by 'chain'; depth: how deep).
+   * → 'started' | 'skip' | 'unknown' | 'running' | 'stopped'
+   */
+  function fire2(rt, tr, by = 'event', depth = 0) {
+    if (rt.stopped) return 'stopped';
     const def = rt.def;
     const ms = now();
     const running = rt.run;
-    if (running && by === 'event' && def.re !== 'restart') return false;
-    const c = by === 'manual' ? null : conditions(def, ms);
+    if (running && by !== 'manual' && def.re !== 'restart') return 'running';
+    const c = by === 'manual' ? null : conditions(def, ms, rt);
     if (c && c.ok !== true) {
       if (!running) {
         const rec = newRecord(rt, ms, by, tr);
-        ev(rec, ms, 'trig', tr);
+        ev(rec, ms, by === 'event' ? 'trig' : by, tr == null ? undefined : tr);
         const failed = c.checks.findIndex((x) => x.ok !== true);
         ev(rec, ms, 'cond', failed);
         rec.res = 'skip';
@@ -466,25 +583,26 @@ function create(io) {
         rec.end = rec.at;
         emit(rec);
       }
-      return false;
+      return c.ok === null ? 'unknown' : 'skip';
     }
-    if (brake(rt, ms)) { stopRule(rt, ms, by, tr); return false; }
+    if (brake(rt, ms)) { stopRule(rt, ms, by, tr); return 'stopped'; }
     if (io.fired) io.fired(def.id, iso(ms));
     if (running) {
       if (running.timer != null) clearTimer(running.timer);
       running.timer = null;
       running.gen++;
       running.step = 0;
-      ev(running.rec, ms, 'restart', by === 'manual' ? 'manual' : tr);
+      running.depth = depth;
+      ev(running.rec, ms, 'restart', by === 'event' ? tr : by);
       advance(rt, running);
-      return true;
+      return 'started';
     }
-    const run = { rec: newRecord(rt, ms, by, tr), by, step: 0, gen: 0, timer: null, acks: new Map(), ackTimer: null, partial: null, announced: false, done: false };
-    ev(run.rec, ms, by === 'manual' ? 'manual' : 'trig', tr);
+    const run = { rec: newRecord(rt, ms, by, tr), by, depth, step: 0, gen: 0, timer: null, acks: new Map(), ackTimer: null, partial: null, announced: false, done: false };
+    ev(run.rec, ms, by === 'event' ? 'trig' : by, tr == null ? undefined : tr);
     if (c) ev(run.rec, ms, 'cond', 'ok');
     rt.run = run;
     advance(rt, run);
-    return true;
+    return 'started';
   }
 
   /** cancel: a running chain whose NUR WENN no longer holds stops. */
@@ -492,7 +610,21 @@ function create(io) {
     const run = rt.run;
     if (!run || rt.def.re !== 'cancel' || run.by === 'manual') return;
     const ms = now();
-    if (conditions(rt.def, ms).ok === false) { drop(rt); finish(rt, run, ms, 'cancel', 'cond'); }
+    if (conditions(rt.def, ms, rt).ok === false) { drop(rt); finish(rt, run, ms, 'cancel', 'cond'); }
+  }
+
+  /** "seit … min" of a trigger: it fires once the state has held for that long. */
+  function forTimer(rt, i, w) {
+    if (rt.forT[i] != null) return;
+    rt.forT[i] = setTimer(() => {
+      rt.forT[i] = null;
+      if (st.rules.get(rt.def.id) !== rt) return;
+      if (whenHolds(w) === true) fire2(rt, i);
+    }, w.for * 60000);
+  }
+  function clearFor(rt, i) {
+    if (rt.forT[i] != null) clearTimer(rt.forT[i]);
+    rt.forT[i] = null;
   }
 
   function onDevice2(rt, base) {
@@ -509,7 +641,18 @@ function create(io) {
       rt.wsat[i] = v;
       // its own report after a command of this chain (2 s) is no reason to start again
       const echo = keys.some((p) => (rt.echo.get(keyOf(p)) || 0) > ms);
+      if (w.for) {
+        if (!v) clearFor(rt, i);
+        else if (before === false && !echo) forTimer(rt, i, w);
+        return;
+      }
       if (v && before === false && !echo && first == null) first = i;
+    });
+    // "seit … min" of a condition: since when it holds
+    def.cond.list.forEach((c, i) => {
+      if (c.k !== 'dev' || !c.for || c.base !== base) return;
+      const v = holds(c, io.device(base));
+      if (v === true) { if (rt.since[i] == null) rt.since[i] = ms; } else rt.since[i] = null;
     });
     if (first != null) fire2(rt, first);
     if (def.cond.list.some((c) => c.k === 'dev' && c.base === base)) checkCancel(rt);
@@ -531,7 +674,7 @@ function create(io) {
   function needsClock() {
     for (const rt of st.rules.values()) {
       if (!rt.def.v) continue;
-      if (rt.def.when.some((w) => w.k === 'time')) return true;
+      if (rt.def.when.some((w) => w.k === 'time' || w.k === 'sun')) return true;
       if (rt.def.re === 'cancel' && rt.def.cond.list.some((c) => c.k !== 'dev')) return true;
     }
     return false;
@@ -544,7 +687,8 @@ function create(io) {
     const at = hhmm(clock.min);
     for (const rt of st.rules.values()) {
       if (!rt.def.v) continue;
-      const i = rt.def.when.findIndex((w) => w.k === 'time' && w.at === at);
+      // the clock or the sun of today (+ its minutes)
+      const i = rt.def.when.findIndex((w) => (w.k === 'time' && w.at === at) || (w.k === 'sun' && sunMinute(w.ev, w.off, clock, st.sun, st.tz) === clock.min));
       const mark = `${clock.date} ${at}`;
       if (i >= 0 && rt.lastTime !== mark) { rt.lastTime = mark; fire2(rt, i); }
       checkCancel(rt);
@@ -560,9 +704,11 @@ function create(io) {
   }
 
   function runtime(def, key) {
-    const rt = { def, key, sat: null, timer: null, starts: [], stopped: null, run: null, acking: [], echo: new Map(), wsat: [], lastTime: null };
+    const rt = { def, key, sat: null, timer: null, starts: [], stopped: null, run: null, acking: [], echo: new Map(), wsat: [], lastTime: null, forT: [], since: [] };
     if (def.v === 2) {
       rt.wsat = def.when.map((w) => whenHolds(w));
+      const ms = now();
+      rt.since = def.cond.list.map((c) => (c.k === 'dev' && c.for && holds(c, io.device(c.base)) === true ? ms : null));
       // a clock trigger does not fire again for the minute it arrives in
       const clock = clockOf(now(), st.tz);
       rt.lastTime = `${clock.date} ${hhmm(clock.min)}`;
@@ -572,6 +718,7 @@ function create(io) {
 
   function stopRuntime(rt) {
     drop(rt);
+    rt.forT.forEach((t, i) => { if (t != null) clearFor(rt, i); });
     if (rt.run) { rt.run.done = true; rt.run = null; }
     for (const r of rt.acking.splice(0)) if (r.ackTimer != null) { clearTimer(r.ackTimer); r.ackTimer = null; }
   }
@@ -580,6 +727,7 @@ function create(io) {
     set(cfg) {
       const c = cfg && typeof cfg === 'object' ? cfg : {};
       st.tz = typeof c.tz === 'string' && /^[A-Za-z0-9_+\-/]{1,64}$/.test(c.tz) ? c.tz : null;
+      st.sun = isObj(c.sun) && sun.validPlace(c.sun.lat, c.sun.lon) ? { lat: c.sun.lat, lon: c.sun.lon } : null;
       const next = new Map();
       for (const raw of (Array.isArray(c.rules) ? c.rules : []).slice(0, MAX_RULES)) {
         const def = cleanRule(raw);
@@ -610,7 +758,10 @@ function create(io) {
         }
       }
     },
-    /** spec { id } (a chain of the list) or { rule } (a draft, checked only); run: start it by hand, NUR WENN skipped. */
+    /**
+     * spec { id } (a chain of the list) or { rule } (a draft, checked only); run: start it by hand — by 'manual'
+     * (default) skips NUR WENN, by 'app' is its trigger "Von Hand (App)" and checks it (→ { started, result }).
+     */
     test(spec, opts = {}) {
       const ms = now();
       const s = spec && typeof spec === 'object' ? spec : {};
@@ -624,6 +775,12 @@ function create(io) {
       }
       if (opts.run) {
         if (rt.stopped) throw Object.assign(new Error('this logic chain was stopped'), { code: 'stopped' });
+        if (opts.by === 'app') {
+          const i = rt.def.v === 2 ? rt.def.when.findIndex((w) => w.k === 'man') : -1;
+          if (i < 0) throw Object.assign(new Error('this logic chain is not started from the apps'), { code: 'not_manual' });
+          const result = fire2(rt, i, 'app');
+          return { started: result === 'started', result, at: iso(ms) };
+        }
         if (rt.def.v === 2) fire2(rt, null, 'manual');
         else run(rt, 'manual');
         return { started: true, at: iso(ms) };
@@ -631,13 +788,15 @@ function create(io) {
       const def = rt.def;
       const out = { at: iso(ms), running: !!(rt.run || rt.timer != null), stopped: rt.stopped ? { ...rt.stopped } : null };
       if (def.v === 2) {
-        const c = conditions(def, ms);
-        return { ...out, v: 2, clock: hhmm(c.clock.min), day: c.clock.day, mode: def.cond.mode, checks: c.checks, result: c.ok === true ? 'run' : (c.ok === false ? 'skip' : 'unknown') };
+        const c = conditions(def, ms, rt);
+        const today = st.sun ? sun.times(c.clock.date, st.sun.lat, st.sun.lon) : null;
+        const sunOut = today ? { rise: today.rise == null ? null : hhmm(clockOf(today.rise, st.tz).min), set: today.set == null ? null : hhmm(clockOf(today.set, st.tz).min) } : null;
+        return { ...out, v: 2, clock: hhmm(c.clock.min), day: c.clock.day, mode: def.cond.mode, checks: c.checks, sun: sunOut, result: c.ok === true ? 'run' : (c.ok === false ? 'skip' : 'unknown') };
       }
       // version 1: the states of the triggers and the time window
       const clock = clockOf(ms, st.tz);
       const checks = def.triggers.map((t) => { const dev = io.device(t.base); const v = valueOf(t, dev); return { ok: holds(t, dev), v: v === undefined ? null : v }; });
-      if (def.window) checks.push({ ok: inWindow(def.window, ms, st.tz), v: hhmm(clock.min) });
+      if (def.window) checks.push({ ok: inWindow(def.window, ms, st.tz, st.sun), v: hhmm(clock.min) });
       const ok = checks.some((x) => x.ok === false) ? false : (checks.some((x) => x.ok == null) ? null : true);
       return { ...out, v: 1, clock: hhmm(clock.min), day: clock.day, mode: 'all', checks, result: ok === true ? 'run' : (ok === false ? 'skip' : 'unknown') };
     },
@@ -661,4 +820,4 @@ function create(io) {
   };
 }
 
-module.exports = { create, cleanRule, holds, inWindow, minuteOfDay, clockOf, MAX_RULES, MAX_STEPS, RUNS_PER_MIN, CMDS_PER_MIN, ECHO_MS };
+module.exports = { create, cleanRule, holds, inWindow, minuteOfDay, clockOf, sunMinute, MAX_RULES, MAX_STEPS, MAX_DEPTH, RUNS_PER_MIN, CMDS_PER_MIN, ECHO_MS };
