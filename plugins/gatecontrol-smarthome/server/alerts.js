@@ -251,6 +251,12 @@ let chain = Promise.resolve();
 
 function reset() { notifier = null; }
 
+/** The plugin's one notifier (its hourly budget is shared with the notifications of the logic chains). */
+function notifierFor(gc) {
+  if (!notifier) notifier = notify.createNotifier(gc);
+  return notifier;
+}
+
 /** Owners of the sensors in window events: { 'gw:deconzId' → [user ids] }. */
 async function sensorOwners(gc, events) {
   const out = new Map();
@@ -268,7 +274,7 @@ async function sensorOwners(gc, events) {
 /** Compare the background sync's results with the last seen state and send what changed. */
 function check(gc, results, { now = Date.now() } = {}) {
   const run = async () => {
-    if (!notifier) notifier = notify.createNotifier(gc);
+    notifierFor(gc);
     const prev = await notify.loadState(gc, STATE_KEY);
     const cfg = configOf(await gc.settings.all());
     // gateways that no longer exist leave the stored state
@@ -288,4 +294,4 @@ function check(gc, results, { now = Date.now() } = {}) {
   return p;
 }
 
-module.exports = { evaluate, toNotification, configOf, check, reset, dayOf, STATE_KEY, TEXTS };
+module.exports = { evaluate, toNotification, configOf, check, reset, notifierFor, dayOf, STATE_KEY, TEXTS };

@@ -292,8 +292,8 @@ test('Testlauf: what each condition is now and what would happen; "Trotzdem ausf
   x.feed(...LIGHT_STATE(true, 50));
   x.feed('shellies/wz/status/switch:0', SW(true));
   const t = x.e.test({ id: 1 });
-  assert.deepEqual({ ...t, at: null }, { at: null, running: false, stopped: null, v: 2, clock: '12:00', day: 3, mode: 'all', result: 'skip',
-    checks: [{ ok: true, v: '12:00' }, { ok: false, v: true }, { ok: false, v: 3 }] });
+  assert.deepEqual({ ...t, at: null }, { at: null, running: false, stopped: null, v: 2, clock: '12:00', day: 3, mode: 'all', result: 'skip', sun: null,
+    checks: [{ ok: true, v: '12:00', range: ['11:00', '23:30'] }, { ok: false, v: true }, { ok: false, v: 3 }] });
   assert.deepEqual(x.sent, [], 'a test switches nothing');
   assert.deepEqual(x.e.test({ id: 1 }, { run: true }).started, true);
   await x.settle();

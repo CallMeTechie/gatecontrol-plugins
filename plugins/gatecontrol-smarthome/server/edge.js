@@ -15,7 +15,9 @@
 // state; `found` { devices: [candidate] } → the "new devices" hint. $started / $online → the device list again
 // (gc.edge.configure { devices: [{ base, family }], rules, tz }) and the runs the server part missed (gc.edge.call
 // 'runs'); `fired` { rules: [{ id, at }] } → a logic chain ran, `runs` { runs: [run] } → its protocol
-// (server/edgerules.js).
+// (server/edgerules.js); `notify` { notes: [{ r, i, at, u }] } (since 1.12.0) → a step "Mitteilung senden" ran — the
+// notification goes out here (server/serverchains.js sendNote). The configuration carries the zigbee2mqtt devices the
+// gateway's chains use and where the gateway is (z2m, sun — since 1.12.0).
 
 const crypto = require('node:crypto');
 const store = require('./store');
@@ -115,9 +117,9 @@ async function configureGateway(gc, gatewayId) {
   if (!available(gc)) return false;
   const devices = (await es.listDevices(gc, gatewayId)).map((d) => ({ base: d.base, family: d.family }));
   // the gateway's logic chains run in its edge part (edge/rules.js); an older edge part ignores them
-  const { rules, tz } = await edgerules.configFor(gc, gatewayId);
+  const { rules, tz, z2m, sun } = await edgerules.configFor(gc, gatewayId);
   try {
-    await gc.edge.configure(Number(gatewayId), { devices, rules, tz });
+    await gc.edge.configure(Number(gatewayId), { devices, rules, tz, z2m, sun });
     return true;
   } catch (e) {
     gc.log.debug('edge configure failed', gatewayId, edgeErr(e));
@@ -359,7 +361,12 @@ function setup(gc) {
   gc.edge.on('runs', ({ gatewayId, data }) => edgerules.storeRuns(gc, gatewayId, data && data.runs)
     .then((stopped) => (stopped ? configureGateway(gc, gatewayId) : null))
     .catch((e) => gc.log.warn('edge rule runs failed', (e && (e.code || e.message)) || e)));
-  gc.edge.on('states', (ev) => onStates(gc, ev));
+  gc.edge.on('states', (ev) => onStates(gc, ev).then(() => require('./serverchains').refresh(gc)).catch(() => null));
+  gc.edge.on('notify', async ({ gatewayId, data }) => {
+    for (const n of (data && Array.isArray(data.notes) ? data.notes : []).slice(0, 20)) {
+      await require('./serverchains').sendNote(gc, gatewayId, n).catch((e) => gc.log.warn('chain notification failed', (e && (e.code || e.message)) || e));
+    }
+  });
   gc.edge.on('found', ({ gatewayId, data }) => rememberFound(gatewayId, data && data.devices));
   gc.edge.on('fired', ({ gatewayId, data }) => edgerules.markFired(gc, gatewayId, data).catch((e) => gc.log.warn('edge rule mark failed', (e && (e.code || e.message)) || e)));
   return true;

@@ -3,6 +3,53 @@
 Phoscon/deCONZ-Integration als GateControl-Plugin – bisher fest in GateControl eingebaut; seit 1.7.0 auch Shelly und
 Tasmota über ein GateControl-Gateway.
 
+## 1.12.0
+
+- **Logikketten, Stufe 2** nach dem freigegebenen Entwurf (gleiche Seite, gleiche Bausteine):
+  - **Sonnenauf-/-untergang** mit Versatz (−180…180 min) als WENN (`{ kind: 'sun', event, offset }` → Edge
+    `{ k: 'sun', ev, off }`) und als Grenze von „Zeit zwischen“ (`from`/`to` auch `{ sun, offset }`). Gerechnet wird
+    auf dem Gateway (`edge/sun.js`, NOAA-Näherung, ±1–2 min) mit dem **Standort des Ortes**: `GET/PUT /rules/location`
+    (`gc.settings` `sun.<gateway>` / `sun.server`, auf 0,01° gerundet), mitgeschickt als `gc.edge.configure { sun }`.
+    Ohne Standort zeigt der Editor einen Hinweis mit Breite/Länge; „Sonne“ löst dann nie aus, „Zeit zwischen“ mit
+    Sonne gilt als offen. Der Testlauf zeigt die Sonnenzeit des Tages (`checks[].range`, `sun`).
+  - **„seit X min“** (`for: 1…1440`) an Geräte-Auslösern (feuert, wenn der Zustand so lange gilt) und -Bedingungen.
+  - **Kontakt, Bewegung, Wasser** (`contact` / `motion` / `water`, Felder `open` / `presence` / `water`) für Sensoren
+    von zigbee2mqtt, deCONZ und Bluetooth (nur Version 2).
+  - **„Andere Kette starten“** (`{ kind: 'chain', ruleId }`, nur derselbe Ort, nie sich selbst): die andere Kette
+    prüft ihr „Nur wenn“; höchstens 4 Ketten tief. Die Schleifenprüfung kennt Kettenstarts: gegenseitiges Starten
+    ohne „Nur wenn“ wird abgelehnt, mit „Nur wenn“ als Hinweis gezeigt. Fehlt die gestartete Kette, gilt die Kette
+    als „Gerät fehlt“.
+  - **„Mitteilung senden“** (`{ kind: 'notify', text ≤ 200, users? }`): das Gateway meldet den Schritt mit dem
+    Ereignis `notify` (vom Gateway bis zu 1 h gepuffert), der Server schickt über den vorhandenen Notifier
+    (`gc.notify`, neues Thema `chains` „Logikketten“, Budget geteilt mit den übrigen Mitteilungen), nur an `users`,
+    wenn gesetzt; doppelt gelieferte Ereignisse einmal. Liste: „läuft am Gateway“ + „+ Mitteilung über Server“.
+  - **„Von Hand (App)“** (`{ kind: 'manual' }`): Ketten als Schnellaktion der Apps (siehe unten).
+- **zigbee2mqtt am Gateway als Quelle der Ketten:** Geräte, die GateControl über zigbee2mqtt am Gateway meldet
+  (`capabilities.gateway_id`), stehen in den Ketten dieses Gateways (Licht, Steckdose, Kanäle `state_<kanal>`,
+  Rollladen, Sensoren, Fernbedienungen per `action` als Taster). Der Edge-Teil abonniert `zigbee2mqtt/#` nur, solange
+  Ketten solche Geräte nutzen, ordnet Namen über `zigbee2mqtt/bridge/devices` zu und schaltet über
+  `zigbee2mqtt/<Name>/set` (`normalize.parseZ2m`, `commands` Familie `z2m`). **Neue Edge-Fähigkeit `mqtt.topic:
+  zigbee2mqtt/#`** (keine Gateway-Änderung nötig) – GateControl lässt den Edge-Teil nach dem Update je Gateway aus,
+  bis ein Administrator sie bestätigt (`update_pending`). Wird das Abo verweigert, laufen Shelly/Tasmota weiter.
+- **Ketten über mehrere Gateways / gemischt mit deCONZ:** neuer Ort `source: 'server'` (`gateway_id 0`), Editor-Wahl
+  „Mehrere Gateways (über Server)“, gelbe Box und Pille **„läuft am Server“**, nicht offline-fähig. Sie laufen mit
+  derselben Engine (`edge/rules.js`) im Server-Teil (`server/serverchains.js`): Geräte `res/<id>` aus dem Zustands-
+  Cache (alle 2 s gelesen, Shelly/Tasmota sofort nach dem Bündel), Schalten über `service.setResourceState`
+  (auch Szenen), Protokoll in `rule_runs` mit `gateway_id 0` (`GET /rules/runs?server=1`), Bremse, Testlauf
+  (`POST /rules/test { source: 'server' }`). Taster bleiben in Ketten an ihrem Gateway.
+- **Server-API für App-Schnellaktionen:** Ketten mit „Von Hand (App)“ erscheinen in `quickActions` als Knopf
+  `chain:<id>` (zuerst, höchstens 8; Gerät `chains`) – für Administratoren alle, für andere nur, wenn ein
+  Administrator sie freigegeben hat (`quick_users`, Migration 005, `POST/PUT /rules { quick_users }`,
+  `GET /rules/people`). `runQuickAction` prüft erneut und startet mit „Nur wenn“ (Edge `test { id, run, by: 'app' }`
+  bzw. Server-Engine). Zusätzlich Portal-API für eigene App-Ansichten: `GET /portal/chains`,
+  `POST /portal/chains/:id/run` → `{ ok, result: started | running | skip | unknown | stopped | error, message }`.
+- Editor: `GET /rules/devices` liefert die Geräte eines Ortes (Gateway: Shelly/Tasmota + zigbee2mqtt; Server:
+  alle mit Ortsnamen).
+- Tests: Sonnenzeiten, Sonne/„seit“/Ketten/Mitteilung/Von Hand/zigbee2mqtt/`res`-Schritte der Engine, Edge-Teil
+  (Abo, Namen, `notify`), Server (Kompilieren, Standort, Schleifen, Server-Ketten end-to-end, Mitteilungen,
+  Schnellaktionen mit Rechten, Portal-API) und der fehlende Test aus Stufe 1: `buttons: true` (SetOption73) geht vom
+  Einrichtungs-Job des Servers nur auf Wunsch (nur `true`) an das Gateway.
+
 ## 1.11.0
 
 - **Logikketten, Stufe 1 (Shelly und Tasmota am GateControl-Gateway, offline-fähig):** neuer Editor nach dem

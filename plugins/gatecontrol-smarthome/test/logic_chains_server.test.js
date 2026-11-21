@@ -92,11 +92,13 @@ test('a version 2 chain: checked, kept as sent, compiled — and the edge part t
     [{ ...ok, triggers: [{ kind: 'button', deviceId: 9999, input: 0, event: 'single' }] }, 'foreign_device'],
     [{ ...ok, triggers: [{ kind: 'button', deviceId: h.dev('Taster Flur'), input: 0, event: 'quintuple' }] }, 'bad_button_trigger'],
     [{ ...ok, triggers: [{ kind: 'time', at: '7 Uhr' }] }, 'bad_time_trigger'],
-    [{ ...ok, triggers: [{ kind: 'sun', event: 'sunset' }] }, 'foreign_resource'],      // stage 2
+    [{ ...ok, triggers: [{ kind: 'sun', event: 'noon' }] }, 'bad_sun_trigger'],          // stage 2 knows sunrise / sunset
+    [{ ...ok, triggers: [{ kind: 'sun', event: 'sunset', offset: 181 }] }, 'bad_sun_trigger'],
     [{ ...ok, conditions: { mode: 'all', list: [{ kind: 'days', days: [8] }] } }, 'bad_days_condition'],
     [{ ...ok, steps: [{ kind: 'wait', seconds: 60 }] }, 'no_action'],
     [{ ...ok, steps: [...ok.steps, { kind: 'wait', seconds: 86401 }] }, 'bad_wait'],
-    [{ ...ok, steps: [...ok.steps, { kind: 'notify', text: 'x' }] }, 'bad_step'],
+    [{ ...ok, steps: [...ok.steps, { kind: 'notify', text: '' }] }, 'bad_notify_step'],
+    [{ ...ok, steps: [...ok.steps, { kind: 'teleport' }] }, 'bad_step'],
     [{ ...ok, steps: Array.from({ length: 21 }, () => ok.steps[0]) }, 'too_many_steps'],
     [{ ...ok, version: 3 }, 'bad_version'],
   ];

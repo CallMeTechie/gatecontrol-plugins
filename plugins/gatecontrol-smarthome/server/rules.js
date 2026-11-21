@@ -10,6 +10,10 @@
 // objects: server/edgerules.js compiles it and the plugin's edge part on the gateway runs it (edge/rules.js).
 // Since 1.11.0 an edge rule may be a version 2 definition (WENN · NUR WENN · DANN, server/edgerules.js); deCONZ
 // rules stay version 1. An edge rule the brake stopped carries stopped { at, reason } until it is started again.
+// Since 1.12.0 a third source: 'server' (gateway_id 0) — a version 2 chain with devices of several gateways or of
+// deCONZ, run by the server part (server/serverchains.js). A version 2 chain with the trigger "Von Hand (App)" is a
+// quick action of the apps; quick_users (migrations/005_chain_quick.sql) are the portal viewers an administrator
+// released it for.
 
 const store = require('./store');
 const service = require('./service');
@@ -18,6 +22,31 @@ const caps = require('./caps');
 const edge = require('./edge');
 const edgerules = require('./edgerules');
 const { codeError } = require('./deconz');
+
+const isChain = (source) => source === 'edge' || source === 'server';
+const serverchains = () => require('./serverchains');
+
+/** The chains of a place changed: the gateway's edge part, or the server's engine, gets the new list. */
+async function pushPlace(gc, source, gatewayId) {
+  if (source === 'server') return serverchains().reload(gc);
+  return edge.configureGateway(gc, gatewayId);
+}
+
+/** The portal viewers a chain is released for (rules.quick_users, a JSON array). */
+function quickUsersOf(row) {
+  try {
+    const v = JSON.parse(row && row.quick_users);
+    return Array.isArray(v) ? v.filter((x) => Number.isSafeInteger(x) && x > 0) : [];
+  } catch { return []; }
+}
+
+/** quick_users of a request: an array of user ids (at most 200), or null. */
+function cleanQuickUsers(v) {
+  if (v === undefined) return undefined;
+  if (v === null) return null;
+  if (!Array.isArray(v) || v.length > 200 || !v.every((x) => Number.isSafeInteger(x) && x > 0)) throw invalid('quick_users');
+  return [...new Set(v)];
+}
 
 const LIMIT_CODES = new Set(caps.ruleLimit.errorCodes); // HTTP status AND 200-body error codes
 function isLimit(e) { return !!(e && LIMIT_CODES.has(e.code)); }
@@ -43,10 +72,11 @@ function parseRow(row) {
   return {
     id: row.id, gateway_id: row.gateway_id, name: row.name, enabled: !!row.enabled,
     definition: store.parseJson(row.definition_json),
-    source: row.source === 'edge' ? 'edge' : 'deconz', last_fired_at: row.last_fired_at || null,
+    source: isChain(row.source) ? row.source : 'deconz', last_fired_at: row.last_fired_at || null,
     deconz_rule_id: row.deconz_rule_id, deconz_schedule_id: row.deconz_schedule_id, deconz_clip_sensor_id: row.deconz_clip_sensor_id,
-    synced: row.source === 'edge' || row.deconz_rule_id != null,
-    stopped: row.source === 'edge' && row.stopped_at ? { at: row.stopped_at, reason: row.stopped_reason || 'rate' } : null,
+    synced: isChain(row.source) || row.deconz_rule_id != null,
+    stopped: isChain(row.source) && row.stopped_at ? { at: row.stopped_at, reason: row.stopped_reason || 'rate' } : null,
+    quick_users: isChain(row.source) ? quickUsersOf(row) : undefined,
   };
 }
 
@@ -56,15 +86,19 @@ function idsOf(def) {
 }
 
 async function list(gc, gatewayId, source = 'deconz') {
-  if (source === 'edge') {
-    const byId = await edgerules.resourcesOf(gc, gatewayId);
-    const devById = await edgerules.devicesOf(gc, gatewayId);
-    const today = await edgerules.runsToday(gc, gatewayId);
-    const rows = (await gc.db.query("SELECT * FROM rules WHERE source = 'edge' AND gateway_id = ? ORDER BY id", [gatewayId])).rows;
+  if (isChain(source)) {
+    const place = source === 'server' ? 0 : gatewayId;
+    const byId = await edgerules.resourcesOf(gc, place);
+    const devById = source === 'server' ? new Map() : await edgerules.devicesOf(gc, gatewayId);
+    const today = await edgerules.runsToday(gc, place);
+    const rows = source === 'server'
+      ? (await gc.db.query("SELECT * FROM rules WHERE source = 'server' ORDER BY id")).rows
+      : (await gc.db.query("SELECT * FROM rules WHERE source = 'edge' AND gateway_id = ? ORDER BY id", [gatewayId])).rows;
+    const ids = new Set(rows.map((x) => x.id));
     return rows.map((row) => {
       const r = parseRow(row);
       const refs = edgerules.refsOf(r.definition);
-      r.orphaned = !refs.resources.every((id) => byId.has(Number(id))) || !refs.devices.every((id) => devById.has(Number(id)));
+      r.orphaned = !refs.resources.every((id) => byId.has(Number(id))) || !refs.devices.every((id) => devById.has(Number(id))) || !refs.chains.every((id) => ids.has(Number(id)));
       // the new editor edits version 2: a version 1 chain is shown as one ("wird wahr: A und B")
       r.v2 = edgerules.toV2(r.definition);
       r.runs_today = today.get(r.id) || 0;
@@ -90,9 +124,9 @@ function checkDefinition(def, source = 'deconz') {
   if (def.triggers != null && !Array.isArray(def.triggers)) throw invalid('triggers');
   if (def.actions != null && !Array.isArray(def.actions)) throw invalid('actions');
   if ((def.triggers || []).length > 20 || (def.actions || []).length > 20) throw invalid('too_many');
-  if (def.version === undefined) return;
-  // version 2 (WENN · NUR WENN · DANN): the chains on a GateControl gateway only, for now
-  if (def.version !== 2 || source !== 'edge') throw invalid('bad_version');
+  if (def.version === undefined) { if (source === 'server') throw invalid('bad_version'); return; }
+  // version 2 (WENN · NUR WENN · DANN): the chains on a GateControl gateway and on the server
+  if (def.version !== 2 || !isChain(source)) throw invalid('bad_version');
   if (def.steps != null && !Array.isArray(def.steps)) throw invalid('steps');
   if (def.conditions != null && (typeof def.conditions !== 'object' || Array.isArray(def.conditions) || (def.conditions.list != null && !Array.isArray(def.conditions.list)))) throw invalid('conditions');
   if ((def.steps || []).length > edgerules.MAX_STEPS) throw invalid('too_many_steps');
@@ -101,7 +135,7 @@ function checkDefinition(def, source = 'deconz') {
 
 function checkName(name, source = 'deconz') {
   // deCONZ rule names are ~32 characters including the GC:<id>: prefix; a chain on a GateControl gateway has 40
-  if (!name || typeof name !== 'string' || name.length > (source === 'edge' ? 40 : 20)) throw invalid('name_too_long', 'name too long');
+  if (!name || typeof name !== 'string' || name.length > (isChain(source) ? 40 : 20)) throw invalid('name_too_long', 'name too long');
 }
 
 /** Create the deCONZ objects of a plan; placeholders resolved; compensation on failure. */
@@ -151,19 +185,24 @@ async function deleteObjects(gc, client, row) {
   }
 }
 
-/** An edge rule: stored, then the gateway's list goes to its edge part (now, or when the gateway is back). */
-async function createEdge(gc, gatewayId, name, definition) {
-  if (!edge.available(gc)) throw codeError('SMARTHOME_EDGE_UNAVAILABLE', 'no edge part');
-  await edgerules.check(gc, gatewayId, null, definition);
-  const id = Number((await gc.db.run("INSERT INTO rules (gateway_id, name, enabled, definition_json, source) VALUES (?, ?, 1, ?, 'edge')", [gatewayId, name, JSON.stringify(definition)])).lastInsertRowid);
-  await edge.configureGateway(gc, gatewayId);
+/**
+ * A chain (edge: on a GateControl gateway — stored, then the gateway's list goes to its edge part, now or when the
+ * gateway is back; server: on the server — its engine takes the new list).
+ */
+async function createChain(gc, gatewayId, name, definition, source, quickUsers) {
+  if (source === 'edge' && !edge.available(gc)) throw codeError('SMARTHOME_EDGE_UNAVAILABLE', 'no edge part');
+  const place = source === 'server' ? 0 : gatewayId;
+  await edgerules.check(gc, place, null, definition);
+  const id = Number((await gc.db.run('INSERT INTO rules (gateway_id, name, enabled, definition_json, source, quick_users) VALUES (?, ?, 1, ?, ?, ?)',
+    [place, name, JSON.stringify(definition), source, quickUsers && quickUsers.length ? JSON.stringify(quickUsers) : null])).lastInsertRowid);
+  await pushPlace(gc, source, place);
   return get(gc, id);
 }
 
-async function create(gc, gatewayId, name, definition, source = 'deconz') {
+async function create(gc, gatewayId, name, definition, source = 'deconz', { quickUsers } = {}) {
   checkName(name, source);
   checkDefinition(definition, source);
-  if (source === 'edge') return createEdge(gc, gatewayId, name, definition);
+  if (isChain(source)) return createChain(gc, gatewayId, name, definition, source, cleanQuickUsers(quickUsers));
   const gw = await store.getGateway(gc, gatewayId);
   if (!gw) throw codeError('SMARTHOME_GATEWAY_NOT_FOUND', 'gateway not found');
   const resolve = await resolverFor(gc, gatewayId);
@@ -179,15 +218,17 @@ async function create(gc, gatewayId, name, definition, source = 'deconz') {
   }
 }
 
-async function update(gc, id, name, definition) {
+async function update(gc, id, name, definition, { quickUsers } = {}) {
   const row = await get(gc, id);
   if (!row) throw codeError('SMARTHOME_RULE_NOT_FOUND', 'rule not found');
   checkName(name, row.source);
   checkDefinition(definition, row.source);
-  if (row.source === 'edge') {
+  if (isChain(row.source)) {
+    const qu = cleanQuickUsers(quickUsers);
     await edgerules.check(gc, row.gateway_id, row.id, definition);
     await gc.db.run("UPDATE rules SET name = ?, definition_json = ?, updated_at = datetime('now') WHERE id = ?", [name, JSON.stringify(definition), row.id]);
-    await edge.configureGateway(gc, row.gateway_id);
+    if (qu !== undefined) await gc.db.run('UPDATE rules SET quick_users = ? WHERE id = ?', [qu && qu.length ? JSON.stringify(qu) : null, row.id]);
+    await pushPlace(gc, row.source, row.gateway_id);
     return get(gc, row.id);
   }
   const client = await clientFactory(gc, row.gateway_id);
@@ -211,10 +252,10 @@ async function update(gc, id, name, definition) {
 async function remove(gc, id) {
   const row = await get(gc, id);
   if (!row) return;
-  if (row.source === 'edge') {
+  if (isChain(row.source)) {
     await gc.db.run('DELETE FROM rules WHERE id = ?', [row.id]);
     await gc.db.run('DELETE FROM rule_runs WHERE rule_id = ?', [row.id]);
-    await edge.configureGateway(gc, row.gateway_id);
+    await pushPlace(gc, row.source, row.gateway_id);
     return;
   }
   try { await deleteObjects(gc, await clientFactory(gc, row.gateway_id), row); } catch (e) { gc.log.warn('rule objects not removed from the gateway', e.code || e.message); }
@@ -224,11 +265,11 @@ async function remove(gc, id) {
 async function setEnabled(gc, id, on) {
   const row = await get(gc, id);
   if (!row) throw codeError('SMARTHOME_RULE_NOT_FOUND', 'rule not found');
-  if (row.source === 'edge') {
+  if (isChain(row.source)) {
     // on again ("Wieder starten"): the stop of the brake is over
     if (on) await gc.db.run('UPDATE rules SET enabled = 1, stopped_at = NULL, stopped_reason = NULL, resumed_at = ? WHERE id = ?', [new Date().toISOString(), row.id]);
     else await gc.db.run('UPDATE rules SET enabled = 0 WHERE id = ?', [row.id]);
-    await edge.configureGateway(gc, row.gateway_id);
+    await pushPlace(gc, row.source, row.gateway_id);
     return get(gc, row.id);
   }
   if (row.deconz_rule_id) {
@@ -256,4 +297,4 @@ async function resyncPending(gc) {
   return rows.length;
 }
 
-module.exports = { list, get, create, update, remove, setEnabled, gatewayRuleCount, resyncPending, limitWarn, _setClientFactoryForTest };
+module.exports = { list, get, create, update, remove, setEnabled, gatewayRuleCount, resyncPending, limitWarn, isChain, quickUsersOf, _setClientFactoryForTest };

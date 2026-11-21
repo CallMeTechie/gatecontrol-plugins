@@ -1,4 +1,4 @@
-<!-- version: 1.11.0 -->
+<!-- version: 1.12.0 -->
 # Smart Home
 
 ## What the plugin does
@@ -8,7 +8,7 @@
 - **Bluetooth sensors** through a GateControl gateway (since 1.8.0): thermometers and sensors you took over in GateControl under radio – encrypted ones too, once their key is entered there.
 - **Zigbee devices of zigbee2mqtt** through a GateControl gateway (since 1.9.0): lights, plugs, shutters, sensors and buttons you paired in GateControl under radio with zigbee2mqtt. Since 1.10.0 also switches with several channels, thermostats and firmware updates.
 - **Owners and areas:** you assign devices to people. They use them in the portal “Home” and in the app.
-- **Logic chains:** for deCONZ on the deCONZ gateway; for Shelly and Tasmota on the GateControl gateway (since 1.10.0) – since 1.11.0 with buttons, times, conditions with AND/OR, steps with waits, test run and log.
+- **Logic chains:** for deCONZ on the deCONZ gateway; for Shelly and Tasmota on the GateControl gateway (since 1.10.0) – since 1.11.0 with buttons, times, conditions with AND/OR, steps with waits, test run and log; since 1.12.0 with sunrise/sunset, “for X min”, zigbee2mqtt on the gateway, chains across several gateways (on the server), notifications and quick actions in the app.
 - **Notifications:** alarm (water, smoke, CO), window open too long, battery low, gateway unreachable.
 - **Quick actions and widgets** in the GateControl apps for your own devices.
 
@@ -102,6 +102,23 @@ The chains run in the edge part on the gateway, also while the server cannot be 
 
 **Existing rules (up to 1.10)** keep running unchanged. The editor shows their triggers as **“becomes true: A and B”**; saved, they become a chain in the new format.
 
+### Sun, “for X min”, other chains, notifications (since 1.12.0) {#logikketten-stufe-2}
+
+- **Sunrise and sunset:** “+ Time / sun” fires at sunrise or sunset, with minutes before (−) or after. **“Time between”** knows the sun too, e.g. “Sunset–23:30”. The chain needs the **location of the gateway** for that: without one the editor shows a hint with two fields for latitude and longitude (rounded to 0.01°, about 1 km). Without a location “sun” never fires, and “time between” with the sun stays open. The test run shows the day's sun time, e.g. “Sunset (16:31)”.
+- **“for X min”:** a state or value has to hold that long – as a trigger (“washing machine below 5 W for 3 min”) and as a condition (“floor lamp is off for 10 min”). If the value rises before, nothing happens. After a restart of the gateway the time starts again.
+- **Contacts, motion, water** of zigbee2mqtt are triggers and conditions (“cellar door opens”, “motion detected”).
+- **zigbee2mqtt on the gateway:** devices the gateway connects through zigbee2mqtt are part of this gateway's chains – lights, plugs (single channels too), shutters, sensors and remotes (as buttons). The chain switches them right on the gateway, without the server too. The edge part needs the new capability **`zigbee2mqtt/#`** for that: confirm it after the update under Gateways › your gateway › Edge plugins. Until then “Smart Home” is off on that gateway (“update waiting for confirmation”) – the other chains too.
+- **Start another chain:** a step starts another chain of the same place. It checks its own “Only if”. Chains that start each other without “Only if” cannot be saved; with “Only if” there is a hint. A chain does not start itself, and four chains in a row is the end.
+- **Send a notification:** a step sends a notification on the topic **“Logic chains”** (System › Notifications) – to everybody who subscribed, or only to the people ticked. The server sends it: a chain on a gateway keeps switching without the server, its notification comes once the gateway is connected again (up to an hour). The list then says “+ notification through the server”.
+
+### Chains across several gateways (runs on the server) {#logikketten-server}
+
+Choose **“Several gateways (through the server)”** as the place in the editor to connect devices of all gateways – deCONZ, Bluetooth and zigbee2mqtt sensors too. The box at the top turns yellow, the chain carries the yellow pill **“runs on the server”**. Such chains do not run offline: without the server or with a gateway disconnected nothing happens. They react with a delay of 2–3 seconds, deCONZ devices with the polling interval. Buttons only work in chains on their gateway. Test run, protocol, brake and loop check work as on a gateway. For the sun the server takes its own location or a gateway's.
+
+### By hand (app): chains as quick actions {#logikketten-app}
+
+The trigger **“+ By hand (app)”** makes a chain a quick action “Start” in the GateControl apps (e.g. “Good night”). Administrators may always start it; people of the portal only when you **release** it for them in the editor. “Only if” applies when started from the app too. The protocol shows the run as “from the app”.
+
 ## Permissions
 
 - Administrators set up sources and devices and assign them.
@@ -131,6 +148,12 @@ That is as it should be: battery devices only wake up every few hours or when th
 **A chain for Shelly or Tasmota does not fire.**
 If the gateway says “not connected”, changes only arrive once it is back. With MQTT off on the gateway the chain cannot switch. A state only triggers on a change: if it already holds when you create the chain, it waits for the next time. The **test run** and the **log** show which condition does not hold.
 
+**A chain with the sun never fires.**
+The editor misses the location of the gateway (hint under WHEN). Enter latitude and longitude ([sun](#logikketten-stufe-2)).
+
+**After the update “Smart Home” is off on a gateway (“update waiting for confirmation”).**
+1.12.0 needs the new capability `zigbee2mqtt/#`. Confirm it under Gateways › your gateway › Edge plugins – then every chain runs again.
+
 **A Tasmota button does nothing.**
 Tasmota reports buttons only with `SetOption73 1` (see [Logic chains](#logikketten-edge)).
 
@@ -145,6 +168,13 @@ Set the device up “By hand …”. The instructions are in the window.
 
 **A zigbee2mqtt device cannot be switched (“zigbee2mqtt on the gateway is not answering right now”).**
 Look at the gateway's tab “Radio”: does zigbee2mqtt run, are edge and MQTT on? New devices show up within half a minute.
+
+## New in 1.12.0
+
+- **Logic chains, stage 2:** sunrise and sunset with an offset (location of the gateway), “for X min”, contacts and motion, steps “Start another chain” and “Send a notification” ([stage 2](#logikketten-stufe-2)).
+- **zigbee2mqtt on the gateway** in the gateway's chains – works offline. After the update confirm the new capability `zigbee2mqtt/#` per gateway.
+- **Chains across several gateways** run on the server, marked yellow ([runs on the server](#logikketten-server)).
+- **By hand (app):** chains as quick actions in the apps; for people of the portal only when released ([quick action](#logikketten-app)).
 
 ## New in 1.11.0
 

@@ -2,7 +2,10 @@
    gateway, the builder as before) and GateControl gateways with Shelly / Tasmota devices (chains in the plugin's edge
    part on that gateway, server/edgerules.js). Since 1.11.0 the start view is "Alle Quellen", grouped by place; a chain
    on a GateControl gateway is edited in the new editor (WENN · NUR WENN · DANN, version 2), has a Testlauf and a
-   Protokoll; a version 1 chain opens there as "wird wahr: A und B" and is saved as version 2. */
+   Protokoll; a version 1 chain opens there as "wird wahr: A und B" and is saved as version 2.
+   Since 1.12.0 (Stufe 2): sunrise / sunset (with the place of the gateway), "seit X min", "Von Hand (App)" (a quick
+   action of the apps, released for portal viewers here), "Andere Kette starten", "Mitteilung senden", zigbee2mqtt
+   devices of the gateway, and a third place: "Mehrere Gateways (über Server)" — chains that run on the server. */
 (function () {
   'use strict';
   var S = window.SH, T = S.T, $ = S.$, $$ = S.$$, el = S.el;
@@ -14,6 +17,11 @@
   var MAX_EDGE = 40;
   var MAX_STEPS = 20;
   var DAY_PRESETS = [['1,2,3,4,5', 'chain.days_workdays'], ['6,7', 'chain.days_weekend'], ['1,2,3,4,5,6,7', 'chain.days_every']];
+  // sensors that report yes / no: the trigger kind, its two events, the reading that has it
+  var BOOL = { contact: ['open', 'closed'], motion: ['detected', 'ended'], water: ['wet', 'dry'] };
+  var READING_KIND = { open: 'contact', presence: 'motion', water: 'water' };
+  var SUNS = ['sunrise', 'sunset'];
+  var users = null;             // [{ id, username }] for "Von Hand (App)" and "Mitteilung senden" (loaded once)
 
   // the deCONZ builder works on one source at a time (as before)
   var gatewayId = null;
@@ -103,8 +111,35 @@
     return el('div', { class: 'rule-flow' }, parts);
   }
 
+  /** What a resource of a chain (any place) can trigger on / be a condition of. */
+  function chainKinds(r) {
+    var caps = r.capabilities || {}; var st = r.state || {}; var out = [];
+    if (['light', 'plug', 'relay', 'group'].indexOf(r.kind) >= 0) out.push('state');
+    if (r.kind === 'cover' && caps.position) out.push('cover');
+    if (r.kind !== 'sensor' && r.kind !== 'thermostat' && caps.power) out.push('power');
+    if (r.kind === 'sensor' || r.kind === 'thermostat') {
+      var rd = caps.reading || st.type;
+      if (rd === 'temperature' || r.kind === 'thermostat') out.push('temperature');
+      if (rd === 'humidity' || st.humidity != null) out.push('humidity');
+      if (READING_KIND[rd]) out.push(READING_KIND[rd]);
+    }
+    return out;
+  }
+
   // ── Labels (chains on a GateControl gateway, version 2) ──
   function nameIn(src, id) { var r = src && src.resById[id]; return r ? (r.name || ('#' + id)) : T('chain.missing'); }
+  function chainName(src, id) {
+    var r = (src && src.rules || []).filter(function (x) { return x.id === id; })[0];
+    return r ? r.name : T('chain.missing');
+  }
+  /** "Sonnenuntergang", "30 min nach Sonnenuntergang", "15 min vor Sonnenaufgang". */
+  function sunLabel(ev, off) {
+    var n = T('chain.sun_' + (ev === 'sunrise' ? 'rise' : 'set'));
+    if (!off) return n;
+    return T(off > 0 ? 'chain.sun_after' : 'chain.sun_before', { n: Math.abs(off), sun: n });
+  }
+  function boundLabel(b) { return typeof b === 'string' ? b : (b && b.sun ? sunLabel(b.sun, b.offset || 0) : '?'); }
+  function forLabel(x) { return x && x.for ? ' ' + T('chain.for_n', { n: x.for }) : ''; }
   function devName(src, id) { var d = src && src.devById[id]; return d ? d.name : T('chain.missing'); }
   function num(v) { return String(v).replace('.', T('chain.decimal')); }
   function valueText(kind, op, value) { return T(op === 'lt' ? 'rules.op_lt' : 'rules.op_gt') + ' ' + num(value) + ' ' + (UNITS[kind] || ''); }
@@ -120,13 +155,18 @@
     return T('chain.dur_min_s', { m: Math.floor(sec / 60), s: sec % 60 });
   }
   /** A device state as a condition: "Stehlampe ist aus", "Waschmaschine unter 5 W". */
-  function condLabel(c, src) {
-    if (c.kind === 'time') return T('chain.between', { from: c.from, to: c.to });
+  function condLabel(c, src, range) {
+    if (c.kind === 'time') {
+      // in the Testlauf a sun bound carries today's time: "Sonnenuntergang (16:31)"
+      var b = function (x, i) { var l = boundLabel(x); return typeof x !== 'string' && range && range[i] ? l + ' (' + range[i] + ')' : l; };
+      return T('chain.between', { from: b(c.from, 0), to: b(c.to, 1) });
+    }
     if (c.kind === 'days') return daysLabel(c.days);
     var n = nameIn(src, c.resourceId);
-    if (c.kind === 'state') return T(c.is === 'on' ? 'chain.is_on' : 'chain.is_off', { n: n });
-    if (c.kind === 'cover') return T(c.is === 'open' ? 'chain.is_open' : 'chain.is_closed', { n: n });
-    return n + ' ' + valueText(c.kind, c.op, c.value);
+    if (c.kind === 'state') return T(c.is === 'on' ? 'chain.is_on' : 'chain.is_off', { n: n }) + forLabel(c);
+    if (c.kind === 'cover') return T(c.is === 'open' ? 'chain.is_open' : 'chain.is_closed', { n: n }) + forLabel(c);
+    if (BOOL[c.kind]) return T('chain.is_' + c.is, { n: n }) + forLabel(c);
+    return n + ' ' + valueText(c.kind, c.op, c.value) + forLabel(c);
   }
   function partLabel(t, src) {
     if (t.kind === 'state' || t.kind === 'cover') return condLabel({ kind: t.kind, resourceId: t.resourceId, is: t.event }, src);
@@ -135,17 +175,23 @@
   /** A trigger (an event): "Flur geht an", "Taster · Taste 2 kurz", "um 07:00", "wird wahr: A und B". */
   function whenLabel(t, src) {
     if (!t) return '';
-    if (t.kind === 'button') return T('chain.button_label', { n: devName(src, t.deviceId), key: t.input + 1, ev: T('chain.press_' + t.event) });
+    if (t.kind === 'button') return T('chain.button_label', { n: t.resourceId != null ? nameIn(src, t.resourceId) : devName(src, t.deviceId), key: t.input + 1, ev: T('chain.press_' + t.event) });
     if (t.kind === 'time') return T('chain.at', { time: t.at });
+    if (t.kind === 'sun') return sunLabel(t.event, t.offset || 0);
+    if (t.kind === 'manual') return T('chain.manual');
     if (t.kind === 'all') return T('chain.becomes', { list: (t.parts || []).map(function (p) { return partLabel(p, src); }).join(' ' + T('chain.and') + ' ') });
     var n = nameIn(src, t.resourceId);
-    if (t.kind === 'state') return T(t.event === 'on' ? 'chain.goes_on' : 'chain.goes_off', { n: n });
-    if (t.kind === 'cover') return T(t.event === 'open' ? 'chain.goes_open' : 'chain.goes_closed', { n: n });
-    return T('chain.crosses', { n: n, what: valueText(t.kind, t.op, t.value) });
+    if (t.kind === 'state') return T(t.event === 'on' ? 'chain.goes_on' : 'chain.goes_off', { n: n }) + forLabel(t);
+    if (t.kind === 'cover') return T(t.event === 'open' ? 'chain.goes_open' : 'chain.goes_closed', { n: n }) + forLabel(t);
+    if (BOOL[t.kind]) return T('chain.goes_' + t.event, { n: n }) + forLabel(t);
+    return T('chain.crosses', { n: n, what: valueText(t.kind, t.op, t.value) }) + forLabel(t);
   }
   function stepLabel(s, src) {
     if (!s) return '';
     if (s.kind === 'wait') return durLabel(s.seconds);
+    if (s.kind === 'chain') return T('chain.step_chain', { name: chainName(src, s.ruleId) });
+    if (s.kind === 'notify') return T('chain.step_notify', { text: s.text || '' });
+    if (s.op === 'scene' || (src && src.resById[s.resourceId] && src.resById[s.resourceId].kind === 'scene')) return nameIn(src, s.resourceId) + ': ' + T('activate');
     var n = nameIn(src, s.resourceId); var set = s.set || {};
     if (set.cover) return n + ' ' + T('cover.' + set.cover);
     if ('pos' in set) return n + ' ' + T('cover.pos_open', { pos: set.pos });
@@ -174,8 +220,10 @@
 
   // ── Sources ──
   function srcList() {
-    return edgeGws.map(function (g) { return 'e:' + g.id; }).concat(deconzGws.map(function (g) { return 'd:' + g.id; }));
+    // the server's chains ("Mehrere Gateways") stand between the gateways and the deCONZ ones
+    return edgeGws.map(function (g) { return 'e:' + g.id; }).concat(sources['s:0'] ? ['s:0'] : []).concat(deconzGws.map(function (g) { return 'd:' + g.id; }));
   }
+  var isChainSrc = function (src) { return !!src && (src.type === 'e' || src.type === 's'); };
   function loadGateways() {
     return Promise.all([
       S.api('GET', 'gateways').catch(function () { return { gateways: [] }; }),
@@ -187,10 +235,12 @@
       var sel = S.clear($('#shr-gateway'));
       sel.appendChild(el('option', { value: 'all', text: T('chain.all_sources') }));
       if (edgeGws.length) sel.appendChild(el('optgroup', { label: T('chain.group_gc') }, edgeGws.map(function (g) { return el('option', { value: 'e:' + g.id, text: g.name }); })));
+      if (edgeGws.length || deconzGws.length) sel.appendChild(el('option', { value: 's:0', text: T('chain.server_name') }));
       if (deconzGws.length) sel.appendChild(el('optgroup', { label: T('source.group_deconz') }, deconzGws.map(function (g) { return el('option', { value: 'd:' + g.id, text: g.name }); })));
-      sel.hidden = deconzGws.length + edgeGws.length < 2;
+      sel.hidden = deconzGws.length + edgeGws.length < 1;
       sources = {};
       edgeGws.forEach(function (g) { sources['e:' + g.id] = { key: 'e:' + g.id, type: 'e', id: g.id, name: g.name, gw: g, rules: null }; });
+      if (edgeGws.length || deconzGws.length) sources['s:0'] = { key: 's:0', type: 's', id: 0, name: T('chain.server_name'), gw: { state: 'running' }, rules: null };
       deconzGws.forEach(function (g) { sources['d:' + g.id] = { key: 'd:' + g.id, type: 'd', id: g.id, name: g.name, gw: g, rules: null }; });
       if (current !== 'all' && !sources[current]) current = 'all';
       sel.value = current;
@@ -198,29 +248,28 @@
   }
   /** Resources, devices and rules of one source. */
   function loadSource(src) {
-    var edge = src.type === 'e';
-    var load = edge
-      ? S.api('GET', 'edge/devices?gateway_id=' + src.id).then(function (rd) {
-        src.devices = rd.devices || [];
-        src.resources = [];
-        src.devices.forEach(function (d) { (d.resources || []).forEach(function (r) { src.resources.push(r); }); });
-      })
+    var chain = isChainSrc(src);
+    var q = src.type === 's' ? 'server=1' : 'gateway_id=' + src.id;
+    // a chain's editor: the place's resources (Shelly / Tasmota / zigbee2mqtt of a gateway, or all of them) and buttons
+    var load = chain
+      ? S.api('GET', 'rules/devices?' + q).then(function (rd) { src.devices = rd.devices || []; src.resources = rd.resources || []; })
       : S.api('GET', 'resources?gateway_id=' + src.id).then(function (rd) { src.devices = []; src.resources = rd.resources || []; });
     return load.catch(function () { src.devices = src.devices || []; src.resources = src.resources || []; }).then(function () {
       src.resById = {}; src.resources.forEach(function (r) { src.resById[r.id] = r; });
       src.devById = {}; src.devices.forEach(function (d) { src.devById[d.id] = d; });
-      return S.api('GET', 'rules?gateway_id=' + src.id + (edge ? '&source=edge' : ''));
+      return S.api('GET', src.type === 's' ? 'rules?source=server' : 'rules?gateway_id=' + src.id + (chain ? '&source=edge' : ''));
     }).then(function (data) {
       src.rules = data.rules || [];
       src.cancelSupported = data.cancelSupported !== false;
       src.limitWarn = !!data.limit_warn;
+      src.location = data.location || null;
       src.error = false;
     }, function () { src.rules = []; src.error = true; });
   }
   function shown() { return current === 'all' ? srcList() : [current]; }
   function reload() {
     $('#shr-count-hint').hidden = true;
-    var keys = view === 'log' ? srcList().filter(function (k) { return k.charAt(0) === 'e'; }) : shown();
+    var keys = view === 'log' ? srcList().filter(function (k) { return k.charAt(0) !== 'd'; }) : shown();
     return Promise.all(keys.map(function (k) { return sources[k] ? loadSource(sources[k]) : null; })).then(function () {
       if (view === 'log') renderLog(); else renderList();
     });
@@ -235,19 +284,25 @@
     var src = sources[current];
     $('#shr-gateway-count').hidden = !(src && src.type === 'd');
     if (!edgeGws.length || (src && src.type === 'd')) { h.hidden = true; return; }
-    var away = src ? src.gw.state !== 'running' : false;
+    var away = src && src.type === 'e' ? src.gw.state !== 'running' : false;
     h.textContent = T('chain.banner') + (away ? ' ' + T('rules.edge_away') : '');
     h.hidden = false;
   }
 
   // ── List ──
+  /** Does a chain (version 2) have a step "Mitteilung senden"? On a gateway it then needs the server for that step. */
+  function hasNote(r) { return ((r.v2 && r.v2.steps) || []).some(function (x) { return x.kind === 'notify'; }); }
   function ruleCard(r, src) {
-    var edge = src.type === 'e';
+    var edge = isChainSrc(src);
+    var server = src.type === 's';
     var stopped = edge && r.stopped;
     var ic = el('div', { class: 'rule-ic' });
     ic.innerHTML = stopped ? STOP_ICON : RULE_ICON; // static markup
     var pill = stopped ? el('span', { class: 'sh-pill is-crit', text: T('chain.stopped') })
-      : el('span', { class: 'sh-pill ' + (edge ? 'is-good' : 'is-info'), text: T(edge ? 'chain.runs_gateway' : 'chain.runs_deconz') });
+      : el('span', { class: 'sh-pill ' + (server ? 'is-warn' : (edge ? 'is-good' : 'is-info')), text: T(server ? 'chain.runs_server' : (edge ? 'chain.runs_gateway' : 'chain.runs_deconz')) });
+    var pills = [pill];
+    if (!stopped && src.type === 'e' && hasNote(r)) pills.push(el('span', { class: 'sh-pill', text: T('chain.note_server') }));
+    if (!stopped && edge && ((r.v2 && r.v2.triggers) || []).some(function (x) { return x.kind === 'manual'; })) pills.push(el('span', { class: 'sh-pill is-info', text: T('chain.quick_pill') }));
     var last = null;
     if (edge && !r.orphaned) {
       var txt = r.last_fired_at ? T('rules.last_fired', { ago: S.since(r.last_fired_at) }) : (r.runs_today ? '' : T('rules.never_fired'));
@@ -255,8 +310,9 @@
       last = el('div', { class: 'rule-last', text: txt });
     }
     var main = el('div', { class: 'rule-main' }, [
-      el('div', { class: 'rule-name' }, [r.name || '', pill]),
+      el('div', { class: 'rule-name' }, [r.name || ''].concat(pills)),
       edge ? flowV2(r.v2 || {}, src) : flowWith(src, r.definition),
+      server && !stopped ? el('div', { class: 'rule-note', text: T('chain.server_note') }) : null,
       r.orphaned ? el('div', { class: 'rule-warn', text: T('rules.orphaned_warn') }) : null,
       stopped ? el('div', { class: 'rule-crit', text: T('chain.stopped_why', { time: clockOf(r.stopped.at), n: stoppedCount(r.stopped.reason), max: 10 }) }) : null,
       stopped ? null : last,
@@ -284,7 +340,7 @@
     var n = (src.rules || []).length;
     var small = src.type === 'e'
       ? T('chain.group_edge', { n: n, max: MAX_EDGE }) + ' · ' + T(src.gw.state === 'running' ? 'chain.connected' : 'chain.not_connected')
-      : T('chain.group_deconz', { n: n });
+      : (src.type === 's' ? T('chain.group_server', { n: n, max: MAX_EDGE }) : T('chain.group_deconz', { n: n }));
     return el('div', { class: 'group-title' }, [src.name, el('small', { text: small }), el('span', { class: 'ln' })]);
   }
   function renderList() {
@@ -377,7 +433,7 @@
       fields.appendChild(makeSelect('shr-f-act', [['short', T('rules.btn_short')], ['long', T('rules.btn_long')], ['double', T('rules.btn_double')]]));
     }
   }
-  function renderActionFields(fields, r) {
+  function renderActionFields(fields, r, noColor) {
     S.clear(fields); if (!r || r.kind === 'scene') return;
     var caps = r.capabilities || {};
     if (r.kind === 'cover') {
@@ -395,7 +451,7 @@
     }
     var opts = [['on', T('rules.act_on')], ['off', T('rules.act_off')]];
     if (caps.bri) opts.push(['bri', T('brightness')]);
-    if (caps.color && caps.color !== 'none') opts.push(['color', T('color')]);
+    if (!noColor && caps.color && caps.color !== 'none') opts.push(['color', T('color')]); // a chain's step: no colour
     var op = makeSelect('shr-f-aop', opts); fields.appendChild(op);
     var extra = el('span', { class: 'shr-extra inline-row' }); fields.appendChild(extra);
     function renderExtra() {
@@ -554,20 +610,36 @@
   function xBtn(row) {
     return el('button', { type: 'button', class: 'btn row-x', text: '×', 'aria-label': T('chain.remove'), on: { click: function () { row.remove(); edChanged(); } } });
   }
-  function trigResources(src) { return (src.resources || []).filter(function (r) { return r.enabled && edgeTrigKinds(r).length; }); }
-  function actResources(src) { return (src.resources || []).filter(function (r) { return r.enabled && ['light', 'plug', 'relay', 'cover'].indexOf(r.kind) >= 0; }); }
+  function trigResources(src) { return (src.resources || []).filter(function (r) { return r.enabled && r.kind !== 'scene' && chainKinds(r).length; }); }
+  function actResources(src) {
+    var kinds = src.type === 's' ? ['light', 'plug', 'relay', 'cover', 'group', 'scene'] : ['light', 'plug', 'relay', 'cover'];
+    return (src.resources || []).filter(function (r) { return r.enabled && kinds.indexOf(r.kind) >= 0; });
+  }
+  /** "Flurlicht · Gateway Keller" on the server's list (devices of several places). */
+  function resLabel(r) { return (r.name || ('#' + r.id)) + (r.place ? ' · ' + r.place : ''); }
+  /** Remotes of zigbee2mqtt on this gateway (their `action`): buttons like a Shelly input. */
+  function remotes(src) { return src.type === 'e' ? (src.resources || []).filter(function (r) { return r.enabled && r.kind === 'switch' && r.source === 'z2m'; }) : []; }
   /** Taster (the devices) and the channels that report a state; extra options in front (conditions: time, days). */
   function deviceSelect(src, buttons, extra) {
     var s = el('select', { class: 'form-select dev', 'aria-label': T('chain.device') });
     (extra || []).forEach(function (o) { s.appendChild(opt(o[0], o[1])); });
-    if (buttons && (src.devices || []).length) s.appendChild(el('optgroup', { label: T('chain.group_buttons') }, src.devices.map(function (d) { return opt('b:' + d.id, d.name); })));
+    var btns = buttons && src.type === 'e' ? (src.devices || []).map(function (d) { return opt('b:' + d.id, d.name); }).concat(remotes(src).map(function (r) { return opt('z:' + r.id, r.name || ('#' + r.id)); })) : [];
+    if (btns.length) s.appendChild(el('optgroup', { label: T('chain.group_buttons') }, btns));
     var rl = trigResources(src);
-    if (rl.length) s.appendChild(el('optgroup', { label: T('chain.group_devices') }, rl.map(function (r) { return opt('r:' + r.id, r.name || ('#' + r.id)); })));
+    if (rl.length) s.appendChild(el('optgroup', { label: T('chain.group_devices') }, rl.map(function (r) { return opt('r:' + r.id, resLabel(r)); })));
     return s;
+  }
+  /** "seit … min" (optional): the state has held that long. */
+  function forFields(host, pre) {
+    host.appendChild(el('span', { class: 'form-hint', text: T('chain.for_since') }));
+    var n = numInput('f-for f-off', T('chain.for_label'), pre && pre.for ? pre.for : null);
+    n.min = 1; n.max = 1440; n.step = '1'; n.placeholder = '–';
+    host.appendChild(n);
+    host.appendChild(el('span', { class: 'form-hint', text: T('chain.unit_min') }));
   }
   /** What of a channel: state / position / power / … then its fields (a trigger: "geht an"; a condition: "ist an"). */
   function channelFields(host, r, pre, asCond) {
-    var kinds = edgeTrigKinds(r);
+    var kinds = chainKinds(r);
     var what = sel('f f-what', T('rules.what'), kinds.map(function (k) { return [k, T('rules.what_' + k)]; }));
     what.hidden = kinds.length < 2;
     var rest = el('span', { class: 'f-rest' });
@@ -577,11 +649,13 @@
       var k = what.value;
       if (k === 'state') rest.appendChild(sel('f f-ev', T('chain.event'), asCond ? [['on', T('chain.st_is_on')], ['off', T('chain.st_is_off')]] : [['on', T('chain.st_goes_on')], ['off', T('chain.st_goes_off')]]));
       else if (k === 'cover') rest.appendChild(sel('f f-ev', T('chain.event'), asCond ? [['open', T('chain.st_is_open')], ['closed', T('chain.st_is_closed')]] : [['open', T('chain.st_goes_open')], ['closed', T('chain.st_goes_closed')]]));
+      else if (BOOL[k]) rest.appendChild(sel('f f-ev', T('chain.event'), BOOL[k].map(function (v) { return [v, T((asCond ? 'chain.st_is_' : 'chain.st_goes_') + v)]; })));
       else {
         rest.appendChild(sel('f f-op', T('chain.op'), [['gt', T('rules.op_gt')], ['lt', T('rules.op_lt')]]));
         rest.appendChild(numInput('f-val', UNITS[k]));
         rest.appendChild(el('span', { class: 'form-hint', text: UNITS[k] }));
       }
+      forFields(rest, pre);
     };
     what.addEventListener('change', function () { render(); edChanged(); });
     if (pre && kinds.indexOf(pre.kind) >= 0) what.value = pre.kind;
@@ -596,19 +670,107 @@
   function readChannel(row, r, asCond) {
     var k = row.querySelector('.f-what').value;
     var ev = row.querySelector('.f-ev');
-    if (k === 'state' || k === 'cover') return asCond ? { kind: k, resourceId: r.id, is: ev.value } : { kind: k, resourceId: r.id, event: ev.value };
-    return { kind: k, resourceId: r.id, op: row.querySelector('.f-op').value, value: Number(row.querySelector('.f-val').value) };
+    var out = (k === 'state' || k === 'cover' || BOOL[k])
+      ? (asCond ? { kind: k, resourceId: r.id, is: ev.value } : { kind: k, resourceId: r.id, event: ev.value })
+      : { kind: k, resourceId: r.id, op: row.querySelector('.f-op').value, value: Number(row.querySelector('.f-val').value) };
+    var f = parseInt(row.querySelector('.f-for') && row.querySelector('.f-for').value, 10);
+    if (f > 0) out.for = f;
+    return out;
+  }
+  /** A point of the day: a time, or sunrise / sunset with minutes before (−) or after. */
+  function whenPoint(host, pre, cls, label) {
+    var kindSel = sel('f ' + cls + '-k', label, [['time', T('chain.k_clock')], ['sunrise', T('chain.sun_rise')], ['sunset', T('chain.sun_set')]]);
+    var rest = el('span', { class: 'f-rest' });
+    host.appendChild(kindSel); host.appendChild(rest);
+    var render = function (p) {
+      S.clear(rest);
+      if (kindSel.value === 'time') {
+        rest.appendChild(el('input', { type: 'time', class: 'form-input f-sm ' + cls + '-t', 'aria-label': label, value: (p && typeof p.time === 'string' && p.time) || '07:00' }));
+      } else {
+        var n = numInput(cls + '-o f-off', T('chain.offset'), p && p.offset ? p.offset : 0);
+        n.min = -180; n.max = 180; n.step = '5';
+        rest.appendChild(n);
+        rest.appendChild(el('span', { class: 'form-hint', text: T('chain.offset_hint') }));
+      }
+    };
+    if (pre && pre.sun) kindSel.value = pre.sun;
+    kindSel.addEventListener('change', function () { render(null); edChanged(); });
+    render(pre);
+    // ("input" comes before "change": the fields may still be those of the other kind for a moment)
+    return function () {
+      var t = rest.querySelector('.' + cls + '-t'); var o = rest.querySelector('.' + cls + '-o');
+      if (kindSel.value === 'time') return t && t.value ? t.value : null;
+      var n = o ? parseInt(o.value, 10) : 0;
+      return { sun: kindSel.value, offset: isFinite(n) ? n : 0 };
+    };
+  }
+  function usesSun() {
+    var def = readDef();
+    var bound = function (b) { return b && typeof b === 'object' && b.sun; };
+    return def.triggers.some(function (t) { return t.kind === 'sun'; }) || def.conditions.list.some(function (c) { return c.kind === 'time' && (bound(c.from) || bound(c.to)); });
+  }
+  /** Sunrise / sunset need the place: without one a hint and two fields (latitude, longitude). */
+  function sunHint() {
+    var box = $('#shr-e-sun');
+    if (!box || !ed.src) return;
+    var need = usesSun();
+    box.hidden = !need;
+    if (!need) return;
+    var loc = ed.src.location;
+    $('#shr-e-sun-text').textContent = loc ? T('chain.sun_place', { lat: num(loc.lat), lon: num(loc.lon) }) : T(ed.src.type === 's' ? 'chain.sun_missing_server' : 'chain.sun_missing');
+    box.classList.toggle('is-set', !!loc);
+    $('#shr-e-sun-form').hidden = !!loc && !box._edit;
+    $('#shr-e-sun-change').hidden = !loc || !!box._edit;
+    if (loc && !box._edit) { $('#shr-e-lat').value = String(loc.lat); $('#shr-e-lon').value = String(loc.lon); }
+  }
+  function saveSun() {
+    var lat = Number(String($('#shr-e-lat').value).replace(',', '.'));
+    var lon = Number(String($('#shr-e-lon').value).replace(',', '.'));
+    if (!isFinite(lat) || !isFinite(lon) || !$('#shr-e-lat').value || !$('#shr-e-lon').value) { fail(T('chain.sun_invalid')); return; }
+    var body = ed.src.type === 's' ? { server: true, lat: lat, lon: lon } : { gateway_id: ed.src.id, lat: lat, lon: lon };
+    S.api('PUT', 'rules/location', body).then(function (r) {
+      ed.src.location = r.location; $('#shr-e-sun')._edit = false; sunHint(); edChanged();
+      S.toast(T('chain.sun_saved'), 'good');
+    }, fail);
+  }
+
+  function loadUsers() {
+    if (users) return Promise.resolve(users);
+    return S.api('GET', 'rules/people').then(function (r) { users = r.users || []; return users; }, function () { users = []; return users; });
+  }
+  /** Check boxes of the people (portal viewers): who may start the chain / gets the notification. */
+  function whoBox(title, picked, skipAdmins) {
+    var box = el('div', { class: 'who' }, [el('span', { class: 'who-title', text: title })]);
+    (users || []).filter(function (u) { return !(skipAdmins && u.admin); }).forEach(function (u) {
+      var cb = el('input', { type: 'checkbox', value: String(u.id) });
+      cb.checked = (picked || []).indexOf(u.id) >= 0;
+      box.appendChild(el('label', {}, [cb, u.username || ('#' + u.id)]));
+    });
+    if (!(users || []).length) box.appendChild(el('span', { class: 'form-hint', text: T('chain.who_none') }));
+    box._read = function () { return $$('input[type=checkbox]', box).filter(function (c) { return c.checked; }).map(function (c) { return Number(c.value); }); };
+    return box;
   }
 
   function addWhen(pre) {
     var src = ed.src;
     var row = el('div', { class: 'row' });
-    if (pre && pre.kind === 'time') {
-      var at = el('input', { type: 'time', class: 'form-input f-sm f-at', 'aria-label': T('chain.time'), value: pre.at || '07:00' });
-      row.appendChild(el('span', { class: 'step-kind', text: T('chain.time') }));
-      row.appendChild(at);
+    if (pre && (pre.kind === 'time' || pre.kind === 'sun')) {
+      row.appendChild(el('span', { class: 'step-kind', text: T('chain.when_point') }));
+      var read = whenPoint(row, pre.kind === 'sun' ? { sun: pre.event, offset: pre.offset } : { time: pre.at }, 'f-at', T('chain.time'));
       row.appendChild(el('span', { class: 'form-hint', text: T('chain.time_hint') }));
-      row._read = function () { return at.value ? { kind: 'time', at: at.value } : null; };
+      row._read = function () {
+        var v = read();
+        if (!v) return null;
+        return typeof v === 'string' ? { kind: 'time', at: v } : { kind: 'sun', event: v.sun, offset: v.offset };
+      };
+    } else if (pre && pre.kind === 'manual') {
+      // "Von Hand (App)": a quick action of the apps — administrators always, portal viewers when released here
+      row.appendChild(el('span', { class: 'pill pill-when', text: T('chain.manual') }));
+      row.appendChild(el('span', { class: 'form-hint', text: T('chain.manual_hint') }));
+      var who = whoBox(T('chain.manual_who'), ed.quick || [], true);
+      row.appendChild(who);
+      row._manual = who;
+      row._read = function () { return { kind: 'manual' }; };
     } else if (pre && pre.kind === 'all') {
       // a version 1 chain: its triggers together ("wird wahr: A und B"), kept as they are
       row.appendChild(el('span', { class: 'pill pill-when chain-all', text: whenLabel(pre, src) }));
@@ -620,20 +782,21 @@
       var render = function (p) {
         S.clear(fields);
         var v = s.value || '';
-        if (v.charAt(0) === 'b') {
+        if (v.charAt(0) === 'b' || v.charAt(0) === 'z') {
           fields.appendChild(sel('f f-key', T('chain.key'), [0, 1, 2, 3].map(function (i) { return [String(i), T('chain.key_n', { n: i + 1 })]; })));
           fields.appendChild(sel('f f-press', T('chain.event'), [['single', T('chain.press_single')], ['double', T('chain.press_double')], ['triple', T('chain.press_triple')], ['long', T('chain.press_long')]]));
           if (p) { fields.querySelector('.f-key').value = String(p.input || 0); fields.querySelector('.f-press').value = p.event || 'single'; }
         } else if (v.charAt(0) === 'r') channelFields(fields, src.resById[Number(v.slice(2))], p, false);
         tasmotaHint();
       };
-      if (pre && pre.kind === 'button') s.value = 'b:' + pre.deviceId;
+      if (pre && pre.kind === 'button') s.value = pre.resourceId != null ? 'z:' + pre.resourceId : 'b:' + pre.deviceId;
       else if (pre && pre.resourceId != null) s.value = 'r:' + pre.resourceId;
       s.addEventListener('change', function () { render(null); });
       render(pre);
       row._read = function () {
         var v = s.value || '';
         if (v.charAt(0) === 'b') return { kind: 'button', deviceId: Number(v.slice(2)), input: Number(row.querySelector('.f-key').value), event: row.querySelector('.f-press').value };
+        if (v.charAt(0) === 'z') return { kind: 'button', resourceId: Number(v.slice(2)), input: Number(row.querySelector('.f-key').value), event: row.querySelector('.f-press').value };
         if (v.charAt(0) === 'r') return readChannel(row, src.resById[Number(v.slice(2))], false);
         return null;
       };
@@ -641,9 +804,15 @@
     }
     row.appendChild(xBtn(row));
     $('#shr-e-when').appendChild(row);
+    manualButton();
   }
   function tasmotaHint() {
     $('#shr-e-tasmota').hidden = !$$('#shr-e-when .row').some(function (r) { return r._tasmota && r._tasmota(); });
+  }
+  /** One "Von Hand (App)" per chain. */
+  function manualButton() {
+    var b = $('#shr-e-add-manual');
+    if (b) b.disabled = $$('#shr-e-when > .row').some(function (r) { return !!r._manual; });
   }
 
   function addCond(pre) {
@@ -652,13 +821,16 @@
     var s = deviceSelect(src, false, [['time', T('chain.c_time')], ['days', T('chain.c_days')]]);
     var fields = el('span', { class: 'chain-fields' });
     row.appendChild(s); row.appendChild(fields);
+    var readFrom = null; var readTo = null;
+    var bound = function (b, dflt) { return typeof b === 'string' ? { time: b } : (b && b.sun ? { sun: b.sun, offset: b.offset } : { time: dflt }); };
     var render = function (p) {
       S.clear(fields);
+      readFrom = null; readTo = null;
       var v = s.value;
       if (v === 'time') {
-        fields.appendChild(el('input', { type: 'time', class: 'form-input f-sm f-from', 'aria-label': T('chain.from'), value: (p && p.from) || '22:00' }));
+        readFrom = whenPoint(fields, bound(p && p.from, '22:00'), 'f-from', T('chain.from'));
         fields.appendChild(el('span', { text: '–' }));
-        fields.appendChild(el('input', { type: 'time', class: 'form-input f-sm f-to', 'aria-label': T('chain.to'), value: (p && p.to) || '06:00' }));
+        readTo = whenPoint(fields, bound(p && p.to, '06:00'), 'f-to', T('chain.to'));
       } else if (v === 'days') {
         var opts = DAY_PRESETS.map(function (d) { return [d[0], T(d[1])]; });
         for (var i = 1; i <= 7; i++) opts.push([String(i), T('chain.only_day', { day: T('chain.day_' + i) })]);
@@ -672,11 +844,11 @@
     if (pre && (pre.kind === 'time' || pre.kind === 'days')) s.value = pre.kind;
     else if (pre && pre.resourceId != null) s.value = 'r:' + pre.resourceId;
     else s.value = 'time';
-    s.addEventListener('change', function () { render(null); });
+    s.addEventListener('change', function () { render(null); sunHint(); });
     render(pre);
     row._read = function () {
       var v = s.value;
-      if (v === 'time') return { kind: 'time', from: row.querySelector('.f-from').value, to: row.querySelector('.f-to').value };
+      if (v === 'time') { var f = readFrom(); var t = readTo(); return f && t ? { kind: 'time', from: f, to: t } : null; }
       if (v === 'days') return { kind: 'days', days: row.querySelector('.f-days').value.split(',').map(Number) };
       if (v && v.charAt(0) === 'r') return readChannel(row, src.resById[Number(v.slice(2))], true);
       return null;
@@ -686,12 +858,13 @@
   }
 
   var UNIT_S = [[3600, 'chain.unit_h'], [60, 'chain.unit_min'], [1, 'chain.unit_s']];
+  var STEP_KINDS = { wait: 'chain.k_wait', action: 'chain.k_action', chain: 'chain.k_chain', notify: 'chain.k_notify' };
   function addStep(pre) {
     var src = ed.src;
-    var wait = pre && pre.kind === 'wait';
-    var li = el('li', { class: 'step' + (wait ? ' is-wait' : '') });
-    li.appendChild(el('span', { class: 'step-kind', text: T(wait ? 'chain.k_wait' : 'chain.k_action') }));
-    if (wait) {
+    var kind = (pre && STEP_KINDS[pre.kind]) ? pre.kind : 'action';
+    var li = el('li', { class: 'step' + (kind === 'wait' ? ' is-wait' : '') });
+    li.appendChild(el('span', { class: 'step-kind', text: T(STEP_KINDS[kind]) }));
+    if (kind === 'wait') {
       var sec = pre.seconds || 60;
       var unit = UNIT_S.filter(function (u) { return sec % u[0] === 0; })[0][0];
       var n = numInput('f-n', T('chain.duration'), sec / unit);
@@ -701,12 +874,34 @@
       li.appendChild(n); li.appendChild(u);
       li.appendChild(el('span', { class: 'form-hint f-wait-hint' }));
       li._read = function () { return { kind: 'wait', seconds: Math.round(Number(n.value) * Number(u.value)) }; };
+    } else if (kind === 'chain') {
+      // another chain of this place (never itself); it checks its own NUR WENN
+      var others = (src.rules || []).filter(function (x) { return !ed.rule || x.id !== ed.rule.id; });
+      var cs = el('select', { class: 'form-select dev', 'aria-label': T('chain.k_chain') }, others.map(function (x) { return opt(String(x.id), x.name); }));
+      if (!others.length) cs.appendChild(opt('', T('chain.no_other')));
+      if (pre && pre.ruleId != null) cs.value = String(pre.ruleId);
+      li.appendChild(cs);
+      li.appendChild(el('span', { class: 'form-hint', text: T('chain.chain_hint') }));
+      li._read = function () { return cs.value ? { kind: 'chain', ruleId: Number(cs.value) } : null; };
+    } else if (kind === 'notify') {
+      var tx = el('input', { type: 'text', class: 'form-input f-text', maxlength: '200', 'aria-label': T('chain.k_notify'), placeholder: T('chain.notify_ph') });
+      if (pre && pre.text) tx.value = pre.text;
+      li.appendChild(tx);
+      li.appendChild(el('span', { class: 'sh-pill', text: T('chain.needs_server') }));
+      var who = whoBox(T('chain.notify_who'), pre && pre.users);
+      li.appendChild(who);
+      li._read = function () {
+        var text = tx.value.trim();
+        if (!text) return null;
+        var picked = who._read();
+        return picked.length ? { kind: 'notify', text: text, users: picked } : { kind: 'notify', text: text };
+      };
     } else {
       var list = actResources(src);
-      var s = el('select', { class: 'form-select dev', 'aria-label': T('chain.device') }, list.map(function (r) { return opt(String(r.id), r.name || ('#' + r.id)); }));
+      var s = el('select', { class: 'form-select dev', 'aria-label': T('chain.device') }, list.map(function (r) { return opt(String(r.id), resLabel(r)); }));
       var fields = el('span', { class: 'chain-fields shr-fields' });
       li.appendChild(s); li.appendChild(fields);
-      var setRes = function () { li._res = src.resById[Number(s.value)]; renderActionFields(fields, li._res); };
+      var setRes = function () { li._res = src.resById[Number(s.value)]; renderActionFields(fields, li._res, true); };
       if (pre && pre.resourceId != null) s.value = String(pre.resourceId);
       s.addEventListener('change', setRes);
       setRes();
@@ -720,7 +915,7 @@
           else if (v === 'bri') { var b = fields.querySelector('.shr-f-bri'); if (b) b.value = st.bri; }
         }
       }
-      li._read = function () { var a = li._res ? readAction(li) : null; return a ? { kind: 'action', resourceId: a.resourceId, set: a.set } : null; };
+      li._read = function () { var a = li._res ? readAction(li) : null; return a ? { kind: 'action', resourceId: a.resourceId, set: a.kind === 'scene' ? {} : a.set } : null; };
     }
     var move = function (d) {
       return el('button', { type: 'button', class: 'btn row-x', text: d < 0 ? '↑' : '↓', 'aria-label': T(d < 0 ? 'chain.up' : 'chain.down'), on: { click: function () {
@@ -738,32 +933,48 @@
     var re = $('#shr-e-re').value;
     $$('#shr-e-steps .f-wait-hint').forEach(function (h) { h.textContent = re === 'restart' ? T('chain.wait_restart') : (re === 'cancel' ? T('chain.wait_cancel') : ''); });
     var full = $$('#shr-e-steps .step').length >= MAX_STEPS;
-    $('#shr-e-add-act').disabled = full; $('#shr-e-add-wait').disabled = full;
+    ['#shr-e-add-act', '#shr-e-add-wait', '#shr-e-add-chain', '#shr-e-add-note'].forEach(function (id) { $(id).disabled = full; });
   }
   function setMode(m) {
     ed.mode = m === 'any' ? 'any' : 'all';
     $$('#shr-edit-modal .seg button').forEach(function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-mode') === ed.mode ? 'true' : 'false'); });
   }
   function readDef() {
-    var pick = function (selr) { return $$(selr).map(function (r) { return r._read ? r._read() : null; }).filter(Boolean); };
+    // a row in the middle of being rebuilt reads as nothing (the next change reads it again)
+    var pick = function (selr) { return $$(selr).map(function (r) { try { return r._read ? r._read() : null; } catch (e) { return null; } }).filter(Boolean); };
     return { version: 2, triggers: pick('#shr-e-when > .row'), conditions: { mode: ed.mode, list: pick('#shr-e-if > .row') }, steps: pick('#shr-e-steps > .step'), retrigger: $('#shr-e-re').value };
+  }
+  /** The portal viewers "Von Hand (App)" is released for (null: the chain has no such trigger). */
+  function readQuick() {
+    var row = $$('#shr-e-when > .row').filter(function (r) { return !!r._manual; })[0];
+    return row ? row._manual._read() : [];
   }
   function whereText() {
     var g = ed.src.gw;
-    $('#shr-e-where-text').textContent = '';
-    $('#shr-e-where-text').appendChild(el('b', { text: T('chain.where_title', { name: ed.src.name }) }));
-    $('#shr-e-where-text').appendChild(document.createTextNode(' ' + T('chain.where') + (g.state !== 'running' ? ' ' + T('rules.edge_away') : '')));
+    var server = ed.src.type === 's';
+    var host = S.clear($('#shr-e-where-text'));
+    $('#shr-e-where').classList.toggle('is-server', server);
+    if (server) {
+      host.appendChild(el('b', { text: T('chain.where_server_title') }));
+      host.appendChild(document.createTextNode(' ' + T('chain.where_server')));
+      return;
+    }
+    host.appendChild(el('b', { text: T('chain.where_title', { name: ed.src.name }) }));
+    host.appendChild(document.createTextNode(' ' + T('chain.where') + (g.state !== 'running' ? ' ' + T('rules.edge_away') : '')));
   }
   function fillGateways() {
     var s = S.clear($('#shr-e-gw'));
     s.appendChild(el('optgroup', { label: T('chain.group_gc') }, edgeGws.map(function (g) { return opt('e:' + g.id, g.name); })));
+    if (sources['s:0']) s.appendChild(opt('s:0', T('chain.server_name')));
     if (deconzGws.length && !ed.rule) s.appendChild(el('optgroup', { label: T('source.group_deconz') }, deconzGws.map(function (g) { return opt('d:' + g.id, g.name); })));
     s.value = ed.src.key;
-    s.disabled = !!ed.rule; // a chain stays on its gateway
+    s.disabled = !!ed.rule; // a chain stays on its place
   }
   function openEditor(src, rule) {
     var go = function () {
       ed.src = src; ed.rule = rule || null; ed.loop = null;
+      ed.quick = rule && Array.isArray(rule.quick_users) ? rule.quick_users.slice() : [];
+      $('#shr-e-sun')._edit = false;
       $('#shr-e-title').textContent = T(rule ? 'chain.edit_title' : 'chain.new_title');
       $('#shr-e-name').value = rule ? (rule.name || '') : '';
       fillGateways();
@@ -772,7 +983,9 @@
       S.openModal('shr-edit-modal', '#shr-e-name');
       edChanged();
     };
-    if (src.rules) go(); else loadSource(src).then(go);
+    var need = [loadUsers()];
+    if (!src.rules) need.push(loadSource(src));
+    Promise.all(need).then(go);
   }
   function fillRows(def) {
     S.clear($('#shr-e-when')); S.clear($('#shr-e-if')); S.clear($('#shr-e-steps'));
@@ -784,11 +997,11 @@
       ((def.conditions && def.conditions.list) || []).forEach(addCond);
       (def.steps || []).forEach(addStep);
     } else { addWhen(null); addStep({ kind: 'action' }); }
-    tasmotaHint(); waitHints();
+    tasmotaHint(); waitHints(); manualButton(); sunHint();
   }
   /** Something changed: the hints, then (a moment later) the check of the server. */
   function edChanged() {
-    waitHints(); tasmotaHint();
+    waitHints(); tasmotaHint(); manualButton(); sunHint();
     clearTimeout(ed.timer);
     ed.timer = setTimeout(checkNow, 500);
   }
@@ -806,10 +1019,13 @@
     box.className = 'check-line' + (res.loop === 'sure' ? ' is-crit' : (res.loop ? '' : ' is-info'));
     box.hidden = false;
   }
+  /** Where a request about the chain goes: { gateway_id } of a gateway, { source: 'server' } for the server. */
+  function placeOf(src) { return src.type === 's' ? { source: 'server' } : { gateway_id: src.id }; }
+  function withPlace(src, body) { var p = placeOf(src); Object.keys(p).forEach(function (k) { body[k] = p[k]; }); return body; }
   function checkNow() {
     if (!ed.src || $('#shr-edit-modal').hidden) return;
     var seq = ++ed.seq;
-    S.api('POST', 'rules/check', { gateway_id: ed.src.id, id: ed.rule ? ed.rule.id : null, definition: readDef() }).then(function (res) {
+    S.api('POST', 'rules/check', withPlace(ed.src, { id: ed.rule ? ed.rule.id : null, definition: readDef() })).then(function (res) {
       if (seq === ed.seq) renderCheck(res);
     }, function () { if (seq === ed.seq) renderCheck(null); }); // not complete yet: nothing to say
   }
@@ -818,10 +1034,11 @@
     if (!name) { fail(T('rules.name_required')); $('#shr-e-name').focus(); return; }
     var def = readDef();
     if (!def.triggers.length) { fail(T('chain.need_trigger')); return; }
-    if (!def.steps.some(function (s) { return s.kind === 'action'; })) { fail(T('chain.need_action')); return; }
+    if (!def.steps.some(function (s) { return s.kind === 'action' || s.kind === 'chain' || s.kind === 'notify'; })) { fail(T('chain.need_action')); return; }
     var btn = $('#shr-e-save'); btn.disabled = true;
-    var p = ed.rule ? S.api('PUT', 'rules/' + ed.rule.id, { name: name, definition: def })
-      : S.api('POST', 'rules', { gateway_id: ed.src.id, source: 'edge', name: name, definition: def });
+    var quick = readQuick();
+    var p = ed.rule ? S.api('PUT', 'rules/' + ed.rule.id, { name: name, definition: def, quick_users: quick })
+      : S.api('POST', 'rules', withPlace(ed.src, { source: ed.src.type === 's' ? 'server' : 'edge', name: name, definition: def, quick_users: quick }));
     p.then(function () { S.closeModal('shr-edit-modal'); return reload(); }, function (e) {
       var d = (e && e.data) || {};
       if (d.code === 'SMARTHOME_RULE_LOOP') { renderCheck({ loop: 'sure', chains: d.chains || [], shared: [] }); return; }
@@ -857,13 +1074,14 @@
     (t.checks || []).forEach(function (c, i) {
       var mark = c.ok === true ? ['ok', '✓'] : (c.ok === false ? ['no', '✗'] : ['unk', '?']);
       host.appendChild(el('li', {}, [el('span', { class: mark[0], text: mark[1], 'aria-hidden': 'true' }), el('span', { class: 'sr-only', text: T('chain.check_' + mark[0]) }),
-        el('span', { text: conds[i] ? condLabel(conds[i], src) : '' }), el('span', { class: 'v', text: fmtValue(conds[i], c.v) })]));
+        el('span', { text: conds[i] ? condLabel(conds[i], src, c.range) : '' }), el('span', { class: 'v', text: fmtValue(conds[i], c.v) })]));
     });
     var first = (t.checks || []).findIndex(function (c) { return c.ok !== true; });
-    var what = first >= 0 && conds[first] ? condLabel(conds[first], src) : '';
+    var what = first >= 0 && conds[first] ? condLabel(conds[first], src, t.checks[first].range) : '';
     var res = $(ids.result);
     var txt;
     if (t.result === 'run') txt = T((t.checks || []).length ? 'chain.would_run' : 'chain.would_run_nocond');
+    else if (t.result === 'unknown' && first >= 0 && conds[first] && conds[first].kind === 'time' && (t.checks[first].range || []).indexOf(null) >= 0) txt = T('chain.would_nosun');
     else if (t.result === 'skip') txt = T('chain.would_skip', { what: what });
     else txt = T('chain.would_unknown', { what: what });
     if (t.stopped) txt += ' ' + T('chain.test_stopped');
@@ -875,7 +1093,7 @@
     if (!ed.src) return;
     var def = readDef();
     var box = $('#shr-e-test');
-    S.api('POST', 'rules/test', { gateway_id: ed.src.id, definition: def }).then(function (r) {
+    S.api('POST', 'rules/test', withPlace(ed.src, { definition: def })).then(function (r) {
       renderTest({ sub: '#shr-e-test-sub', eval: '#shr-e-test-eval', result: '#shr-e-test-result' }, r.test, def, ed.src, null);
       box.hidden = false;
     }, function (e) {
@@ -904,7 +1122,7 @@
   }
   function edgeRules() {
     var out = [];
-    srcList().forEach(function (k) { if (k.charAt(0) === 'e') (sources[k].rules || []).forEach(function (r) { out.push({ rule: r, src: sources[k] }); }); });
+    srcList().forEach(function (k) { if (k.charAt(0) !== 'd') (sources[k].rules || []).forEach(function (r) { out.push({ rule: r, src: sources[k] }); }); });
     return out;
   }
   function renderLog() {
@@ -916,6 +1134,7 @@
     var src = sources[current];
     var q = [];
     if (src && src.type === 'e') q.push('gateway_id=' + src.id);
+    if (src && src.type === 's') q.push('server=1');
     if (log.rule) q.push('rule_id=' + log.rule);
     if ($('#shr-log-result').value === '1') q.push('problems=1');
     return S.api('GET', 'rules/runs' + (q.length ? '?' + q.join('&') : '')).then(function (r) {
@@ -932,6 +1151,8 @@
   }
   function runTrigger(run, x) {
     if (run.by === 'manual') return T('chain.by_manual');
+    if (run.by === 'app') return T('chain.by_app');
+    if (run.by === 'chain') return T('chain.by_chain');
     var trig = x && x.rule.v2 ? (x.rule.v2.triggers || []) : [];
     return whenLabel(trig[run.trigger == null ? 0 : run.trigger], x && x.src);
   }
@@ -990,6 +1211,10 @@
       var label = s ? stepLabel(s, x.src) : '';
       if (code === 'trig') txt = runTrigger({ by: 'event', trigger: a }, x);
       else if (code === 'manual') txt = T('chain.by_manual');
+      else if (code === 'app') txt = T('chain.by_app');
+      else if (code === 'chain' && typeof a !== 'number') txt = T('chain.by_chain');
+      else if (code === 'chain') txt = label;
+      else if (code === 'note') txt = T('chain.tl_note', { what: label });
       else if (code === 'cond') {
         var c = typeof a === 'number' && x && x.rule.v2 && x.rule.v2.conditions ? x.rule.v2.conditions.list[a] : null;
         txt = a === 'ok' ? T('chain.tl_cond_ok') : (c ? T('chain.tl_cond_no', { what: condLabel(c, x.src) }) : T('chain.tl_cond_unknown'));
@@ -1015,7 +1240,7 @@
     if (!x) return;
     $('#shr-test-title').textContent = T('chain.test_title', { name: x.rule.name });
     var ids = { sub: '#shr-test-sub', eval: '#shr-test-eval', result: '#shr-test-result' };
-    S.api('POST', 'rules/test', { gateway_id: x.src.id, id: x.rule.id }).then(function (res) {
+    S.api('POST', 'rules/test', withPlace(x.src, { id: x.rule.id })).then(function (res) {
       renderTest(ids, res.test, x.rule.v2 || {}, x.src, x.rule);
     }, function (e) {
       S.clear($(ids.eval)); $(ids.sub).textContent = '';
@@ -1027,7 +1252,7 @@
     if (!x) return;
     S.confirm(T('chain.run_confirm', { name: x.rule.name }), T('chain.run_anyway')).then(function (ok) {
       if (!ok) return;
-      S.api('POST', 'rules/test', { gateway_id: x.src.id, id: x.rule.id, run: true }).then(function () {
+      S.api('POST', 'rules/test', withPlace(x.src, { id: x.rule.id, run: true })).then(function () {
         S.toast(T('chain.run_started'), 'good');
         setTimeout(function () { renderLog(); }, 2500);
       }, fail);
@@ -1042,7 +1267,7 @@
       src = e ? sources['e:' + e.id] : (deconzGws[0] ? sources['d:' + deconzGws[0].id] : null);
     }
     if (!src) return;
-    if (src.type === 'e') openEditor(src, null);
+    if (isChainSrc(src)) openEditor(src, null);
     else (src.rules ? Promise.resolve() : loadSource(src)).then(function () { openBuilderFor(src, null); });
   });
   $('#shr-save').addEventListener('click', saveRule);
@@ -1059,13 +1284,18 @@
 
   $('#shr-e-add-dev').addEventListener('click', function () { addWhen(null); edChanged(); });
   $('#shr-e-add-time').addEventListener('click', function () { addWhen({ kind: 'time', at: '07:00' }); edChanged(); });
+  $('#shr-e-add-manual').addEventListener('click', function () { addWhen({ kind: 'manual' }); edChanged(); });
+  $('#shr-e-add-chain').addEventListener('click', function () { addStep({ kind: 'chain' }); edChanged(); });
+  $('#shr-e-add-note').addEventListener('click', function () { addStep({ kind: 'notify' }); edChanged(); });
+  $('#shr-e-sun-save').addEventListener('click', saveSun);
+  $('#shr-e-sun-change').addEventListener('click', function () { $('#shr-e-sun')._edit = true; sunHint(); });
   $('#shr-e-add-cond').addEventListener('click', function () { addCond(null); edChanged(); });
   $('#shr-e-add-act').addEventListener('click', function () { addStep({ kind: 'action' }); edChanged(); });
   $('#shr-e-add-wait').addEventListener('click', function () { addStep({ kind: 'wait', seconds: 180 }); edChanged(); });
   $$('#shr-edit-modal .seg button').forEach(function (b) { b.addEventListener('click', function () { setMode(b.getAttribute('data-mode')); edChanged(); }); });
   $('#shr-e-re').addEventListener('change', edChanged);
   $('#shr-edit-modal .chain-body').addEventListener('input', edChanged);
-  $('#shr-edit-modal .chain-body').addEventListener('change', function (e) { if (e.target && e.target.id !== 'shr-e-gw') edChanged(); });
+  $('#shr-edit-modal .chain-body').addEventListener('change', function (e) { if (e.target && e.target.id !== 'shr-e-gw' && e.target.id !== 'shr-e-lat' && e.target.id !== 'shr-e-lon') edChanged(); });
   $('#shr-e-gw').addEventListener('change', function () {
     var v = $('#shr-e-gw').value; var src = sources[v]; var name = $('#shr-e-name').value.trim();
     if (!src) return;
