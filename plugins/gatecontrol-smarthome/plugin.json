@@ -7,8 +7,8 @@
   "version": "1.12.0",
   "publisher": "CallMeTechie",
   "description": {
-    "de": "Phoscon/deCONZ-Gateways, Shelly- und Tasmota-Geräte, Zigbee-Geräte von zigbee2mqtt und Bluetooth-Sensoren über ein GateControl-Gateway einbinden: Lichter, Steckdosen, Schalter, Rollläden, Gruppen, Szenen und Sensoren steuern, Haushaltsmitgliedern zuweisen (Portal „Zuhause“) und Logikketten anlegen – für deCONZ auf dem deCONZ-Gateway, für Shelly, Tasmota und zigbee2mqtt auf dem GateControl-Gateway, über mehrere Gateways auf dem Server.",
-    "en": "Connect Phoscon/deCONZ gateways, Shelly and Tasmota devices, Zigbee devices of zigbee2mqtt and Bluetooth sensors through a GateControl gateway: control lights, plugs, switches, shutters, groups, scenes and sensors, assign them to household members (portal “Home”) and create logic chains – for deCONZ on the deCONZ gateway, for Shelly, Tasmota and zigbee2mqtt on the GateControl gateway, across several gateways on the server."
+    "de": "Phoscon/deCONZ-Gateways, Shelly- und Tasmota-Geräte, Zigbee-Geräte von zigbee2mqtt und Bluetooth-Sensoren über ein GateControl-Gateway einbinden: Lichter, Steckdosen, Schalter, Rollläden, Gruppen, Szenen und Sensoren steuern, Haushaltsmitgliedern zuweisen (Portal „Zuhause“) und Logikketten anlegen – für deCONZ auf dem deCONZ-Gateway, für Shelly und Tasmota auf dem GateControl-Gateway, über mehrere Gateways (auch zigbee2mqtt) auf dem Server.",
+    "en": "Connect Phoscon/deCONZ gateways, Shelly and Tasmota devices, Zigbee devices of zigbee2mqtt and Bluetooth sensors through a GateControl gateway: control lights, plugs, switches, shutters, groups, scenes and sensors, assign them to household members (portal “Home”) and create logic chains – for deCONZ on the deCONZ gateway, for Shelly and Tasmota on the GateControl gateway, across several gateways (zigbee2mqtt too) on the server."
   },
   "gatecontrol": ">=1.228.1",
   "entry": "server/index.js",
@@ -29,8 +29,7 @@
       "mqtt": {
         "topics": [
           "shellies/#",
-          "tasmota/#",
-          "zigbee2mqtt/#"
+          "tasmota/#"
         ]
       }
     }

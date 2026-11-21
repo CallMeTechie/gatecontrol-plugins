@@ -4,8 +4,8 @@
    on a GateControl gateway is edited in the new editor (WENN · NUR WENN · DANN, version 2), has a Testlauf and a
    Protokoll; a version 1 chain opens there as "wird wahr: A und B" and is saved as version 2.
    Since 1.12.0 (Stufe 2): sunrise / sunset (with the place of the gateway), "seit X min", "Von Hand (App)" (a quick
-   action of the apps, released for portal viewers here), "Andere Kette starten", "Mitteilung senden", zigbee2mqtt
-   devices of the gateway, and a third place: "Mehrere Gateways (über Server)" — chains that run on the server. */
+   action of the apps, released for portal viewers here), "Andere Kette starten", "Mitteilung senden", and a
+   third place: "Mehrere Gateways (über Server)" — chains that run on the server (zigbee2mqtt, deCONZ, several gateways). */
 (function () {
   'use strict';
   var S = window.SH, T = S.T, $ = S.$, $$ = S.$$, el = S.el;
@@ -175,7 +175,7 @@
   /** A trigger (an event): "Flur geht an", "Taster · Taste 2 kurz", "um 07:00", "wird wahr: A und B". */
   function whenLabel(t, src) {
     if (!t) return '';
-    if (t.kind === 'button') return T('chain.button_label', { n: t.resourceId != null ? nameIn(src, t.resourceId) : devName(src, t.deviceId), key: t.input + 1, ev: T('chain.press_' + t.event) });
+    if (t.kind === 'button') return T('chain.button_label', { n: devName(src, t.deviceId), key: t.input + 1, ev: T('chain.press_' + t.event) });
     if (t.kind === 'time') return T('chain.at', { time: t.at });
     if (t.kind === 'sun') return sunLabel(t.event, t.offset || 0);
     if (t.kind === 'manual') return T('chain.manual');
@@ -250,7 +250,7 @@
   function loadSource(src) {
     var chain = isChainSrc(src);
     var q = src.type === 's' ? 'server=1' : 'gateway_id=' + src.id;
-    // a chain's editor: the place's resources (Shelly / Tasmota / zigbee2mqtt of a gateway, or all of them) and buttons
+    // a chain's editor: the place's resources (Shelly / Tasmota of a gateway, or all of them) and buttons
     var load = chain
       ? S.api('GET', 'rules/devices?' + q).then(function (rd) { src.devices = rd.devices || []; src.resources = rd.resources || []; })
       : S.api('GET', 'resources?gateway_id=' + src.id).then(function (rd) { src.devices = []; src.resources = rd.resources || []; });
@@ -617,13 +617,11 @@
   }
   /** "Flurlicht · Gateway Keller" on the server's list (devices of several places). */
   function resLabel(r) { return (r.name || ('#' + r.id)) + (r.place ? ' · ' + r.place : ''); }
-  /** Remotes of zigbee2mqtt on this gateway (their `action`): buttons like a Shelly input. */
-  function remotes(src) { return src.type === 'e' ? (src.resources || []).filter(function (r) { return r.enabled && r.kind === 'switch' && r.source === 'z2m'; }) : []; }
   /** Taster (the devices) and the channels that report a state; extra options in front (conditions: time, days). */
   function deviceSelect(src, buttons, extra) {
     var s = el('select', { class: 'form-select dev', 'aria-label': T('chain.device') });
     (extra || []).forEach(function (o) { s.appendChild(opt(o[0], o[1])); });
-    var btns = buttons && src.type === 'e' ? (src.devices || []).map(function (d) { return opt('b:' + d.id, d.name); }).concat(remotes(src).map(function (r) { return opt('z:' + r.id, r.name || ('#' + r.id)); })) : [];
+    var btns = buttons && src.type === 'e' ? (src.devices || []).map(function (d) { return opt('b:' + d.id, d.name); }) : [];
     if (btns.length) s.appendChild(el('optgroup', { label: T('chain.group_buttons') }, btns));
     var rl = trigResources(src);
     if (rl.length) s.appendChild(el('optgroup', { label: T('chain.group_devices') }, rl.map(function (r) { return opt('r:' + r.id, resLabel(r)); })));
@@ -782,21 +780,20 @@
       var render = function (p) {
         S.clear(fields);
         var v = s.value || '';
-        if (v.charAt(0) === 'b' || v.charAt(0) === 'z') {
+        if (v.charAt(0) === 'b') {
           fields.appendChild(sel('f f-key', T('chain.key'), [0, 1, 2, 3].map(function (i) { return [String(i), T('chain.key_n', { n: i + 1 })]; })));
           fields.appendChild(sel('f f-press', T('chain.event'), [['single', T('chain.press_single')], ['double', T('chain.press_double')], ['triple', T('chain.press_triple')], ['long', T('chain.press_long')]]));
           if (p) { fields.querySelector('.f-key').value = String(p.input || 0); fields.querySelector('.f-press').value = p.event || 'single'; }
         } else if (v.charAt(0) === 'r') channelFields(fields, src.resById[Number(v.slice(2))], p, false);
         tasmotaHint();
       };
-      if (pre && pre.kind === 'button') s.value = pre.resourceId != null ? 'z:' + pre.resourceId : 'b:' + pre.deviceId;
+      if (pre && pre.kind === 'button') s.value = 'b:' + pre.deviceId;
       else if (pre && pre.resourceId != null) s.value = 'r:' + pre.resourceId;
       s.addEventListener('change', function () { render(null); });
       render(pre);
       row._read = function () {
         var v = s.value || '';
         if (v.charAt(0) === 'b') return { kind: 'button', deviceId: Number(v.slice(2)), input: Number(row.querySelector('.f-key').value), event: row.querySelector('.f-press').value };
-        if (v.charAt(0) === 'z') return { kind: 'button', resourceId: Number(v.slice(2)), input: Number(row.querySelector('.f-key').value), event: row.querySelector('.f-press').value };
         if (v.charAt(0) === 'r') return readChannel(row, src.resById[Number(v.slice(2))], false);
         return null;
       };

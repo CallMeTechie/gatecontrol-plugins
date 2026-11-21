@@ -36,15 +36,17 @@
 //   t  { kind: 'sun', event: 'sunrise' | 'sunset', offset: −180…180 } · { kind: 'manual' } ("Von Hand (App)": a quick
 //      action of the apps; who may run it: rules.quick_users) · a device trigger with for: 1…1440 ("seit X min") ·
 //      { kind: 'contact', resourceId, event: 'open' | 'closed' } · { kind: 'motion', resourceId, event: 'detected' |
-//      'ended' } · { kind: 'water', resourceId, event: 'wet' | 'dry' } (sensors of zigbee2mqtt / deCONZ / Bluetooth) ·
-//      { kind: 'button', resourceId, input, event } (a remote of zigbee2mqtt)
+//      'ended' } · { kind: 'water', resourceId, event: 'wet' | 'dry' } (sensors of zigbee2mqtt / deCONZ / Bluetooth —
+//      in the chains on the server)
 //   c  { kind: 'time', from, to } — from / to also { sun: 'sunrise' | 'sunset', offset } · a device condition with for ·
 //      contact / motion / water with is
 //   s  { kind: 'chain', ruleId } (another chain of the same place, never itself) · { kind: 'notify', text ≤ 200, users? }
 //      (sent by the server part: topic `chains`, only to `users` when given)
-// Places: source 'edge' (gateway_id = a GateControl gateway; its Shelly / Tasmota devices and — since 1.12.0 — the
-// zigbee2mqtt devices of that gateway, run by the edge part) and source 'server' (gateway_id 0: devices of several
-// gateways or of deCONZ, run by the server part — server/serverchains.js; not without the server).
+// Places: source 'edge' (gateway_id = a GateControl gateway; its Shelly / Tasmota devices, run by the edge part) and
+// source 'server' (gateway_id 0: devices of several gateways, of deCONZ, zigbee2mqtt or Bluetooth — run by the server
+// part, server/serverchains.js; not without the server). zigbee2mqtt devices are not part of the chains on a gateway:
+// the edge part would need the capability mqtt.topic zigbee2mqtt/# for that, and GateControl keeps an edge part off
+// (update_pending) until an administrator confirms a new capability — there are no optional ones yet.
 // The sun: per place a location { lat, lon } (gc.settings `sun.<gateway id>` / `sun.server`, rounded to 0.01°); a
 // chain with the sun needs one (the page says so), the server place falls back to the first gateway that has one.
 //
@@ -75,7 +77,6 @@ const MAX_OFFSET = 180;
 const MAX_FOR = 1440;
 const MAX_NOTE = 200;
 const SERVER = 'server';
-const Z2M_ID_RE = /^z2m:([0-9a-f]{16})(?:\/([a-z0-9_]{1,8}))?$/;
 // sensor readings → the trigger kinds of a contact, a motion sensor, water (event values → the edge field)
 const BOOL_KINDS = {
   contact: { reading: 'open', field: 'open', yes: 'open', no: 'closed' },
@@ -91,30 +92,9 @@ const finite = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 const arr = (v) => (Array.isArray(v) ? v : []);
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 
-/** A zigbee2mqtt resource as the edge part of its gateway runs it: { resource, device: { base, family, ieee }, ch, zch }. */
-function z2mEntry(r) {
-  const m = Z2M_ID_RE.exec(String(r.deconz_id || ''));
-  if (!m) return null;
-  const caps = r.capabilities || {};
-  const device = { base: `zigbee2mqtt/0x${m[1]}`, family: 'z2m', ieee: `0x${m[1]}` };
-  if (m[2] && (r.kind === 'light' || r.kind === 'plug')) return { resource: r, device, ch: `switch:${Math.max(0, Math.min(7, (Number(caps.channel_no) || 1) - 1))}`, zch: m[2] };
-  if (r.kind === 'light') return { resource: r, device, ch: 'light:0' };
-  if (r.kind === 'plug') return { resource: r, device, ch: 'switch:0' };
-  if (r.kind === 'cover') return { resource: r, device, ch: 'cover:0' };
-  if (r.kind === 'sensor' || r.kind === 'switch') return { resource: r, device, ch: 'sensor' };
-  return null; // a thermostat reports other fields there: on the server only
-}
-
-/** The zigbee2mqtt resources of one GateControl gateway (capabilities.gateway_id). */
-async function z2mResourcesOf(gc, gatewayId) {
-  const rows = (await gc.db.query("SELECT * FROM resources WHERE gateway_id = 0 AND deconz_type = 'z2m' AND enabled = 1 ORDER BY id")).rows;
-  return rows.map((row) => ({ ...row, capabilities: store.parseJson(row.capabilities_json) || {}, state: store.parseJson(row.state_json) || {} }))
-    .filter((r) => Number(r.capabilities.gateway_id) === Number(gatewayId));
-}
-
 /**
- * The resources of a place with how its engine knows them: id → { resource, device: { base, family }, ch, zch? }.
- * A GateControl gateway: its Shelly / Tasmota channels and its zigbee2mqtt devices; the server (gatewayId 0 / SERVER):
+ * The resources of a place with how its engine knows them: id → { resource, device: { base, family }, ch }.
+ * A GateControl gateway: its Shelly / Tasmota channels; the server (gatewayId 0 / SERVER):
  * every enabled resource as res/<id> (switched through the plugin, like the page does).
  */
 async function resourcesOf(gc, gatewayId) {
@@ -131,10 +111,6 @@ async function resourcesOf(gc, gatewayId) {
     for (const r of await es.deviceResources(gc, dev.id)) {
       out.set(r.id, { resource: r, device: dev, ch: String(r.deconz_id).split('/')[1] || '' });
     }
-  }
-  for (const r of await z2mResourcesOf(gc, gatewayId)) {
-    const e = z2mEntry(r);
-    if (e) out.set(r.id, e);
   }
   return out;
 }
@@ -219,8 +195,7 @@ function compileAction(a, byId) {
   const m = CH_RE.exec(ch);
   if (!m) throw invalid('not_controllable');
   const set = a.set && typeof a.set === 'object' ? a.set : {};
-  const out = { base: device.base, family: device.family, ch, ...(hit.zch ? { zch: hit.zch } : {}) };
-  if (hit.zch && ('bri' in set || 'cover' in set || 'pos' in set)) throw invalid('bad_action');
+  const out = { base: device.base, family: device.family, ch };
   if (m[1] === 'cover') {
     if (['open', 'close', 'stop'].includes(set.cover)) return { ...out, op: set.cover };
     const pos = finite(set.pos);
@@ -258,17 +233,9 @@ function compileWhen(t, byId, devById, ctx = {}) {
   if (!isObj(t)) throw invalid('bad_trigger');
   if (t.kind === 'button') {
     if (ctx.server) throw invalid('button_on_server'); // presses stay on their gateway
-    let base;
-    if (t.resourceId != null) {
-      // a remote of zigbee2mqtt (its `action`)
-      const hit = byId.get(Number(t.resourceId));
-      if (!hit || hit.device.family !== 'z2m' || hit.resource.kind !== 'switch') throw invalid('foreign_device');
-      base = hit.device.base;
-    } else {
-      const dev = devById.get(Number(t.deviceId));
-      if (!dev) throw invalid('foreign_device');
-      base = dev.base;
-    }
+    const dev = devById.get(Number(t.deviceId));
+    if (!dev) throw invalid('foreign_device');
+    const base = dev.base;
     if (!Number.isInteger(t.input) || t.input < 0 || t.input > 7 || !BUTTON_EVENTS.includes(t.event)) throw invalid('bad_button_trigger');
     return { k: 'btn', base, input: t.input, ev: t.event };
   }
@@ -382,8 +349,7 @@ function refsOf(def) {
   const chains = [];
   const trig = (t) => {
     if (!isObj(t)) return;
-    if (t.kind === 'button' && t.resourceId == null) devices.push(t.deviceId);
-    else if (t.kind === 'button') resources.push(t.resourceId);
+    if (t.kind === 'button') devices.push(t.deviceId);
     else if (t.kind === 'all') arr(t.parts).forEach(trig);
     else if (t.resourceId != null) resources.push(t.resourceId);
   };
@@ -436,35 +402,14 @@ async function setLocation(gc, gatewayId, loc) {
   return v;
 }
 
-/** The zigbee2mqtt devices a gateway's chains use: [{ ieee, kind, chs, name }] for the edge part. */
-function z2mList(compiled, byId) {
-  const used = new Set();
-  const add = (x) => { if (x && typeof x.base === 'string' && x.base.startsWith('zigbee2mqtt/')) used.add(x.base); };
-  for (const c of compiled) {
-    if (c.v !== 2) continue;
-    for (const w of c.when) { add(w); if (w.k === 'all') w.parts.forEach(add); }
-    c.cond.list.forEach(add);
-    c.steps.forEach(add);
-  }
-  const out = new Map();
-  for (const e of byId.values()) {
-    if (e.device.family !== 'z2m' || !used.has(e.device.base)) continue;
-    const r = e.resource;
-    const d = out.get(e.device.ieee) || { ieee: e.device.ieee, kind: r.kind === 'light' && e.zch ? 'plug' : r.kind, chs: [], name: (r.capabilities && r.capabilities.named) ? null : (r.name || null) };
-    if (e.zch) d.chs[Number(e.ch.split(':')[1])] = e.zch;
-    out.set(e.device.ieee, d);
-  }
-  return [...out.values()].map((d) => ({ ...d, chs: d.chs.length >= 2 && d.chs.every(Boolean) ? d.chs : null })).slice(0, 128);
-}
-
 /**
- * What configureGateway adds to the device list: the enabled, complete rules of the gateway, the zigbee2mqtt
- * devices they use and where the gateway is (the sun). For the server (gatewayId 0) the same for its engine.
+ * What configureGateway adds to the device list: the enabled, complete rules of the gateway and where the gateway
+ * is (the sun). For the server (gatewayId 0) the same for its engine.
  */
 async function configFor(gc, gatewayId) {
   const list = await rows(gc, gatewayId);
   const server = isServer(gatewayId);
-  if (!list.length) return { rules: [], tz: timeZone(), z2m: [], sun: null };
+  if (!list.length) return { rules: [], tz: timeZone(), sun: null };
   const byId = await resourcesOf(gc, gatewayId);
   const devById = server ? new Map() : await devicesOf(gc, gatewayId);
   const chains = new Set(list.map((r) => r.id)); // a chain that is off: the step fails there, the chain stays
@@ -474,7 +419,7 @@ async function configFor(gc, gatewayId) {
     try { out.push(compileRule(row.id, store.parseJson(row.definition_json), byId, devById, { server, chains })); } catch { /* a device is gone: the page shows it */ }
   }
   const rules = out.slice(0, MAX_RULES);
-  return { rules, tz: timeZone(), z2m: server ? [] : z2mList(rules, byId), sun: await locationOf(gc, gatewayId) };
+  return { rules, tz: timeZone(), sun: await locationOf(gc, gatewayId) };
 }
 
 // ─── Loops ──────────────────────────────────────
@@ -762,5 +707,5 @@ async function runsToday(gc, gatewayId, now = Date.now()) {
 
 module.exports = {
   SOURCE, SERVER, MAX_RULES, MAX_STEPS, resourcesOf, devicesOf, compileRule, toV2, refsOf, configFor, check, analyse, analyseCompiled, markFired, timeZone,
-  cleanRun, storeRuns, pullRuns, listRuns, runsToday, isServer, locationOf, setLocation, chainIds, serverCh, z2mEntry, readingOf,
+  cleanRun, storeRuns, pullRuns, listRuns, runsToday, isServer, locationOf, setLocation, chainIds, serverCh, readingOf,
 };

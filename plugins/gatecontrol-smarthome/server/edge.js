@@ -16,8 +16,8 @@
 // (gc.edge.configure { devices: [{ base, family }], rules, tz }) and the runs the server part missed (gc.edge.call
 // 'runs'); `fired` { rules: [{ id, at }] } → a logic chain ran, `runs` { runs: [run] } → its protocol
 // (server/edgerules.js); `notify` { notes: [{ r, i, at, u }] } (since 1.12.0) → a step "Mitteilung senden" ran — the
-// notification goes out here (server/serverchains.js sendNote). The configuration carries the zigbee2mqtt devices the
-// gateway's chains use and where the gateway is (z2m, sun — since 1.12.0).
+// notification goes out here (server/serverchains.js sendNote). The configuration carries where the gateway is (sun —
+// since 1.12.0).
 
 const crypto = require('node:crypto');
 const store = require('./store');
@@ -117,9 +117,9 @@ async function configureGateway(gc, gatewayId) {
   if (!available(gc)) return false;
   const devices = (await es.listDevices(gc, gatewayId)).map((d) => ({ base: d.base, family: d.family }));
   // the gateway's logic chains run in its edge part (edge/rules.js); an older edge part ignores them
-  const { rules, tz, z2m, sun } = await edgerules.configFor(gc, gatewayId);
+  const { rules, tz, sun } = await edgerules.configFor(gc, gatewayId);
   try {
-    await gc.edge.configure(Number(gatewayId), { devices, rules, tz, z2m, sun });
+    await gc.edge.configure(Number(gatewayId), { devices, rules, tz, sun });
     return true;
   } catch (e) {
     gc.log.debug('edge configure failed', gatewayId, edgeErr(e));

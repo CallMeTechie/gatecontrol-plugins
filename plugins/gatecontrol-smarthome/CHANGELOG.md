@@ -14,7 +14,7 @@ Tasmota über ein GateControl-Gateway.
     Sonne gilt als offen. Der Testlauf zeigt die Sonnenzeit des Tages (`checks[].range`, `sun`).
   - **„seit X min“** (`for: 1…1440`) an Geräte-Auslösern (feuert, wenn der Zustand so lange gilt) und -Bedingungen.
   - **Kontakt, Bewegung, Wasser** (`contact` / `motion` / `water`, Felder `open` / `presence` / `water`) für Sensoren
-    von zigbee2mqtt, deCONZ und Bluetooth (nur Version 2).
+    von zigbee2mqtt, deCONZ und Bluetooth (nur Version 2, in Ketten am Server).
   - **„Andere Kette starten“** (`{ kind: 'chain', ruleId }`, nur derselbe Ort, nie sich selbst): die andere Kette
     prüft ihr „Nur wenn“; höchstens 4 Ketten tief. Die Schleifenprüfung kennt Kettenstarts: gegenseitiges Starten
     ohne „Nur wenn“ wird abgelehnt, mit „Nur wenn“ als Hinweis gezeigt. Fehlt die gestartete Kette, gilt die Kette
@@ -24,14 +24,11 @@ Tasmota über ein GateControl-Gateway.
     (`gc.notify`, neues Thema `chains` „Logikketten“, Budget geteilt mit den übrigen Mitteilungen), nur an `users`,
     wenn gesetzt; doppelt gelieferte Ereignisse einmal. Liste: „läuft am Gateway“ + „+ Mitteilung über Server“.
   - **„Von Hand (App)“** (`{ kind: 'manual' }`): Ketten als Schnellaktion der Apps (siehe unten).
-- **zigbee2mqtt am Gateway als Quelle der Ketten:** Geräte, die GateControl über zigbee2mqtt am Gateway meldet
-  (`capabilities.gateway_id`), stehen in den Ketten dieses Gateways (Licht, Steckdose, Kanäle `state_<kanal>`,
-  Rollladen, Sensoren, Fernbedienungen per `action` als Taster). Der Edge-Teil abonniert `zigbee2mqtt/#` nur, solange
-  Ketten solche Geräte nutzen, ordnet Namen über `zigbee2mqtt/bridge/devices` zu und schaltet über
-  `zigbee2mqtt/<Name>/set` (`normalize.parseZ2m`, `commands` Familie `z2m`). **Neue Edge-Fähigkeit `mqtt.topic:
-  zigbee2mqtt/#`** (keine Gateway-Änderung nötig) – GateControl lässt den Edge-Teil nach dem Update je Gateway aus,
-  bis ein Administrator sie bestätigt (`update_pending`). Wird das Abo verweigert, laufen Shelly/Tasmota weiter.
-- **Ketten über mehrere Gateways / gemischt mit deCONZ:** neuer Ort `source: 'server'` (`gateway_id 0`), Editor-Wahl
+- **Keine neue Edge-Fähigkeit:** Das Update braucht keine Bestätigung am Gateway (kein `update_pending`) –
+  Shelly/Tasmota und die Ketten aus 1.11 laufen weiter. zigbee2mqtt-Geräte sind deshalb nur in Ketten am Server
+  dabei (über GateControls `gc.radio`); Ketten am Gateway mit zigbee2mqtt bräuchten `mqtt.topic: zigbee2mqtt/#`, und
+  GateControl kennt (noch) keine optionalen oder bei Bedarf angefragten Edge-Fähigkeiten.
+- **Ketten über mehrere Gateways / gemischt mit deCONZ oder zigbee2mqtt:** neuer Ort `source: 'server'` (`gateway_id 0`), Editor-Wahl
   „Mehrere Gateways (über Server)“, gelbe Box und Pille **„läuft am Server“**, nicht offline-fähig. Sie laufen mit
   derselben Engine (`edge/rules.js`) im Server-Teil (`server/serverchains.js`): Geräte `res/<id>` aus dem Zustands-
   Cache (alle 2 s gelesen, Shelly/Tasmota sofort nach dem Bündel), Schalten über `service.setResourceState`
@@ -43,10 +40,10 @@ Tasmota über ein GateControl-Gateway.
   `GET /rules/people`). `runQuickAction` prüft erneut und startet mit „Nur wenn“ (Edge `test { id, run, by: 'app' }`
   bzw. Server-Engine). Zusätzlich Portal-API für eigene App-Ansichten: `GET /portal/chains`,
   `POST /portal/chains/:id/run` → `{ ok, result: started | running | skip | unknown | stopped | error, message }`.
-- Editor: `GET /rules/devices` liefert die Geräte eines Ortes (Gateway: Shelly/Tasmota + zigbee2mqtt; Server:
+- Editor: `GET /rules/devices` liefert die Geräte eines Ortes (Gateway: Shelly/Tasmota; Server:
   alle mit Ortsnamen).
-- Tests: Sonnenzeiten, Sonne/„seit“/Ketten/Mitteilung/Von Hand/zigbee2mqtt/`res`-Schritte der Engine, Edge-Teil
-  (Abo, Namen, `notify`), Server (Kompilieren, Standort, Schleifen, Server-Ketten end-to-end, Mitteilungen,
+- Tests: Sonnenzeiten, Sonne/„seit“/Ketten/Mitteilung/Von Hand/`res`-Schritte der Engine, Edge-Teil
+  (gleiche Fähigkeiten wie 1.11, `notify`), Server (Kompilieren, Standort, Schleifen, Server-Ketten end-to-end, Mitteilungen,
   Schnellaktionen mit Rechten, Portal-API) und der fehlende Test aus Stufe 1: `buttons: true` (SetOption73) geht vom
   Einrichtungs-Job des Servers nur auf Wunsch (nur `true`) an das Gateway.
 
