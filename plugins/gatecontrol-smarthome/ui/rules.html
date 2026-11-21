@@ -1,16 +1,145 @@
 <main class="sh-page">
   <!-- no page title: GateControl shows it in its header -->
   <div class="page-actions page-toolbar">
-    <select id="shr-gateway" class="form-select" aria-label="{{t:rules.gateway}}"></select>
+    <select id="shr-gateway" class="form-select" aria-label="{{t:chain.source}}"></select>
+    <span class="sh-spacer"></span>
     <button class="btn" type="button" data-nav="main">{{t:rules.back}}</button>
-    <button class="btn" type="button" id="shr-gateway-count">{{t:rules.load_count}}</button>
-    <button class="btn btn-primary" type="button" id="shr-new">{{t:rules.new}}</button>
+    <button class="btn" type="button" id="shr-gateway-count" hidden>{{t:rules.load_count}}</button>
+    <button class="btn" type="button" id="shr-log-open">{{t:chain.log}}</button>
+    <button class="btn btn-primary" type="button" id="shr-new">{{t:chain.new}}</button>
   </div>
   <div id="shr-limit" class="banner banner-warn" role="status" hidden></div>
   <div id="shr-count-hint" class="banner" hidden></div>
   <div id="shr-source-hint" class="banner" role="note" hidden></div>
-  <div id="shr-list" class="rule-list"></div>
 
+  <section id="shr-list-view">
+    <div id="shr-list" class="rule-list"></div>
+  </section>
+
+  <!-- Testlauf und Protokoll (the chains on a GateControl gateway) -->
+  <section id="shr-log-view" hidden>
+    <div class="page-actions page-toolbar">
+      <button class="btn" type="button" id="shr-log-back">{{t:chain.back_list}}</button>
+    </div>
+    <div class="split" id="shr-split">
+      <div class="sh-card" id="shr-test-card" hidden>
+        <div class="panel-title" id="shr-test-title"></div>
+        <div class="panel-sub" id="shr-test-sub"></div>
+        <ul class="eval" id="shr-test-eval"></ul>
+        <div class="result" id="shr-test-result" role="status"></div>
+        <div class="row">
+          <button class="btn" type="button" id="shr-test-again">{{t:chain.test_again}}</button>
+          <button class="btn" type="button" id="shr-test-run">{{t:chain.run_anyway}}</button>
+        </div>
+        <p class="form-hint">{{t:chain.run_hint}}</p>
+      </div>
+      <div class="sh-card">
+        <div class="panel-title">{{t:chain.log}}</div>
+        <div class="panel-sub">{{t:chain.log_sub}}</div>
+        <div class="filters">
+          <select class="form-select" id="shr-log-chain" aria-label="{{t:chain.filter_chain}}"></select>
+          <select class="form-select" id="shr-log-result" aria-label="{{t:chain.filter_result}}">
+            <option value="">{{t:chain.filter_all_results}}</option>
+            <option value="1">{{t:chain.filter_problems}}</option>
+          </select>
+        </div>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>{{t:chain.col_time}}</th><th>{{t:chain.col_chain}}</th><th>{{t:chain.col_trigger}}</th><th>{{t:chain.col_result}}</th></tr></thead>
+            <tbody id="shr-log-rows"></tbody>
+          </table>
+        </div>
+        <ol class="timeline" id="shr-log-timeline" aria-live="polite"></ol>
+      </div>
+    </div>
+  </section>
+
+  <!-- Kette bearbeiten: a chain on a GateControl gateway (WENN · NUR WENN · DANN) -->
+  <div class="modal-overlay" id="shr-edit-modal" role="dialog" aria-modal="true" aria-labelledby="shr-e-title" hidden>
+    <div class="modal modal-chain">
+      <div class="modal-head">
+        <div class="modal-title" id="shr-e-title">{{t:chain.edit_title}}</div>
+        <button class="btn modal-close" type="button" data-close="shr-edit-modal" aria-label="{{t:common.close}}">×</button>
+      </div>
+      <div class="modal-body chain-body">
+        <div class="two">
+          <div class="form-group">
+            <label class="form-label" for="shr-e-name">{{t:rules.name_label}}</label>
+            <input class="form-input" id="shr-e-name" type="text" maxlength="40" autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="shr-e-gw">{{t:rules.gateway}}</label>
+            <select class="form-select" id="shr-e-gw"></select>
+          </div>
+        </div>
+
+        <div class="where" id="shr-e-where">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+          <div id="shr-e-where-text"></div>
+        </div>
+
+        <div class="builder-block">
+          <div class="bb-head"><span class="bb-badge bb-when">{{t:rules.when}}</span><span class="bb-sub">{{t:chain.when_sub}}</span></div>
+          <div id="shr-e-when" class="chain-rows"></div>
+          <div class="add-row">
+            <button class="btn btn-sm btn-ghost" type="button" id="shr-e-add-dev">{{t:chain.add_device}}</button>
+            <button class="btn btn-sm btn-ghost" type="button" id="shr-e-add-time">{{t:chain.add_time}}</button>
+          </div>
+          <div class="form-hint">{{t:chain.when_hint}}</div>
+          <div class="form-hint is-warn" id="shr-e-tasmota" hidden>{{t:chain.tasmota_hint}}</div>
+        </div>
+
+        <div class="builder-block">
+          <div class="bb-head"><span class="bb-badge bb-if">{{t:chain.if}}</span><span class="opt-tag">{{t:chain.optional}}</span>
+            <div class="seg" role="group" aria-label="{{t:chain.mode}}">
+              <button type="button" data-mode="all" aria-pressed="true">{{t:chain.mode_all}}</button>
+              <button type="button" data-mode="any" aria-pressed="false">{{t:chain.mode_any}}</button>
+            </div>
+          </div>
+          <div id="shr-e-if" class="chain-rows"></div>
+          <div class="add-row"><button class="btn btn-sm btn-ghost" type="button" id="shr-e-add-cond">{{t:chain.add_condition}}</button></div>
+        </div>
+
+        <div class="builder-block">
+          <div class="bb-head"><span class="bb-badge bb-then">{{t:rules.then}}</span><span class="bb-sub">{{t:chain.then_sub}}</span></div>
+          <ol class="steps" id="shr-e-steps"></ol>
+          <div class="add-row">
+            <button class="btn btn-sm btn-ghost" type="button" id="shr-e-add-act">{{t:chain.add_action}}</button>
+            <button class="btn btn-sm btn-ghost" type="button" id="shr-e-add-wait">{{t:chain.add_wait}}</button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="shr-e-re">{{t:chain.retrigger}}</label>
+          <select class="form-select" id="shr-e-re">
+            <option value="restart">{{t:chain.re_restart}}</option>
+            <option value="ignore">{{t:chain.re_ignore}}</option>
+            <option value="cancel">{{t:chain.re_cancel}}</option>
+          </select>
+        </div>
+
+        <div class="check-line" id="shr-e-check" role="status" hidden>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4M12 17h.01"/><circle cx="12" cy="12" r="10"/></svg>
+          <span id="shr-e-check-text"></span>
+        </div>
+
+        <div class="chain-test" id="shr-e-test" hidden>
+          <div class="panel-title">{{t:chain.test}}</div>
+          <div class="panel-sub" id="shr-e-test-sub"></div>
+          <ul class="eval" id="shr-e-test-eval"></ul>
+          <div class="result" id="shr-e-test-result" role="status"></div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" type="button" id="shr-e-test-btn">{{t:chain.test}}</button>
+        <span class="sh-spacer"></span>
+        <button class="btn" type="button" data-close="shr-edit-modal">{{t:common.cancel}}</button>
+        <button class="btn btn-primary" type="button" id="shr-e-save">{{t:chain.save}}</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- deCONZ rules: the builder as before (they run on the deCONZ gateway) -->
   <div class="modal-overlay" id="shr-modal" role="dialog" aria-modal="true" aria-labelledby="shr-title" hidden>
     <div class="modal modal-wide">
       <div class="modal-head">

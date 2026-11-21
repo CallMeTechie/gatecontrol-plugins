@@ -4,7 +4,12 @@
 // Pure functions, no I/O (tested with real sample messages in test/edge_normalize.test.js).
 //
 //   parse(topic, payload) → null (not a state message: our own commands, unknown topics, broken JSON)
-//                           | { base, family, patch }
+//                           | { base, family, patch, events? }
+//                           events: button presses (since 1.11.0, for the logic chains — an event, not a state):
+//                           [{ input: 0…7, ev: 'single' | 'double' | 'triple' | 'long', cnt? }]
+//                           Shelly Gen1 input_event/<n> { event: S | SS | SSS | L, event_cnt }, Gen2+ events/rpc
+//                           NotifyEvent (single_push, double_push, triple_push, long_push), Tasmota with SetOption73 1
+//                           stat/RESULT { ButtonN: { Action: SINGLE | DOUBLE | TRIPLE | HOLD } }
 //   apply(device, patch)  → merges a patch into a device record (create one with newDevice(base, family))
 //   snapshot(device)      → what the server part gets: { base, family, online, ch, sensor, info, drop }
 //
@@ -51,6 +56,36 @@ function onOff(s) {
   return null;
 }
 const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v);
+
+// ─── Button presses (events for the logic chains) ───
+
+const GEN1_EVENTS = { S: 'single', SS: 'double', SSS: 'triple', L: 'long' };
+const GEN2_EVENTS = { single_push: 'single', double_push: 'double', triple_push: 'triple', long_push: 'long' };
+const TASMOTA_EVENTS = { SINGLE: 'single', DOUBLE: 'double', TRIPLE: 'triple', HOLD: 'long' };
+const INPUT_RE = /^input:(\d)$/;
+
+/** Gen2+ NotifyEvent → [{ input, ev }] (other events of the device — btn_down, ota, … — are not presses). */
+function gen2Events(params) {
+  const out = [];
+  for (const e of (isObj(params) && Array.isArray(params.events) ? params.events : []).slice(0, 16)) {
+    if (!isObj(e)) continue;
+    const m = INPUT_RE.exec(String(e.component || ''));
+    const ev = GEN2_EVENTS[e.event];
+    if (m && ev && Number(m[1]) <= 7) out.push({ input: Number(m[1]), ev });
+  }
+  return out;
+}
+
+/** Tasmota (SetOption73 1): { Button1: { Action: 'SINGLE' } } → [{ input: 0, ev: 'single' }]. */
+function tasmotaEvents(o) {
+  const out = [];
+  for (const [k, v] of Object.entries(o)) {
+    const m = /^Button([1-8])$/.exec(k);
+    const ev = m && isObj(v) ? TASMOTA_EVENTS[String(v.Action || '').toUpperCase()] : null;
+    if (ev) out.push({ input: Number(m[1]) - 1, ev });
+  }
+  return out;
+}
 
 // ─── Shelly Gen2+ (status/<component>, events/rpc NotifyStatus / NotifyFullStatus) ───
 
@@ -103,6 +138,10 @@ function parseShelly(base, rest, payload) {
   }
   if (p === 'events/rpc') {
     const o = json(payload);
+    if (o && o.method === 'NotifyEvent') {
+      const events = gen2Events(o.params);
+      return events.length ? { family: 'shelly2', patch: {}, events } : null;
+    }
     if (!o || (o.method !== 'NotifyStatus' && o.method !== 'NotifyFullStatus') || !isObj(o.params)) return null;
     for (const [k, v] of Object.entries(o.params)) gen2Component(patch, k, v);
     if (typeof o.src === 'string' && NAME_RE.test(o.src)) patch.info = { id: o.src };
@@ -110,6 +149,13 @@ function parseShelly(base, rest, payload) {
   }
   // Gen1: relay/<n>[/power|/energy], roller/<n>[/pos|/power|/energy], light/<n>[/status|/power|/energy], sensor/<x>, announce
   const t = text(payload).trim();
+  if (rest[0] === 'input_event' && rest.length === 2 && /^[0-7]$/.test(rest[1])) {
+    const o = json(payload);
+    const ev = o && GEN1_EVENTS[o.event];
+    if (!ev) return null;
+    const cnt = Number.isSafeInteger(o.event_cnt) ? o.event_cnt : null;
+    return { family: 'shelly1', patch: {}, events: [{ input: Number(rest[1]), ev, ...(cnt == null ? {} : { cnt }) }] };
+  }
   const kindOf = { relay: 'switch', roller: 'cover', light: 'light' }[rest[0]];
   if (kindOf && /^\d{1,2}$/.test(rest[1] || '')) {
     const key = `${kindOf}:${rest[1]}`;
@@ -156,7 +202,7 @@ function parseShelly(base, rest, payload) {
     if (typeof o.mac === 'string') info.mac = o.mac.slice(0, 20);
     return Object.keys(info).length ? { family: 'shelly1', patch: { info } } : null;
   }
-  return null; // our own rpc/command topics, input events, info, …
+  return null; // our own rpc/command topics, input (state) topics, info, …
 }
 
 // ─── Tasmota (tele/LWT, tele/STATE, tele/SENSOR, stat/RESULT, stat/POWERn, stat/STATUS10/11) ───
@@ -205,6 +251,7 @@ function parseTasmota(base, rest, payload) {
   const tp = {};
   const sensor = {};
   const info = {};
+  const events = [];
   if (prefix === 'stat' && /^POWER\d?$/.test(cmd)) {
     const on = onOff(text(payload));
     if (on == null) return null;
@@ -218,7 +265,7 @@ function parseTasmota(base, rest, payload) {
     if (!o) return null;
     if (prefix === 'tele' && cmd === 'STATE') tasmotaState(tp, o);
     else if (prefix === 'tele' && cmd === 'SENSOR') tasmotaSensor(tp, sensor, o);
-    else if (prefix === 'stat' && cmd === 'RESULT') { tasmotaState(tp, o); tasmotaSensor(tp, sensor, o); }
+    else if (prefix === 'stat' && cmd === 'RESULT') { tasmotaState(tp, o); tasmotaSensor(tp, sensor, o); events.push(...tasmotaEvents(o)); }
     else if (prefix === 'stat' && cmd === 'STATUS11' && isObj(o.StatusSTS)) tasmotaState(tp, o.StatusSTS);
     else if (prefix === 'stat' && cmd === 'STATUS10' && isObj(o.StatusSNS)) tasmotaSensor(tp, sensor, o.StatusSNS);
     else if (prefix === 'tele' && /^INFO[12]$/.test(cmd)) {
@@ -232,6 +279,7 @@ function parseTasmota(base, rest, payload) {
   if (Object.keys(tp).length) patch.tasmota = tp;
   if (Object.keys(sensor).length) patch.sensor = sensor;
   if (Object.keys(info).length) patch.info = info;
+  if (events.length) return { family: 'tasmota', patch, events };
   return Object.keys(patch).length ? { family: 'tasmota', patch } : null;
 }
 
@@ -244,7 +292,8 @@ function parse(topic, payload) {
   let out = null;
   if (seg[0] === 'shellies') out = parseShelly(base, seg.slice(2), payload);
   else if (seg[0] === 'tasmota') out = parseTasmota(base, seg.slice(2), payload);
-  return out ? { base, family: out.family, patch: out.patch } : null;
+  if (!out) return null;
+  return out.events ? { base, family: out.family, patch: out.patch, events: out.events } : { base, family: out.family, patch: out.patch };
 }
 
 // ─── Device records ─────────────────────────────

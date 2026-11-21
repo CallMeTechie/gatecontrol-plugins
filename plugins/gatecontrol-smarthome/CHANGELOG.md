@@ -3,6 +3,42 @@
 Phoscon/deCONZ-Integration als GateControl-Plugin – bisher fest in GateControl eingebaut; seit 1.7.0 auch Shelly und
 Tasmota über ein GateControl-Gateway.
 
+## 1.11.0
+
+- **Logikketten, Stufe 1 (Shelly und Tasmota am GateControl-Gateway, offline-fähig):** neuer Editor nach dem
+  freigegebenen Entwurf – **WENN** (Ereignisse, eines genügt: Taster kurz/doppelt/dreifach/lang, Zustandswechsel,
+  Wert über/unter, Uhrzeit), **NUR WENN** (UND/ODER, eine Ebene: Gerätezustand, Wert über/unter, Zeit zwischen,
+  Wochentage), **DANN** (Schritte der Reihe nach: Schalten/Dimmen/Rollladen, Warten bis 24 h; höchstens 20 Schritte)
+  und „ausgelöst, während sie läuft“: von vorn starten, ignorieren, abbrechen wenn „Nur wenn“ nicht mehr gilt.
+  Definition `version: 2` (`server/edgerules.js`), kompiliert zu `{ v: 2, when, cond, steps, re }` für den Edge-Teil
+  (`edge/rules.js`); das Gateway rechnet die Uhrzeit selbst mit der Zeitzone des Servers. Server und Edge prüfen
+  jede Kette (wie `cleanRule`), nur Administratoren bearbeiten.
+- **Taster:** `edge/normalize.js` gibt Tastendrücke als Ereignis an die Ketten (nicht als Zustand) – Shelly Gen1
+  `input_event/<n>` (doppelt gemeldete Zähler und retained Meldungen zählen nicht), Gen2+ `NotifyEvent`
+  (single/double/triple/long_push), Tasmota `stat/RESULT` `ButtonN.Action` (SetOption73). Die Einrichtungshilfe setzt
+  `SetOption73 1` bei Tasmota auf Wunsch („Tasten als Taster für Logikketten melden“), sonst Hinweis im Editor.
+- **Testlauf** (`POST /rules/test`, Edge `test`): prüft eine gespeicherte Kette oder den Entwurf im Editor mit den
+  Werten vom Gateway und schaltet nichts; „Trotzdem ausführen“ überspringt „Nur wenn“ und steht im Protokoll als
+  „von Hand“.
+- **Protokoll** (`GET /rules/runs`, Tabelle `rule_runs`, Migration 004): letzte 200 Läufe je Gateway mit Auslöser,
+  Prüfungen, Schritten und Bestätigung der Geräte. Der Edge-Teil hält einen Ring der letzten 200 Läufe (`gc.store`
+  `runs`, höchstens einmal pro Minute geschrieben), meldet sie mit dem Ereignis `runs` und reicht nach, was der Server
+  verpasst hat (Edge `runs`, nach `$online` / `$started`).
+- **Schleifen- und Ratenbremse:** Beim Speichern wird eine sichere Schleife abgelehnt (`SMARTHOME_RULE_LOOP`), eine
+  mögliche als Hinweis gezeigt, andere Ketten mit demselben Gerät genannt (`POST /rules/check`). Am Gateway: eigene
+  Rückmeldung 2 s ignoriert, mehr als 10 Läufe pro Minute → Kette angehalten (der Server schaltet sie aus und zeigt
+  den Grund, „Wieder starten“), höchstens 60 Befehle pro Minute je Gateway.
+- **Startansicht „Alle Quellen“**, gruppiert nach Ort, mit Ort-Pille an jeder Kette (grün am Gateway, blau deCONZ),
+  „heute n×“, rote Karte für angehaltene Ketten. deCONZ-Regeln bleiben unverändert (alter Editor).
+- **Bestehende Ketten (1.10)** laufen unverändert; der Editor zeigt sie als „wird wahr: A und B“, gespeichert werden
+  sie als `version: 2` (keine Datenmigration). Name einer Kette am Gateway bis 40 Zeichen. Grenzen: 40 Ketten je
+  Gateway, 20 Schritte je Kette, Größe der Liste wie bisher geprüft.
+- Kein neues Gateway nötig: MQTT-Topics (`shellies/#`, `tasmota/#`), `gc.store` und Timer reichen; Mindestversion
+  des Gateways bleibt 1.19.0.
+- Tests: Edge-Engine (Schritte, Warten, Retrigger, Uhrzeit, Bedingungen, Bremsen, Bestätigung, Testlauf),
+  Taster in `normalize`, Edge-Teil (Ring, Nachreichen, Anhalten über einen Neustart), Server (v2, v1-Kompatibilität,
+  Schleifenprüfung, Protokoll, Testlauf, nur Admins), Texte der Seite.
+
 ## 1.10.0
 
 - **Logikketten für Shelly und Tasmota:** Die Seite „Logikketten“ kennt neben den deCONZ-Gateways die
