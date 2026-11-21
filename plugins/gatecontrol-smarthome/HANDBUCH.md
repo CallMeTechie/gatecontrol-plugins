@@ -1,4 +1,4 @@
-<!-- version: 1.12.0 -->
+<!-- version: 1.13.0 -->
 # Smart Home
 
 ## Was das Plugin kann
@@ -10,7 +10,7 @@
 - **Besitzer und Bereiche:** Du weist Geräte Personen zu. Diese Personen bedienen sie im Portal „Zuhause“ und in der App.
 - **Logikketten:** für deCONZ auf dem deCONZ-Gateway; für Shelly und Tasmota auf dem GateControl-Gateway (ab 1.10.0) – seit 1.11.0 mit Tastern, Uhrzeit, Bedingungen mit UND/ODER, Schritten mit Wartezeiten, Testlauf und Protokoll; seit 1.12.0 mit Sonnenauf-/untergang, „seit X min“, Ketten über mehrere Gateways und mit zigbee2mqtt (am Server), Mitteilungen und Schnellaktionen in der App.
 - **Mitteilungen:** Alarm (Wasser, Rauch, CO), Fenster lange offen, Batterie schwach, Gateway nicht erreichbar.
-- **Schnellaktionen und Widgets** in den GateControl-Apps für die eigenen Geräte.
+- **Schnellaktionen und Widgets** in den GateControl-Apps für die eigenen Geräte – seit 1.13.0 mit dem Batteriestand von Batteriegeräten.
 
 ## Voraussetzungen
 
@@ -55,7 +55,7 @@ GateControl ändert am Gerät nur die MQTT-Einstellungen. Cloud, WLAN und Zeitpl
 2. Die Geräte erscheinen von selbst im Plugin unter der Quelle „Funk (GateControl-Gateway)“ des Gateways: Lichter mit Helligkeit, Farbe und Farbtemperatur, Steckdosen und Schalter, Rollläden (Auf / Stopp / Zu), Sensoren und Taster.
 3. Besitzer, Bereich und Name gibst du wie bei den anderen Geräten. Ein Name, den du hier vergibst, bleibt; sonst gilt der Name aus zigbee2mqtt.
 4. Entfernst du ein Gerät in GateControl aus dem Zigbee-Netz, wird es hier ausgeblendet – seine Besitzer bleiben, falls es wiederkommt.
-5. **Mehrere Kanäle:** Ein 2- oder 3-fach-Schalter steht als eine Karte je Kanal da („Kanal 1“, „Kanal 2“ …). Jeder Kanal hat eigenen Namen, Bereich und Besitzer und wird einzeln geschaltet.
+5. **Mehrere Kanäle:** Ein 2- oder 3-fach-Schalter steht als eine Karte je Kanal da („Kanal 1“, „Kanal 2“ …). Jeder Kanal hat eigenen Namen, Bereich und Besitzer und wird einzeln geschaltet. Seit 1.13.0 wählst du je Kanal unter **„Besitzer verwalten“ › Art**, wofür er steht: Licht, Steckdose oder Schalter. Das ändert Symbol, Begriffe und die Schnellaktion der Apps, nicht das Gerät; ein Kanal wird nur ein- und ausgeschaltet, nie gedimmt.
 6. **Thermostate:** Die Karte zeigt Ist- und Soll-Temperatur. Das Soll stellst du mit dem Regler, den Modus (Aus, Heizen, Automatik) mit den Knöpfen darunter. Zugewiesene Personen stellen das Soll im Portal mit − und +.
 7. **Firmware-Updates:** Kann ein Gerät Updates über Funk, steht unten auf seiner Karte „Firmware“. **„Nach Update suchen“** fragt zigbee2mqtt; gibt es eines, steht dort „Update verfügbar“ mit dem Knopf **„Aktualisieren“**. Ein Update dauert 10 bis 60 Minuten, die Karte zeigt den Fortschritt. Ein Batteriegerät muss dafür wach sein – betätige es einmal.
 
@@ -63,7 +63,8 @@ GateControl ändert am Gerät nur die MQTT-Einstellungen. Cloud, WLAN und Zeitpl
 
 - **„Besitzer verwalten“** (Dialog „Besitzer zuweisen“): welche Personen ein Gerät bedienen dürfen, und der **Bereich** (z. B. Wohnzimmer). Seite und Portal gruppieren nach Bereich.
 - Im selben Dialog kannst du Lampen und Sensoren umbenennen. deCONZ-Geräte werden dabei direkt in deCONZ umbenannt, Geräte von zigbee2mqtt und Bluetooth-Sensoren hier.
-- Bei Shelly und Tasmota legst du unter **„Bearbeiten“** außerdem die Art je Ausgang fest (Licht, Steckdose, Schalter; zwei Ausgänge als Rollladen, Markise oder Tor).
+- Bei Shelly und Tasmota legst du unter **„Bearbeiten“** außerdem die Art je Ausgang fest (Licht, Steckdose, Schalter) – bei einem Shelly 2PM, Pro 4PM oder Tasmota mit mehreren Relais für jeden Ausgang einzeln. Ein Paar als Rollladen, Markise oder Tor gibt es nur, wenn das Gerät selbst im Rollladen-Modus läuft. Die Art bestimmt Symbol, Begriffe und Schnellaktion; in Logikketten bleibt jeder Ausgang schaltbar, gedimmt wird nur ein Dimmer.
+- Bei zigbee2mqtt-Geräten mit mehreren Kanälen wählst du die Art je Kanal im Dialog „Besitzer verwalten“ ([zigbee2mqtt](#zigbee2mqtt)).
 
 ### Einstellungen
 
@@ -72,7 +73,7 @@ Unter **Einstellungen › Plugins › Smart Home › Einstellungen**: Abfrageint
 ## Benutzen
 
 - **Portal „Zuhause“:** Jede Person sieht dort die Geräte, die ihr zugewiesen sind – schalten, dimmen, Farbe, Szenen, Rollläden mit Auf / Stopp / Zu. Wer keine Geräte hat, sieht den Abschnitt nicht.
-- **App:** Schnellaktionen (Startbildschirm, Schnelleinstellungen, Widget) für die eigenen Lampen, Steckdosen, Gruppen und Szenen, Rollläden mit Positionsregler, Leistung im Widget.
+- **App:** Schnellaktionen (Startbildschirm, Schnelleinstellungen, Widget) für die eigenen Lampen, Steckdosen, Gruppen und Szenen, Rollläden mit Positionsregler, Leistung im Widget. Seit 1.13.0 zeigen Batteriegeräte ihren Batteriestand als kleines Symbol mit Prozentwert neben dem Namen – gelb ab der Einstellung „Batterie schwach“, rot ab 5 %. Sensoren mit Batterie (Shelly H&T, Zigbee-, Bluetooth-Sensoren) stehen als Karte mit ihrem Wert dabei; ein schlafender Shelly H&T zeigt den letzten Wert und wie alt er ist, nach mehr als 26 Stunden ohne Meldung „Batterie leer?“. Auf der Seite und im Portal steht dasselbe Batteriesymbol an der Karte.
 - **Logikketten** (Seite „Logikketten“): Die Liste zeigt alle Quellen, nach Ort gruppiert. Regeln eines deCONZ-Gateways laufen auf diesem Gateway. Ketten für Shelly und Tasmota laufen auf dem GateControl-Gateway, an dem die Geräte hängen – siehe [Logikketten für Shelly und Tasmota](#logikketten-edge).
 - **Regeln anderer Plugins** (z. B. Familie: „Alle weg → Licht aus“) schalten genau den gewünschten Zustand.
 
@@ -164,6 +165,13 @@ Richte das Gerät „Von Hand …“ ein. Die Anleitung steht im Fenster.
 
 **Ein Gerät von zigbee2mqtt lässt sich nicht schalten („zigbee2mqtt auf dem Gateway antwortet gerade nicht“).**
 Im Reiter „Funk“ des Gateways nachsehen: Läuft zigbee2mqtt, sind Edge und MQTT an? Neue Geräte erscheinen spätestens nach einer halben Minute.
+
+## Neu in 1.13.0
+
+- **Batteriestand in den Apps:** Batteriegeräte zeigen in Schnellaktionen und Widgets ein Batteriesymbol mit Prozentwert, gelb ab „Batterie schwach“, rot ab 5 %; Sensoren mit Batterie erscheinen als Karte. Der Shelly H&T zeigt den letzten Wert mit seinem Alter. Auf der Seite und im Portal steht ein kleines Batteriesymbol an der Karte; deCONZ-Sensoren liefern ihren Batteriestand jetzt mit.
+- **Art je Kanal** auch bei zigbee2mqtt-Geräten mit mehreren Kanälen (Licht, Steckdose, Schalter). Bei Shelly und Tasmota gab es die Art je Ausgang schon.
+- **Benutzername am Gerät** für Shelly der ersten Generation und Tasmota gibt es seit 1.10.0 ([Shelly und Tasmota](#shelly-tasmota)) – das Gerätepasswort wird weiterhin nur für den einen Vorgang benutzt und nie gespeichert.
+- Das Update braucht keine neue Bestätigung am Gateway.
 
 ## Neu in 1.12.0
 

@@ -3,6 +3,40 @@
 Phoscon/deCONZ-Integration als GateControl-Plugin – bisher fest in GateControl eingebaut; seit 1.7.0 auch Shelly und
 Tasmota über ein GateControl-Gateway.
 
+## 1.13.0
+
+- **Batteriestand in den Schnellaktionen/Widgets der Apps** (`widget.badge` von GateControl, ab 1.175.0; ältere Hosts
+  lassen ihn weg): `{ icon, value, unit: '%', state, label }` – Symbol eine Batterie mit 0–3 Balken nach Füllstand
+  (SVG-Pfad 24×24), Wert in ganzen Prozent, `state` `good` | `warn` (≤ Einstellung „Batterie schwach“, Standard 15 %)
+  | `crit` (≤ 5 %, deCONZ `lowbattery` ohne Prozentwert – dann `value: 'schwach'`/`'low'` –, oder ein schlafender
+  Shelly länger als 26 h still → `label` „Batterie leer?“). Schläft ein Shelly H&T (oder ist ein Gerät nicht
+  erreichbar), trägt das `label` das Alter des letzten Werts („Batterie, vor 2 h“, ≤ 20 Zeichen). Neu
+  `server/battery.js` (eine Stelle für Apps, Portal und Seite).
+  - An jedem Widget eines Geräts mit Batterie (Dimmer, Messsteckdose, Rollladen „Auf“); ein Schalter ohne eigenes
+    Widget bekommt mit Batterie ein kleines (An/Aus als Wert, Art als Status, `power: true`).
+  - **Sensoren mit Batterie** (Shelly H&T, deCONZ, zigbee2mqtt, Bluetooth) erscheinen als Knopf `sensor:<id>` mit
+    Widget (Messwert, Feuchte als Messung, „schläft, Wert vor …“ im Status, `power: false`) – nach Schaltern,
+    Rollläden und Szenen, innerhalb der 16. `runQuickAction` schaltet nichts und antwortet mit dem aktuellen Widget.
+    Sensoren ohne Batterie und Taster bleiben draußen.
+  - deCONZ-Sensoren speichern jetzt `config.battery` als `state.battery` und `state.lowbattery`.
+- **Seite und Portal:** kleines Batteriesymbol mit Prozentwert an der Karte (deCONZ, zigbee2mqtt, Bluetooth, Shelly/
+  Tasmota; `S.batteryChip`), Farbe aus `battery_level` (`good` | `warn` | `crit`) – neu in `GET /resources`,
+  `GET /ble/resources`, `GET /edge/devices[/:id]` und im Portal (`state.battery_level`, auch für Geräte, nicht nur
+  Sensoren). Thermostat-Karten bleiben unverändert.
+- **Art je Kanal** auch für zigbee2mqtt-Geräte mit mehreren Kanälen: `PUT /resources/:id { kind: light | plug |
+  relay }` (nur ein Kanal, `capabilities.channel`), gespeichert als `capabilities.kind_set` und bei jedem Bericht
+  behalten; Auswahl „Art“ im Dialog „Besitzer verwalten“. Wirkt auf Symbol, Begriffe und Schnellaktion; ein Kanal
+  bleibt nur schaltbar (`capabilities.bri: false` – auch in Ketten am Server). Shelly/Tasmota hatten die Art je
+  Ausgang (Licht, Steckdose, Schalter; Rollladen nur im Rollladen-Modus des Geräts) schon seit 1.7.0.
+- **Benutzername am Gerät** (Shelly Gen1 HTTP Basic, Tasmota `user=`) war seit 1.10.0 da – Einrichtungsdialog,
+  „Bearbeiten“ › Verbindung, Edge-Teil (`setup { httpUser }`); unverändert. Das Gerätepasswort wird weiter nur für
+  den einen Vorgang benutzt und nie gespeichert.
+- **Keine neue Edge-Fähigkeit** (`edge.capabilities` wie 1.12.0, Test) – kein `update_pending` am Gateway.
+- Tests: Badge (Stufen, Schwelle aus der Einstellung, Alter, „Batterie leer?“, Länge, Symbol nach Hostprüfung),
+  Sensor-Karten deCONZ und Shelly H&T (schlafend / überfällig, Lauf), zigbee2mqtt mit Batterie (Rollladen, Dimmer,
+  einfache Steckdose, Antwort eines Laufs), Art je Kanal (bleibt, Schnellaktion, Kette dimmt nicht, ungültige Arten,
+  Geräte ohne Kanäle), Edge-Fähigkeiten unverändert.
+
 ## 1.12.0
 
 - **Logikketten, Stufe 2** nach dem freigegebenen Entwurf (gleiche Seite, gleiche Bausteine):

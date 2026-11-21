@@ -1,4 +1,4 @@
-<!-- version: 1.12.0 -->
+<!-- version: 1.13.0 -->
 # Smart Home
 
 ## What the plugin does
@@ -10,7 +10,7 @@
 - **Owners and areas:** you assign devices to people. They use them in the portal “Home” and in the app.
 - **Logic chains:** for deCONZ on the deCONZ gateway; for Shelly and Tasmota on the GateControl gateway (since 1.10.0) – since 1.11.0 with buttons, times, conditions with AND/OR, steps with waits, test run and log; since 1.12.0 with sunrise/sunset, “for X min”, chains across several gateways and with zigbee2mqtt (on the server), notifications and quick actions in the app.
 - **Notifications:** alarm (water, smoke, CO), window open too long, battery low, gateway unreachable.
-- **Quick actions and widgets** in the GateControl apps for your own devices.
+- **Quick actions and widgets** in the GateControl apps for your own devices – since 1.13.0 with the battery level of battery devices.
 
 ## Requirements
 
@@ -55,7 +55,7 @@ GateControl only changes the device's MQTT settings. Cloud, Wi-Fi and schedules 
 2. The devices show up in the plugin by themselves under the gateway's source “Radio (GateControl gateway)”: lights with brightness, colour and colour temperature, plugs and switches, shutters (up / stop / down), sensors and buttons.
 3. Owners, area and name work as for the other devices. A name you give here stays; otherwise the name from zigbee2mqtt counts.
 4. When you remove a device from the Zigbee network in GateControl, it is hidden here – its owners stay in case it comes back.
-5. **Several channels:** a 2- or 3-gang switch shows as one card per channel (“channel 1”, “channel 2” …). Each channel has its own name, area and owners and is switched by itself.
+5. **Several channels:** a 2- or 3-gang switch shows as one card per channel (“channel 1”, “channel 2” …). Each channel has its own name, area and owners and is switched by itself. Since 1.13.0 you choose per channel under **“Manage owners” › Kind** what it stands for: light, plug or switch. That changes the icon, the words and the quick action of the apps, not the device; a channel is only switched on and off, never dimmed.
 6. **Thermostats:** the card shows the measured and the target temperature. Set the target with the slider and the mode (off, heat, auto) with the buttons below. Assigned people set the target in the portal with − and +.
 7. **Firmware updates:** if a device takes updates over the air, its card says “Firmware” at the bottom. **“Check for an update”** asks zigbee2mqtt; if there is one, it says “Update available” with the button **“Update”**. An update takes 10 to 60 minutes, the card shows the progress. A battery device has to be awake for it – operate it once.
 
@@ -63,7 +63,8 @@ GateControl only changes the device's MQTT settings. Cloud, Wi-Fi and schedules 
 
 - **“Manage owners”** (dialog “Assign owners”): which people may use a device, and its **area** (e.g. living room). The page and the portal group by area.
 - In the same dialog you can rename lights and sensors. deCONZ devices are renamed in deCONZ itself, zigbee2mqtt devices and Bluetooth sensors here.
-- For Shelly and Tasmota you also set, under **“Edit”**, the kind of each output (light, plug, switch; two outputs as a shutter, awning or gate).
+- For Shelly and Tasmota you also set, under **“Edit”**, the kind of each output (light, plug, switch) – on a Shelly 2PM, Pro 4PM or a Tasmota with several relays for every output by itself. A pair as a shutter, awning or gate is only offered when the device itself runs in shutter mode. The kind decides the icon, the words and the quick action; in logic chains every output stays switchable, only a dimmer is dimmed.
+- For zigbee2mqtt devices with several channels you choose the kind per channel in the dialog “Manage owners” ([zigbee2mqtt](#zigbee2mqtt)).
 
 ### Settings
 
@@ -72,7 +73,7 @@ Under **Settings › Plugins › Smart Home › Settings**: polling interval (se
 ## Using it
 
 - **Portal “Home”:** everyone sees the devices assigned to them – switch, dim, colour, scenes, shutters with up / stop / down. People without devices do not see the section.
-- **App:** quick actions (home screen, quick settings, widget) for your own lights, plugs, groups and scenes, shutters with a position slider, power in the widget.
+- **App:** quick actions (home screen, quick settings, widget) for your own lights, plugs, groups and scenes, shutters with a position slider, power in the widget. Since 1.13.0 battery devices show their battery as a small icon with the percentage beside the name – yellow from the setting “battery low”, red from 5 %. Sensors with a battery (Shelly H&T, Zigbee and Bluetooth sensors) come along as a card with their value; a sleeping Shelly H&T shows its last value and how old it is, after more than 26 hours without a report “Battery empty?”. The page and the portal show the same battery icon on the card.
 - **Logic chains** (page “Logic chains”): the list shows all sources, grouped by place. Rules of a deCONZ gateway run on that gateway. Chains for Shelly and Tasmota run on the GateControl gateway the devices are connected to – see [Logic chains for Shelly and Tasmota](#logikketten-edge).
 - **Rules of other plugins** (e.g. Family: “everyone out → lights off”) set exactly the state they ask for.
 
@@ -164,6 +165,13 @@ Set the device up “By hand …”. The instructions are in the window.
 
 **A zigbee2mqtt device cannot be switched (“zigbee2mqtt on the gateway is not answering right now”).**
 Look at the gateway's tab “Radio”: does zigbee2mqtt run, are edge and MQTT on? New devices show up within half a minute.
+
+## New in 1.13.0
+
+- **Battery level in the apps:** battery devices show a battery icon with the percentage in quick actions and widgets, yellow from “battery low”, red from 5 %; sensors with a battery appear as a card. The Shelly H&T shows its last value with its age. The page and the portal show a small battery icon on the card; deCONZ sensors now report their battery too.
+- **Kind per channel** for zigbee2mqtt devices with several channels too (light, plug, switch). Shelly and Tasmota had the kind per output already.
+- **User name on the device** for first-generation Shelly and Tasmota exists since 1.10.0 ([Shelly and Tasmota](#shelly-tasmota)) – the device password is still used for that one step only and never stored.
+- The update needs no new confirmation on the gateway.
 
 ## New in 1.12.0
 

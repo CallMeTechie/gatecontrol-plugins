@@ -23,6 +23,7 @@ const crypto = require('node:crypto');
 const store = require('./store');
 const es = require('./edgestore');
 const alerts = require('./alerts');
+const batteryLevel = require('./battery');
 const edgerules = require('./edgerules');
 const { codeError } = require('./deconz');
 
@@ -514,6 +515,8 @@ async function deviceView(gc, dev, users, owners, lowAt = BATTERY_LOW_DEFAULT) {
     // a battery device between two reports: "schläft – letzte Meldung vor …", never "nicht erreichbar"; overdue =
     // silent for longer than such a device sleeps (26 h) — the battery may be empty
     sleeper, overdue: sleeper && !reachable, battery_low: battery != null && battery <= lowAt,
+    // since 1.13.0: the level of the battery symbol (good | warn | crit; crit at 5 % or when overdue), null without one
+    battery_level: battery == null ? null : batteryLevel.levelOf({ battery, sleeping: sleeper, reachable }, lowAt),
     http_user: httpUserOf(dev),
     config: dev.config || {},
     channels: channelKeys(dev.state).map((k) => ({ key: k, type: k.split(':')[0] })),

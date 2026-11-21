@@ -38,7 +38,7 @@
   /** A shutter, awning or gate: its position and three buttons (open, stop, close). */
   function coverTile(d) {
     var status = el('span', { class: 'pt-small', text: shStatus(d) });
-    var t = el('div', { class: 'pt-shtile pt-shtile-cover', 'data-id': String(d.id) }, [el('div', { class: 'pt-shtile-head' }, [el('b', { text: d.name || '' }), status])]);
+    var t = el('div', { class: 'pt-shtile pt-shtile-cover', 'data-id': String(d.id) }, [el('div', { class: 'pt-shtile-head' }, [el('b', { text: d.name || '' }), status, S.batteryChip(d.state, d.state && d.state.battery_level)])]);
     var row = el('div', { class: 'pt-sh-coverbtns', role: 'group', 'aria-label': T('cover.controls_of', { name: d.name || '' }) });
     ['open', 'stop', 'close'].forEach(function (op) {
       var b = el('button', { type: 'button', class: 'pt-sh-coverbtn', text: T('cover.' + op), disabled: !loggedIn });
@@ -112,7 +112,7 @@
     var st = d.state || {};
     var scene = d.kind === 'scene';
     var main = el('button', { type: 'button', class: 'pt-shtile-main', 'aria-pressed': scene ? null : (st.on ? 'true' : 'false'), disabled: !loggedIn },
-      [el('b', { text: scene ? T('portal.scene', { name: d.name || '' }) : (d.name || '') }), el('span', { class: 'pt-small', text: shStatus(d) })]);
+      [el('b', { text: scene ? T('portal.scene', { name: d.name || '' }) : (d.name || '') }), el('span', { class: 'pt-small', text: shStatus(d) }), scene ? null : S.batteryChip(st, st.battery_level)]);
     var t = el('div', { class: 'pt-shtile' + (st.on && !scene ? ' is-on' : ''), 'data-id': String(d.id) }, [main]);
     main.addEventListener('click', function () {
       if (scene) { control(d.id, {}).then(function (ok) { if (ok) S.toast(T('portal.scene_done', { name: d.name || '' })); }); return; }
@@ -198,7 +198,9 @@
       var notes = [];
       if (asleep && st.reachable === false && st.lastupdated) notes.push(T('portal.last_report', { ago: S.since(st.lastupdated) }));
       if (st.battery_low) notes.push(T('portal.battery_low'));
-      var item = el('li', null, [el('span', { text: label }), el('b', { 'data-tone': gone ? 'warn' : v.tone, text: gone ? T('card.unreachable') : text })]);
+      // since 1.13.0: the battery as a small symbol with its percentage beside the name
+      var name = el('span', { class: 'pt-sensor-name' }, [el('span', { text: label }), S.batteryChip(st, st.battery_level)]);
+      var item = el('li', null, [name, el('b', { 'data-tone': gone ? 'warn' : v.tone, text: gone ? T('card.unreachable') : text })]);
       if (notes.length && !gone) { item.classList.add('has-note'); item.appendChild(el('small', { class: 'pt-sensor-note', text: notes.join(' · ') })); }
       list.appendChild(item);
     });

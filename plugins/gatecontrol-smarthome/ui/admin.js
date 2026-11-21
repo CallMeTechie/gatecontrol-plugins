@@ -77,7 +77,8 @@
   function iconSvg(r) { return svg(ICONS[catKey(r)] || ICONS['sensor.unknown']); }
   function cardShell(r) {
     return el('div', { class: 'sh-card', 'data-id': String(r.id) }, [
-      el('div', { class: 'sh-name' }, [iconSvg(r), el('span', { text: r.name || '' })]),
+      // since 1.13.0: a battery device (deCONZ, zigbee2mqtt, Bluetooth) shows its battery as a small symbol
+      el('div', { class: 'sh-name' }, [iconSvg(r), el('span', { text: r.name || '' }), S.batteryChip(r.state, r.battery_level)]),
       el('div', { class: 'sh-sub', text: subLabel(r) }),
     ]);
   }
@@ -342,8 +343,9 @@
     var icon = r ? (ICONS[r.kind === 'sensor' ? 'sensor.temperature' : r.kind] || ICONS.light) : ICONS['sensor.unknown'];
     var subParts = [prettyModel(d)];
     if (r) subParts.push(kindText(r));
-    if (r && r.kind === 'sensor' && st.battery != null) subParts.push(T('card.battery', { pct: fmt(st.battery, 0) }));
-    var head = el('div', null, [el('div', { class: 'sh-name' }, [svg(icon), el('span', { text: name || '' })]), el('div', { class: 'sh-sub', text: subParts.join(' · ') })]);
+    // the battery (Shelly H&T …; since 1.13.0 a small symbol with its percentage, the tone from the server)
+    var batt = r && st.battery != null ? S.batteryChip(st, d.battery_level || r.battery_level) : null;
+    var head = el('div', null, [el('div', { class: 'sh-name' }, [svg(icon), el('span', { text: name || '' }), batt]), el('div', { class: 'sh-sub', text: subParts.join(' · ') })]);
     var right = null;
     var switchable = r && (r.kind === 'light' || r.kind === 'plug' || r.kind === 'relay');
     if (d.waiting) right = pill(T('card.waiting'), 'info');
@@ -730,6 +732,10 @@
     var renamable = !!(r && (r.deconz_type === 'lights' || r.deconz_type === 'sensors' || r.deconz_type === 'ble' || r.deconz_type === 'z2m'));
     $('#sh-owner-name-row').hidden = !renamable;
     $('#sh-owner-name').value = renamable ? (r.name || '') : '';
+    // one output of a zigbee2mqtt device with several (since 1.13.0): light, plug or switch
+    var kindable = !!(r && r.deconz_type === 'z2m' && r.capabilities && r.capabilities.channel && ['light', 'plug', 'relay'].indexOf(r.kind) >= 0);
+    $('#sh-owner-kind-row').hidden = !kindable;
+    if (kindable) $('#sh-owner-kind').value = r.kind;
     $('#sh-owner-search').value = '';
     var current = r ? (r.owners || []) : deviceOwners(d);
     fetchUsers().then(function (users) {
@@ -761,7 +767,10 @@
     var r = target.resource;
     var area = $('#sh-owner-area').value.trim();
     var name = $('#sh-owner-name-row').hidden ? '' : $('#sh-owner-name').value.trim();
+    var kind = $('#sh-owner-kind-row').hidden ? '' : $('#sh-owner-kind').value;
     S.api('PUT', 'resources/' + r.id + '/owners', { userIds: ids }).then(function () {
+      return !kind || kind === r.kind ? null : S.api('PUT', 'resources/' + r.id, { kind: kind });
+    }).then(function () {
       return area === (r.area || '') ? null : S.api('PUT', 'resources/' + r.id, { area: area || null });
     }).then(function () {
       return !name || name === (r.name || '') ? null : S.api('PUT', 'resources/' + r.id, { name: name });
