@@ -281,6 +281,15 @@
           <input class="form-input" id="sh-owner-name" type="text" maxlength="32" autocomplete="off">
           <span class="form-hint">{{t:owners.name_hint}}</span>
         </div>
+        <div class="form-group" id="sh-owner-kind-row" hidden>
+          <label class="form-label" for="sh-owner-kind">{{t:owners.kind}}</label>
+          <select class="form-select" id="sh-owner-kind" aria-describedby="sh-owner-kind-hint">
+            <option value="light">{{t:kind.light}}</option>
+            <option value="plug">{{t:kind.plug}}</option>
+            <option value="relay">{{t:kind.relay}}</option>
+          </select>
+          <span class="form-hint" id="sh-owner-kind-hint">{{t:owners.kind_hint}}</span>
+        </div>
         <div class="form-group" id="sh-owner-area-row">
           <label class="form-label" for="sh-owner-area">{{t:owners.area}}</label>
           <input class="form-input" id="sh-owner-area" type="text" maxlength="40" autocomplete="off" list="sh-areas">

@@ -108,7 +108,8 @@ test('a Shelly H&T sleeps: "schläft" with its last report instead of "nicht err
   const sensor = (await view(host, 'Klima Keller')).resources[0];
   await admin(host, 'PUT', `/resources/${sensor.id}/owners`, { userIds: [ADA.id] });
   let p = (await asPortal(host, ADA, 'GET', '/portal')).json.sensors[0];
-  assert.deepEqual(p.state, { reachable: false, type: 'temperature', value: 21.4, humidity: 49, battery: 82, sleeping: true, lastupdated: twoHours });
+  // since 1.13.0 with the level of the battery symbol: overdue → crit ("Batterie leer?"), whatever the last value
+  assert.deepEqual(p.state, { reachable: false, type: 'temperature', value: 21.4, humidity: 49, battery: 82, sleeping: true, lastupdated: twoHours, battery_level: 'crit' });
   // it wakes up and reports: awake again for the page
   await host.edgeEvent(7, 'states', { devices: [snapshotOf(ht, HT_GEN1(81))] });
   assert.deepEqual(flags(await view(host, 'Klima Keller')), { sleeper: true, overdue: false, reachable: true, waiting: false, battery: 81, battery_low: false });
@@ -248,4 +249,30 @@ test('Shelly Gen2+: always "admin", whatever was entered', () => withEdge({ fami
   assert.deepEqual([dev.http_user, dev.config.httpUser], ['admin', undefined]);
   assert.equal(edge.httpUserOf({ family: 'shelly2', config: { httpUser: 'x' } }), 'admin');
   assert.equal(edge.httpUserOf({ family: 'tasmota', config: { httpUser: 'x' } }), 'x');
+}));
+
+test('1.13.0: a Shelly H&T in the apps — a card with its last value, the battery as the badge with its age, "Batterie leer?" when overdue', () => withEdge({ settings: { notify_battery_low: 20 } }, async (host) => {
+  const ht = await addDevice(host, 'Klima Keller', 'shelly1');
+  const twoHours = new Date(Date.now() - 2 * 3600000 - 60000).toISOString();
+  await host.edgeEvent(7, 'states', { devices: [snapshotOf(ht, HT_GEN1(18), twoHours)] });
+  const d = await view(host, 'Klima Keller');
+  assert.deepEqual([d.battery, d.battery_low, d.battery_level], [18, true, 'warn'], 'the threshold of the setting (20 %)');
+  const sensor = d.resources[0];
+  await admin(host, 'PUT', `/resources/${sensor.id}/owners`, { userIds: [ADA.id] });
+  let [card] = await host.quickActions(ADA);
+  assert.deepEqual([card.id, card.kind, card.title, card.subtitle], [`sensor:${sensor.id}`, 'button', 'Klima Keller', 'Temperatur · schläft, Wert vor 2 h']);
+  assert.deepEqual(card.widget, {
+    label: 'Temperatur', value: '21,4', unit: '°C', status: 'Temperatur · schläft, Wert vor 2 h', state: null,
+    readings: [{ id: 'humidity', label: 'Feuchte', value: 49, unit: '%', icon: null, state: null }], controls: [], power: false,
+    badge: { icon: 'M2 7h16v10H2zM21 10v4M6 10v4', value: 18, unit: '%', state: 'warn', label: 'Batterie, vor 2 h' },
+  });
+  // silent for longer than it sleeps: the last value stays, the badge asks whether the battery is empty
+  await host.gc.db.run('UPDATE edge_devices SET last_seen_at = ?', [new Date(Date.now() - 30 * 3600000).toISOString()]);
+  await host.tick();
+  [card] = await host.quickActions(ADA, 'en');
+  assert.equal(card.widget.badge.state, 'crit');
+  assert.equal(card.widget.badge.label, 'Battery empty?');
+  assert.equal(card.widget.value, '21.4', 'the last value stays');
+  const run = (await host.runQuickAction(ADA, card.id, 'en')).body;
+  assert.deepEqual([run.ok, run.widget.badge.label], [true, 'Battery empty?']);
 }));

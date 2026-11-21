@@ -46,6 +46,9 @@
 //     declare their verbs and honour a target state (GateControl ≥ 1.173.0:
 //     `target` 'on'|'off' sets that state, never switches over)
 //     since 1.12.0 first: a button chain:<id> per logic chain with "Von Hand (App)" the viewer may start (at most 8)
+//     since 1.13.0: the battery of a device as the widget's badge (server/battery.js), sensors on batteries last as
+//     buttons sensor:<id> with a widget that only shows (its value, the badge; a run answers with it)
+//   PUT  /resources/:id { kind }     since 1.13.0: light | plug | relay for one output of a zigbee2mqtt device with several
 //
 // Requests run with the requesting user's rights: req.user.portal = a portal
 // viewer, who only ever sees and controls what an administrator assigned to
@@ -58,6 +61,7 @@ const service = require('./service');
 const rules = require('./rules');
 const legacy = require('./legacy');
 const alerts = require('./alerts');
+const battery = require('./battery');
 const deconzCaps = require('./caps');
 const edge = require('./edge');
 const radio = require('./radio');
@@ -141,7 +145,7 @@ async function usersById(gc) {
 }
 
 const STATE_KEYS = new Set(['on', 'bri', 'reachable', 'type', 'value', 'pos', 'moving', 'power', 'energy_today', 'humidity', 'battery',
-  'sleeping', 'lastupdated', 'setpoint', 'mode', 'heating']);
+  'lowbattery', 'sleeping', 'lastupdated', 'setpoint', 'mode', 'heating']);
 const EDGE_CAPS = ['bri', 'power', 'position', 'cover', 'reading'];
 const Z2M_CAPS = ['bri', 'ct', 'color', 'power', 'position', 'cover', 'reading', 'setpoint', 'modes'];
 /** Portal: only the controllable surface — never gateway, target or deCONZ internals. */
@@ -207,15 +211,18 @@ async function portalData(gc, userId) {
   const groupArea = new Map(owned.filter((r) => r.kind === 'group' && r.area).map((g) => [`${g.gateway_id}/${g.deconz_id}`, g.area]));
   for (const r of owned) if (r.kind === 'scene' && !r.area) r.area = groupArea.get(sceneGroupKey(r)) || null;
   const sensors = owned.filter((r) => r.kind === 'sensor').map(portalResource); // switches stay out
-  // "Batterie schwach" below the threshold of the notification (settings, default 15 %)
-  if (sensors.some((s) => s.state.battery != null)) {
-    const lowAt = alerts.configOf(await gc.settings.all().catch(() => ({}))).batteryLow;
-    for (const s of sensors) if (Number.isFinite(Number(s.state.battery)) && Number(s.state.battery) <= lowAt) s.state.battery_low = true;
+  const devices = owned.filter((r) => r.kind !== 'sensor' && r.kind !== 'switch').map(portalResource);
+  // "Batterie schwach" at or below the threshold of the notification (settings, default 15 %); since 1.13.0 also
+  // for devices (zigbee2mqtt on batteries) and with the level of the battery symbol (battery_level good | warn | crit)
+  const withBattery = [...sensors, ...devices].filter((s) => battery.of(s.state));
+  if (withBattery.length) {
+    const lowAt = await batteryLowAt(gc);
+    for (const s of withBattery) {
+      if (battery.isLow(s.state, lowAt)) s.state.battery_low = true;
+      s.state.battery_level = battery.levelOf(s.state, lowAt);
+    }
   }
-  return {
-    devices: owned.filter((r) => r.kind !== 'sensor' && r.kind !== 'switch').map(portalResource),
-    sensors,
-  };
+  return { devices, sensors };
 }
 
 // ─── Portal Start tiles and search (declarative; the host renders them) ──
@@ -232,6 +239,17 @@ const TILE_ICONS = {
   relay: 'M12 3v9M6.3 7.3a8 8 0 1 0 11.4 0',
   cover: 'M4 3h16v18H4zM4 9h16M4 15h16',
 };
+
+/** "Batterie schwach" at or below this (the plugin setting of the notification, 5–50 %, default 15). */
+async function batteryLowAt(gc) {
+  try { return alerts.configOf(await gc.settings.all()).batteryLow; } catch { return alerts.configOf(null).batteryLow; }
+}
+
+/** The page's view of a resource with a battery (since 1.13.0): battery_low and battery_level (good | warn | crit). */
+function withBatteryView(r, lowAt) {
+  if (!battery.of(r.state)) return r;
+  return { ...r, battery_low: battery.isLow(r.state, lowAt), battery_level: battery.levelOf(r.state, lowAt) };
+}
 
 function fmtNum(v, lang) {
   const n = Number(v);
@@ -350,7 +368,7 @@ async function startChainFor(gc, user, lang, id) {
 // ─── Quick actions of the apps (declarative; the host checks and caps them) ──
 
 const QA_MAX = 16;
-const QA_ID_RE = /^(light|plug|group|scene|relay|cover):([1-9][0-9]{0,9})(?::(open|stop|close))?$/;
+const QA_ID_RE = /^(light|plug|group|scene|relay|cover|sensor):([1-9][0-9]{0,9})(?::(open|stop|close))?$/;
 const COVER_OPS = ['open', 'stop', 'close'];
 const COVER_ICONS = { open: 'M12 19V5M5 12l7-7 7 7', stop: 'M7 7h10v10H7z', close: 'M12 5v14M5 12l7 7 7-7' };
 const SCENE_ICON = 'M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z';
@@ -363,6 +381,21 @@ function clip(v, max) {
 }
 
 const BRI = { min: 1, max: 100, step: 1, fallback: 100 };
+
+/**
+ * The battery of a resource as the badge of its widget (since 1.13.0; GateControl ≥ 1.175.0 shows it right of the
+ * device's name, older hosts drop it): `ctx` { lowAt, now } — without one (or without a battery) the widget stays as
+ * it is.
+ */
+function withBadge(w, r, lang, ctx) {
+  if (!w || !ctx) return w;
+  const b = battery.badge(r.state, { lowAt: ctx.lowAt, lang, now: ctx.now });
+  if (b) w.badge = b;
+  return w;
+}
+
+/** What the battery badges need: the threshold "Batterie schwach" and the time of the answer. */
+async function badgeCtx(gc) { return { lowAt: await batteryLowAt(gc), now: Date.now() }; }
 
 /** Whether a resource's quick action carries a widget: a dimmable light or group (never a plug or a scene). */
 function dimmable(r) {
@@ -386,7 +419,7 @@ const metered = (r) => (r.kind === 'plug' || r.kind === 'relay') && Boolean(r.ca
  * kind and reachability as the status, a brightness slider. A metered light
  * (Shelly / Tasmota) adds its power as a reading.
  */
-function widgetOf(r, lang) {
+function widgetOf(r, lang, ctx) {
   const st = r.state || {};
   const bri = st.bri == null || !Number.isFinite(Number(st.bri)) ? null : Math.min(BRI.max, Math.max(BRI.min, Math.round(Number(st.bri))));
   let status = t(lang, 'kind.' + r.kind);
@@ -400,23 +433,65 @@ function widgetOf(r, lang) {
     const readings = powerReadings(r, lang, true);
     if (readings.length) w.readings = readings;
   }
-  return w;
+  return withBadge(w, r, lang, ctx);
 }
 
 /** A metered plug or switch (Shelly / Tasmota): the power now as the value, today's energy as a reading. */
-function powerWidgetOf(r, lang) {
+function powerWidgetOf(r, lang, ctx) {
   const st = r.state || {};
   let status = kindLabel(r, lang) + ' · ' + t(lang, st.on ? 'portal.on' : 'portal.off');
   if (st.reachable === false) status = kindLabel(r, lang) + ' · ' + t(lang, 'qa.unreachable');
   const power = st.power != null && Number.isFinite(Number(st.power)) ? Math.round(Number(st.power)) : null;
-  return {
+  return withBadge({
     label: clip(t(lang, 'card.power'), 24), value: power, unit: power == null ? null : 'W', status: clip(status, 60), state: st.on ? 'on' : 'off',
     readings: powerReadings(r, lang, false), controls: [],
-  };
+  }, r, lang, ctx);
+}
+
+/**
+ * A plain switch on batteries (zigbee2mqtt) — without a widget of its own: on / off as the value, the kind as the
+ * status, the battery as the badge (since 1.13.0). Null without a battery: such a switch stays a plain toggle.
+ */
+function batteryWidgetOf(r, lang, ctx) {
+  if (!ctx || !battery.of(r.state)) return null;
+  const st = r.state || {};
+  let status = kindLabel(r, lang);
+  if (st.reachable === false) status += ' · ' + t(lang, 'qa.unreachable');
+  return withBadge({ label: null, value: t(lang, st.on ? 'portal.on' : 'portal.off'), unit: null, status: clip(status, 60), state: st.on ? 'on' : 'off', controls: [] }, r, lang, ctx);
+}
+
+/**
+ * A sensor on batteries (since 1.13.0) as a card of the apps: its value (temperature, humidity, open / closed …), the
+ * humidity of a temperature sensor as a reading, asleep / unreachable in the status, the battery as the badge; no
+ * on / off (power: false), nothing to switch.
+ */
+function sensorWidgetOf(r, lang, ctx) {
+  const st = r.state || {};
+  let status = kindLabel(r, lang);
+  if (st.sleeping === true && st.lastupdated) {
+    const age = battery.ageText(st.lastupdated, ctx ? ctx.now : Date.now(), lang);
+    status += ' · ' + (st.reachable === false ? t(lang, 'qa.sensor_silent', { ago: age || '–' }) : (age ? t(lang, 'qa.sensor_asleep', { ago: age }) : t(lang, 'qa.sensor_asleep_now')));
+  } else if (st.reachable === false) status += ' · ' + t(lang, 'qa.unreachable');
+  const w = { label: clip(kindLabel(r, lang), 24), value: null, unit: null, status: clip(status, 60), state: null, readings: [], controls: [], power: false };
+  const tile = sensorTile(r, lang);
+  if (tile.value !== '–' && tile.value != null) { w.value = clip(tile.value, 24); w.unit = tile.unit || null; }
+  if (tile.state === 'good' || tile.state === 'warn' || tile.state === 'crit') w.state = tile.state;
+  if (st.type === 'temperature' && st.humidity != null && Number.isFinite(Number(st.humidity))) {
+    w.readings.push({ id: 'humidity', label: clip(t(lang, 'sensor.humidity'), 20), value: Math.round(Number(st.humidity)), unit: '%' });
+  }
+  return withBadge(w, r, lang, ctx);
+}
+
+/** A sensor on batteries as a button of the apps (since 1.13.0): a card that shows, nothing to run. */
+function sensorAction(r, lang, ctx) {
+  const st = r.state || {};
+  const icon = TILE_ICONS[st.type || (r.capabilities && r.capabilities.reading)] || TILE_ICONS.sensor;
+  const w = sensorWidgetOf(r, lang, ctx);
+  return { id: `${r.kind}:${r.id}`, title: clip(r.name, 40) || kindLabel(r, lang), subtitle: w.status, icon, kind: 'button', device: { ...deviceOf(r, lang), icon }, widget: w };
 }
 
 /** A cover (Shelly / Tasmota): the position as the value, a position slider; carried by its "open" button. */
-function coverWidgetOf(r, lang) {
+function coverWidgetOf(r, lang, ctx) {
   const st = r.state || {};
   const pos = st.pos != null && Number.isFinite(Number(st.pos)) ? Math.round(Number(st.pos)) : null;
   let status = kindLabel(r, lang);
@@ -424,7 +499,7 @@ function coverWidgetOf(r, lang) {
   else if (st.moving === 'opening' || st.moving === 'closing') status += ' · ' + t(lang, 'cover.' + st.moving);
   const w = { label: clip(t(lang, 'cover.position'), 24), value: pos, unit: pos == null ? null : '%', status: clip(status, 60), state: st.reachable === false ? 'warn' : null, power: false, controls: [] };
   if (r.capabilities && r.capabilities.position) w.controls.push({ id: 'pos', kind: 'slider', label: clip(t(lang, 'cover.position'), 20), value: pos == null ? 0 : pos, min: 0, max: 100, step: 1, unit: '%' });
-  return w;
+  return withBadge(w, r, lang, ctx);
 }
 
 /** A resource as the apps group quick actions (GateControl ≥ 1.172.0): r:<resource id>, its name and icon. */
@@ -433,19 +508,19 @@ function deviceOf(r, lang) {
 }
 
 /** A cover's three buttons (open, stop, close) as one device; the "open" button carries the widget. */
-function coverActions(r, lang) {
+function coverActions(r, lang, ctx) {
   const device = deviceOf(r, lang);
   const st = r.state || {};
   const sub = clip(st.reachable === false ? kindLabel(r, lang) + ' · ' + t(lang, 'qa.unreachable') : (coverText(st, lang) || kindLabel(r, lang)), 60);
   return COVER_OPS.map((op) => {
     const a = { id: `cover:${r.id}:${op}`, title: clip(t(lang, 'cover.' + op), 40), subtitle: sub, icon: COVER_ICONS[op], kind: 'button', device };
-    if (op === 'open') a.widget = coverWidgetOf(r, lang);
+    if (op === 'open') a.widget = coverWidgetOf(r, lang, ctx);
     return a;
   });
 }
 
 /** `device`: the resource's own, for a scene its group's (when the viewer has that group). */
-function quickAction(r, lang, device) {
+function quickAction(r, lang, device, ctx) {
   const name = clip(r.name, 40) || kindLabel(r, lang);
   if (r.kind === 'scene') return { id: `scene:${r.id}`, title: name, subtitle: t(lang, 'kind.scene'), icon: SCENE_ICON, kind: 'button', device: device || deviceOf(r, lang) };
   const st = r.state || {};
@@ -457,9 +532,16 @@ function quickAction(r, lang, device) {
     id: `${r.kind}:${r.id}`, title: name, subtitle: clip(subtitle, 60), icon: TILE_ICONS[r.kind] || TILE_ICONS.light, kind: 'toggle', state: st.on ? 'on' : 'off',
     device: device || deviceOf(r, lang), verbs: { on: t(lang, 'qa.verb_on'), off: t(lang, 'qa.verb_off') }, targets: true,
   };
-  if (dimmable(r)) a.widget = widgetOf(r, lang);
-  else if (metered(r)) a.widget = powerWidgetOf(r, lang);
+  const w = widgetFor(r, lang, ctx);
+  if (w) a.widget = w;
   return a;
+}
+
+/** The widget of a toggle: dimmable, metered, or (since 1.13.0) a plain one on batteries; none otherwise. */
+function widgetFor(r, lang, ctx) {
+  if (dimmable(r)) return widgetOf(r, lang, ctx);
+  if (metered(r)) return powerWidgetOf(r, lang, ctx);
+  return batteryWidgetOf(r, lang, ctx);
 }
 
 /** The deCONZ group of a scene on its gateway: "<gateway id>/<group id>" (capabilities.group_id, else the id's prefix). */
@@ -479,28 +561,32 @@ function sceneGroupKey(r) {
 async function quickActionsFor(gc, user, lang) {
   if (!user || !Number.isInteger(user.id) || user.loggedIn === false) return [];
   // thermostats are set in the portal (a target temperature is no switch)
-  const devices = (await ownedResources(gc, user.id)).filter((r) => r.kind !== 'sensor' && r.kind !== 'switch' && r.kind !== 'thermostat');
+  const owned = await ownedResources(gc, user.id);
+  const devices = owned.filter((r) => r.kind !== 'sensor' && r.kind !== 'switch' && r.kind !== 'thermostat');
+  // since 1.13.0: sensors on batteries (Shelly H&T, deCONZ, zigbee2mqtt, Bluetooth) as cards with their battery, last
+  const sensors = owned.filter((r) => r.kind === 'sensor' && battery.of(r.state));
+  const ctx = await badgeCtx(gc);
   const groups = new Map(devices.filter((r) => r.kind === 'group').map((g) => [`${g.gateway_id}/${g.deconz_id}`, g]));
   const toggles = devices.filter((d) => d.kind !== 'scene' && d.kind !== 'cover');
   const covers = devices.filter((d) => d.kind === 'cover');
   const scenes = devices.filter((d) => d.kind === 'scene');
   // the chains the viewer may start come first (at most 8), then the devices
   const out = (await startableChains(gc, user)).slice(0, CHAINS_MAX).map((x) => chainAction(x, lang));
-  out.push(...toggles.map((d) => quickAction(d, lang, null)));
-  for (const c of covers) if (out.length + 3 <= QA_MAX) out.push(...coverActions(c, lang));
+  out.push(...toggles.map((d) => quickAction(d, lang, null, ctx)));
+  for (const c of covers) if (out.length + 3 <= QA_MAX) out.push(...coverActions(c, lang, ctx));
   for (const d of scenes) {
     const group = groups.get(sceneGroupKey(d));
-    out.push(quickAction(d, lang, group ? deviceOf(group, lang) : null));
+    out.push(quickAction(d, lang, group ? deviceOf(group, lang) : null, ctx));
   }
+  for (const s of sensors) out.push(sensorAction(s, lang, ctx));
   return out.slice(0, QA_MAX);
 }
 
 /** The widget of a resource after a change (the cached state follows what was sent). */
-async function widgetAfter(gc, r, lang) {
-  if (!dimmable(r) && !metered(r) && r.kind !== 'cover') return undefined;
+async function widgetAfter(gc, r, lang, ctx) {
   const now = (await store.getResource(gc, r.id)) || r;
-  if (r.kind === 'cover') return coverWidgetOf(now, lang);
-  return dimmable(r) ? widgetOf(now, lang) : powerWidgetOf(now, lang);
+  if (r.kind === 'cover') return coverWidgetOf(now, lang, ctx);
+  return widgetFor(now, lang, ctx) || undefined;
 }
 
 /**
@@ -523,21 +609,28 @@ async function runQuickActionFor(gc, user, lang, id, control, value, target) {
   if ((m[1] === 'cover') !== (m[3] !== undefined)) return { ok: false, message: t(lang, 'qa.unknown') };
   const rid = Number(m[2]);
   let r = null;
+  let ctx = null;
   try {
     if (!(await store.canAccess(gc, rid, user.id))) throw fail('SMARTHOME_NOT_OWNER');
     r = await store.getResource(gc, rid);
     if (!r || !r.enabled || r.kind !== m[1]) throw fail('SMARTHOME_RESOURCE_NOT_FOUND');
+    ctx = await badgeCtx(gc);
+    // a sensor (since 1.13.0): a card that shows, nothing to run — the answer is its widget as it is now
+    if (r.kind === 'sensor') {
+      if (control !== undefined || target !== undefined || !battery.of(r.state)) return { ok: false, message: t(lang, 'qa.unknown') };
+      return { ok: true, message: null, widget: sensorWidgetOf(r, lang, ctx) };
+    }
     const name = clip(r.name, 40);
     if (control !== undefined) {
       const v = typeof value === 'number' && Number.isFinite(value) ? Math.round(value) : NaN;
       if (r.kind === 'cover') {
         if (control !== 'pos' || !(r.capabilities && r.capabilities.position) || !(v >= 0 && v <= 100)) return { ok: false, message: t(lang, 'qa.unknown') };
         await service.setResourceState(gc, rid, { pos: v });
-        return { ok: true, message: null, widget: await widgetAfter(gc, r, lang) };
+        return { ok: true, message: null, widget: await widgetAfter(gc, r, lang, ctx) };
       }
       if (control !== 'bri' || !dimmable(r) || !(v >= BRI.min && v <= BRI.max)) return { ok: false, message: t(lang, 'qa.unknown') };
       await service.setResourceState(gc, rid, { bri: v, on: true });
-      return { ok: true, message: null, state: 'on', widget: await widgetAfter(gc, r, lang) };
+      return { ok: true, message: null, state: 'on', widget: await widgetAfter(gc, r, lang, ctx) };
     }
     if (r.kind === 'scene') {
       await service.setResourceState(gc, rid, {});
@@ -546,21 +639,22 @@ async function runQuickActionFor(gc, user, lang, id, control, value, target) {
     if (r.kind === 'cover') {
       await service.setResourceState(gc, rid, { cover: m[3] });
       const out = { ok: true, message: clip(t(lang, 'cover.done_' + m[3], { name }), 120) };
-      if (m[3] === 'open') out.widget = await widgetAfter(gc, r, lang);
+      if (m[3] === 'open') out.widget = await widgetAfter(gc, r, lang, ctx);
       return out;
     }
     const on = target === 'on' || target === 'off' ? target === 'on' : !(r.state && r.state.on);
     await service.setResourceState(gc, rid, { on });
     const out = { ok: true, message: clip(t(lang, on ? 'qa.switched_on' : 'qa.switched_off', { name }), 120), state: on ? 'on' : 'off' };
-    const widget = await widgetAfter(gc, r, lang);
+    const widget = await widgetAfter(gc, r, lang, ctx);
     if (widget) out.widget = widget;
     return out;
   } catch (e) {
     if (!ERRORS[e && e.code]) gc.log.warn('quick action failed', id, (e && (e.code || e.message)) || e);
     const out = { ok: false, message: errorResponse(e, lang).json.error };
-    if (r && dimmable(r)) out.widget = widgetOf(r, lang);
-    else if (r && metered(r)) out.widget = powerWidgetOf(r, lang);
-    else if (r && r.kind === 'cover' && m[3] === 'open') out.widget = coverWidgetOf(r, lang);
+    if (r && r.kind === 'cover') { if (m[3] === 'open') out.widget = coverWidgetOf(r, lang, ctx); } else if (r && r.kind !== 'scene') {
+      const w = widgetFor(r, lang, ctx);
+      if (w) out.widget = w;
+    }
     return out;
   }
 }
@@ -687,7 +781,8 @@ async function adminRoute(req, gc, seg) {
       const gid = req.query && req.query.gateway_id ? posInt(req.query.gateway_id) : null;
       const users = await usersById(gc);
       const owners = await store.allOwners(gc);
-      const resources = (await radio.list(gc, gid)).map((r) => ({ ...r, owners: (owners.get(r.id) || []).filter((uid) => users.has(uid)).map((uid) => users.get(uid)) }));
+      const lowAt = await batteryLowAt(gc);
+      const resources = (await radio.list(gc, gid)).map((r) => withBatteryView({ ...r, owners: (owners.get(r.id) || []).filter((uid) => users.has(uid)).map((uid) => users.get(uid)) }, lowAt));
       return { json: { ok: true, resources } };
     }
     throw fail('NOT_FOUND');
@@ -699,10 +794,11 @@ async function adminRoute(req, gc, seg) {
       const users = await usersById(gc);
       const owners = await store.allOwners(gc);
       const list = await store.listResources(gc, gid || undefined);
+      const lowAt = await batteryLowAt(gc);
       const resources = [];
       for (const r of list) {
         const ids = r.kind === 'scene' ? await store.inheritedOwnerIdsOf(gc, r) : (owners.get(r.id) || []);
-        resources.push({ ...r, owners: ids.filter((uid) => users.has(uid)).map((uid) => users.get(uid)) });
+        resources.push(withBatteryView({ ...r, owners: ids.filter((uid) => users.has(uid)).map((uid) => users.get(uid)) }, lowAt));
       }
       return { json: { ok: true, resources } };
     }
@@ -712,6 +808,12 @@ async function adminRoute(req, gc, seg) {
       const name = typeof body.name === 'string' ? body.name.replace(/[\0-\x1f\x7f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 32) : '';
       if (!name) throw fail('INVALID');
       return { json: { ok: true, name, ...(await service.renameResource(gc, id, name)) } };
+    }
+    // since 1.13.0: the kind of one output of a zigbee2mqtt device with several (light, plug, switch)
+    if (seg.length === 2 && m === 'PUT' && body.kind !== undefined) {
+      const resource = await store.getResource(gc, id);
+      if (!resource) throw fail('SMARTHOME_RESOURCE_NOT_FOUND');
+      return { json: { ok: true, ...(await zigbee.setKind(gc, resource, body.kind)) } };
     }
     if (seg.length === 2 && m === 'PUT') {
       if (body.area !== null && typeof body.area !== 'string') throw fail('INVALID');

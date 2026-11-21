@@ -38,6 +38,9 @@ const IEEE_RE = /^([0-9a-f]{2}:){7}[0-9a-f]{2}$/;
 const NAME_MAX = 60;
 const SYNC_MS = 15 * 1000;
 const KINDS = { light: 'light', plug: 'plug', cover: 'cover', sensor: 'sensor', remote: 'switch', climate: 'thermostat' };
+// what one output of a device with several may stand for (chosen on the page; it changes the symbol, the words and the
+// quick action — never the device)
+const CHANNEL_KINDS = new Set(['light', 'plug', 'relay']);
 const CH_RE = /^[a-z0-9_]{1,8}$/;
 const MAX_CHANNELS = 8;
 const MODES = ['off', 'heat', 'auto', 'cool', 'fan_only', 'dry'];
@@ -93,8 +96,11 @@ function setpointCaps(c) {
  * one switched output of a device with several (channelsOf).
  */
 function resourceOf(d, prev, channel) {
-  const kind = KINDS[d.kind] || null;
+  let kind = KINDS[d.kind] || null;
   if (!kind) return null;
+  // one output of several: the kind chosen here (since 1.13.0 — light, plug or switch) stays over every report
+  const chosen = channel && prev && prev.capabilities && CHANNEL_KINDS.has(prev.capabilities.kind_set) ? prev.capabilities.kind_set : null;
+  if (chosen) kind = chosen;
   const c = d.caps && typeof d.caps === 'object' ? d.caps : {};
   const v = d.values && typeof d.values === 'object' ? d.values : {};
   const caps = { source: Z2M_TYPE, gateway_id: Number.isInteger(d.gatewayId) ? d.gatewayId : null, gateway: cleanText(d.gateway, 80) || null,
@@ -105,6 +111,8 @@ function resourceOf(d, prev, channel) {
     // one output of several: on/off only (brightness and colour are per device in zigbee2mqtt's first channel)
     caps.channel = channel.id;
     caps.channel_no = channel.no;
+    caps.bri = false; // on / off only, whatever kind it stands for
+    if (chosen) caps.kind_set = chosen;
     const on = v.ch && typeof v.ch === 'object' ? v.ch[channel.id] : undefined;
     state = { reachable, on: on === true };
   } else if (kind === 'thermostat') {
@@ -284,6 +292,18 @@ async function rename(gc, resource, name) {
 }
 
 /**
+ * The kind of one output of a device with several (since 1.13.0): light, plug or switch ('relay') — kept as
+ * capabilities.kind_set, so the next report keeps it. Only for such an output (capabilities.channel).
+ */
+async function setKind(gc, resource, kind) {
+  if (!resource || resource.deconz_type !== Z2M_TYPE || !(resource.capabilities && resource.capabilities.channel)) throw codeError('SMARTHOME_NOT_CONTROLLABLE');
+  if (!CHANNEL_KINDS.has(kind)) throw codeError('INVALID');
+  const caps = { ...resource.capabilities, kind_set: kind };
+  await gc.db.run("UPDATE resources SET kind = ?, capabilities_json = ?, updated_at = datetime('now') WHERE id = ?", [kind, JSON.stringify(caps), resource.id]);
+  return { kind };
+}
+
+/**
  * A firmware update over the air: 'check' asks zigbee2mqtt whether there is one, 'update' starts it (it takes
  * 10–60 minutes; the device keeps working, a battery device has to be awake). The answer comes with the reports.
  */
@@ -304,4 +324,4 @@ async function ota(gc, resource, action) {
   return { ok: true, action };
 }
 
-module.exports = { Z2M_TYPE, available, sync, list, setState, rename, ota, resourceOf, channelsOf, _mem: mem };
+module.exports = { Z2M_TYPE, CHANNEL_KINDS, available, sync, list, setState, rename, setKind, ota, resourceOf, channelsOf, _mem: mem };

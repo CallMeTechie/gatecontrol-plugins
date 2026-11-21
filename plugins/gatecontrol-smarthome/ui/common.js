@@ -166,10 +166,36 @@
     { c: '#36d6c3', hue: 33000, sat: 200 }, { c: '#8be36b', hue: 23000, sat: 200 },
     { c: '#ffd27a', hue: 8000, sat: 160 }, { c: '#ffffff', hue: 0, sat: 0 },
   ];
+  /**
+   * A small battery symbol with its percentage (since 1.13.0): the symbol filled by level (as the badge of the apps,
+   * server/battery.js), the tone from the server (level good | warn | crit). st: a resource's state — battery (%),
+   * lowbattery (deCONZ, without a percentage); null without a battery.
+   */
+  function batteryChip(st, level) {
+    st = st || {};
+    var pct = typeof st.battery === 'number' && isFinite(st.battery) ? Math.max(0, Math.min(100, Math.round(st.battery))) : null;
+    if (pct == null && st.lowbattery !== true) return null;
+    var d = 'M2 7h16v10H2zM21 10v4';
+    if (pct == null) d += 'M10 9.5v2.5M10 14.5h.01';
+    else if (pct > 75) d += 'M6 10v4M10 10v4M14 10v4';
+    else if (pct > 40) d += 'M6 10v4M10 10v4';
+    else if (pct > 15) d += 'M6 10v4';
+    // fixed markup (d comes from the constants above, never from data); parsed as SVG inside the HTML span
+    var holder = el('span');
+    holder.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="' + d + '"/></svg>';
+    var svg = holder.firstChild;
+    var tone = level === 'crit' || level === 'warn' ? level : (level === 'good' ? 'good' : null);
+    var title = pct == null ? T('battery.title_flag')
+      : (st.sleeping === true && st.reachable === false ? T('battery.title_empty', { pct: pct }) : T(tone === 'warn' || tone === 'crit' ? 'battery.title_low' : 'battery.title', { pct: pct }));
+    var chip = el('span', { class: 'sh-batt', 'data-tone': tone, title: title, role: 'img', 'aria-label': title });
+    chip.appendChild(svg);
+    if (pct != null) chip.appendChild(el('span', { class: 'sh-batt-v', 'aria-hidden': 'true', text: pct + ' %' }));
+    return chip;
+  }
   function hasColour(caps) { return !!caps && (caps.color === 'hs' || caps.color === 'xy'); }
   function hasWarmth(caps) { return !!caps && (caps.color === 'ct' || caps.ct === true); }
   window.SH = { CTX: CTX, T: T, esc: esc, $: $, $$: $$, el: el, clear: clear, api: api, toast: toast, openModal: openModal, closeModal: closeModal, confirm: confirmDialog,
-    SWATCHES: SWATCHES, hasColour: hasColour, hasWarmth: hasWarmth, kbText: kbText, copyText: copyText, since: since };
+    SWATCHES: SWATCHES, hasColour: hasColour, hasWarmth: hasWarmth, kbText: kbText, copyText: copyText, since: since, batteryChip: batteryChip };
   document.addEventListener('click', function (e) {
     var c = e.target && e.target.closest ? e.target.closest('[data-close]') : null;
     if (c) closeModal(c.getAttribute('data-close'));

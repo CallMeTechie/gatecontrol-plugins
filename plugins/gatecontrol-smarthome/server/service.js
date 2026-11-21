@@ -53,6 +53,15 @@ function xyFromHueSat(hue, sat) {
 
 function sensorReading(sensor) {
   const s = sensor.state || {};
+  const out = readingOf(s);
+  // since 1.13.0 the battery too (config.battery %, state.lowbattery): the badge of the apps, the symbol on the page
+  const cfg = sensor.config || {};
+  if (typeof cfg.battery === 'number' && Number.isFinite(cfg.battery)) out.battery = Math.max(0, Math.min(100, Math.round(cfg.battery)));
+  if (s.lowbattery === true) out.lowbattery = true;
+  return out;
+}
+
+function readingOf(s) {
   if ('presence' in s) return { type: 'presence', value: s.presence };
   if ('open' in s) return { type: 'open', value: s.open };
   if ('water' in s) return { type: 'water', value: s.water };

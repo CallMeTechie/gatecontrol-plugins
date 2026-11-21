@@ -709,7 +709,16 @@
   "qa.chain_started": "„{{name}}“ gestartet",
   "qa.chain_running": "„{{name}}“ läuft schon",
   "qa.chain_skipped": "„{{name}}“ nicht gestartet – „Nur wenn“ gilt gerade nicht",
-  "chain.when_point": "Zeitpunkt"
+  "chain.when_point": "Zeitpunkt",
+  "qa.sensor_asleep": "schläft, Wert {{ago}}",
+  "qa.sensor_asleep_now": "schläft",
+  "qa.sensor_silent": "letzte Meldung {{ago}}",
+  "battery.title": "Batterie {{pct}} %",
+  "battery.title_low": "Batterie schwach ({{pct}} %)",
+  "battery.title_flag": "Batterie schwach",
+  "battery.title_empty": "Batterie leer? Letzter Wert {{pct}} %",
+  "owners.kind": "Art",
+  "owners.kind_hint": "Ein Kanal eines Geräts mit mehreren Ausgängen: Licht, Steckdose oder Schalter ändert Symbol, Begriffe und die Schnellaktion der Apps – nicht das Gerät."
  },
  "en": {
   "error.gateway_not_found": "Smart Home gateway not found",
@@ -1421,6 +1430,15 @@
   "qa.chain_started": "“{{name}}” started",
   "qa.chain_running": "“{{name}}” is already running",
   "qa.chain_skipped": "“{{name}}” not started – “Only if” does not hold right now",
-  "chain.when_point": "At"
+  "chain.when_point": "At",
+  "qa.sensor_asleep": "asleep, value {{ago}}",
+  "qa.sensor_asleep_now": "asleep",
+  "qa.sensor_silent": "last report {{ago}}",
+  "battery.title": "Battery {{pct}} %",
+  "battery.title_low": "Battery low ({{pct}} %)",
+  "battery.title_flag": "Battery low",
+  "battery.title_empty": "Battery empty? Last value {{pct}} %",
+  "owners.kind": "Kind",
+  "owners.kind_hint": "One channel of a device with several outputs: light, plug or switch changes the icon, the words and the quick action of the apps – not the device."
  }
 }

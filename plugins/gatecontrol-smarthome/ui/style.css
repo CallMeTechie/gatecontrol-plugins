@@ -326,3 +326,8 @@ input[type=time].f-sm{flex-basis:124px;width:124px}
 .timeline .ms{font:600 11.5px ui-monospace,monospace;color:var(--muted);margin-right:6px;font-variant-numeric:tabular-nums}
 @media (max-width:760px){.split,.two{grid-template-columns:minmax(0,1fr)}}
 @media (max-width:560px){.rule-acts{width:100%;justify-content:flex-end}.step-kind{flex-basis:100%}.seg{margin-left:0}}
+/* 1.13.0: a small battery symbol with its percentage (tone from the server: good | warn | crit) */
+.sh-batt{display:inline-flex;align-items:center;gap:3px;margin-left:auto;flex:none;font-size:12px;font-weight:600;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.sh-batt svg{flex:none}
+.sh-batt[data-tone="warn"]{color:var(--warn)}
+.sh-batt[data-tone="crit"]{color:var(--crit)}
