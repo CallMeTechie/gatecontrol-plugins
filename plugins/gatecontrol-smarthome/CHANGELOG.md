@@ -3,6 +3,35 @@
 Phoscon/deCONZ-Integration als GateControl-Plugin – bisher fest in GateControl eingebaut; seit 1.7.0 auch Shelly und
 Tasmota über ein GateControl-Gateway.
 
+## 1.18.0
+
+- **zigbee2mqtt-Thermostate im Plan am Gateway** (Fortsetzung von 1.17.0, gleiche Entscheidungen: Zuständigkeit Gateway vs.
+  Server, `gc.store`, Bestätigung über das gemeldete Soll, höchstens 3 Versuche, Fenster-Gültigkeit 2 h, ≤ 8 Thermostate
+  je Raum, ≤ 24 Räume je Gateway).
+  - **Zuständigkeit:** Ein Raum, dessen Thermostate alle am selben Gateway hängen – Shelly/BLU TRV und/oder
+    zigbee2mqtt-Thermostate dieses Gateways (`capabilities.gateway_id`) –, läuft am Gateway, zigbee2mqtt aber nur, wenn
+    die optionale Fähigkeit `mqtt.topic:zigbee2mqtt/#` für das Gateway bestätigt ist (`gc.edge.capabilities`, je
+    Gateway höchstens einmal pro Minute gefragt) und das Gateway das Topic nicht ablehnt (Ereignis `z2m` `denied` → Raum
+    zurück an den Server; nach `$started` wird neu gefragt). Ohne Bestätigung, mit deCONZ oder mit Thermostaten an zwei
+    Gateways bleibt der Raum am Server wie bisher. Die Heizung fragt die Fähigkeit nicht an (das tun nur die Ketten).
+  - **Übergabe** wie 1.17.0: ab dem Wechsel schickt der Server dem Raum nichts mehr; das Gateway schickt nur, was ein
+    Thermostat noch nicht meldet – ein Soll, das der Server schon geschickt hat, geht nicht noch einmal hinaus. Wird die
+    Bestätigung zurückgenommen, übernimmt der Server wieder, das Gateway bekommt den Raum nicht mehr.
+  - **Edge-Teil:** `edge/heat.js` nimmt Thermostate `fam: 'z2m'` (`zigbee2mqtt/0x<IEEE>`, `thermostat:0`, `name`,
+    `step`, `modes`); Befehle an `zigbee2mqtt/<Name>/set` mit dem Soll-Feld, das das Gerät anbietet
+    (`occupied_heating_setpoint` vor `current_heating_setpoint`, aus den Exposes von `zigbee2mqtt/bridge/devices`, sonst
+    aus seiner Meldung – ohne Meldung wartet es), Aus als `system_mode: off` (sonst Frostschutz), zurück aus Aus bzw.
+    eigener Plan (`auto`) beim Senden des Plans → `system_mode: heat`, Boost 30 °C. „Erledigt“, sobald Soll und Modus
+    gemeldet sind. `normalize.parseZ2m` kennt `kind: 'thermostat'` → `thermostat:0` { temp, target, sp, mode, valve };
+    `commands` `setpoint` (mit `prop`) / `mode` für zigbee2mqtt-Thermostate. `edge/index.js` abonniert `zigbee2mqtt/#`
+    auch für die Thermostate der Heizung (auch aus `gc.store` nach einem Neustart ohne Server), wertet
+    `zigbee2mqtt/<Name>/availability` aus (offline → wartet) und meldet `z2m` wie für die Ketten.
+  - **Server-Teil:** `server/heating.js` `edgeGatewayOf` / `load` (Bestätigung), `edgeConfig` (zigbee2mqtt-Einträge),
+    `edgePending` (Aus mit `system_mode off`, Boost 30 °C); `server/edge.js` setzt `denied` bei `$started` zurück.
+  - **Seiten:** nur der vorhandene Hinweis „Plan läuft am Gateway“ und der Text im Plan-Editor.
+- `edge.capabilities` und `edge.optionalCapabilities` unverändert (`zigbee2mqtt/#` ist schon optional) – kein
+  `update_pending`. Kein Eingriff in Gateway oder Server nötig.
+
 ## 1.17.0
 
 - **Thermostate Stufe 2** (freigegebener Entwurf „Thermostate“): Shelly TRV (Gen1) und Shelly BLU TRV über ein Shelly BLU

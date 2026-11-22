@@ -6,9 +6,14 @@
 // — with the server and without it. The server part never sends to them itself, so a server that comes back sends
 // nothing twice: it only hands over a new configuration, and what is already applied (the same signature) is not
 // sent again.
+// Since 1.18.0 also thermostats of the gateway's own zigbee2mqtt (fam 'z2m', base zigbee2mqtt/0x<IEEE address>, channel
+// thermostat:0) — only while zigbee2mqtt/# (the optional capability) is confirmed for this gateway: the server part
+// hands over such a room only then. Their target goes to zigbee2mqtt/<friendly name>/set with the setpoint the device
+// reports (occupied_heating_setpoint or current_heating_setpoint), Aus as system_mode off where the device has it, its own
+// plan (system_mode auto) is set to heat when the plan sends, boost is 30 °C (as for a BLU TRV).
 //
 //   heat  { v: 1, tz, plans: { <plan id>: week }, rooms: [room] }   week: 7 × [[start minute, preset], …], Monday first
-//   room  { id, th: [{ base, ch, fam, min, max, boost }], temps: { comfort, eco, night, frost },
+//   room  { id, th: [{ base, ch, fam, min, max, boost, (z2m:) name, step, modes }], temps: { comfort, eco, night, frost },
 //           plan: <plan id> | null, away (Komfort → Eco), mode: plan | manual | off,
 //           manual, hold, vac: { from, end, preset } | null (end: the return minus the preheating),
 //           ov: { at, until, setpoint? , preset? } | null (by hand until the next switching point),
@@ -35,6 +40,7 @@ const MAX_TH = 8;
 const DAY_MIN = 1440;
 const TZ_RE = /^[A-Za-z0-9_+\-/]{1,64}$/;
 const CH_RE = /^thermostat:\d{1,2}$/;
+const Z2M_MODES = ['off', 'heat', 'auto'];
 
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
@@ -61,10 +67,17 @@ function cleanRoom(r, weeks) {
   if (!isObj(r) || !Number.isSafeInteger(r.id) || r.id <= 0) return null;
   const th = [];
   for (const t of (Array.isArray(r.th) ? r.th : []).slice(0, MAX_TH)) {
-    if (!isObj(t) || typeof t.base !== 'string' || !commands.BASE_RE.test(t.base) || typeof t.ch !== 'string' || !CH_RE.test(t.ch) || !['shelly1', 'shelly2'].includes(t.fam)) continue;
+    if (!isObj(t) || typeof t.base !== 'string' || !commands.BASE_RE.test(t.base) || typeof t.ch !== 'string' || !CH_RE.test(t.ch) || !['shelly1', 'shelly2', 'z2m'].includes(t.fam)) continue;
+    if ((t.fam === 'z2m') !== commands.Z2M_RE.test(t.base) || (t.fam === 'z2m' && t.ch !== 'thermostat:0')) continue;
     const min = temp(t.min) == null ? 5 : temp(t.min);
     const max = temp(t.max) == null ? 30 : temp(t.max);
-    th.push({ base: t.base, ch: t.ch, fam: t.fam, min, max: Math.max(min, max), boost: t.boost === true && t.fam === 'shelly1' });
+    const x = { base: t.base, ch: t.ch, fam: t.fam, min, max: Math.max(min, max), boost: t.boost === true && t.fam === 'shelly1' };
+    if (t.fam === 'z2m') {
+      x.name = typeof t.name === 'string' && t.name && t.name.length <= 128 ? t.name : null;
+      x.step = num(t.step) != null && t.step >= 0.1 && t.step <= 5 ? t.step : 0.5;
+      x.modes = Array.isArray(t.modes) ? Z2M_MODES.filter((m) => t.modes.includes(m)) : [];
+    }
+    th.push(x);
   }
   if (!th.length) return null;
   const temps = {};
@@ -143,8 +156,12 @@ function decide(r, now, tz) {
   return { kind: 'none', sig: null };
 }
 
-/** What one thermostat gets: { setpoint?, boost? (minutes, 0 = end), schedule_off? }. */
+/**
+ * What one thermostat gets: { setpoint?, boost? (minutes, 0 = end), schedule_off? } — a zigbee2mqtt thermostat
+ * { setpoint?, mode? (off | heat), prop (the setpoint it reports) }.
+ */
 function commandFor(t, want, prevKind, planned, rep, now) {
+  if (t.fam === 'z2m') return z2mCommand(t, want, prevKind, planned, rep || {});
   const clamp = (v) => Math.max(t.min, Math.min(t.max, v));
   const cmd = {};
   if (want.kind === 'boost') {
@@ -158,8 +175,29 @@ function commandFor(t, want, prevKind, planned, rep, now) {
   return cmd;
 }
 
-function messagesOf(t, cmd) {
+/** A zigbee2mqtt thermostat (as server/heating.js commandFor does it for one on the server). */
+function z2mCommand(t, want, prevKind, planned, rep) {
+  const step = t.step || 0.5;
+  const clamp = (v) => Math.round(Math.max(t.min, Math.min(t.max, Math.round(v / step) * step)) * 10) / 10;
+  const cmd = { prop: rep.sp || null };
+  if (want.kind === 'off' && t.modes.includes('off')) { cmd.mode = 'off'; return cmd; }
+  cmd.setpoint = clamp(want.kind === 'boost' ? BOOST_SETPOINT : want.setpoint);
+  // back from Aus (system_mode off): heating again; its own plan (auto) gives way to the plan
+  if (prevKind === 'off' && rep.mode === 'off' && t.modes.includes('off')) cmd.mode = t.modes.includes('heat') ? 'heat' : (t.modes.find((m) => m !== 'off') || null);
+  else if (planned && rep.mode === 'auto' && t.modes.includes('heat')) cmd.mode = 'heat';
+  if (cmd.mode == null) delete cmd.mode;
+  return cmd;
+}
+
+/** The MQTT messages of a command; `name` the zigbee2mqtt friendly name of a z2m thermostat. */
+function messagesOf(t, cmd, name) {
   const out = [];
+  if (t.fam === 'z2m') {
+    const opts = { z2mTopic: () => name || t.name };
+    if (cmd.mode) out.push(...commands.messages({ base: t.base, family: 'z2m', ch: t.ch, op: 'mode', value: cmd.mode }, opts));
+    if (cmd.setpoint != null) out.push(...commands.messages({ base: t.base, family: 'z2m', ch: t.ch, op: 'setpoint', value: cmd.setpoint, prop: cmd.prop }, opts));
+    return out;
+  }
   const one = (op, value) => out.push(...commands.messages({ base: t.base, family: t.fam, ch: t.ch, op, ...(value === undefined ? {} : { value }) }));
   if (cmd.schedule_off) one('schedule_off');
   if (cmd.boost === 0) one('boost', 0);
@@ -172,7 +210,8 @@ const keyOf = (t) => `${t.base}|${t.ch}`;
 const same = (a, b) => a != null && b != null && Math.abs(a - b) < 0.05;
 
 /**
- * The engine: create({ device(base) → the edge part's record, publish(list) → Promise, save(applied), log, now? }).
+ * The engine: create({ device(base) → the edge part's record, publish(list) → Promise, save(applied), log, now?,
+ * z2mTopic(base) → the friendly name of a zigbee2mqtt device (zigbee2mqtt/bridge/devices) }).
  *   set(cfg)        the server part's configuration (clean)
  *   restore(list)   what was applied before a restart ([{ id, sig, kind, prev, done: [key] }])
  *   tick()          every room: what applies now → the thermostats that do not have it yet → Promise
@@ -218,14 +257,18 @@ function create(io) {
       if (!rep) { waiting++; continue; }
       const cmd = commandFor(t, want, ap.prev, planned, rep, t0);
       const tr = ap.tries.get(k) || { n: 0, at: 0 };
-      // the device has it (reported): done — also before anything was sent (nothing twice after a restart)
-      if (cmd.setpoint != null && same(rep.target, cmd.setpoint) && !cmd.schedule_off && cmd.boost == null) { ap.done.add(k); continue; }
+      // the device has it (reported): done — also before anything was sent (nothing twice after a restart, nothing
+      // twice when the server part hands a room over that it already sent to)
+      const has = (cmd.setpoint != null || cmd.mode != null) && (cmd.setpoint == null || same(rep.target, cmd.setpoint)) && (cmd.mode == null || rep.mode === cmd.mode);
+      if (has && !cmd.schedule_off && cmd.boost == null) { ap.done.add(k); continue; }
+      // a zigbee2mqtt thermostat that did not report which setpoint it has yet: waits for its first report
+      if (t.fam === 'z2m' && cmd.setpoint != null && !cmd.prop) { waiting++; continue; }
       if (tr.n >= TRIES) { ap.done.add(k); debug('heating: thermostat did not confirm its target', t.base, t.ch); continue; }
       if (tr.at && t0 - tr.at < RETRY_MS) { waiting++; continue; }
       try {
-        await io.publish(messagesOf(t, cmd));
+        await io.publish(messagesOf(t, cmd, t.fam === 'z2m' && io.z2mTopic ? io.z2mTopic(t.base) : null));
         ap.tries.set(k, { n: tr.n + 1, at: t0 });
-        if (cmd.setpoint == null) ap.done.add(k); // a boost of the device itself: nothing to compare
+        if (cmd.setpoint == null && cmd.mode == null) ap.done.add(k); // a boost of the device itself: nothing to compare
         else waiting++;
       } catch (e) {
         ap.tries.set(k, { n: tr.n, at: t0 });
@@ -266,6 +309,12 @@ function create(io) {
       return waiting;
     },
     onDevice(base) { return st.rooms.some((r) => r.th.some((t) => t.base === base)); },
+    /** The zigbee2mqtt thermostats of the rooms: [{ ieee, name }] (edge/index.js subscribes to zigbee2mqtt/# for them). */
+    z2m() {
+      const out = new Map();
+      for (const r of st.rooms) for (const t of r.th) if (t.fam === 'z2m' && !out.has(t.base)) out.set(t.base, { ieee: t.base.slice('zigbee2mqtt/'.length), name: t.name });
+      return [...out.values()];
+    },
     count() { return st.rooms.length; },
     view() { const t0 = now(); return st.rooms.map((r) => { const w = decide(r, t0, st.tz); const a = st.applied.get(r.id); return { id: r.id, kind: w.kind, setpoint: w.setpoint == null ? null : w.setpoint, sent: !!a && a.sig === w.sig && a.done.size === r.th.length }; }); },
   };

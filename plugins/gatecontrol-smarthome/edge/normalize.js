@@ -37,6 +37,10 @@
 // cover:0 { pos, moving }; power on the first channel; sensor { temperature, humidity, battery, open (contact false),
 // presence (occupancy / presence), water (water_leak) }; `action` single / double / triple / hold (also 1_single,
 // button_2_double …) → events like a button.
+// Since 1.18.0 kind thermostat (the heating on the gateway, edge/heat.js) → thermostat:0 { kind: 'z2m', temp
+// (local_temperature), target (info.sp — the setpoint the device exposes, from zigbee2mqtt/bridge/devices — else
+// occupied_heating_setpoint, else current_heating_setpoint, as the GateControl gateway picks it), sp (which one),
+// mode (system_mode off | heat | auto | …), valve (pi_heating_demand %) }; battery as for every device.
 
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
 const COMP_RE = /^(switch|light|cover|temperature|humidity|devicepower):(\d{1,2})$/;
@@ -357,6 +361,21 @@ function parse(topic, payload) {
 
 const Z2M_ACTIONS = { single: 'single', double: 'double', triple: 'triple', hold: 'long', long: 'long' };
 const Z2M_ACTION_RE = /^(?:button_)?(?:([1-8])_)?(single|double|triple|hold|long)$/;
+const Z2M_SETPOINTS = ['occupied_heating_setpoint', 'current_heating_setpoint'];
+const Z2M_MODES = ['off', 'heat', 'auto', 'cool', 'fan_only', 'dry'];
+
+/** A thermostat of zigbee2mqtt → thermostat:0 (null: none of its fields in this message). */
+function z2mThermostat(o, sp) {
+  const c = { kind: 'z2m' };
+  const prop = Z2M_SETPOINTS.includes(sp) ? sp : Z2M_SETPOINTS.find((k) => num(o[k]) != null);
+  if (prop && num(o[prop]) != null) { c.target = round(o[prop], 1); c.sp = prop; } else if (prop) c.sp = prop;
+  const t = round(o.local_temperature, 1);
+  if (t != null) c.temp = t;
+  if (typeof o.system_mode === 'string' && Z2M_MODES.includes(o.system_mode)) c.mode = o.system_mode;
+  const v = pct(o.pi_heating_demand);
+  if (v != null) c.valve = v;
+  return Object.keys(c).length > 1 ? c : null;
+}
 
 function z2mOn(v) {
   if (v === true || v === false) return v;
@@ -394,6 +413,9 @@ function parseZ2m(base, payload, info) {
     else if (run === 'DOWN' || run === 'CLOSING') c.moving = 'closing';
     else if (run === 'STOP' || run === 'STOPPED' || o.moving === false) c.moving = null;
     if (Object.keys(c).length) patch.ch['cover:0'] = c;
+  } else if (kind === 'thermostat') {
+    const c = z2mThermostat(o, info && info.sp);
+    if (c) patch.ch['thermostat:0'] = c;
   }
   const t = round(o.temperature, 1);
   if (t != null) patch.sensor.temperature = t;

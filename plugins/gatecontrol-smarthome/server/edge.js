@@ -24,7 +24,8 @@
 // Since 1.17.0 thermostats: Shelly TRV (Gen1) and Shelly BLU TRV through a BLU Gateway Gen3 report a channel
 // thermostat:<n> → a resource of kind thermostat (the heating, server/heating.js); the configuration carries `heat`, the
 // plan of the rooms whose thermostats all hang on that gateway (server/heating.js edgeConfig) — it runs there, also
-// while the server is away.
+// while the server is away. Since 1.18.0 zigbee2mqtt thermostats of that gateway count for it too, once zigbee2mqtt/#
+// is confirmed there.
 
 const crypto = require('node:crypto');
 const store = require('./store');
@@ -417,7 +418,13 @@ function setup(gc) {
   require('./heating').resetEdge();
   mem.ready = available(gc);
   if (!gc.edge) return false;
-  gc.edge.on('$started', ({ gatewayId }) => configureGateway(gc, gatewayId).then(() => catchUp(gc, gatewayId)));
+  gc.edge.on('$started', ({ gatewayId }) => {
+    // a restarted edge part (an updated gateway, perhaps): whether it refuses zigbee2mqtt/# is asked anew — the
+    // heating keeps such a room here only while it does (server/heating.js z2mOn)
+    const m = edgerules._z2mMem.get(Number(gatewayId));
+    if (m && m.edge === 'denied') m.edge = null;
+    return configureGateway(gc, gatewayId).then(() => catchUp(gc, gatewayId));
+  });
   gc.edge.on('$online', ({ gatewayId }) => configureGateway(gc, gatewayId).then(() => catchUp(gc, gatewayId)));
   gc.edge.on('runs', ({ gatewayId, data }) => edgerules.storeRuns(gc, gatewayId, data && data.runs)
     .then((stopped) => (stopped ? configureGateway(gc, gatewayId) : null))

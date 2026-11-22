@@ -36,6 +36,15 @@
 // lowered window reaches the gateway with `ttl` (2 h, renewed while it stays open): a gateway that no longer hears
 // the server goes back to the plan then. Every other room (zigbee2mqtt, deCONZ, a TRV together with them or with
 // thermostats of another gateway) runs here as before; a Shelly / BLU TRV in it gets its commands through its gateway.
+//
+// Since 1.18.0 zigbee2mqtt thermostats count for that too — the zigbee2mqtt of a GateControl gateway (capabilities.
+// gateway_id), but only while the optional capability zigbee2mqtt/# is confirmed for that gateway (gc.edge.capabilities,
+// as the chains of 1.15.0; looked at at most once a minute) and the gateway does not refuse it (event `z2m` denied —
+// an older gateway): a room whose thermostats are all Shelly / BLU TRV and / or zigbee2mqtt thermostats of the same
+// gateway runs there (same limits). Without the confirmation, with deCONZ or with another gateway the room stays here.
+// edge.capabilities do not change; nothing is asked for (zigbee2mqtt/# is asked for by the chains only). The hand-over
+// is the one of 1.17.0: from the moment the room is the gateway's this part sends nothing to it, the gateway sends only
+// what a thermostat does not report yet — a target the server already sent is not sent again.
 
 const store = require('./store');
 const battery = require('./battery');
@@ -66,6 +75,8 @@ const WINDOW_RENEW = HOUR;          // … and renewed when less is left
 const EDGE_ROOMS_MAX = 24;          // rooms per gateway (edge/heat.js takes 32; the configuration stays small)
 const EDGE_TH_MAX = 8;              // thermostats per room on a gateway
 const EDGE_RETRY_MS = 5 * 60000;    // a configuration the gateway did not take: tried again (and with $online)
+const Z2M_CHECK_MS = 60000;         // whether zigbee2mqtt/# is confirmed for a gateway: asked at most so often
+const Z2M_EDGE_MODES = Object.freeze(['off', 'heat', 'auto']);
 
 // the clock of the plan (tests replace it: _setClock)
 let clock = () => Date.now();
@@ -307,6 +318,8 @@ const limitsOf = (r) => {
 };
 const isDeconz = (r) => r.deconz_type === 'sensors';
 const isEdge = (r) => r.deconz_type === 'edge';
+const isZ2m = (r) => r.deconz_type === 'z2m';
+const Z2M_HEX_RE = /^z2m:([0-9a-f]{16})$/;
 /** The thermostat does boost itself: deCONZ with a preset (Tuya and others), zigbee2mqtt when the gateway reports it. */
 const deviceBoost = (r) => !!(r.capabilities && (isDeconz(r) ? r.capabilities.preset === true : r.capabilities.boost === true));
 /** The thermostat runs a plan of its own. */
@@ -421,6 +434,10 @@ async function load(gc) {
     room.edge = edgeGatewayOf(room.thermostats);
     rooms.push(room);
   }
+  // zigbee2mqtt on the gateway only while zigbee2mqtt/# is confirmed there (else the room stays here, as before 1.18.0)
+  for (const room of rooms) {
+    if (room.edge && room.thermostats.some(isZ2m) && !(await z2mOn(gc, room.edge))) room.edge = null;
+  }
   rooms.sort((a, b) => a.name.localeCompare(b.name) || a.id - b.id);
   // at most 24 rooms per gateway run there (in the order of the rooms' ids); the others stay here
   const perGw = new Map();
@@ -433,16 +450,40 @@ async function load(gc) {
   return { house: await houseOf(gc), plans: await plansOf(gc), rooms };
 }
 
-/** The gateway a room's plan runs on: every thermostat a Shelly / BLU TRV of the same gateway (at most 8), else null. */
+/**
+ * The gateway a room's plan runs on: every thermostat a Shelly / BLU TRV or (since 1.18.0) a zigbee2mqtt thermostat of
+ * the same gateway (at most 8), else null. Whether zigbee2mqtt/# is confirmed there is load's business (z2mOn).
+ */
 function edgeGatewayOf(list) {
   if (!list.length || list.length > EDGE_TH_MAX) return null;
   let gw = null;
   for (const r of list) {
-    const id = isEdge(r) && r.capabilities ? Number(r.capabilities.gateway_id) : NaN;
+    const z2m = isZ2m(r) && Z2M_HEX_RE.test(String(r.deconz_id || ''));
+    const id = (isEdge(r) || z2m) && r.capabilities ? Number(r.capabilities.gateway_id) : NaN;
     if (!Number.isSafeInteger(id) || id <= 0 || (gw != null && gw !== id)) return null;
     gw = id;
   }
   return gw;
+}
+
+// gateway id → { on, at }: zigbee2mqtt/# confirmed there (memory only; asked again after Z2M_CHECK_MS)
+const z2mSeen = new Map();
+
+/**
+ * May zigbee2mqtt thermostats of this gateway run there? The edge part runs there (GateControl with optional
+ * capabilities), an administrator confirmed zigbee2mqtt/# for it, and the gateway did not refuse the topic.
+ */
+async function z2mOn(gc, gw) {
+  const edgerules = require('./edgerules');
+  if (!require('./edge').available(gc) || !edgerules.z2mHost(gc)) return false;
+  const m = edgerules._z2mMem.get(Number(gw));
+  if (m && m.edge === 'denied') return false;
+  const now = clock();
+  const seen = z2mSeen.get(Number(gw));
+  if (seen && now - seen.at < Z2M_CHECK_MS) return seen.on;
+  const on = await edgerules.z2mApproved(gc, gw);
+  z2mSeen.set(Number(gw), { on, at: now });
+  return on;
 }
 
 async function saveRoom(gc, id, patch) {
@@ -551,7 +592,9 @@ function edgePending(room, ctx, want) {
   for (const r of room.thermostats) {
     const st = r.state || {};
     if (st.reachable === false) { n++; continue; }
-    if (want.kind === 'boost' && deviceBoost(r)) continue;
+    if (want.kind === 'boost' && isEdge(r) && deviceBoost(r)) continue;
+    // a zigbee2mqtt thermostat with system_mode off: Aus is that mode (edge/heat.js)
+    if (want.kind === 'off' && isZ2m(r) && ((r.capabilities && r.capabilities.modes) || []).includes('off')) { if (st.mode !== 'off') n++; continue; }
     const lim = limitsOf(r);
     const exp = Math.max(lim.min, Math.min(lim.max, want.kind === 'boost' ? BOOST_SETPOINT : (want.kind === 'off' ? frost : want.setpoint)));
     if (!(finite(st.setpoint) != null && Math.abs(st.setpoint - exp) < 0.05)) n++;
@@ -576,9 +619,18 @@ async function edgeConfigFrom(gc, ctx, gw) {
     const plan = planOf(room, ctx);
     const th = [];
     for (const r of room.thermostats) {
+      const lim = limitsOf(r);
+      if (isZ2m(r)) {
+        // zigbee2mqtt of this gateway: its friendly name (the edge part prefers zigbee2mqtt/bridge/devices), its limits
+        // and the modes the plan uses; boost is 30 °C there
+        const m = Z2M_HEX_RE.exec(String(r.deconz_id || ''));
+        if (!m) continue;
+        const modes = Array.isArray(r.capabilities.modes) ? Z2M_EDGE_MODES.filter((x) => r.capabilities.modes.includes(x)) : [];
+        th.push({ base: `zigbee2mqtt/0x${m[1]}`, ch: 'thermostat:0', fam: 'z2m', name: r.capabilities.named ? null : (r.name || null), min: lim.min, max: lim.max, step: lim.step, modes, boost: false });
+        continue;
+      }
       const d = devs.get(Number(r.edge_device_id));
       if (!d) continue;
-      const lim = limitsOf(r);
       th.push({ base: d.base, ch: r.capabilities.ch, fam: d.family, min: lim.min, max: lim.max, boost: deviceBoost(r) });
     }
     if (!th.length) continue;
@@ -609,7 +661,7 @@ async function edgeConfig(gc, gw) {
 }
 
 function noteSent(gw, key) { edgeSent.set(Number(gw), key); edgeTried.delete(Number(gw)); }
-function resetEdge() { edgeSent.clear(); edgeTried.clear(); edgeStarted = false; }
+function resetEdge() { edgeSent.clear(); edgeTried.clear(); edgeStarted = false; z2mSeen.clear(); }
 
 /** Every gateway whose rooms changed gets its configuration again (also one whose last room left it). */
 async function pushEdge(gc, ctx) {
@@ -693,7 +745,7 @@ function roomView(room, ctx, now, viewer, lowAt) {
       gateway: isEdge(r) ? ((ctx.edgeNames && ctx.edgeNames.get(Number(r.capabilities && r.capabilities.gateway_id))) || null) : ((r.capabilities && r.capabilities.gateway) || null),
       value: finite(st.value), setpoint: finite(st.setpoint), valve: finite(st.valve), heating: st.heating === true, mode: st.mode || null,
       reachable: st.reachable !== false, lastupdated: st.lastupdated || null, battery: finite(st.battery), lowbattery: st.lowbattery === true,
-      battery_level: battery.levelOf(st, lowAt), own_schedule: ownSchedule(r), device_boost: deviceBoost(r),
+      battery_level: battery.levelOf(st, lowAt), own_schedule: ownSchedule(r), device_boost: room.edge && isZ2m(r) ? false : deviceBoost(r),
     };
   });
   const reach = ths.filter((x) => x.reachable);
@@ -1279,7 +1331,7 @@ async function runQuickAction(gc, user, lang, id, control, value, target) {
   }
 }
 
-function _setClock(fn) { clock = typeof fn === 'function' ? fn : () => Date.now(); retryAt.clear(); edgeSent.clear(); edgeTried.clear(); }
+function _setClock(fn) { clock = typeof fn === 'function' ? fn : () => Date.now(); retryAt.clear(); edgeSent.clear(); edgeTried.clear(); z2mSeen.clear(); }
 
 module.exports = {
   PRESETS, HOUSE_DEFAULT, BOOST_MINUTES, BOOST_SETPOINT, WINDOW_MINUTES, PREHEAT_DEFAULT, ICONS,
