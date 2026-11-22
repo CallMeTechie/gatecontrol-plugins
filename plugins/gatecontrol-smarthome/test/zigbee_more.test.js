@@ -129,10 +129,11 @@ describe('zigbee2mqtt: several channels, thermostats, firmware updates', () => {
         assert.equal((await asPortal(host, ADA, 'POST', `/portal/resources/${t.id}/state`, { patch: bad })).status, 400, JSON.stringify(bad));
       }
       assert.equal((await asPortal(host, BOB, 'POST', `/portal/resources/${t.id}/state`, { patch: { setpoint: 20 } })).status, 403);
-      // the Start tab shows the temperature; the apps' quick actions leave thermostats out
+      // the Start tab shows the temperature; the apps get no switch for a thermostat — since 1.14.0 its room's card
+      // of the heating (test/heating_*.test.js)
       const tiles = await host.plugin.portalTiles({ user: ADA, lang: 'de' }, host.gc);
       assert.deepEqual(tiles.map((x) => [x.title, x.value, x.unit]), [['Heizung Bad', '20,4', '°C']]);
-      assert.deepEqual(await host.plugin.quickActions({ user: ADA, lang: 'de' }, host.gc), []);
+      assert.deepEqual((await host.plugin.quickActions({ user: ADA, lang: 'de' }, host.gc)).map((a) => [a.id, a.kind, a.title]), [['heat:1', 'button', 'Heizung Bad'], ['heat:1:boost', 'button', 'Boost 30 min']]);
       // the gateway does not answer
       state.fail = 'ERR_RADIO_GATEWAY';
       r = await asAdmin(host, 'POST', `/resources/${t.id}/state`, { setpoint: 20 });

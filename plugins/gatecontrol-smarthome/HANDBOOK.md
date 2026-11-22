@@ -1,4 +1,4 @@
-<!-- version: 1.13.0 -->
+<!-- version: 1.14.0 -->
 # Smart Home
 
 ## What the plugin does
@@ -9,6 +9,7 @@
 - **Zigbee devices of zigbee2mqtt** through a GateControl gateway (since 1.9.0): lights, plugs, shutters, sensors and buttons you paired in GateControl under radio with zigbee2mqtt. Since 1.10.0 also switches with several channels, thermostats and firmware updates.
 - **Owners and areas:** you assign devices to people. They use them in the portal “Home” and in the app.
 - **Logic chains:** for deCONZ on the deCONZ gateway; for Shelly and Tasmota on the GateControl gateway (since 1.10.0) – since 1.11.0 with buttons, times, conditions with AND/OR, steps with waits, test run and log; since 1.12.0 with sunrise/sunset, “for X min”, chains across several gateways and with zigbee2mqtt (on the server), notifications and quick actions in the app.
+- **Heating** (since 1.14.0): radiator thermostats of zigbee2mqtt and deCONZ per room with presets, weekly plans, boost, “window open”, holiday and “Heating away” ([Heating](#heizung)).
 - **Notifications:** alarm (water, smoke, CO), window open too long, battery low, gateway unreachable.
 - **Quick actions and widgets** in the GateControl apps for your own devices – since 1.13.0 with the battery level of battery devices.
 
@@ -119,10 +120,68 @@ Choose **“Several gateways (through the server)”** as the place in the edito
 
 The trigger **“+ By hand (app)”** makes a chain a quick action “Start” in the GateControl apps (e.g. “Good night”). Administrators may always start it; people of the portal only when you **release** it for them in the editor. “Only if” applies when started from the app too. The protocol shows the run as “from the app”.
 
+## Heating {#heizung}
+
+You find the heating under **Smart Home › Heating** (button at the top of the page). It controls the radiator thermostats of zigbee2mqtt and – since 1.14.0 – of deCONZ too (target temperature and mode).
+
+### Rooms
+
+- A **room** is the **area** of its thermostats (dialog “Manage owners”). A thermostat without an area is a room of its own.
+- All thermostats of a room get **one common target**. “Now” is the mean of the thermostats.
+- Window contacts with the same area belong to the room.
+- The overview shows per room the temperature, what applies now (the preset's colour; violet: by hand; red: boost; yellow border: window open or device unreachable) and today's plan. **“Open”** leads to the room page.
+
+### Presets
+
+- There are four fixed presets: **Comfort, Eco, Night, Frost protection** (default 21 / 18 / 17 / 7 °C).
+- You set the temperatures of the house under **“Presets”**. A plan or a room may have its own; the room's come before the plan's.
+- **Boost** is no preset but an action for 15, 30 or 60 minutes. If the thermostat can boost itself (deCONZ with a preset), GateControl uses that, otherwise it sets 30 °C. Afterwards what applied before applies again.
+
+### Weekly plan
+
+1. **“New plan”** opens the editor. Enter a name, pick a template and the rooms the plan applies to. A room has exactly one plan.
+2. Every weekday is a bar of sections. Tap a section and change **From**, **To** and **Preset**. Switching points snap to 15 minutes. **“Split section”** makes two sections of one, **“Copy day to …”** takes the day over for other days.
+3. Under **Exceptions** you set “Window open” (after 1, 2 or 5 minutes) and “Nobody at home”.
+4. **“Save plan”** – the plan sends what applies now at once.
+
+The plan **runs on the server**: about every 30 seconds it checks every room and sends the target at each switching point. While the server is away the thermostats keep the last target; a missed switching point is caught up as soon as the server is back. If a thermostat does not answer, the plan tries again after 5 minutes; a sleeping battery device gets the value as soon as it is back.
+
+If a thermostat has a **weekly plan of its own in the device** (mode “auto”, deCONZ preset “auto” or schedule on), the editor shows a hint. As soon as the plan sends, GateControl sets the device to “manual” or “heat”. The plan in the device is not deleted.
+
+### Room page and operation
+
+- **− / +** changes the target in half degrees, a **preset** sets its temperature. Both last **until the next switching point**; then the plan takes over again. **“Back to plan”** ends it earlier.
+- **Operation:** **By plan**, **By hand** (the target applies for good, without switching points) or **Off** (mode “off” where the thermostat has it, else frost protection). Only an administrator changes the operation.
+- **“Pause plan today”** keeps the current target until midnight.
+- A room **without a plan** keeps its target; a change there lasts for good.
+- Below are the room's devices with temperature, target, valve and battery.
+
+What applies, top first: Off · window open · boost · change by hand · holiday · by hand · plan (with “Heating away”) · the target of a room without a plan.
+
+### Window open
+
+If a contact in the room stays open longer than set in the plan (default 2 minutes; without a plan always 2 minutes), the plan sets the room to **frost protection**. Once it is closed, what is due then applies again. The thermostat's own window detection stays on. The notification “Window left open” then reads **“Window open, heating turned down”**.
+
+### Holiday and Heating away
+
+- **“Plan a holiday”:** start, return, a preset for all rooms (default Eco) and a different one per room. The holiday comes before the plans. **Preheat** (default 4 hours): this long before the return the plans apply again, so it is warm. After the return the holiday goes away by itself.
+- **“Heating away”** (switch at the top, and a quick action for administrators in the app): Comfort becomes Eco in every room whose plan allows “Nobody at home”. The Family rules “Everybody away” / “First person comes home” can switch it when you choose the quick action there.
+
+### Who may do what
+
+- **Administrators:** everything – plans, presets of the house, holiday, operation, upper limits.
+- **Assigned persons** (who has a thermostat of the room assigned) see the room in the portal “Home” and in the app and change target, preset and boost there.
+- Under **“Room settings”** you set an **upper limit** (e.g. children's room at most 22 °C). It applies to assigned persons in the portal and in the app (the control goes no higher); boost is not available to them in that room then.
+
+### In the app
+
+Every room is a card: temperature, valve, window, humidity and battery, below the plan as text (“Comfort · by plan until 08:00, then Eco 18.0 °C”), the target with − / + in half degrees and the four presets. Beside it the buttons **Boost 30 min** / **End boost** and **Back to plan** when they make sense. While no preset applies (boost, by hand), a fifth button (“Boost”, “By hand”) lights up instead of a wrong preset. With a window open or no thermostat answering, the card only shows the reason.
+
 ## Permissions
 
 - Administrators set up sources and devices and assign them.
 - People only use devices assigned to them. The server checks this again on every action.
+- Heating: assigned persons change target, preset and boost in their rooms (up to the room's upper limit); plans, presets of the house, holiday and operation only administrators ([Heating](#heizung)).
 - “Window open” goes to the people the sensor is assigned to. Alarm, battery and gateway follow the topic's rule in GateControl's notification settings.
 
 ## FAQ / troubleshooting
@@ -165,6 +224,14 @@ Set the device up “By hand …”. The instructions are in the window.
 
 **A zigbee2mqtt device cannot be switched (“zigbee2mqtt on the gateway is not answering right now”).**
 Look at the gateway's tab “Radio”: does zigbee2mqtt run, are edge and MQTT on? New devices show up within half a minute.
+
+## New in 1.14.0
+
+- **Heating:** rooms from the areas of the thermostats, four presets, weekly plans, boost, “window open”, holiday with preheating and “Heating away”; the plan runs on the server ([Heating](#heizung)).
+- **deCONZ thermostats** can now be controlled (target and mode), not only shown.
+- **In the app** every room is a card with temperature, target in half degrees, presets, boost and “Back to plan”; administrators switch “Heating away” there.
+- The notification about an open window reads “Window open, heating turned down” when the heating turned the room down.
+- The update needs no new confirmation on the gateway.
 
 ## New in 1.13.0
 

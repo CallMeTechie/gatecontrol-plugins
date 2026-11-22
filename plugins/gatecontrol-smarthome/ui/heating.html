@@ -1,0 +1,143 @@
+<main class="sh-page">
+  <!-- no page title: GateControl shows it in its header -->
+  <div class="page-actions page-toolbar" id="ht-toolbar">
+    <button class="btn" type="button" data-nav="main">{{t:heat.ui.back_devices}}</button>
+    <div class="seg" role="group" aria-label="{{t:heat.ui.view}}" id="ht-seg" style="margin-left:0">
+      <button type="button" data-v="rooms" aria-pressed="true">{{t:heat.ui.rooms}}</button><button type="button" data-v="plans" aria-pressed="false">{{t:heat.ui.plans}}</button><button type="button" data-v="presets" aria-pressed="false">{{t:heat.ui.presets}}</button>
+    </div>
+    <span class="sh-spacer"></span>
+    <span class="ht-switch-l"><span id="ht-away-l">{{t:heat.away}}</span><button class="sh-switch" type="button" id="ht-away" role="switch" aria-checked="false" aria-labelledby="ht-away-l"><i></i></button></span>
+    <button class="btn" type="button" id="ht-vac-open">{{t:heat.ui.vacation_plan}}</button>
+    <button class="btn btn-primary" type="button" id="ht-new">{{t:heat.ui.new_plan}}</button>
+  </div>
+  <div id="ht-banner"></div>
+
+  <section id="ht-overview">
+    <div id="ht-rooms-sec">
+      <h2 class="group-title"><span>{{t:heat.ui.rooms}}</span> <small id="ht-rooms-sub"></small><span class="ln"></span></h2>
+      <div class="ht-rooms" id="ht-rooms"></div>
+    </div>
+    <div id="ht-plans-sec">
+      <h2 class="group-title" style="margin-top:22px"><span>{{t:heat.ui.plans}}</span> <small id="ht-plans-sub"></small><span class="ln"></span></h2>
+      <div class="ht-plans" id="ht-plans"></div>
+    </div>
+    <div id="ht-presets-sec" hidden>
+      <h2 class="group-title"><span>{{t:heat.ui.house_presets}}</span><span class="ln"></span></h2>
+      <div class="sh-card sh-stack">
+        <p class="sh-lead">{{t:heat.ui.house_presets_lead}}</p>
+        <div class="ht-pset" id="ht-house-presets"></div>
+        <div class="row"><span class="sh-spacer"></span><button class="btn btn-primary" type="button" id="ht-house-save">{{t:common.save}}</button></div>
+      </div>
+      <h2 class="group-title" style="margin-top:22px"><span>{{t:heat.ui.room_presets}}</span><span class="ln"></span></h2>
+      <div class="tbl-wrap"><table><thead><tr><th>{{t:heat.room}}</th><th>{{t:heat.ui.own_temps}}</th><th>{{t:heat.ui.max_setpoint}}</th><th></th></tr></thead><tbody id="ht-room-presets"></tbody></table></div>
+    </div>
+    <p class="ht-empty" id="ht-empty" hidden>{{t:heat.ui.empty}}</p>
+  </section>
+
+  <section id="ht-room" hidden></section>
+
+  <!-- Wochenplan bearbeiten -->
+  <div class="modal-overlay" id="ht-plan-modal" role="dialog" aria-modal="true" aria-labelledby="ht-p-title" hidden>
+    <div class="modal modal-plan">
+      <div class="modal-head">
+        <h2 class="modal-title" id="ht-p-title">{{t:heat.ui.plan_edit}}</h2>
+        <button class="btn modal-close" type="button" data-close="ht-plan-modal" aria-label="{{t:common.close}}">×</button>
+      </div>
+      <div class="modal-body sh-stack">
+        <div class="two">
+          <div class="form-group"><label class="form-label" for="ht-p-name">{{t:heat.ui.name}}</label><input class="form-input" id="ht-p-name" type="text" maxlength="40"></div>
+          <div class="form-group"><label class="form-label" for="ht-p-tpl">{{t:heat.ui.template}}</label>
+            <select class="form-select" id="ht-p-tpl">
+              <option value="">{{t:heat.ui.tpl_own}}</option><option value="work">{{t:heat.ui.tpl_work}}</option><option value="home">{{t:heat.ui.tpl_home}}</option><option value="kids">{{t:heat.ui.tpl_kids}}</option><option value="eco">{{t:heat.ui.tpl_eco}}</option>
+            </select></div>
+        </div>
+        <div class="form-group">
+          <span class="form-label" id="ht-p-rooms-l">{{t:heat.ui.applies_to}}</span>
+          <div class="ht-chips" role="group" aria-labelledby="ht-p-rooms-l" id="ht-p-rooms"></div>
+          <span class="form-hint">{{t:heat.ui.one_plan_hint}}</span>
+        </div>
+        <div class="form-group">
+          <span class="form-label">{{t:heat.ui.plan_temps}}</span>
+          <div class="ht-pset" id="ht-p-presets"></div>
+          <span class="form-hint">{{t:heat.ui.plan_temps_hint}}</span>
+        </div>
+        <div class="form-group">
+          <div class="row"><span class="form-label">{{t:heat.ui.week}}</span><span class="sh-spacer"></span><span id="ht-p-legend"></span></div>
+          <div class="ht-week" id="ht-p-week"></div>
+          <span class="form-hint">{{t:heat.ui.week_hint}}</span>
+        </div>
+        <div class="ht-segedit" id="ht-p-seg">
+          <div class="form-group"><label class="form-label" for="ht-se-day">{{t:heat.ui.day}}</label><select class="form-select" id="ht-se-day"></select></div>
+          <div class="form-group"><label class="form-label" for="ht-se-from">{{t:heat.ui.from}}</label><input class="form-input" id="ht-se-from" type="time" step="900"></div>
+          <div class="form-group"><label class="form-label" for="ht-se-to">{{t:heat.ui.to}}</label><input class="form-input" id="ht-se-to" type="time" step="900"></div>
+          <div class="form-group wide"><label class="form-label" for="ht-se-p">{{t:heat.preset}}</label><select class="form-select" id="ht-se-p"></select></div>
+          <button class="btn btn-sm" type="button" id="ht-se-split">{{t:heat.ui.split}}</button>
+          <select class="form-select" id="ht-se-copy" aria-label="{{t:heat.ui.copy_day}}" style="width:auto"></select>
+        </div>
+        <div class="form-group">
+          <span class="form-label">{{t:heat.ui.exceptions}}</span>
+          <div class="ht-rules">
+            <div class="ht-rule"><div class="grow"><b id="ht-p-win-l">{{t:heat.ui.ex_window}}</b><small id="ht-p-win-sub"></small></div>
+              <select class="form-select" id="ht-p-win-min" aria-label="{{t:heat.ui.ex_window_wait}}"></select>
+              <button class="sh-switch" type="button" role="switch" id="ht-p-win" aria-checked="true" aria-labelledby="ht-p-win-l"><i></i></button></div>
+            <div class="ht-rule"><div class="grow"><b id="ht-p-away-l">{{t:heat.ui.ex_away}}</b> <span class="sh-pill">{{t:heat.ui.from_family}}</span><small>{{t:heat.ui.ex_away_sub}}</small></div>
+              <button class="sh-switch" type="button" role="switch" id="ht-p-away" aria-checked="true" aria-labelledby="ht-p-away-l"><i></i></button></div>
+          </div>
+        </div>
+        <div class="check-line" id="ht-p-own" hidden></div>
+        <div class="where is-server" id="ht-p-where"></div>
+        <p class="sh-form-error" id="ht-p-error" role="alert" hidden></p>
+      </div>
+      <div class="modal-foot sh-foot-split">
+        <div class="sh-foot-right"><button class="btn" type="button" id="ht-p-today">{{t:heat.ui.preview_today}}</button><button class="btn btn-danger" type="button" id="ht-p-delete" hidden>{{t:heat.ui.delete_plan}}</button></div>
+        <div class="sh-foot-right"><button class="btn" type="button" data-close="ht-plan-modal">{{t:common.cancel}}</button><button class="btn btn-primary" type="button" id="ht-p-save">{{t:heat.ui.save_plan}}</button></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Urlaub planen -->
+  <div class="modal-overlay" id="ht-vac-modal" role="dialog" aria-modal="true" aria-labelledby="ht-v-title" hidden>
+    <div class="modal modal-wide">
+      <div class="modal-head">
+        <h2 class="modal-title" id="ht-v-title">{{t:heat.ui.vacation_plan}}</h2>
+        <button class="btn modal-close" type="button" data-close="ht-vac-modal" aria-label="{{t:common.close}}">×</button>
+      </div>
+      <div class="modal-body sh-stack">
+        <p class="sh-lead">{{t:heat.ui.vacation_lead}}</p>
+        <div class="two">
+          <div class="form-group"><label class="form-label" for="ht-v-from">{{t:heat.ui.vacation_from}}</label><input class="form-input" id="ht-v-from" type="datetime-local" step="900"></div>
+          <div class="form-group"><label class="form-label" for="ht-v-to">{{t:heat.ui.vacation_to}}</label><input class="form-input" id="ht-v-to" type="datetime-local" step="900"></div>
+        </div>
+        <div class="two">
+          <div class="form-group"><label class="form-label" for="ht-v-pre">{{t:heat.ui.preheat}}</label><input class="form-input" id="ht-v-pre" type="number" min="0" max="24" step="1"><span class="form-hint">{{t:heat.ui.preheat_hint}}</span></div>
+          <div class="form-group"><label class="form-label" for="ht-v-preset">{{t:heat.ui.vacation_preset}}</label><select class="form-select" id="ht-v-preset"></select></div>
+        </div>
+        <div class="form-group"><span class="form-label">{{t:heat.ui.vacation_rooms}}</span><div class="ht-vrooms" id="ht-v-rooms"></div></div>
+        <p class="sh-form-error" id="ht-v-error" role="alert" hidden></p>
+      </div>
+      <div class="modal-foot sh-foot-split">
+        <div class="sh-foot-right"><button class="btn btn-danger" type="button" id="ht-v-delete" hidden>{{t:heat.ui.vacation_delete}}</button></div>
+        <div class="sh-foot-right"><button class="btn" type="button" data-close="ht-vac-modal">{{t:common.cancel}}</button><button class="btn btn-primary" type="button" id="ht-v-save">{{t:common.save}}</button></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Raum: eigene Temperaturen, Obergrenze -->
+  <div class="modal-overlay" id="ht-room-modal" role="dialog" aria-modal="true" aria-labelledby="ht-r-title" hidden>
+    <div class="modal modal-wide">
+      <div class="modal-head">
+        <h2 class="modal-title" id="ht-r-title"></h2>
+        <button class="btn modal-close" type="button" data-close="ht-room-modal" aria-label="{{t:common.close}}">×</button>
+      </div>
+      <div class="modal-body sh-stack">
+        <div class="form-group"><span class="form-label">{{t:heat.ui.own_temps}}</span><div class="ht-pset" id="ht-r-presets"></div><span class="form-hint">{{t:heat.ui.room_temps_hint}}</span></div>
+        <div class="form-group"><label class="form-label" for="ht-r-max">{{t:heat.ui.max_setpoint}}</label><input class="form-input" id="ht-r-max" type="number" min="5" max="30" step="0.5" style="max-width:160px"><span class="form-hint">{{t:heat.ui.max_hint}}</span></div>
+        <p class="sh-form-error" id="ht-r-error" role="alert" hidden></p>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" type="button" data-close="ht-room-modal">{{t:common.cancel}}</button>
+        <button class="btn btn-primary" type="button" id="ht-r-save">{{t:common.save}}</button>
+      </div>
+    </div>
+  </div>
+</main>

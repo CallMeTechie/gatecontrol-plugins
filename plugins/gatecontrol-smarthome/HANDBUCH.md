@@ -1,4 +1,4 @@
-<!-- version: 1.13.0 -->
+<!-- version: 1.14.0 -->
 # Smart Home
 
 ## Was das Plugin kann
@@ -9,6 +9,7 @@
 - **Zigbee-Geräte von zigbee2mqtt** über ein GateControl-Gateway (ab 1.9.0): Lichter, Steckdosen, Rollläden, Sensoren und Taster, die du in GateControl unter Funk mit zigbee2mqtt angelernt hast. Ab 1.10.0 auch Schalter mit mehreren Kanälen, Thermostate und Firmware-Updates.
 - **Besitzer und Bereiche:** Du weist Geräte Personen zu. Diese Personen bedienen sie im Portal „Zuhause“ und in der App.
 - **Logikketten:** für deCONZ auf dem deCONZ-Gateway; für Shelly und Tasmota auf dem GateControl-Gateway (ab 1.10.0) – seit 1.11.0 mit Tastern, Uhrzeit, Bedingungen mit UND/ODER, Schritten mit Wartezeiten, Testlauf und Protokoll; seit 1.12.0 mit Sonnenauf-/untergang, „seit X min“, Ketten über mehrere Gateways und mit zigbee2mqtt (am Server), Mitteilungen und Schnellaktionen in der App.
+- **Heizung** (ab 1.14.0): Heizkörper-Thermostate von zigbee2mqtt und deCONZ je Raum mit Presets, Wochenplänen, Boost, „Fenster offen“, Urlaub und „Heizung abwesend“ ([Heizung](#heizung)).
 - **Mitteilungen:** Alarm (Wasser, Rauch, CO), Fenster lange offen, Batterie schwach, Gateway nicht erreichbar.
 - **Schnellaktionen und Widgets** in den GateControl-Apps für die eigenen Geräte – seit 1.13.0 mit dem Batteriestand von Batteriegeräten.
 
@@ -119,10 +120,68 @@ Wählst du im Editor als Ort **„Mehrere Gateways (über Server)“**, kannst d
 
 Der Auslöser **„+ Von Hand (App)“** macht eine Kette zur Schnellaktion „Starten“ in den GateControl-Apps (z. B. „Gute Nacht“). Administratoren dürfen sie immer starten; Personen aus dem Portal nur, wenn du sie im Editor dafür **freigibst**. „Nur wenn“ gilt auch beim Start aus der App. Im Protokoll steht der Lauf als „aus der App“.
 
+## Heizung {#heizung}
+
+Die Heizung findest du unter **Smart Home › Heizung** (Knopf oben auf der Seite). Sie steuert die Heizkörper-Thermostate von zigbee2mqtt und – ab 1.14.0 – auch von deCONZ (Soll-Temperatur und Modus).
+
+### Räume
+
+- Ein **Raum** ist der **Bereich** seiner Thermostate (Dialog „Besitzer verwalten“). Ein Thermostat ohne Bereich ist ein Raum für sich.
+- Alle Thermostate eines Raums bekommen **ein gemeinsames Soll**. „Ist“ ist der Mittelwert der Thermostate.
+- Fensterkontakte mit demselben Bereich gehören zum Raum.
+- Die Übersicht zeigt je Raum Ist, was gerade gilt (Farbe des Presets; violett: von Hand; rot: Boost; gelb umrandet: Fenster offen oder Gerät nicht erreichbar) und den heutigen Plan. **„Öffnen“** führt zur Raumseite.
+
+### Presets
+
+- Es gibt vier feste Presets: **Komfort, Eco, Nacht, Frostschutz** (Vorgabe 21 / 18 / 17 / 7 °C).
+- Die Temperaturen des Hauses stellst du unter **„Presets“** ein. Ein Plan oder ein Raum kann eigene haben; die des Raums gelten vor denen des Plans.
+- **Boost** ist kein Preset, sondern eine Aktion für 15, 30 oder 60 Minuten. Kann das Thermostat selbst Boost (deCONZ mit Preset), nutzt GateControl das, sonst stellt es 30 °C. Danach gilt wieder, was vorher galt.
+
+### Wochenplan
+
+1. **„Neuer Plan“** öffnet den Editor. Gib einen Namen ein, wähle eine Vorlage und die Räume, für die der Plan gilt. Ein Raum hat genau einen Plan.
+2. Jeder Wochentag ist ein Balken aus Abschnitten. Tippe einen Abschnitt an und ändere **Von**, **Bis** und **Preset**. Schaltpunkte rasten auf 15 Minuten. **„Abschnitt teilen“** macht aus einem Abschnitt zwei, **„Tag kopieren nach …“** übernimmt den Tag für andere Tage.
+3. Unter **Ausnahmen** stellst du „Fenster offen“ (nach 1, 2 oder 5 Minuten) und „Niemand zu Hause“ ein.
+4. **„Plan speichern“** – der Plan schickt sofort, was jetzt gilt.
+
+Der Plan **läuft am Server**: Etwa alle 30 Sekunden prüft er jeden Raum und schickt zu jedem Schaltpunkt das Soll. Ist der Server weg, halten die Thermostate das letzte Soll; ein verpasster Schaltpunkt wird nachgeholt, sobald der Server wieder da ist. Antwortet ein Thermostat nicht, versucht es der Plan nach 5 Minuten erneut; ein schlafendes Batteriegerät bekommt den Wert, sobald es wieder da ist.
+
+Hat ein Thermostat einen **eigenen Wochenplan im Gerät** (Modus „Automatik“, deCONZ-Preset „auto“ oder Zeitplan an), zeigt der Editor einen Hinweis. Sobald der Plan sendet, stellt GateControl das Gerät auf „manuell“ bzw. „Heizen“. Der Plan im Gerät wird nicht gelöscht.
+
+### Raumseite und Betrieb
+
+- **− / +** ändert das Soll in halben Grad, ein **Preset** setzt seine Temperatur. Beides gilt **bis zum nächsten Schaltpunkt**; dann übernimmt wieder der Plan. **„Zurück zum Plan“** beendet es früher.
+- **Betrieb:** **Nach Plan**, **Von Hand** (das Soll gilt auf Dauer, ohne Schaltpunkte) oder **Aus** (Modus „Aus“, wo das Thermostat ihn hat, sonst Frostschutz). Den Betrieb ändert nur ein Admin.
+- **„Plan heute aussetzen“** hält das jetzige Soll bis Mitternacht.
+- Ein Raum **ohne Plan** behält sein Soll; eine Änderung gilt dort auf Dauer.
+- Unten stehen die Geräte des Raums mit Ist, Soll, Ventil und Batterie.
+
+Was gilt, von oben nach unten: Aus · Fenster offen · Boost · Änderung von Hand · Urlaub · Von Hand · Plan (mit „Heizung abwesend“) · Soll eines Raums ohne Plan.
+
+### Fenster offen
+
+Ist ein Kontakt im Raum länger offen als im Plan eingestellt (Vorgabe 2 Minuten; ohne Plan immer 2 Minuten), stellt der Plan den Raum auf **Frostschutz**. Nach dem Schließen gilt wieder, was dann dran ist. Die Fenster-Erkennung im Thermostat bleibt an. Die Mitteilung „Fenster lange offen“ heißt dann **„Fenster offen, Heizung heruntergeregelt“**.
+
+### Urlaub und Heizung abwesend
+
+- **„Urlaub planen“:** Beginn, Rückkehr, Preset für alle Räume (Vorgabe Eco) und abweichend je Raum. Der Urlaub hat Vorrang vor den Plänen. **Vorheizen** (Vorgabe 4 Stunden): So lange vor der Rückkehr gelten wieder die Pläne, damit es warm ist. Nach der Rückkehr verschwindet der Urlaub von selbst.
+- **„Heizung abwesend“** (Schalter oben, und als Schnellaktion für Admins in der App): Komfort wird in allen Räumen zu Eco, deren Plan „Niemand zu Hause“ erlaubt. Die Familie-Regeln „Alle weg“ / „Erste Person kommt“ können ihn schalten, wenn du die Schnellaktion dort auswählst.
+
+### Wer darf was
+
+- **Admins:** alles – Pläne, Presets des Hauses, Urlaub, Betrieb, Obergrenzen.
+- **Zugewiesene Personen** (wem ein Thermostat des Raums zugewiesen ist) sehen den Raum im Portal „Zuhause“ und in der App und ändern dort Soll, Preset und Boost.
+- Unter **„Raum einstellen“** legst du eine **Obergrenze** fest (z. B. Kinderzimmer höchstens 22 °C). Sie gilt für zugewiesene Personen im Portal und in der App (der Regler geht nicht höher); Boost gibt es für sie in diesem Raum dann nicht.
+
+### In der App
+
+Jeder Raum ist eine Karte: Ist-Temperatur, Ventil, Fenster, Feuchte und Batterie, darunter der Plan als Text („Komfort · nach Plan bis 08:00, dann Eco 18,0 °C“), das Soll mit − / + in halben Grad und die vier Presets. Daneben die Knöpfe **Boost 30 min** / **Boost beenden** und **Zurück zum Plan**, wenn es passt. Gilt gerade kein Preset (Boost, von Hand), leuchtet ein fünfter Knopf („Boost“, „Von Hand“) statt eines falschen Presets. Bei offenem Fenster oder wenn kein Thermostat antwortet, zeigt die Karte nur den Grund.
+
 ## Berechtigungen
 
 - Administratoren richten Quellen und Geräte ein und weisen sie zu.
 - Personen bedienen nur Geräte, die ihnen zugewiesen sind. Das prüft der Server bei jedem Schalten erneut.
+- Heizung: Zugewiesene Personen ändern in ihren Räumen Soll, Preset und Boost (bis zur Obergrenze des Raums); Pläne, Presets des Hauses, Urlaub und Betrieb nur Admins ([Heizung](#heizung)).
 - „Fenster offen“ geht an die Personen, denen der Sensor zugewiesen ist. Alarm, Batterie und Gateway gehen nach der Regel des Themas in den Mitteilungs-Einstellungen von GateControl.
 
 ## Häufige Fragen / Fehlersuche
@@ -165,6 +224,14 @@ Richte das Gerät „Von Hand …“ ein. Die Anleitung steht im Fenster.
 
 **Ein Gerät von zigbee2mqtt lässt sich nicht schalten („zigbee2mqtt auf dem Gateway antwortet gerade nicht“).**
 Im Reiter „Funk“ des Gateways nachsehen: Läuft zigbee2mqtt, sind Edge und MQTT an? Neue Geräte erscheinen spätestens nach einer halben Minute.
+
+## Neu in 1.14.0
+
+- **Heizung:** Räume aus den Bereichen der Thermostate, vier Presets, Wochenpläne, Boost, „Fenster offen“, Urlaub mit Vorheizen und „Heizung abwesend“; der Plan läuft am Server ([Heizung](#heizung)).
+- **deCONZ-Thermostate** sind jetzt steuerbar (Soll und Modus), nicht nur Temperaturanzeige.
+- **In der App** ist jeder Raum eine Karte mit Ist, Soll in halben Grad, Presets, Boost und „Zurück zum Plan“; Admins schalten dort „Heizung abwesend“.
+- Die Mitteilung zu einem offenen Fenster heißt „Fenster offen, Heizung heruntergeregelt“, wenn die Heizung den Raum heruntergeregelt hat.
+- Das Update braucht keine neue Bestätigung am Gateway.
 
 ## Neu in 1.13.0
 

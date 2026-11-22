@@ -3,6 +3,55 @@
 Phoscon/deCONZ-Integration als GateControl-Plugin – bisher fest in GateControl eingebaut; seit 1.7.0 auch Shelly und
 Tasmota über ein GateControl-Gateway.
 
+## 1.14.0
+
+- **Heizung** (freigegebener Entwurf „Thermostate“, Stufe 1a; neu `server/heating.js`, Migration `006_heating.sql`:
+  `heat_house`, `heat_plans`, `heat_rooms`). Raum = Bereich der Thermostate (`a:<Bereich>`), ohne Bereich ein Raum je
+  Thermostat (`t:<id>`); ein Soll je Raum für alle Thermostate, Fensterkontakte desselben Bereichs gehören dazu.
+  - **Presets** Komfort / Eco / Nacht / Frostschutz (Haus 21 / 18 / 17 / 7 °C), Überschreiben je Plan und je Raum.
+  - **Wochenpläne** je Raum (7 Tage, Abschnitte im 15-min-Raster, höchstens 12 je Tag, nur Presets), ein Plan je Raum.
+  - **Planer im Server-Teil** (`tick`, ~30 s): rechnet je Raum, was jetzt gilt, und schickt es nur bei Änderung
+    (Signatur mit Schaltpunkt) an jedes Thermostat; verpasste Schaltpunkte werden nachgeholt, fehlgeschlagene Befehle
+    nach 5 min wiederholt, nicht erreichbare Geräte bekommen den Wert, sobald sie wieder da sind; ohne Server halten
+    die Thermostate das letzte Soll. Ein eigener Plan im Gerät (Modus `auto`, deCONZ `preset: auto`, `schedule_on`)
+    wird beim Senden auf manuell/heat gestellt.
+  - Vorrang: Aus · Fenster offen · Boost · von Hand bis zum nächsten Schaltpunkt · Urlaub · „Von Hand“ auf Dauer ·
+    Plan (mit „Heizung abwesend“: Komfort → Eco, je Plan abschaltbar) · gehaltenes Soll eines Raums ohne Plan.
+  - **Betrieb** Nach Plan / Von Hand / Aus (Aus: Modus `off`, sonst Frostschutz; danach der Modus von vorher),
+    „Zurück zum Plan“, „Plan heute aussetzen“ (bis Mitternacht).
+  - **Boost** 15 / 30 / 60 min: deCONZ mit `config.preset` → `preset: boost` (danach `manual`), zigbee2mqtt mit
+    `caps.boost` (ein späteres Gateway) → `boost`, sonst Soll 30 °C (bzw. Gerätemaximum).
+  - **Fenster offen:** Kontakt im Bereich länger als 1 / 2 / 5 min (Plan, ohne Plan 2) → Frostschutz, danach was dann
+    gilt. Die Mitteilung `window_open` heißt dann „Fenster offen, Heizung heruntergeregelt“ und kommt auch, wenn
+    kein Thermostat heizt.
+  - **Urlaub** für das ganze Haus: von – Rückkehr, Preset (Vorgabe Eco) und je Raum, Vorheizen (Vorgabe 4 h),
+    Vorrang vor den Plänen; verschwindet nach der Rückkehr.
+  - **Rechte:** Admins alles (`/heating…`); Personen, denen ein Thermostat des Raums zugewiesen ist, im Portal
+    (`GET /portal/heating`, `POST /portal/heating/rooms/:id`) Soll, Preset, Boost, Zurück zum Plan – Betrieb und
+    „Plan heute aussetzen“ nur Admins. Optionale Obergrenze je Raum (`max_setpoint`) für Zugewiesene, auch als
+    `stepper.max` der Apps; über ihr kein Boost für sie.
+- **Seite „Heizung“** (neu `ui/heating.html`, `ui/heating.js`, gemeinsam mit dem Portal `ui/heatui.js`): Übersicht
+  Räume / Pläne / Presets, Schalter „Heizung abwesend“, „Urlaub planen“, Wochenplan-Editor (Vorlagen, Räume,
+  eigene Temperaturen, Abschnitte, teilen, Tag kopieren, Ausnahmen, Hinweis auf eigenen Plan im Gerät), Raumseite
+  (Ist/Soll, − / +, Betrieb, Presets, Boost, heutiger Plan, Geräte), Raum-Einstellungen (eigene Werte, Obergrenze).
+  **Portal „Zuhause“:** Heizung mit den eigenen Räumen und ihrer Raumseite; Thermostate stehen nicht mehr als
+  einzelne Kacheln da.
+- **Schnellaktionen der Apps** je Raum (höchstens 8 der 16): Karte `heat:<raum>` (Ist als `value`, Ventil als
+  `badge`, Fenster / Feuchte / Batterie als `readings`, Plan-Text als `status`, Soll als `stepper` mit Schritt 0,5 –
+  ohne die Rundung auf ganze Zahlen –, Presets als `choice`), Knöpfe `heat:<raum>:boost` (Boost 30 min / beenden)
+  und `heat:<raum>:plan` im selben `device`; `heat:away` (Toggle mit `targets`, nur Admins) für die Familie-Regeln
+  über `gc.actions.run` mit `state`. Solange der Host `choice.value: null` nicht kennt, bekommt die `choice` bei
+  Boost, von Hand, Fenster und Aus eine fünfte Option („Boost“, „Von Hand“ …), die ausgewählt ist – so leuchtet kein
+  falsches Preset; sie zu wählen ändert nichts. Bei offenem Fenster oder ohne erreichbares Thermostat keine Regler.
+- **deCONZ-Thermostate** (`ZHAThermostat`) sind jetzt Art `thermostat`: `heatsetpoint`, `mode`, Ventil, Batterie,
+  `preset`, `schedule_on`; gesetzt über `PUT /sensors/<id>/config`. Sync-Zähler `thermostats`.
+- **Keine neue Edge-Fähigkeit** (`edge.capabilities` wie 1.13.0, Test).
+- Tests: Planer mit Fake-Uhr (Schaltpunkte, Nachholen, Fehler/Wiederholung, nicht erreichbar, von Hand, Betrieb,
+  Aus, ohne Plan, Plan löschen, abwesend, Urlaub mit Vorheizen, Boost, eigener Plan im Gerät, Fenster offen,
+  keine Schreibzugriffe ohne Änderung), deCONZ-Thermostate (Sync, Steuern, Boost über Preset), Mitteilung
+  „heruntergeregelt“, Rechte (Portal-Umfang, Obergrenze, Admin-API), Schnellaktionen (Widget, Schritt 0,5, Extra-
+  Option, Boost-Zeit, Fenster, nicht erreichbar, Toggle mit `state`), Manifest.
+
 ## 1.13.0
 
 - **Batteriestand in den Schnellaktionen/Widgets der Apps** (`widget.badge` von GateControl, ab 1.175.0; ältere Hosts

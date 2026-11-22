@@ -92,7 +92,7 @@ test('connect without an assigned target is refused clearly', () => withHost({ g
 test('sync classifies plugs/switches, skips virtuals and caches normalised state', () => withHost({ gateways: [fakeDeconz()] }, async (host) => {
   const { id, by, resources } = await connected(host);
   const sync = await asAdmin(host, 'POST', `/gateways/${id}/sync`);
-  assert.deepEqual(sync.json.counts, { lights: 2, plugs: 1, groups: 1, scenes: 1, sensors: 3, switches: 1 });
+  assert.deepEqual(sync.json.counts, { lights: 2, plugs: 1, groups: 1, scenes: 1, sensors: 3, switches: 1, thermostats: 0 });
   assert.equal(by('Poolpumpe').kind, 'plug');
   assert.equal(by('Smart Switch').kind, 'switch');
   assert.equal(by('Fensterkontakt').capabilities.reading, 'open');
