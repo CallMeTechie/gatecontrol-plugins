@@ -1,4 +1,4 @@
-<!-- version: 1.16.0 -->
+<!-- version: 1.17.0 -->
 # Smart Home
 
 ## What the plugin does
@@ -9,7 +9,7 @@
 - **Zigbee devices of zigbee2mqtt** through a GateControl gateway (since 1.9.0): lights, plugs, shutters, sensors and buttons you paired in GateControl under radio with zigbee2mqtt. Since 1.10.0 also switches with several channels, thermostats and firmware updates.
 - **Owners and areas:** you assign devices to people. They use them in the portal “Home” and in the app.
 - **Logic chains:** for deCONZ on the deCONZ gateway; for Shelly and Tasmota on the GateControl gateway (since 1.10.0) – since 1.11.0 with buttons, times, conditions with AND/OR, steps with waits, test run and log; since 1.12.0 with sunrise/sunset, “for X min”, chains across several gateways (on the server), notifications and quick actions in the app; since 1.15.0 with zigbee2mqtt devices on the gateway too, once an administrator confirmed it for the gateway.
-- **Heating** (since 1.14.0): radiator thermostats of zigbee2mqtt and deCONZ per room with presets, weekly plans, boost, “window open”, holiday and “Heating away” ([Heating](#heizung)).
+- **Heating** (since 1.14.0): radiator thermostats of zigbee2mqtt, deCONZ and – since 1.17.0 – Shelly TRV and Shelly BLU TRV per room with presets, weekly plans, boost, “window open”, holiday and “Heating away” ([Heating](#heizung)). If all thermostats of a room hang on one gateway (Shelly TRV, BLU TRV), its plan runs there – also without the server.
 - **Notifications:** alarm (water, smoke, CO), window open too long, battery low, gateway unreachable.
 - **Quick actions and widgets** in the GateControl apps for your own devices – since 1.13.0 with the battery level of battery devices.
 
@@ -44,6 +44,8 @@ The API key is stored encrypted.
 7. **Another user name on the device:** when GateControl asks for the device password, the field “User name on the device” is above it (first-generation Shelly and Tasmota). The default is `admin`; if you gave the device another name, enter it here. GateControl keeps the name with the device, not the password. Later you change it under **“Edit” › Connection**. Shelly devices from the second generation on only know `admin`.
 
 GateControl only changes the device's MQTT settings. Cloud, Wi-Fi and schedules stay as they are.
+
+**Radiator thermostats (since 1.17.0):** set up a **Shelly TRV** like any Shelly device. A **Shelly BLU TRV** comes through a **Shelly BLU Gateway Gen3**: set up the BLU Gateway here and pair the BLU TRVs with it in the Shelly app – every paired TRV then shows up as a thermostat of its own. The thermostats are then under **Heating** ([Heating](#heizung)); you set their target there, not on the device card.
 
 ### Bluetooth sensors
 
@@ -105,7 +107,7 @@ The chains run in the edge part on the gateway, also while the server cannot be 
 
 ### zigbee2mqtt on the gateway (since 1.15.0) {#logikketten-z2m}
 
-zigbee2mqtt devices behind the same gateway – lights, plugs, switches with several channels, shutters, contacts, motion sensors, water sensors and remotes (as buttons) – can be part of a chain on the gateway too. They then run on the gateway like Shelly and Tasmota, without the server as well. Thermostats stay with the heating on the server.
+zigbee2mqtt devices behind the same gateway – lights, plugs, switches with several channels, shutters, contacts, motion sensors, water sensors and remotes (as buttons) – can be part of a chain on the gateway too. They then run on the gateway like Shelly and Tasmota, without the server as well. Thermostats belong to the heating and are in no chain on the gateway ([Plan on the gateway](#heizung-gateway)).
 
 - **Confirmation:** for this the edge part needs the MQTT topic `zigbee2mqtt/#` as well. It is an **optional capability**: Smart Home keeps running on every gateway without a new confirmation, only zigbee2mqtt in chains has to be released by an administrator per gateway – under **Gateways › gateway › Edge plugins › Additional permissions (optional)**.
 - **When you save** a chain with a zigbee2mqtt device, Smart Home asks for that release (a note in the activity log, at most once a day). The chain is saved; the editor and the list show **“waiting for confirmation”** with the hint “For zigbee2mqtt please confirm it under Gateways › gateway › Edge plugins” and the button **“Open the gateway”**. Until then only these chains do not run – every other chain of the gateway goes on.
@@ -134,7 +136,7 @@ The trigger **“+ By hand (app)”** makes a chain a quick action “Start” i
 
 ## Heating {#heizung}
 
-You find the heating under **Smart Home › Heating** (button at the top of the page). It controls the radiator thermostats of zigbee2mqtt and – since 1.14.0 – of deCONZ too (target temperature and mode).
+You find the heating under **Smart Home › Heating** (button at the top of the page). It controls the radiator thermostats of zigbee2mqtt, since 1.14.0 those of deCONZ too (target temperature and mode) and since 1.17.0 Shelly TRV and Shelly BLU TRV through a GateControl gateway ([Shelly and Tasmota](#shelly-tasmota)).
 
 ### Rooms
 
@@ -147,7 +149,7 @@ You find the heating under **Smart Home › Heating** (button at the top of the 
 
 - There are four fixed presets: **Comfort, Eco, Night, Frost protection** (default 21 / 18 / 17 / 7 °C).
 - You set the temperatures of the house under **“Presets”**. A plan or a room may have its own; the room's come before the plan's.
-- **Boost** is no preset but an action for 15, 30 or 60 minutes. If the thermostat can boost itself (deCONZ with a preset), GateControl uses that, otherwise it sets 30 °C. Afterwards what applied before applies again.
+- **Boost** is no preset but an action for 15, 30 or 60 minutes. If the thermostat can boost itself (deCONZ with a preset, Shelly TRV), GateControl uses that, otherwise it sets 30 °C (a BLU TRV too). Afterwards what applied before applies again.
 
 ### Weekly plan
 
@@ -158,7 +160,18 @@ You find the heating under **Smart Home › Heating** (button at the top of the 
 
 The plan **runs on the server**: about every 30 seconds it checks every room and sends the target at each switching point. While the server is away the thermostats keep the last target; a missed switching point is caught up as soon as the server is back. If a thermostat does not answer, the plan tries again after 5 minutes; a sleeping battery device gets the value as soon as it is back.
 
-If a thermostat has a **weekly plan of its own in the device** (mode “auto”, deCONZ preset “auto” or schedule on), the editor shows a hint. As soon as the plan sends, GateControl sets the device to “manual” or “heat”. The plan in the device is not deleted.
+If a thermostat has a **weekly plan of its own in the device** (mode “auto”, deCONZ preset “auto”, schedule on or the schedule of a Shelly TRV), the editor shows a hint. As soon as the plan sends, GateControl sets the device to “manual” or “heat”. The plan in the device is not deleted.
+
+### Plan on the gateway (since 1.17.0) {#heizung-gateway}
+
+If all thermostats of a room are Shelly TRV or BLU TRV of **the same gateway** (at most 8 per room, 24 rooms per gateway), the plan of that room runs **on the gateway**. The room page then shows “Plan runs on the gateway”.
+
+- The gateway sets the thermostats at every switching point itself – also while the server cannot be reached and after a restart of the gateway.
+- For these rooms **only the gateway** sends commands, never the server. What you change (plan, presets, by hand, boost, mode, holiday, “Heating away”) the server sends to the gateway as a new plan; the gateway applies it at once. When the server comes back after an outage, nothing is sent twice.
+- A change by hand lasts until the next switching point on the gateway too, a boost until its end.
+- **Window open** comes from the server (contacts of every source). While it is away, an open window counts on the gateway for at most 2 more hours, then the plan applies again.
+- Without the server no new changes arrive; the room card shows “Sending” until the thermostat reports its new target. A thermostat that does not report its target after three tries is left alone until the next switching point – so turning its knob is not overwritten.
+- Rooms with thermostats of zigbee2mqtt or deCONZ – also together with a Shelly TRV – or with TRVs on two gateways keep running on the server; a Shelly TRV in them gets its target through its gateway.
 
 ### Room page and operation
 
@@ -239,6 +252,12 @@ Set the device up “By hand …”. The instructions are in the window.
 
 **A zigbee2mqtt device cannot be switched (“zigbee2mqtt on the gateway is not answering right now”).**
 Look at the gateway's tab “Radio”: does zigbee2mqtt run, are edge and MQTT on? New devices show up within half a minute.
+
+## New in 1.17.0
+
+- **Shelly TRV and Shelly BLU TRV** (through a Shelly BLU Gateway Gen3) are thermostats of the heating ([Shelly and Tasmota](#shelly-tasmota)).
+- **Plan on the gateway:** if all thermostats of a room hang on one gateway, its weekly plan runs there – also without the server ([Plan on the gateway](#heizung-gateway)).
+- The update needs no new confirmation on the gateway: Smart Home uses `shellies/#` for it, which is already granted.
 
 ## New in 1.16.0
 

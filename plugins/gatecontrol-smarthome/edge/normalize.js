@@ -20,6 +20,13 @@
 //   switch  { on, power (W), energy (Wh, lifetime counter) | today (kWh, Tasmota) }
 //   light   { on, bri (0–100), power, energy | today }
 //   cover   { pos (0–100 % open, null = not calibrated), moving ('opening' | 'closing' | null), power }
+//   thermostat (since 1.17.0) { temp (°C measured), target (°C), valve (0–100 %), kind: 'gen1' | 'blu', schedule (its
+//           own plan is on, Gen1), boost (minutes left, Gen1), window (the device saw an open window, Gen1), bat (%),
+//           paired (BLU), rid (BLU: the component id 200…) }
+//           Shelly TRV (Gen1): shellies/<id>/info { thermostats: [{ tmp, target_t, pos, schedule, boost_minutes,
+//           window_open }], bat } → thermostat:<n>. Shelly BLU TRV through a BLU Gateway Gen3 (a Gen3 device, family
+//           shelly2): its components blutrv:200… (status/blutrv:<id>, NotifyStatus / NotifyFullStatus) { current_C,
+//           target_C, pos, battery, paired } → thermostat:<id − 200>.
 // sensor { temperature (°C), humidity (%), battery (%), external (on USB power, Gen2+) }, online true | false | null
 // (LWT / "online").
 //
@@ -33,6 +40,7 @@
 
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
 const COMP_RE = /^(switch|light|cover|temperature|humidity|devicepower):(\d{1,2})$/;
+const BLUTRV_RE = /^blutrv:(2\d\d)$/;
 
 function num(v) {
   const n = typeof v === 'number' ? v : (typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN);
@@ -97,8 +105,42 @@ function tasmotaEvents(o) {
 
 // ─── Shelly Gen2+ (status/<component>, events/rpc NotifyStatus / NotifyFullStatus) ───
 
+/** A BLU TRV of a BLU Gateway Gen3 (component blutrv:200…) → thermostat:<id − 200>. */
+function bluTrv(patch, id, o) {
+  const c = { kind: 'blu', rid: id };
+  if (o.current_C != null && num(o.current_C) != null) c.temp = round(o.current_C, 1);
+  if (o.target_C != null && num(o.target_C) != null) c.target = round(o.target_C, 1);
+  if (o.pos != null && num(o.pos) != null) c.valve = pct(o.pos);
+  if (o.battery != null && num(o.battery) != null) c.bat = pct(o.battery);
+  if (typeof o.paired === 'boolean') c.paired = o.paired;
+  (patch.ch = patch.ch || {})[`thermostat:${id - 200}`] = c;
+}
+
+/** Shelly TRV (Gen1): the thermostats of its status (shellies/<id>/info) → thermostat:<n>, the battery. */
+function gen1Trv(o) {
+  const patch = { ch: {} };
+  o.thermostats.slice(0, 2).forEach((t, i) => {
+    if (!isObj(t)) return;
+    const c = { kind: 'gen1' };
+    if (isObj(t.tmp) && t.tmp.is_valid !== false && num(t.tmp.value) != null) c.temp = round(t.tmp.value, 1);
+    if (isObj(t.target_t) && num(t.target_t.value) != null) c.target = round(t.target_t.value, 1);
+    if (t.pos != null && num(t.pos) != null) c.valve = pct(t.pos);
+    if (typeof t.schedule === 'boolean') c.schedule = t.schedule;
+    if (t.boost_minutes != null && num(t.boost_minutes) != null) c.boost = Math.max(0, Math.round(num(t.boost_minutes)));
+    if (typeof t.window_open === 'boolean') c.window = t.window_open;
+    if (isObj(o.bat) && num(o.bat.value) != null) c.bat = pct(o.bat.value);
+    patch.ch[`thermostat:${i}`] = c;
+  });
+  if (!Object.keys(patch.ch).length) return null;
+  if (isObj(o.bat) && num(o.bat.value) != null) patch.sensor = { battery: pct(o.bat.value) };
+  if (isObj(o.fw_info) && typeof o.fw_info.fw === 'string') patch.info = { firmware: o.fw_info.fw.slice(0, 60) };
+  return patch;
+}
+
 /** One Gen2 component (switch:0, cover:0, …) into the patch; unknown components are ignored. */
 function gen2Component(patch, key, o) {
+  const b = BLUTRV_RE.exec(key);
+  if (b && isObj(o)) { bluTrv(patch, Number(b[1]), o); return; }
   const m = COMP_RE.exec(key);
   if (!m || !isObj(o)) return;
   const [, type, idx] = m;
@@ -199,6 +241,13 @@ function parseShelly(base, rest, payload) {
     const field = { temperature: 'temperature', humidity: 'humidity', battery: 'battery' }[rest[1]];
     if (!field) return null;
     return { family: 'shelly1', patch: { sensor: { [field]: field === 'temperature' ? round(v, 1) : pct(v) } } };
+  }
+  // Shelly TRV: its whole status (other Gen1 devices send no thermostats there: not a state of ours)
+  if ((p === 'info' || p === 'status') && rest.length === 1) {
+    const o = json(payload);
+    if (!o || !Array.isArray(o.thermostats)) return null;
+    const patch = gen1Trv(o);
+    return patch ? { family: 'shelly1', patch } : null;
   }
   if (p === 'announce') {
     const o = json(payload);

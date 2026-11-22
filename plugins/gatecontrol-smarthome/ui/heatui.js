@@ -144,7 +144,9 @@
     var gone = v.reachable === 'none';
     host.appendChild(el('div', { class: 'ht-crumb' }, [
       el('button', { type: 'button', class: 'btn btn-sm', text: '‹ ' + T('heat.title'), on: { click: ctx.back } }),
-      el('span', { text: v.name }), el('span', { class: 'sh-spacer' }), el('span', { class: 'sh-pill is-warn', text: T('heat.ui.runs_on_server') }),
+      el('span', { text: v.name }), el('span', { class: 'sh-spacer' }), onGateway(v)
+        ? el('span', { class: 'sh-pill is-good', text: T('heat.ui.runs_on_gateway') })
+        : el('span', { class: 'sh-pill is-warn', text: T('heat.ui.runs_on_server') }),
     ]));
     var grid = el('div', { class: 'ht-detail' });
     host.appendChild(grid);
@@ -252,7 +254,7 @@
       }
       var chip = S.batteryChip({ battery: x.battery, lowbattery: x.lowbattery }, x.battery_level);
       if (chip) vals.appendChild(chip);
-      var sub = [x.source === 'deconz' ? 'deCONZ' : 'zigbee2mqtt'];
+      var sub = [x.source === 'deconz' ? 'deCONZ' : (x.source === 'shelly' ? 'Shelly' : 'zigbee2mqtt')];
       if (x.gateway) sub.push(x.gateway);
       if (x.own_schedule) sub.push(T('heat.ui.own_schedule'));
       list.appendChild(el('div', { class: 'ht-devrow' }, [el('div', { class: 'grow' }, [el('b', { text: x.name }), el('small', { text: sub.join(' · ') })]), vals]));
@@ -264,9 +266,14 @@
     });
     devs.appendChild(list);
     right.appendChild(devs);
-    var where = el('div', { class: 'where is-server' }, [icon('alert', 18), el('div', null, [el('b', { text: T('heat.ui.server_title') }), ' ' + T('heat.ui.server_text')])]);
+    // since 1.17.0: a room whose thermostats all hang on one gateway (Shelly TRV / BLU TRV) runs its plan there
+    var where = onGateway(v)
+      ? el('div', { class: 'where' }, [icon('thermo', 18), el('div', null, [el('b', { text: v.runs_at.name ? T('heat.ui.gateway_title_name', { name: v.runs_at.name }) : T('heat.ui.gateway_title') }), ' ' + T('heat.ui.gateway_text')])])
+      : el('div', { class: 'where is-server' }, [icon('alert', 18), el('div', null, [el('b', { text: T('heat.ui.server_title') }), ' ' + T('heat.ui.server_text')])]);
     right.appendChild(where);
   }
+
+  function onGateway(v) { return !!(v.runs_at && v.runs_at.kind === 'gateway'); }
 
   window.SHH = { PRESETS: PRESETS, icon: icon, n1: n1, deg: deg, hm: hm, clock: clock, day: day, when: when, pname: pname, pshort: pshort, bar: bar, ticks: ticks, legend: legend,
     roomCard: roomCard, roomPage: roomPage, pillOf: pillOf, capOf: capOf, toneOf: toneOf, PRESET_ICON: PRESET_ICON };

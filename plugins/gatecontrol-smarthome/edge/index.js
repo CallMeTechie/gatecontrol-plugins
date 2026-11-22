@@ -33,10 +33,16 @@
 //   notes     a step "Mitteilung senden" (since 1.12.0): event `notify` { notes: [{ r, i, at, u }] } — the server part
 //             sends the notification (the gateway keeps events up to an hour while the server is away)
 //   sun       gc.edge.configure { sun: { lat, lon } } — sunrise and sunset of the chains, computed here (edge/sun.js)
+//   heating   (since 1.17.0) gc.edge.configure { heat: { v, tz, rooms } } — the rooms whose thermostats (Shelly TRV,
+//             BLU TRV through a BLU Gateway Gen3) all hang on this gateway: their plan runs here, with the server and
+//             without it (edge/heat.js; every 30 s and when one of their thermostats reports). The configuration and
+//             what was applied are kept in gc.store `heat`, so the plan goes on after a restart while the server is
+//             away. A configuration without `heat` (an older server part) leaves the rooms as they are.
 //
 // Capabilities (plugin.json edge.capabilities): mdns _shelly._tcp and _http._tcp, http.lan, mqtt shellies/# and
 // tasmota/#; optional (edge.optionalCapabilities, since 1.15.0): mqtt zigbee2mqtt/#. On disk (gc.store) only the last list of logic chains, so they run after a restart of the gateway
-// while the server is away, and the last runs of the chains — no device password, no MQTT password.
+// while the server is away, the last runs of the chains and the heating plan of this gateway's rooms (`heat`) — no device
+// password, no MQTT password.
 
 const os = require('node:os');
 const crypto = require('node:crypto');
@@ -44,6 +50,7 @@ const normalize = require('./normalize');
 const commands = require('./commands');
 const devices = require('./devices');
 const rules = require('./rules');
+const heat = require('./heat');
 
 const FLUSH_MS = 2000;
 const REFRESH_MS = 10 * 60 * 1000;
@@ -61,6 +68,8 @@ const Z2M_IEEE_RE = /^0x[0-9a-f]{16}$/;
 const Z2M_KINDS = ['light', 'plug', 'cover', 'sensor', 'switch'];
 const SERVICES = ['_shelly._tcp', '_http._tcp'];
 const RULES_KEY = 'rules';
+const HEAT_KEY = 'heat';
+const HEAT_MS = 30 * 1000;
 const RUNS_KEY = 'runs';
 const MAX_RUNS = 200;
 const RUNS_PAGE = 40;
@@ -100,6 +109,11 @@ const st = {
   z2mSub: null,              // the subscription of zigbee2mqtt/#
   z2mState: null,            // what the last try gave: ok | denied | error | off (MQTT not there) — event `z2m`
   notes: [],                 // { r, i, at, u } for the next flush
+  heat: null,                // edge/heat.js — the heating plan of this gateway's rooms
+  heatKey: null,             // the configuration it runs (JSON)
+  heatFromServer: false,     // the server part sent one (the stored one is no longer needed)
+  heatStored: null,          // what gc.store `heat` holds: { cfg, applied } as JSON
+  heatSoon: null,            // a tick asked for by a report of one of the rooms' thermostats
 };
 
 /** For tests: where the gateway's network interfaces come from. */
@@ -237,6 +251,7 @@ function onMessage(topic, payload, meta) {
   dev.seenAt = new Date().toISOString();
   if (st.configured && st.configured.has(r.base)) st.dirty.add(r.base);
   if (st.engine) st.engine.onDevice(r.base);
+  if (st.heat && st.heat.onDevice(r.base)) heatSoon();
   // a button press is an event for the chains, never a state; a retained one is an old press
   if (r.events && st.engine && !(meta && meta.retain)) {
     const seen = st.presses.get(r.base) || {};
@@ -328,6 +343,61 @@ function onConfig(cfg) {
   onZ2mConfig(cfg && cfg.z2m);
   // the server part's list is the truth (an older server part sends none: no chains)
   setRules({ rules: cfg && cfg.rules, tz: cfg && cfg.tz, sun: cfg && cfg.sun }, true);
+  // the heating: only when the server part sends it (an older one does not — the rooms stay as they are)
+  if (cfg && cfg.heat && typeof cfg.heat === 'object') setHeat(cfg.heat, true);
+}
+
+// ─── Heating (edge/heat.js) ─────────────────────
+
+function heatTick() {
+  if (!st.heat) return Promise.resolve(0);
+  return st.heat.tick().catch(() => 0);
+}
+
+/** One of the rooms' thermostats reported (a TRV woke up): looked at in a moment. */
+function heatSoon() {
+  if (st.heatSoon) return;
+  st.heatSoon = setTimeout(() => { st.heatSoon = null; heatTick(); }, 1000);
+  if (st.heatSoon.unref) st.heatSoon.unref();
+}
+
+/** Keep the configuration and what was applied for a restart (written only when it differs). */
+function storeHeat(cfg, applied) {
+  if (!st.gc || !st.gc.store) return;
+  const gc = st.gc;
+  st.stored = (st.stored || Promise.resolve()).then(async () => {
+    if (st.gc !== gc) return;
+    const prev = st.heatStored ? JSON.parse(st.heatStored) : { cfg: null, applied: [] };
+    const next = { cfg: cfg === undefined ? prev.cfg : cfg, applied: applied === undefined ? prev.applied : applied };
+    const key = JSON.stringify(next);
+    if (key === st.heatStored) return;
+    await gc.store.set(HEAT_KEY, next);
+    st.heatStored = key;
+  }).catch(() => warnOnce('store-heat', 'the heating plan could not be kept for a restart of the gateway'));
+}
+
+function setHeat(cfg, fromServer) {
+  if (!st.heat) return;
+  const key = JSON.stringify(heat.clean(cfg));
+  if (fromServer) st.heatFromServer = true;
+  if (key !== st.heatKey) {
+    st.heatKey = key;
+    st.heat.set(cfg);
+    if (fromServer) storeHeat(cfg, undefined);
+    heatSoon();
+  }
+}
+
+function restoreHeat() {
+  if (!st.gc.store) return;
+  const gc = st.gc;
+  st.stored = (st.stored || Promise.resolve()).then(async () => {
+    const v = await gc.store.get(HEAT_KEY).catch(() => null);
+    if (st.gc !== gc || !v || typeof v !== 'object') return;
+    st.heatStored = JSON.stringify({ cfg: v.cfg || null, applied: Array.isArray(v.applied) ? v.applied : [] });
+    if (Array.isArray(v.applied) && st.heat) st.heat.restore(v.applied);
+    if (v.cfg && !st.heatFromServer) setHeat(v.cfg, false);
+  }).catch(() => null);
 }
 
 // ─── Logic chains ───────────────────────────────
@@ -499,6 +569,18 @@ module.exports = {
     st.z2mSub = null;
     st.z2mState = null;
     st.notes = [];
+    st.heatKey = null;
+    st.heatFromServer = false;
+    st.heatStored = null;
+    st.heat = heat.create({
+      device: (base) => st.devices.get(base) || null,
+      publish: async (list) => {
+        if (st.mqtt !== 'ok') throw Object.assign(new Error('the MQTT broker of this gateway is not available'), { code: 'mqtt_off' });
+        await publishAll(list);
+      },
+      save: (applied) => storeHeat(undefined, applied),
+      log: gc.log,
+    });
     st.engine = rules.create({
       device: (base) => st.devices.get(base) || null,
       publish: async (list) => {
@@ -516,8 +598,11 @@ module.exports = {
     gc.handle('info', () => ({
       version: gc.version || null, startedAt: st.startedAt, mqtt: st.mqtt, lan: lan().map((a) => a.address).slice(0, 8),
       devices: st.configured ? st.configured.size : 0, found: st.found.size, rules: st.engine ? st.engine.count() : 0,
-      z2m: st.z2m.size ? st.z2mState : null,
+      z2m: st.z2m.size ? st.z2mState : null, heat: st.heat ? st.heat.count() : 0,
     }));
+
+    // the heating rooms of this gateway: what applies now and whether every thermostat has it
+    gc.handle('heat', () => ({ rooms: st.heat ? st.heat.view() : [] }));
 
     gc.handle('discover', async () => {
       st.probedAt.clear();
@@ -572,6 +657,7 @@ module.exports = {
     });
 
     restoreRules();
+    restoreHeat();
     gc.onConfig((cfg) => onConfig(cfg));
     if (gc.config()) onConfig(gc.config());
 
@@ -580,6 +666,7 @@ module.exports = {
     every(refreshAll, REFRESH_MS);
     every(() => { if (st.mqtt !== 'ok') subscribe(); else if (st.z2m.size && !st.z2mSub) subscribeZ2m(); }, RETRY_MQTT_MS);
     every(() => { saveRuns(); }, RUNS_SAVE_MS);
+    every(heatTick, HEAT_MS);
 
     subscribe();
     browse();
@@ -595,6 +682,12 @@ module.exports = {
     st.z2m = new Map();
     st.z2mNames = new Map();
     st.notes = [];
+    if (st.heatSoon) clearTimeout(st.heatSoon);
+    st.heatSoon = null;
+    st.heat = null;
+    st.heatKey = null;
+    st.heatFromServer = false;
+    st.heatStored = null;
     if (st.gc) saveRuns();
     if (st.engine) st.engine.stop();
     st.engine = null;
@@ -617,5 +710,5 @@ module.exports = {
     st.gc = null;
   },
 
-  _test: { st, hooks, flush, saveRuns },
+  _test: { st, hooks, flush, saveRuns, heatTick },
 };

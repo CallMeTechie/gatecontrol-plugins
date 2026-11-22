@@ -13,15 +13,21 @@
 // the friendly name (edge/index.js knows it from zigbee2mqtt/bridge/devices). Brightness 1–100 % → 3–254; covers
 // OPEN / CLOSE / STOP / position.
 // A channel of several outputs carries zch (the channel's zigbee2mqtt name, l1 / l2 / left …).
+// Since 1.17.0 thermostats (channel thermostat:<n>, the heating — edge/heat.js and server/edge.js):
+//   setpoint (value 4–31 °C, half degrees)  Shelly TRV (Gen1): <base>/thermostat/<n>/command/target_t; BLU TRV through
+//                                           a BLU Gateway Gen3: RPC BluTrv.Call { id: 200 + n, method: TRV.SetTarget }
+//   boost (value 0–120 minutes, 0 = end)    Gen1 only: <base>/thermostat/<n>/command/boost_minutes
+//   schedule_off                            Gen1 only: <base>/thermostat/<n>/command/schedule 0 (its own plan off)
 //   check(cmd) → the same checks without a topic (the logic chains check their steps before they run)
 
 const BASE_RE = /^(?:(shellies|tasmota)\/[A-Za-z0-9][A-Za-z0-9_.-]{0,63}|zigbee2mqtt\/0x[0-9a-f]{16})$/;
 const Z2M_RE = /^zigbee2mqtt\/0x[0-9a-f]{16}$/;
-const CH_RE = /^(switch|light|cover):(\d{1,2})$/;
+const CH_RE = /^(switch|light|cover|thermostat):(\d{1,2})$/;
 const OPS = {
   switch: ['on', 'off'],
   light: ['on', 'off', 'bri'],
   cover: ['open', 'close', 'stop', 'pos'],
+  thermostat: ['setpoint', 'boost', 'schedule_off'],
 };
 
 function bad(msg) { return Object.assign(new Error(msg), { code: 'bad_command' }); }
@@ -55,7 +61,16 @@ function check(cmd) {
   const idx = Number(idxStr);
   if (!OPS[type].includes(c.op)) throw bad('invalid operation');
   let value = null;
-  if (c.op === 'bri' || c.op === 'pos') {
+  if (type === 'thermostat') {
+    if (c.family !== 'shelly1' && !(c.family === 'shelly2' && c.op === 'setpoint')) throw bad('invalid operation');
+    if (c.op === 'setpoint') {
+      value = typeof c.value === 'number' && Number.isFinite(c.value) ? Math.round(c.value * 2) / 2 : NaN;
+      if (!(value >= 4 && value <= 31)) throw bad('invalid value');
+    } else if (c.op === 'boost') {
+      value = typeof c.value === 'number' && Number.isFinite(c.value) ? Math.round(c.value) : NaN;
+      if (!(value >= 0 && value <= 120)) throw bad('invalid value');
+    }
+  } else if (c.op === 'bri' || c.op === 'pos') {
     value = typeof c.value === 'number' && Number.isFinite(c.value) ? Math.round(c.value) : NaN;
     if (!(value >= (c.op === 'bri' ? 1 : 0) && value <= 100)) throw bad('invalid value');
   }
@@ -74,6 +89,13 @@ function messages(cmd, opts = {}) {
     const name = typeof opts.z2mTopic === 'function' ? opts.z2mTopic(base) : null;
     if (typeof name !== 'string' || !name || name.length > 128) throw bad('unknown zigbee2mqtt device');
     return [{ topic: `zigbee2mqtt/${name}/set`, payload: JSON.stringify(z2mPayload(c, type, value)) }];
+  }
+  if (type === 'thermostat') {
+    if (family === 'shelly2') return [rpc(base, 'BluTrv.Call', { id: 200 + idx, method: 'TRV.SetTarget', params: { id: 0, target_C: value } })];
+    const t = `${base}/thermostat/${idx}/command`;
+    if (c.op === 'setpoint') return [{ topic: `${t}/target_t`, payload: String(value) }];
+    if (c.op === 'boost') return [{ topic: `${t}/boost_minutes`, payload: String(value) }];
+    return [{ topic: `${t}/schedule`, payload: '0' }];
   }
   if (family === 'shelly2') {
     if (type === 'switch') return [rpc(base, 'Switch.Set', { id: idx, on: c.op === 'on' })];
