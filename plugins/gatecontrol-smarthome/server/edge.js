@@ -21,6 +21,10 @@
 // capability zigbee2mqtt/# (server/edgerules.js): `z2m` { state: 'ok' | 'denied' | 'error' | 'off' } → whether the
 // gateway let the edge part subscribe to it; tick() notices when an administrator confirmed (or revoked) it and sends the
 // gateway its chains again.
+// Since 1.17.0 thermostats: Shelly TRV (Gen1) and Shelly BLU TRV through a BLU Gateway Gen3 report a channel
+// thermostat:<n> → a resource of kind thermostat (the heating, server/heating.js); the configuration carries `heat`, the
+// plan of the rooms whose thermostats all hang on that gateway (server/heating.js edgeConfig) — it runs there, also
+// while the server is away.
 
 const crypto = require('node:crypto');
 const store = require('./store');
@@ -36,11 +40,14 @@ const SETUP_CALL_MS = 30000;
 const INFO_MS = 4000;
 const STALE_MS = 30 * 60 * 1000;            // devices on mains: the edge part asks them every 10 minutes
 const SENSOR_STALE_MS = 26 * 3600 * 1000;   // battery sensors sleep and report every few hours
+const THERMO_STALE_MS = 2 * 3600 * 1000;    // a radiator thermostat (Shelly TRV, BLU Gateway) reports less often
 const JOB_TTL_MS = 30 * 60 * 1000;
 const ONLINE_WAIT_MS = 3 * 60 * 1000;
 const ORPHAN_RETRY_MS = 5 * 60 * 1000;
 const ORPHANS_KEY = 'edge.orphans';
-const CH_RE = /^(switch|light|cover):(\d{1,2})$/;
+const CH_RE = /^(switch|light|cover|thermostat):(\d{1,2})$/;
+const TRV_LIMITS = Object.freeze({ min: 5, max: 30, step: 0.5 });
+const CONFIG_MAX = 47 * 1024;            // gc.edge.configure takes 48 KB
 const KINDS = new Set(['light', 'plug', 'relay']);
 const COVERS = new Set(['shutter', 'awning', 'gate']);
 const NAME_MAX = 60;
@@ -52,6 +59,7 @@ const mem = {
   ready: false,
   orphanAt: 0,
   z2mSeen: false,     // recheckZ2m looked at the gateways' chains once since the start
+  heatTooBig: new Set(), // gateways whose heating did not fit into the configuration (logged once)
 };
 
 const available = (gc) => !!(gc.edge && gc.mqtt && gc.mqtt.accounts);
@@ -123,8 +131,20 @@ async function configureGateway(gc, gatewayId) {
   const devices = (await es.listDevices(gc, gatewayId)).map((d) => ({ base: d.base, family: d.family }));
   // the gateway's logic chains run in its edge part (edge/rules.js); an older edge part ignores them
   const { rules, tz, z2m, sun } = await edgerules.configFor(gc, gatewayId);
+  // the heating of the rooms that hang on this gateway (since 1.17.0); when it cannot be worked out now, no `heat`:
+  // the gateway keeps the rooms it has (an empty list would stop them)
+  const heating = require('./heating');
+  const heat = await heating.edgeConfig(gc, Number(gatewayId)).catch((e) => { gc.log.warn('heating config failed', gatewayId, (e && (e.code || e.message)) || e); return null; });
+  let data = { devices, rules, tz, z2m, sun, ...(heat ? { heat: heat.cfg } : {}) };
+  if (heat && Buffer.byteLength(JSON.stringify(data)) > CONFIG_MAX) {
+    // GateControl takes 48 KB: the devices and chains go first, the gateway keeps the heating it has
+    if (!mem.heatTooBig.has(Number(gatewayId))) gc.log.warn(`the heating of gateway ${Number(gatewayId)} does not fit into its configuration (too many rooms, plans or chains) — the gateway keeps the plan it has`);
+    mem.heatTooBig.add(Number(gatewayId));
+    data = { devices, rules, tz, z2m, sun };
+  }
   try {
-    await gc.edge.configure(Number(gatewayId), { devices, rules, tz, z2m, sun });
+    await gc.edge.configure(Number(gatewayId), data);
+    if (data.heat) heating.noteSent(Number(gatewayId), heat.key);
     return true;
   } catch (e) {
     gc.log.debug('edge configure failed', gatewayId, edgeErr(e));
@@ -181,13 +201,19 @@ async function batteryLowAt(gc) {
   try { return alerts.configOf(await gc.settings.all()).batteryLow; } catch { return BATTERY_LOW_DEFAULT; }
 }
 
+/** Only thermostats (a Shelly TRV, a BLU Gateway with its TRVs): they report less often than a switch. */
+function thermoOnly(dev) {
+  const keys = Object.keys((dev.state && dev.state.ch) || {});
+  return keys.length > 0 && keys.every((k) => k.startsWith('thermostat:'));
+}
+
 /** Reachable: reported within the window and — on mains — not announced offline (LWT / "online"). */
 function reachableOf(dev, now = Date.now()) {
   const seen = dev.last_seen_at ? Date.parse(dev.last_seen_at) : NaN;
   if (!Number.isFinite(seen)) return false;
   const sleeper = sensorOnly(dev);
   if (!sleeper && dev.online === false) return false;
-  return now - seen <= (sleeper ? SENSOR_STALE_MS : STALE_MS);
+  return now - seen <= (sleeper ? SENSOR_STALE_MS : (thermoOnly(dev) ? THERMO_STALE_MS : STALE_MS));
 }
 
 const finite = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
@@ -231,8 +257,22 @@ function sensorState(s, reachable, dev) {
   return st;
 }
 
+/** A thermostat's resource state (Shelly TRV, BLU TRV): as the heating reads it. */
+function thermostatState(c, reachable, dev) {
+  const bat = finite(c.bat) != null ? c.bat : finite(((dev.state && dev.state.sensor) || {}).battery);
+  const st = { reachable: reachable && c.paired !== false, type: 'temperature', value: finite(c.temp), setpoint: finite(c.target), valve: finite(c.valve), mode: null };
+  if (c.paired === false) st.paired = false; // a BLU TRV the gateway lost
+  st.heating = st.valve != null && st.valve > 0;
+  if (bat != null) st.battery = bat;
+  if (typeof c.schedule === 'boolean') st.schedule_on = c.schedule;
+  if (typeof c.window === 'boolean') st.window = c.window;
+  if (finite(c.boost) != null) st.boost_minutes = c.boost;
+  st.lastupdated = dev.last_seen_at || null;
+  return st;
+}
+
 function channelKeys(state) {
-  const order = { cover: 0, light: 1, switch: 2 };
+  const order = { cover: 0, light: 1, switch: 2, thermostat: 3 };
   return Object.keys((state && state.ch) || {}).filter((k) => CH_RE.test(k))
     .sort((a, b) => (order[a.split(':')[0]] - order[b.split(':')[0]]) || (Number(a.split(':')[1]) - Number(b.split(':')[1])));
 }
@@ -249,6 +289,16 @@ async function syncResources(gc, dev, { drop = [], now = Date.now() } = {}) {
     const c = dev.state.ch[key] || {};
     const cc = chCfg[key] || {};
     const prev = prevAll.get(key);
+    if (type === 'thermostat') {
+      const trv = c.kind === 'blu' ? 'blu' : 'gen1';
+      const name = cleanText(cc.name, NAME_MAX) || (keys.length === 1 ? dev.name : `${dev.name} ${i + 1}`);
+      await es.upsertChannel(gc, dev, key, {
+        kind: 'thermostat', name, area: dev.area, state: thermostatState(c, reachable, dev),
+        // boost of the device itself: Shelly TRV (Gen1); a BLU TRV gets 30 °C instead
+        capabilities: { source: 'edge', ch: key, trv, reading: 'temperature', gateway_id: dev.gateway_id, setpoint: { ...TRV_LIMITS }, boost: trv === 'gen1', schedule: trv === 'gen1' },
+      });
+      continue;
+    }
     let kind;
     if (type === 'cover') kind = 'cover';
     else if (type === 'light') kind = 'light';
@@ -277,9 +327,11 @@ function cleanSnapshot(snap) {
     if (!CH_RE.test(k) || !v || typeof v !== 'object' || Object.keys(ch).length >= 16) continue;
     const c = {};
     if (typeof v.on === 'boolean') c.on = v.on;
-    for (const f of ['bri', 'pos', 'power', 'energy', 'today']) if (finite(v[f]) != null) c[f] = v[f];
+    for (const f of ['bri', 'pos', 'power', 'energy', 'today', 'temp', 'target', 'valve', 'boost', 'bat', 'rid']) if (finite(v[f]) != null) c[f] = v[f];
     if (v.pos === null) c.pos = null;
     if (v.moving === 'opening' || v.moving === 'closing') c.moving = v.moving;
+    for (const f of ['schedule', 'window', 'paired']) if (typeof v[f] === 'boolean') c[f] = v[f];
+    if (v.kind === 'gen1' || v.kind === 'blu') c.kind = v.kind;
     ch[k] = c;
   }
   const sensor = {};
@@ -360,7 +412,9 @@ function setup(gc) {
   mem.jobs.clear();
   mem.orphanAt = 0;
   mem.z2mSeen = false;
+  mem.heatTooBig.clear();
   edgerules._z2mMem.clear();
+  require('./heating').resetEdge();
   mem.ready = available(gc);
   if (!gc.edge) return false;
   gc.edge.on('$started', ({ gatewayId }) => configureGateway(gc, gatewayId).then(() => catchUp(gc, gatewayId)));
@@ -545,6 +599,7 @@ async function setState(gc, resource, raw) {
   if (!m) throw codeError('SMARTHOME_NOT_CONTROLLABLE');
   const type = m[1];
   const p = raw && typeof raw === 'object' ? raw : {};
+  if (type === 'thermostat') return setThermostat(gc, resource, dev, key, p);
   let op = null;
   let value;
   if (type === 'cover') {
@@ -568,6 +623,40 @@ async function setState(gc, resource, raw) {
   if (op === 'open' || op === 'close') st.moving = op === 'open' ? 'opening' : 'closing';
   if (op === 'stop') st.moving = null;
   if (op === 'pos') st.moving = value > (st.pos == null ? -1 : st.pos) ? 'opening' : 'closing';
+  await es.setResourceState(gc, resource.id, st);
+  return { ok: true };
+}
+
+/**
+ * A thermostat (Shelly TRV, BLU TRV): { setpoint?, boost? (true / false), boost_minutes?, schedule_on: false? } — as the
+ * heating's commandFor and the page send it. The cached state follows.
+ */
+async function setThermostat(gc, resource, dev, key, p) {
+  const caps = resource.capabilities || {};
+  const ops = [];
+  if (p.schedule_on === false && caps.schedule) ops.push({ op: 'schedule_off' });
+  if (p.boost === false && caps.boost) ops.push({ op: 'boost', value: 0 });
+  if (typeof p.setpoint === 'number' && Number.isFinite(p.setpoint)) {
+    ops.push({ op: 'setpoint', value: Math.max(TRV_LIMITS.min, Math.min(TRV_LIMITS.max, Math.round(p.setpoint * 2) / 2)) });
+  }
+  if (p.boost === true && caps.boost) ops.push({ op: 'boost', value: Math.max(1, Math.min(120, Math.round(finite(p.boost_minutes) || 30))) });
+  if (!ops.length) throw codeError('SMARTHOME_INVALID_PATCH');
+  if (!available(gc)) throw codeError('SMARTHOME_EDGE_UNAVAILABLE');
+  for (const o of ops) {
+    try {
+      await gc.edge.call(dev.gateway_id, 'command', { base: dev.base, family: dev.family, ch: key, op: o.op, ...(o.value !== undefined ? { value: o.value } : {}) }, { timeoutMs: CALL_MS });
+    } catch (e) {
+      const code = edgeErr(e);
+      if (code === 'mqtt_off') throw codeError('SMARTHOME_MQTT_OFF');
+      throw codeError('SMARTHOME_EDGE_UNREACHABLE', code);
+    }
+  }
+  const st = { ...(resource.state || {}) };
+  for (const o of ops) {
+    if (o.op === 'setpoint') st.setpoint = o.value;
+    if (o.op === 'schedule_off') st.schedule_on = false;
+    if (o.op === 'boost') st.boost_minutes = o.value;
+  }
   await es.setResourceState(gc, resource.id, st);
   return { ok: true };
 }
@@ -873,7 +962,7 @@ async function tick(gc, now = Date.now()) {
   for (const r of await es.allEdgeResources(gc)) {
     const dev = devices.get(r.edge_device_id);
     if (!dev) continue;
-    const reachable = reachableOf(dev, now);
+    const reachable = reachableOf(dev, now) && r.state.paired !== false;
     if (r.state.reachable !== reachable) await es.setResourceState(gc, r.id, { ...r.state, reachable });
   }
   if (available(gc) && now - mem.orphanAt > ORPHAN_RETRY_MS) {

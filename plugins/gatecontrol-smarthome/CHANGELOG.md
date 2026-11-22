@@ -3,6 +3,39 @@
 Phoscon/deCONZ-Integration als GateControl-Plugin – bisher fest in GateControl eingebaut; seit 1.7.0 auch Shelly und
 Tasmota über ein GateControl-Gateway.
 
+## 1.17.0
+
+- **Thermostate Stufe 2** (freigegebener Entwurf „Thermostate“): Shelly TRV (Gen1) und Shelly BLU TRV über ein Shelly BLU
+  Gateway Gen3 als Thermostate der Heizung; der Wochenplan je Raum läuft für sie **am Gateway**, auch ohne Server.
+  - **Edge-Teil:** `normalize` liest `shellies/<id>/info` des Shelly TRV (`thermostats[]`: Ist, Soll, Ventil, eigener
+    Zeitplan, Boost-Minuten, Fenster, Batterie) und die Komponenten `blutrv:200…` des BLU Gateway (`status/blutrv:<id>`,
+    NotifyStatus / NotifyFullStatus: `current_C`, `target_C`, `pos`, `battery`, `paired`) als Kanal `thermostat:<n>`.
+    `commands`: `setpoint` (Gen1 `thermostat/<n>/command/target_t`, BLU RPC `BluTrv.Call` → `TRV.SetTarget`), `boost`
+    (Gen1 `boost_minutes`), `schedule_off` (Gen1 `schedule` 0).
+  - **Plan am Gateway** (neu `edge/heat.js`): `gc.edge.configure { heat: { v, tz, plans, rooms } }`; das Gateway rechnet
+    je Raum wie `server/heating.js decide` (Aus · Fenster · Boost · von Hand · Urlaub · Von Hand · Plan mit Abwesend ·
+    gehaltenes Soll) in der Zeitzone des Servers und schickt nur bei neuer Signatur (echter Schaltpunkt). Ein Thermostat
+    gilt als erledigt, sobald es das Soll meldet, sonst höchstens 3 Versuche im Abstand von 5 min; nicht erreichbare
+    (offline, 2 h still, BLU nicht gekoppelt) bekommen es, sobald sie sich melden. Konfiguration und Angewandtes liegen in
+    `gc.store` `heat` – nach einem Neustart ohne Server läuft der Plan weiter, nichts wird doppelt geschickt. Eine
+    Konfiguration ohne `heat` (älterer Server-Teil) lässt die Räume, wie sie sind. `info` zeigt `heat`, neuer Handler `heat`.
+  - **Zuständigkeit:** Ein Raum, dessen Thermostate alle Shelly/BLU TRV desselben Gateways sind (≤ 8 je Raum, ≤ 24
+    Räume je Gateway), läuft am Gateway (`room.edge`); der Server schickt dessen Thermostaten **nie** Befehle, er
+    schickt dem Gateway den Raum, wenn sich etwas ändert (Plan, Presets, von Hand, Boost, Betrieb, Urlaub, Abwesend,
+    Fenster) – `pushEdge` nach jedem Lauf und jeder Änderung, fehlgeschlagen nach 5 min erneut, sonst bei `$online`.
+    Fenster offen kommt mit `ttl` (2 h, erneuert, solange es offen ist): ohne Server endet es am Gateway von selbst.
+    Gemischte Räume (mit zigbee2mqtt/deCONZ oder TRVs an zwei Gateways) bleiben am Server, ein TRV darin bekommt Befehle
+    über sein Gateway. „Wird übertragen“ zählt für Gateway-Räume Thermostate, die das Soll noch nicht melden.
+  - **Server-Teil:** Kanal `thermostat:<n>` → Ressource `thermostat` (`capabilities.trv` gen1 | blu, `gateway_id`,
+    Grenzen 5–30 °C, `boost` nur Gen1); reine Thermostat-Geräte gelten 2 h als erreichbar; `setState` für
+    Thermostate (`setpoint`, `boost`/`boost_minutes`, `schedule_on: false`). Thermostate sind keine Ressourcen von
+    Ketten am Gateway; Server-Ketten lesen sie wie zigbee2mqtt-Thermostate als Temperatur. Passt die Heizung nicht mehr
+    in die 48 KB der Konfiguration, geht sie ohne `heat` (das Gateway behält seinen Plan, Warnung einmal).
+  - **Seiten:** Raumseite „Plan läuft am Gateway“ (Name des Gateways) statt „am Server“, Quelle „Shelly“; Gerätekarte und
+    Kanäle zeigen Thermostate (Ist, Soll, Ventil); Hinweis im Plan-Editor ergänzt.
+- `edge.capabilities` unverändert (`shellies/#` deckt Shelly TRV und BLU Gateway ab) – kein `update_pending`;
+  `edge.optionalCapabilities` unverändert. Kein Eingriff in Gateway oder Server nötig.
+
 ## 1.16.0
 
 - **Heizungs-Karte der Apps** mit den Widget-Erweiterungen von GateControl 1.317.1 (`"gatecontrol": ">=1.317.1"`):

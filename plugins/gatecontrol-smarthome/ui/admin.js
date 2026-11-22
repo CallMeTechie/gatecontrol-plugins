@@ -375,6 +375,15 @@
         seg.appendChild(el('button', { type: 'button', class: 'btn sh-seg-btn', text: T('cover.' + op), on: { click: function () { send(r.id, { cover: op }).then(function () { S.toast(T('cover.done_' + op, { name: name })); }, warn); } } }));
       });
       body.appendChild(seg);
+    } else if (r.kind === 'thermostat') {
+      // a Shelly TRV / BLU TRV (since 1.17.0): measured and target temperature; the target comes from the heating
+      body.appendChild(el('div', { class: 'sh-vals sh-vals-2' }, [bigValue(T('thermo.actual'), st.value == null ? '–' : fmt(st.value, 1) + ' °C'),
+        bigValue(T('thermo.target'), st.setpoint == null ? '–' : fmt(st.setpoint, 1) + ' °C')]));
+      var tparts = [];
+      if (st.valve != null) tparts.push(T('heat.valve') + ' ' + fmt(st.valve, 0) + ' %');
+      if (st.schedule_on) tparts.push(T('heat.ui.own_schedule'));
+      tparts.push(T('thermo.via_heating'));
+      body.appendChild(el('span', { class: 'sh-sub', text: tparts.join(' · ') }));
     } else if (r.kind === 'sensor') {
       var vals = el('div', { class: 'sh-vals' });
       if (st.type === 'temperature' && st.value != null) vals.appendChild(bigValue(T('card.temperature'), fmt(st.value) + ' °C'));
@@ -428,6 +437,7 @@
         section(T('section.lights'), of('light'), edgeCard),
         section(T('section.plugs'), of('plug'), edgeCard),
         section(T('section.relays'), of('relay'), edgeCard),
+        section(T('section.thermostats'), of('thermostat'), edgeCard),
         section(T('section.sensors'), of('sensor'), edgeCard),
         section(T('section.waiting'), of('waiting'), edgeCard),
       ];
@@ -1131,6 +1141,7 @@
       var control = null;
       if (x.type === 'cover') { label = T('device.outputs_pair', { a: 2 * x.n + 1, b: 2 * x.n + 2 }); hint = T('device.pair_hint'); }
       else if (x.type === 'sensor') label = T('device.sensor');
+      else if (x.type === 'thermostat') label = T('device.thermostat', { n: x.n + 1 });
       else label = T('device.output', { n: x.n + 1 });
       if (x.type === 'cover' || x.type === 'switch') {
         var opts = x.type === 'cover' ? [['shutter', T('cover.shutter')], ['awning', T('cover.awning')], ['gate', T('cover.gate')]] : [['light', T('kind.light')], ['plug', T('kind.plug')], ['relay', T('kind.relay')]];
@@ -1138,7 +1149,7 @@
         opts.forEach(function (o) { sel.appendChild(el('option', { value: o[0], text: o[1] })); });
         sel.value = x.type === 'cover' ? ((res && res.capabilities.cover) || (cfg[x.key] && cfg[x.key].cover) || 'shutter') : ((res && res.kind) || (cfg[x.key] && cfg[x.key].kind) || 'relay');
         control = sel;
-      } else control = el('span', { class: 'sh-sub', text: x.type === 'light' ? T('device.dimmer') : T('device.sensor') });
+      } else control = el('span', { class: 'sh-sub', text: x.type === 'light' ? T('device.dimmer') : (x.type === 'thermostat' ? T('kind.thermostat') : T('device.sensor')) });
       var nameInput = many && x.type !== 'sensor' ? el('input', { class: 'form-input', type: 'text', maxlength: '60', 'data-ch': x.key, 'data-field': 'name', value: (cfg[x.key] && cfg[x.key].name) || '', placeholder: res ? res.name : '', 'aria-label': T('device.name_for', { label: label }) }) : null;
       host.appendChild(el('div', { class: 'sh-ch' }, [
         el('span', { class: 'sh-ch-text' }, [el('strong', { text: label }), hint ? el('span', { class: 'sh-sub', text: hint }) : null]),

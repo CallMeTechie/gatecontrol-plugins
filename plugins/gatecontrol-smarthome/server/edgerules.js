@@ -203,6 +203,7 @@ async function resourcesOf(gc, gatewayId) {
   }
   for (const dev of await es.listDevices(gc, gatewayId)) {
     for (const r of await es.deviceResources(gc, dev.id)) {
+      if (r.kind === 'thermostat') continue; // the heating's (since 1.17.0), no chain's
       out.set(r.id, { resource: r, device: dev, ch: String(r.deconz_id).split('/')[1] || '' });
     }
   }
@@ -220,6 +221,7 @@ const isServer = (g) => g === SERVER || Number(g) === 0;
 
 /** The channel key of any resource on the server: a switched output, a light, a cover, a sensor, a scene. */
 function serverCh(r) {
+  if (r.kind === 'thermostat') return 'sensor'; // a Shelly / BLU TRV too (since 1.17.0): its temperature, like zigbee2mqtt
   if (r.deconz_type === 'edge') return String(r.deconz_id).split('/')[1] || null;
   if (r.kind === 'light' || r.kind === 'group') return 'light:0';
   if (r.kind === 'plug' || r.kind === 'relay') return 'switch:0';

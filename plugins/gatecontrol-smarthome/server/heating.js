@@ -26,6 +26,16 @@
 //
 // A thermostat with a plan of its own (zigbee2mqtt / deCONZ mode "auto", deCONZ preset "auto", deCONZ schedule_on) is
 // set to "manual" when the plan sends to it, so two plans do not work against each other; its plan stays in the device.
+//
+// Since 1.17.0 the plan runs on a GateControl gateway for a room whose thermostats all hang on that gateway (Shelly TRV,
+// Shelly BLU TRV through a BLU Gateway Gen3; at most 8 per room, 24 rooms per gateway): `room.edge` = the gateway. Who
+// sends: for such a room ONLY the gateway (edge/heat.js) — with the server and without it; this part never sends to
+// its thermostats, it hands the gateway what the room needs (edgeConfig: the plan with its temperatures, holiday,
+// "Heizung abwesend", Aus / Von Hand, by hand, boost, window, the time zone) with the configuration
+// (server/edge.js configureGateway) whenever that changes (pushEdge). A server that comes back sends nothing twice. A
+// lowered window reaches the gateway with `ttl` (2 h, renewed while it stays open): a gateway that no longer hears
+// the server goes back to the plan then. Every other room (zigbee2mqtt, deCONZ, a TRV together with them or with
+// thermostats of another gateway) runs here as before; a Shelly / BLU TRV in it gets its commands through its gateway.
 
 const store = require('./store');
 const battery = require('./battery');
@@ -51,6 +61,11 @@ const MODES = Object.freeze(['plan', 'manual', 'off']);
 const NAME_MAX = 40;
 const PLANS_MAX = 50;
 const HOUR = 3600000;
+const WINDOW_TTL = 2 * HOUR;        // a lowered window on a gateway: valid for so long without news from the server
+const WINDOW_RENEW = HOUR;          // … and renewed when less is left
+const EDGE_ROOMS_MAX = 24;          // rooms per gateway (edge/heat.js takes 32; the configuration stays small)
+const EDGE_TH_MAX = 8;              // thermostats per room on a gateway
+const EDGE_RETRY_MS = 5 * 60000;    // a configuration the gateway did not take: tried again (and with $online)
 
 // the clock of the plan (tests replace it: _setClock)
 let clock = () => Date.now();
@@ -291,6 +306,7 @@ const limitsOf = (r) => {
   return { min, max, step: finite(s.step) || 0.5 };
 };
 const isDeconz = (r) => r.deconz_type === 'sensors';
+const isEdge = (r) => r.deconz_type === 'edge';
 /** The thermostat does boost itself: deCONZ with a preset (Tuya and others), zigbee2mqtt when the gateway reports it. */
 const deviceBoost = (r) => !!(r.capabilities && (isDeconz(r) ? r.capabilities.preset === true : r.capabilities.boost === true));
 /** The thermostat runs a plan of its own. */
@@ -299,6 +315,7 @@ function ownSchedule(r) {
   const modes = (r.capabilities && r.capabilities.modes) || [];
   if (st.mode === 'auto' && modes.includes('heat')) return true;
   if (isDeconz(r) && (st.preset === 'auto' || st.schedule_on === true)) return true;
+  if (isEdge(r) && st.schedule_on === true) return true; // Shelly TRV: its own plan is on
   return false;
 }
 
@@ -320,14 +337,18 @@ function commandFor(r, want, prev, planned) {
     cmd.mode = before && before !== 'off' && modes.includes(before) ? before : (modes.includes('heat') ? 'heat' : modes.find((m) => m !== 'off'));
   }
   if (want.kind === 'boost') {
-    if (deviceBoost(r)) { if (isDeconz(r)) cmd.preset = 'boost'; else cmd.boost = true; } else cmd.setpoint = clamp(BOOST_SETPOINT);
+    if (deviceBoost(r)) {
+      if (isDeconz(r)) cmd.preset = 'boost';
+      else cmd.boost = true;
+      if (isEdge(r)) cmd.boost_minutes = Math.max(1, Math.ceil(((want.until || 0) - clock()) / 60000));
+    } else cmd.setpoint = clamp(BOOST_SETPOINT);
   } else {
     cmd.setpoint = clamp(want.setpoint);
     if (prev.kind === 'boost' && deviceBoost(r)) { if (isDeconz(r)) cmd.preset = 'manual'; else cmd.boost = false; }
   }
   if (planned && ownSchedule(r)) {
     if (isDeconz(r) && st.preset === 'auto' && !cmd.preset) cmd.preset = 'manual';
-    if (isDeconz(r) && st.schedule_on === true) cmd.schedule_on = false;
+    if ((isDeconz(r) || isEdge(r)) && st.schedule_on === true) cmd.schedule_on = false;
     if (st.mode === 'auto' && modes.includes('heat') && !cmd.mode) cmd.mode = 'heat';
   }
   if (cmd.mode == null) delete cmd.mode;
@@ -397,10 +418,31 @@ async function load(gc) {
     room.contacts = area ? all.filter((r) => r.kind === 'sensor' && r.area === area && r.state && r.state.type === 'open') : [];
     const hum = area ? all.find((r) => r.kind === 'sensor' && r.area === area && r.state && (r.state.type === 'humidity' || (r.state.type === 'temperature' && r.state.humidity != null)) && r.state.reachable !== false) : null;
     room.humidity = hum ? finite(Number(hum.state.type === 'humidity' ? hum.state.value : hum.state.humidity)) : null;
+    room.edge = edgeGatewayOf(room.thermostats);
     rooms.push(room);
   }
   rooms.sort((a, b) => a.name.localeCompare(b.name) || a.id - b.id);
+  // at most 24 rooms per gateway run there (in the order of the rooms' ids); the others stay here
+  const perGw = new Map();
+  for (const room of [...rooms].sort((a, b) => a.id - b.id)) {
+    if (!room.edge) continue;
+    const n = (perGw.get(room.edge) || 0) + 1;
+    perGw.set(room.edge, n);
+    if (n > EDGE_ROOMS_MAX) room.edge = null;
+  }
   return { house: await houseOf(gc), plans: await plansOf(gc), rooms };
+}
+
+/** The gateway a room's plan runs on: every thermostat a Shelly / BLU TRV of the same gateway (at most 8), else null. */
+function edgeGatewayOf(list) {
+  if (!list.length || list.length > EDGE_TH_MAX) return null;
+  let gw = null;
+  for (const r of list) {
+    const id = isEdge(r) && r.capabilities ? Number(r.capabilities.gateway_id) : NaN;
+    if (!Number.isSafeInteger(id) || id <= 0 || (gw != null && gw !== id)) return null;
+    gw = id;
+  }
+  return gw;
 }
 
 async function saveRoom(gc, id, patch) {
@@ -442,7 +484,11 @@ async function windowStep(gc, room, ctx, now) {
     return;
   }
   if (!w.lowered && now - w.since >= cfg.min * 60000) {
-    room.window = { ...w, lowered: true };
+    room.window = { ...w, lowered: true, ttl: now + WINDOW_TTL };
+    await saveRoom(gc, room.id, { window: room.window });
+  } else if (w.lowered && (!(w.ttl > 0) || w.ttl - now < WINDOW_RENEW)) {
+    // still open: the gateway of the room hears so (its window ends by itself when the server stays away)
+    room.window = { ...w, ttl: now + WINDOW_TTL };
     await saveRoom(gc, room.id, { window: room.window });
   }
 }
@@ -451,6 +497,8 @@ async function windowStep(gc, room, ctx, now) {
 async function applyRoom(gc, room, ctx, now) {
   const want = decide(room, ctx, now);
   if (!want.sig) return 0;
+  // the room's gateway sends (edge/heat.js), never this part: nothing twice, nothing that contradicts it
+  if (room.edge) return edgePending(room, ctx, want);
   if (want.kind === 'off') want.frost = presetTemps(room, planOf(room, ctx), ctx.house).frost;
   const ap = room.applied || {};
   const same = ap.sig === want.sig;
@@ -495,6 +543,95 @@ async function expire(gc, room, ctx, now) {
   if (Object.keys(patch).length) await saveRoom(gc, room.id, patch);
 }
 
+/** A room on a gateway: how many of its thermostats do not report what applies yet (unreachable ones included). */
+function edgePending(room, ctx, want) {
+  if (!want.sig) return 0;
+  const frost = presetTemps(room, planOf(room, ctx), ctx.house).frost;
+  let n = 0;
+  for (const r of room.thermostats) {
+    const st = r.state || {};
+    if (st.reachable === false) { n++; continue; }
+    if (want.kind === 'boost' && deviceBoost(r)) continue;
+    const lim = limitsOf(r);
+    const exp = Math.max(lim.min, Math.min(lim.max, want.kind === 'boost' ? BOOST_SETPOINT : (want.kind === 'off' ? frost : want.setpoint)));
+    if (!(finite(st.setpoint) != null && Math.abs(st.setpoint - exp) < 0.05)) n++;
+  }
+  return n;
+}
+
+function timeZone() {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || null; } catch { return null; }
+}
+
+/**
+ * What the gateway `gw` runs for its rooms (edge/heat.js): { v, tz, plans: { <id>: week }, rooms } — every week once,
+ * only stable values (no "now").
+ */
+async function edgeConfigFrom(gc, ctx, gw) {
+  const devs = new Map((await require('./edgestore').listDevices(gc, gw)).map((d) => [d.id, d]));
+  const vac = ctx.house.vacation;
+  const rooms = [];
+  const plans = {};
+  for (const room of ctx.rooms.filter((r) => r.edge === gw).sort((a, b) => a.id - b.id)) {
+    const plan = planOf(room, ctx);
+    const th = [];
+    for (const r of room.thermostats) {
+      const d = devs.get(Number(r.edge_device_id));
+      if (!d) continue;
+      const lim = limitsOf(r);
+      th.push({ base: d.base, ch: r.capabilities.ch, fam: d.family, min: lim.min, max: lim.max, boost: deviceBoost(r) });
+    }
+    if (!th.length) continue;
+    const o = room.override;
+    if (plan) plans[String(plan.id)] = plan.week;
+    rooms.push({
+      id: room.id, th, temps: presetTemps(room, plan, ctx.house), plan: plan ? plan.id : null, away: !!(ctx.house.away && plan && plan.away),
+      mode: room.mode, manual: room.manual, hold: room.hold,
+      vac: vac ? { from: vac.from, end: vacationEnd(vac), preset: vac.rooms[String(room.id)] || vac.preset } : null,
+      ov: o && o.until != null ? { at: o.at, until: o.until, ...(o.preset ? { preset: o.preset } : { setpoint: o.setpoint }) } : null,
+      boost: room.boost ? { at: room.boost.at, until: room.boost.until, minutes: room.boost.minutes } : null,
+      win: room.window && room.window.lowered && room.window.ttl ? { since: room.window.since, ttl: room.window.ttl } : null,
+    });
+  }
+  return { v: 1, tz: timeZone(), plans, rooms };
+}
+
+// gateway id → what it got last (JSON) / when a configuration it did not take was tried (memory only: after a start
+// of the plugin every gateway with rooms gets it once)
+const edgeSent = new Map();
+const edgeTried = new Map();
+let edgeStarted = false; // the first run after a start looks at every gateway with devices once (a room may have left)
+
+/** server/edge.js configureGateway: the heating part of a gateway's configuration → { cfg, key }. */
+async function edgeConfig(gc, gw) {
+  const cfg = await edgeConfigFrom(gc, await load(gc), Number(gw));
+  return { cfg, key: JSON.stringify(cfg) };
+}
+
+function noteSent(gw, key) { edgeSent.set(Number(gw), key); edgeTried.delete(Number(gw)); }
+function resetEdge() { edgeSent.clear(); edgeTried.clear(); edgeStarted = false; }
+
+/** Every gateway whose rooms changed gets its configuration again (also one whose last room left it). */
+async function pushEdge(gc, ctx) {
+  const edge = require('./edge');
+  if (!edge.available(gc)) return;
+  const gws = new Set(ctx.rooms.map((r) => r.edge).filter(Boolean));
+  for (const [gw, key] of edgeSent) if (key && JSON.parse(key).rooms.length) gws.add(gw);
+  if (!edgeStarted) {
+    edgeStarted = true;
+    for (const d of await require('./edgestore').listDevices(gc)) gws.add(Number(d.gateway_id));
+  }
+  const now = clock();
+  for (const gw of gws) {
+    const key = JSON.stringify(await edgeConfigFrom(gc, ctx, gw));
+    if (edgeSent.get(gw) === key) continue;
+    const tried = edgeTried.get(gw);
+    if (tried && tried.key === key && now - tried.at < EDGE_RETRY_MS) continue;
+    edgeTried.set(gw, { key, at: now });
+    await edge.configureGateway(gc, gw);
+  }
+}
+
 /** The background run: every room — window, what ended, then send what changed. */
 function tick(gc) {
   return serial(async () => {
@@ -513,6 +650,7 @@ function tick(gc) {
         gc.log.warn('heating: room failed', room.id, (e && (e.code || e.message)) || e);
       }
     }
+    await pushEdge(gc, ctx).catch((e) => gc.log.warn('heating: gateway configuration failed', (e && (e.code || e.message)) || e));
     return ctx.rooms.length;
   });
 }
@@ -551,7 +689,8 @@ function roomView(room, ctx, now, viewer, lowAt) {
   const ths = room.thermostats.map((r) => {
     const st = r.state || {};
     return {
-      id: r.id, name: r.name || '', source: isDeconz(r) ? 'deconz' : 'z2m', gateway: (r.capabilities && r.capabilities.gateway) || null,
+      id: r.id, name: r.name || '', source: isDeconz(r) ? 'deconz' : (isEdge(r) ? 'shelly' : 'z2m'),
+      gateway: isEdge(r) ? ((ctx.edgeNames && ctx.edgeNames.get(Number(r.capabilities && r.capabilities.gateway_id))) || null) : ((r.capabilities && r.capabilities.gateway) || null),
       value: finite(st.value), setpoint: finite(st.setpoint), valve: finite(st.valve), heating: st.heating === true, mode: st.mode || null,
       reachable: st.reachable !== false, lastupdated: st.lastupdated || null, battery: finite(st.battery), lowbattery: st.lowbattery === true,
       battery_level: battery.levelOf(st, lowAt), own_schedule: ownSchedule(r), device_boost: deviceBoost(r),
@@ -562,7 +701,8 @@ function roomView(room, ctx, now, viewer, lowAt) {
   const devSetpoint = mean(reach.map((x) => x.setpoint));
   const shown = want.kind === 'boost' ? null : (want.setpoint != null ? want.setpoint : devSetpoint);
   const ap = room.applied || {};
-  const pending = want.sig && ap.sig === want.sig ? room.thermostats.filter((r) => !(ap.done || []).includes(r.id)).length : (want.sig ? room.thermostats.length : 0);
+  const pending = room.edge ? edgePending(room, ctx, want)
+    : (want.sig && ap.sig === want.sig ? room.thermostats.filter((r) => !(ap.done || []).includes(r.id)).length : (want.sig ? room.thermostats.length : 0));
   const next = nextChange(room, ctx, want.kind === 'boost' ? want.until : now);
   const after = want.kind === 'boost' || want.kind === 'window' ? (() => { const r2 = { ...room, boost: null, window: null }; const w = decide(r2, ctx, want.kind === 'boost' ? want.until : now); return w.kind === 'none' ? null : { kind: w.kind, preset: w.preset || null, setpoint: w.setpoint == null ? null : w.setpoint }; })() : null;
   const batts = ths.filter((x) => x.battery != null || x.lowbattery);
@@ -589,6 +729,8 @@ function roomView(room, ctx, now, viewer, lowAt) {
       on: plan ? plan.window.on : true, minutes: plan ? plan.window.min : WINDOW_DEFAULT },
     today: todayOf(room, ctx, now), now_min: minuteOf(d) + d.getSeconds() / 60,
     thermostats: ths, pending,
+    // where the plan runs (since 1.17.0): on the room's gateway — also while the server is away — or here
+    runs_at: room.edge ? { kind: 'gateway', gateway_id: room.edge, name: (ctx.edgeNames && ctx.edgeNames.get(room.edge)) || null } : { kind: 'server' },
   };
 }
 
@@ -618,6 +760,13 @@ async function roomsFor(gc, ctx, viewer) {
   return ctx.rooms.filter((r) => r.thermostats.some((x) => own.has(x.id)));
 }
 
+/** The names of the gateways the plans of rooms run on (ctx.edgeNames), for the pages. */
+async function edgeNames(gc, ctx) {
+  ctx.edgeNames = new Map();
+  if (!ctx.rooms.some((r) => r.edge) || !gc.edge) return;
+  try { for (const g of await gc.edge.gateways()) ctx.edgeNames.set(Number(g.id), g.name || null); } catch { /* names only */ }
+}
+
 async function lowAtOf(gc) {
   try { return require('./alerts').configOf(await gc.settings.all()).batteryLow; } catch { return 15; }
 }
@@ -629,6 +778,7 @@ async function lowAtOf(gc) {
 async function overview(gc, viewer, lang) {
   const now = clock();
   const ctx = await load(gc);
+  await edgeNames(gc, ctx);
   const lowAt = await lowAtOf(gc);
   const rooms = await roomsFor(gc, ctx, viewer);
   const out = { house: houseView(ctx), rooms: rooms.map((r) => { const v = roomView(r, ctx, now, viewer, lowAt); v.status_text = statusText(v, lang, now); return v; }), now, admin: isAdmin(viewer) };
@@ -734,6 +884,8 @@ function act(gc, roomId, body, viewer) {
     // sent at once — a thermostat that is away or asleep gets it with one of the next runs
     await windowStep(gc, room, ctx, now);
     await applyRoom(gc, room, ctx, now);
+    await pushEdge(gc, ctx).catch(() => null);
+    await edgeNames(gc, ctx);
     const v = roomView(room, ctx, now, viewer, await lowAtOf(gc));
     v.status_text = statusText(v, viewer && viewer.lang, now);
     return v;
@@ -757,6 +909,7 @@ function setRoom(gc, roomId, body) {
     Object.assign(room, patch);
     await saveRoom(gc, room.id, patch);
     await applyRoom(gc, room, ctx, clock());
+    await pushEdge(gc, ctx).catch(() => null);
     return { id: room.id, presets: room.presets, max_setpoint: room.max_setpoint };
   });
 }
@@ -782,6 +935,7 @@ function setHouse(gc, body) {
     const ctx = await load(gc);
     const now = clock();
     for (const room of ctx.rooms) await applyRoom(gc, room, ctx, now).catch(() => 0);
+    await pushEdge(gc, ctx).catch(() => null);
     return houseView(ctx);
   });
 }
@@ -820,6 +974,7 @@ function setVacation(gc, body) {
     const ctx = await load(gc);
     const now = clock();
     for (const room of ctx.rooms) await applyRoom(gc, room, ctx, now).catch(() => 0);
+    await pushEdge(gc, ctx).catch(() => null);
     return houseView(ctx);
   });
 }
@@ -865,6 +1020,7 @@ function savePlan(gc, id, body) {
     ctx = await load(gc);
     const now = clock();
     for (const room of ctx.rooms) if (room.plan_id === pid) await applyRoom(gc, room, ctx, now).catch(() => 0);
+    await pushEdge(gc, ctx).catch(() => null);
     return planView(ctx.plans.get(pid), ctx, now);
   });
 }
@@ -882,6 +1038,7 @@ function deletePlan(gc, id) {
     }
     await gc.db.run('UPDATE heat_rooms SET plan_id = NULL WHERE plan_id = ?', [pid]);
     await gc.db.run('DELETE FROM heat_plans WHERE id = ?', [pid]);
+    await pushEdge(gc, await load(gc)).catch(() => null);
     return { ok: true };
   });
 }
@@ -1122,11 +1279,12 @@ async function runQuickAction(gc, user, lang, id, control, value, target) {
   }
 }
 
-function _setClock(fn) { clock = typeof fn === 'function' ? fn : () => Date.now(); retryAt.clear(); }
+function _setClock(fn) { clock = typeof fn === 'function' ? fn : () => Date.now(); retryAt.clear(); edgeSent.clear(); edgeTried.clear(); }
 
 module.exports = {
   PRESETS, HOUSE_DEFAULT, BOOST_MINUTES, BOOST_SETPOINT, WINDOW_MINUTES, PREHEAT_DEFAULT, ICONS,
   normalizeWeek, presetAt, sectionsOf, changesOf, slotStart, baseAt, decide, nextChange, todayOf, commandFor, ownSchedule, deviceBoost,
+  edgeConfig, noteSent, pushEdge, resetEdge, edgeGatewayOf, WINDOW_TTL,
   load, tick, overview, act, setRoom, setHouse, setVacation, savePlan, deletePlan, loweredContacts, awayOf,
   quickActions, runQuickAction, statusText, widgetOf, timelineOf, SEGMENT_COLORS, roomKeyOf, _setClock, now: () => clock(),
 };
