@@ -1,4 +1,4 @@
-<!-- version: 1.18.0 -->
+<!-- version: 1.19.0 -->
 # Smart Home
 
 ## Was das Plugin kann
@@ -19,7 +19,7 @@
 - Für deCONZ: ein Phoscon/deCONZ-Gateway, das GateControl erreicht (über eine Route, ein VPN-Gerät oder eine Adresse).
 - Für Shelly und Tasmota: ein GateControl-Gateway **1.19.0** oder neuer im selben Heimnetz, mit den Diensten `edge` und `mqtt` in seiner Compose-Datei.
 - Für Bluetooth-Sensoren: ein GateControl mit Funk (Reiter „Funk“ beim Gateway) und ein Gateway mit Bluetooth.
-- Für zigbee2mqtt: ein GateControl, das zigbee2mqtt kennt, und ein Gateway nach 1.30.0 mit „zigbee2mqtt“ im Reiter „Funk“ (dafür sind Edge und MQTT des Gateways an). Für mehrere Kanäle, Thermostate und Firmware-Updates: GateControl nach 1.258.4 und ein Gateway nach 1.34.2.
+- Für zigbee2mqtt: ein GateControl, das zigbee2mqtt kennt, und ein Gateway nach 1.30.0 mit „zigbee2mqtt“ im Reiter „Funk“ (dafür sind Edge und MQTT des Gateways an). Für mehrere Kanäle, Thermostate und Firmware-Updates: GateControl nach 1.258.4 und ein Gateway nach 1.34.2. Für Boost, Fenster und Preset von zigbee2mqtt-Thermostaten (ab 1.19.0): ein Gateway ab 1.47.0 und ein GateControl, das diese Angaben an Plugins weitergibt ([Boost, Fenster und Preset](#heizung-z2m-ext)).
 - Für zigbee2mqtt in Logikketten am Gateway (ab 1.15.0): ab Gateway 1.46.0 und die Bestätigung unter **Gateways › Gateway › Edge-Plugins** ([zigbee2mqtt am Gateway](#logikketten-z2m)).
 
 ## Einrichten
@@ -149,7 +149,7 @@ Die Heizung findest du unter **Smart Home › Heizung** (Knopf oben auf der Seit
 
 - Es gibt vier feste Presets: **Komfort, Eco, Nacht, Frostschutz** (Vorgabe 21 / 18 / 17 / 7 °C).
 - Die Temperaturen des Hauses stellst du unter **„Presets“** ein. Ein Plan oder ein Raum kann eigene haben; die des Raums gelten vor denen des Plans.
-- **Boost** ist kein Preset, sondern eine Aktion für 15, 30 oder 60 Minuten. Kann das Thermostat selbst Boost (deCONZ mit Preset, Shelly TRV), nutzt GateControl das, sonst stellt es 30 °C (auch beim BLU TRV). Danach gilt wieder, was vorher galt.
+- **Boost** ist kein Preset, sondern eine Aktion für 15, 30 oder 60 Minuten. Kann das Thermostat selbst Boost (deCONZ mit Preset, Shelly TRV, ab 1.19.0 auch zigbee2mqtt – [Boost, Fenster und Preset](#heizung-z2m-ext)), nutzt GateControl das, sonst stellt es 30 °C (auch beim BLU TRV). Danach gilt wieder, was vorher galt. Der Status heißt dann „Boost (Gerät)“.
 
 ### Wochenplan
 
@@ -166,7 +166,7 @@ Hat ein Thermostat einen **eigenen Wochenplan im Gerät** (Modus „Automatik“
 
 Sind alle Thermostate eines Raums Shelly TRV oder BLU TRV **desselben Gateways** (höchstens 8 je Raum, 24 Räume je Gateway), läuft der Plan dieses Raums **am Gateway**. Die Raumseite zeigt dann „Plan läuft am Gateway“.
 
-**zigbee2mqtt-Thermostate (ab 1.18.0)** zählen auch dazu – allein oder zusammen mit Shelly TRV / BLU TRV desselben Gateways –, sobald ein Admin für dieses Gateway die zusätzliche Fähigkeit `zigbee2mqtt/#` unter **Gateways › Gateway › Edge-Plugins** bestätigt hat (dieselbe wie für [zigbee2mqtt am Gateway](#logikketten-z2m), ab Gateway 1.46.0). Ohne Bestätigung bleibt der Raum am Server wie bisher; nach der Bestätigung wechselt er spätestens nach einer Minute ans Gateway, ohne dass ein Soll doppelt geschickt wird. Am Gateway gilt: das Soll geht direkt an zigbee2mqtt (das Feld, das das Thermostat anbietet), **Aus** schaltet das Thermostat aus, wo es das kann (sonst Frostschutz), ein eigener Plan im Gerät („Automatik“) wird auf „Heizen“ gestellt, **Boost** stellt 30 °C.
+**zigbee2mqtt-Thermostate (ab 1.18.0)** zählen auch dazu – allein oder zusammen mit Shelly TRV / BLU TRV desselben Gateways –, sobald ein Admin für dieses Gateway die zusätzliche Fähigkeit `zigbee2mqtt/#` unter **Gateways › Gateway › Edge-Plugins** bestätigt hat (dieselbe wie für [zigbee2mqtt am Gateway](#logikketten-z2m), ab Gateway 1.46.0). Ohne Bestätigung bleibt der Raum am Server wie bisher; nach der Bestätigung wechselt er spätestens nach einer Minute ans Gateway, ohne dass ein Soll doppelt geschickt wird. Am Gateway gilt: das Soll geht direkt an zigbee2mqtt (das Feld, das das Thermostat anbietet), **Aus** schaltet das Thermostat aus, wo es das kann (sonst Frostschutz), ein eigener Plan im Gerät („Automatik“) wird auf „Heizen“ gestellt, **Boost** stellt 30 °C – ab 1.19.0 nutzt das Gateway den Boost des Thermostats, wenn zigbee2mqtt ihn mit Ein- und Aus-Wert anbietet (`boost_heating` oder `boost`).
 
 - Das Gateway stellt die Thermostate zu jedem Schaltpunkt selbst – auch wenn der Server nicht erreichbar ist und auch nach einem Neustart des Gateways.
 - Für diese Räume schickt **nur das Gateway** Befehle, der Server nie. Was du änderst (Plan, Presets, von Hand, Boost, Betrieb, Urlaub, „Heizung abwesend“), schickt der Server dem Gateway als neuen Plan; das Gateway setzt es sofort um. Kommt der Server nach einem Ausfall zurück, wird nichts doppelt geschickt.
@@ -188,6 +188,16 @@ Was gilt, von oben nach unten: Aus · Fenster offen · Boost · Änderung von Ha
 ### Fenster offen
 
 Ist ein Kontakt im Raum länger offen als im Plan eingestellt (Vorgabe 2 Minuten; ohne Plan immer 2 Minuten), stellt der Plan den Raum auf **Frostschutz**. Nach dem Schließen gilt wieder, was dann dran ist. Die Fenster-Erkennung im Thermostat bleibt an. Die Mitteilung „Fenster lange offen“ heißt dann **„Fenster offen, Heizung heruntergeregelt“**.
+
+### Boost, Fenster und Preset von zigbee2mqtt-Thermostaten (ab 1.19.0) {#heizung-z2m-ext}
+
+Meldet das GateControl-Gateway (ab 1.47.0) für seine zigbee2mqtt-Thermostate Boost, Fenster und Preset, nutzt die Heizung das – nur für Thermostate, die das laut zigbee2mqtt können:
+
+- **Boost** über den Boost des Thermostats statt 30 °C. Nennt das Gerät die Einheit seiner Boost-Dauer (Sekunden oder Minuten), stellt GateControl die Dauer mit ein; sonst gilt die Dauer, die im Gerät eingestellt ist. Am Ende schaltet GateControl den Boost aus und schickt das Soll, das dann gilt.
+- **Fenster offen**, das das Thermostat selbst meldet (z. B. seine Fenster-Erkennung oder ein angeschlossener Kontakt), zählt wie ein Fensterkontakt des Raums – mit denselben Regeln (Minuten aus dem Plan, Frostschutz, am Gateway höchstens 2 Stunden ohne Server). Auf der Raumseite steht beim Thermostat „Fenster offen (Gerät)“.
+- Das **Preset im Gerät** (z. B. „manual“, „schedule“) steht auf der Raumseite beim Thermostat. Der Plan stellt es nicht um.
+
+Meldet das Gateway das nicht (älteres Gateway oder ein GateControl, das die Angaben noch nicht weitergibt), bleibt alles wie in 1.18.0.
 
 ### Urlaub und Heizung abwesend
 
@@ -254,6 +264,12 @@ Richte das Gerät „Von Hand …“ ein. Die Anleitung steht im Fenster.
 
 **Ein Gerät von zigbee2mqtt lässt sich nicht schalten („zigbee2mqtt auf dem Gateway antwortet gerade nicht“).**
 Im Reiter „Funk“ des Gateways nachsehen: Läuft zigbee2mqtt, sind Edge und MQTT an? Neue Geräte erscheinen spätestens nach einer halben Minute.
+
+## Neu in 1.19.0
+
+- **zigbee2mqtt-Thermostate mit Boost, Fenster und Preset:** Boost über den Boost des Geräts, „Fenster offen“ vom Gerät wie ein Fensterkontakt, das Preset des Geräts auf der Raumseite – mit einem Gateway ab 1.47.0 ([Boost, Fenster und Preset](#heizung-z2m-ext)). Ohne bleibt alles wie bisher.
+- Im Plan am Gateway nutzt das Gateway den Boost eines zigbee2mqtt-Thermostats, wenn zigbee2mqtt ihn anbietet; sonst weiter 30 °C.
+- Der Hinweis „zigbee2mqtt ist auf dem Gateway noch nicht verfügbar“ nennt auch die Heizung. Das Update braucht keine neue Bestätigung.
 
 ## Neu in 1.18.0
 

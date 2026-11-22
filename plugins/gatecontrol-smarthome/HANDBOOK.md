@@ -1,4 +1,4 @@
-<!-- version: 1.18.0 -->
+<!-- version: 1.19.0 -->
 # Smart Home
 
 ## What the plugin does
@@ -19,7 +19,7 @@
 - For deCONZ: a Phoscon/deCONZ gateway GateControl can reach (through a route, a VPN device or an address).
 - For Shelly and Tasmota: a GateControl gateway **1.19.0** or later in the same home network, with the services `edge` and `mqtt` in its compose file.
 - For Bluetooth sensors: a GateControl with radio (tab “Radio” of the gateway) and a gateway with Bluetooth.
-- For zigbee2mqtt: a GateControl that knows zigbee2mqtt and a gateway newer than 1.30.0 with “zigbee2mqtt” in the tab “Radio” (edge and MQTT of the gateway are on for it). For several channels, thermostats and firmware updates: GateControl newer than 1.258.4 and a gateway newer than 1.34.2.
+- For zigbee2mqtt: a GateControl that knows zigbee2mqtt and a gateway newer than 1.30.0 with “zigbee2mqtt” in the tab “Radio” (edge and MQTT of the gateway are on for it). For several channels, thermostats and firmware updates: GateControl newer than 1.258.4 and a gateway newer than 1.34.2. For boost, window and preset of zigbee2mqtt thermostats (since 1.19.0): a gateway from 1.47.0 and a GateControl that passes them on to plugins ([Boost, window and preset](#heizung-z2m-ext)).
 - For zigbee2mqtt in logic chains on the gateway (since 1.15.0): from gateway 1.46.0, and the confirmation under **Gateways › gateway › Edge plugins** ([zigbee2mqtt on the gateway](#logikketten-z2m)).
 
 ## Setting up
@@ -149,7 +149,7 @@ You find the heating under **Smart Home › Heating** (button at the top of the 
 
 - There are four fixed presets: **Comfort, Eco, Night, Frost protection** (default 21 / 18 / 17 / 7 °C).
 - You set the temperatures of the house under **“Presets”**. A plan or a room may have its own; the room's come before the plan's.
-- **Boost** is no preset but an action for 15, 30 or 60 minutes. If the thermostat can boost itself (deCONZ with a preset, Shelly TRV), GateControl uses that, otherwise it sets 30 °C (a BLU TRV too). Afterwards what applied before applies again.
+- **Boost** is no preset but an action for 15, 30 or 60 minutes. If the thermostat can boost itself (deCONZ with a preset, Shelly TRV, since 1.19.0 zigbee2mqtt too – [Boost, window and preset](#heizung-z2m-ext)), GateControl uses that, otherwise it sets 30 °C (a BLU TRV too). Afterwards what applied before applies again. The status then reads “Boost (device)”.
 
 ### Weekly plan
 
@@ -166,7 +166,7 @@ If a thermostat has a **weekly plan of its own in the device** (mode “auto”,
 
 If all thermostats of a room are Shelly TRV or BLU TRV of **the same gateway** (at most 8 per room, 24 rooms per gateway), the plan of that room runs **on the gateway**. The room page then shows “Plan runs on the gateway”.
 
-**zigbee2mqtt thermostats (since 1.18.0)** count too – alone or together with Shelly TRV / BLU TRV of the same gateway – once an administrator confirmed the additional capability `zigbee2mqtt/#` for that gateway under **Gateways › gateway › Edge plugins** (the same as for [zigbee2mqtt on the gateway](#logikketten-z2m), from gateway 1.46.0). Without the confirmation the room stays on the server as before; after it the room moves to the gateway within a minute, without any target being sent twice. On the gateway the target goes straight to zigbee2mqtt (the field the thermostat offers), **Off** switches the thermostat off where it can (else frost protection), a plan of its own in the device (“auto”) is set to “heat”, **boost** sets 30 °C.
+**zigbee2mqtt thermostats (since 1.18.0)** count too – alone or together with Shelly TRV / BLU TRV of the same gateway – once an administrator confirmed the additional capability `zigbee2mqtt/#` for that gateway under **Gateways › gateway › Edge plugins** (the same as for [zigbee2mqtt on the gateway](#logikketten-z2m), from gateway 1.46.0). Without the confirmation the room stays on the server as before; after it the room moves to the gateway within a minute, without any target being sent twice. On the gateway the target goes straight to zigbee2mqtt (the field the thermostat offers), **Off** switches the thermostat off where it can (else frost protection), a plan of its own in the device (“auto”) is set to “heat”, **boost** sets 30 °C – since 1.19.0 the gateway uses the thermostat's own boost when zigbee2mqtt offers it with an on and an off value (`boost_heating` or `boost`).
 
 - The gateway sets the thermostats at every switching point itself – also while the server cannot be reached and after a restart of the gateway.
 - For these rooms **only the gateway** sends commands, never the server. What you change (plan, presets, by hand, boost, mode, holiday, “Heating away”) the server sends to the gateway as a new plan; the gateway applies it at once. When the server comes back after an outage, nothing is sent twice.
@@ -188,6 +188,16 @@ What applies, top first: Off · window open · boost · change by hand · holida
 ### Window open
 
 If a contact in the room stays open longer than set in the plan (default 2 minutes; without a plan always 2 minutes), the plan sets the room to **frost protection**. Once it is closed, what is due then applies again. The thermostat's own window detection stays on. The notification “Window left open” then reads **“Window open, heating turned down”**.
+
+### Boost, window and preset of zigbee2mqtt thermostats (since 1.19.0) {#heizung-z2m-ext}
+
+If the GateControl gateway (from 1.47.0) reports boost, window and preset of its zigbee2mqtt thermostats, the heating uses them – only for thermostats that can do so according to zigbee2mqtt:
+
+- **Boost** with the thermostat's own boost instead of 30 °C. If the device names the unit of its boost time (seconds or minutes), GateControl sets the length too; otherwise the length set in the device applies. At the end GateControl switches the boost off and sends the target that applies then.
+- **Window open** reported by the thermostat itself (e.g. its window detection or a contact wired to it) counts like a window contact of the room – with the same rules (minutes from the plan, frost protection, on the gateway at most 2 hours without the server). The room page shows “Window open (device)” at the thermostat.
+- The **preset in the device** (e.g. “manual”, “schedule”) is shown at the thermostat on the room page. The plan does not change it.
+
+If the gateway does not report them (an older gateway or a GateControl that does not pass them on yet), everything stays as in 1.18.0.
 
 ### Holiday and Heating away
 
@@ -254,6 +264,12 @@ Set the device up “By hand …”. The instructions are in the window.
 
 **A zigbee2mqtt device cannot be switched (“zigbee2mqtt on the gateway is not answering right now”).**
 Look at the gateway's tab “Radio”: does zigbee2mqtt run, are edge and MQTT on? New devices show up within half a minute.
+
+## New in 1.19.0
+
+- **zigbee2mqtt thermostats with boost, window and preset:** boost with the device's own boost, “window open” from the device like a window contact, the device's preset on the room page – with a gateway from 1.47.0 ([Boost, window and preset](#heizung-z2m-ext)). Without it everything stays as before.
+- In the plan on the gateway the gateway uses the boost of a zigbee2mqtt thermostat when zigbee2mqtt offers it; otherwise 30 °C as before.
+- The note “zigbee2mqtt is not available on the gateway yet” names the heating too. The update needs no new confirmation.
 
 ## New in 1.18.0
 

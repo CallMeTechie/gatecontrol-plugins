@@ -27,6 +27,16 @@
 //   OTA updates       caps.ota → capabilities.ota, state.ota { state: idle | available | updating | scheduled,
 //                     progress, installed, latest, checked, error }; ota(…, 'check' | 'update') asks zigbee2mqtt
 //                     (gc.radio.command(id, { ota })). On a device with channels the first one carries it.
+//
+// 1.19.0 — preset, boost and window of a zigbee2mqtt thermostat (GateControl gateway 1.47.0, capability
+// `z2m-thermostat-ext`): only for a gateway that names it (gc.radio.zigbee().gateways[].capabilities or .features) and
+// only what the device's caps name — else everything stays as in 1.18.0:
+//   caps.boost        → capabilities.boost (the heating boosts with the device's own boost, not 30 °C); state.boost
+//   caps.boostTime    → capabilities.boost_time { min, max, step, unit } (the heating sets the length when the unit is
+//                       s or min); set with { boost, boost_time }
+//   caps.windowOpen / caps.windowDetection → capabilities.window_open; state.window_open (values.window_open) counts
+//                       in the heating like a window contact of the room
+//   caps.presets      → capabilities.presets; state.preset (the device's own preset — shown, never set by the plan)
 
 const store = require('./store');
 const { sensorState } = require('./radio');
@@ -46,6 +56,11 @@ const MAX_CHANNELS = 8;
 const MODES = ['off', 'heat', 'auto', 'cool', 'fan_only', 'dry'];
 const OTA_STATES = ['idle', 'available', 'updating', 'scheduled'];
 const OTA_ERRORS = ['check_failed', 'update_failed'];
+// the gateway reports preset, boost and window of its zigbee2mqtt thermostats (GateControl gateway 1.47.0)
+const EXT = 'z2m-thermostat-ext';
+const PRESET_RE = /^[a-z0-9_]{1,24}$/;
+const MAX_PRESETS = 16;
+const UNIT_RE = /^[A-Za-z]{1,8}$/;
 
 const mem = { at: 0 };
 
@@ -91,11 +106,51 @@ function setpointCaps(c) {
   return { min, max, step };
 }
 
+/** The ids of the gateways that report `z2m-thermostat-ext` (capabilities or features of gc.radio.zigbee().gateways). */
+function extGateways(out) {
+  const ids = new Set();
+  for (const g of (out && Array.isArray(out.gateways) ? out.gateways : []).slice(0, 64)) {
+    if (!g || !Number.isInteger(g.id)) continue;
+    const named = [g.capabilities, g.features].some((l) => Array.isArray(l) && l.includes(EXT));
+    if (named) ids.add(g.id);
+  }
+  return ids;
+}
+
+/** caps.boostTime { min, max, step, unit? } → { min, max, step, unit } or null. */
+function boostTimeOf(b) {
+  if (!b || typeof b !== 'object') return null;
+  const min = finite(b.min);
+  const max = finite(b.max);
+  const step = finite(b.step);
+  if (min == null || max == null || min < 0 || max <= min || max > 86400) return null;
+  return { min, max, step: step != null && step > 0 ? step : 1, unit: typeof b.unit === 'string' && UNIT_RE.test(b.unit) ? b.unit : null };
+}
+
+/** Preset, boost and window of a thermostat (only with `ext`, only what its caps name) → into caps and state. */
+function thermoExt(c, v, caps, state) {
+  if (Array.isArray(c.presets)) {
+    const presets = [...new Set(c.presets.filter((x) => typeof x === 'string' && PRESET_RE.test(x)))].slice(0, MAX_PRESETS);
+    if (presets.length) caps.presets = presets;
+  }
+  if (typeof v.preset === 'string' && PRESET_RE.test(v.preset)) state.preset = v.preset;
+  if (c.boost === true) {
+    caps.boost = true;
+    const bt = boostTimeOf(c.boostTime);
+    if (bt) caps.boost_time = bt;
+    if (typeof v.boost === 'boolean') state.boost = v.boost;
+  }
+  if (c.windowOpen === true || c.windowDetection === true) {
+    caps.window_open = true;
+    if (typeof v.window_open === 'boolean') state.window_open = v.window_open;
+  }
+}
+
 /**
  * The resource view of one device: { kind, capabilities, state }. With `channel` { id, no, first } it is the view of
- * one switched output of a device with several (channelsOf).
+ * one switched output of a device with several (channelsOf). `ext`: its gateway reports z2m-thermostat-ext (1.19.0).
  */
-function resourceOf(d, prev, channel) {
+function resourceOf(d, prev, channel, ext = false) {
   let kind = KINDS[d.kind] || null;
   if (!kind) return null;
   // one output of several: the kind chosen here (since 1.13.0 — light, plug or switch) stays over every report
@@ -120,13 +175,14 @@ function resourceOf(d, prev, channel) {
     caps.setpoint = setpointCaps(c);
     const modes = Array.isArray(c.modes) ? [...new Set(c.modes.filter((m) => MODES.includes(m)))] : [];
     if (modes.length) caps.modes = modes;
-    // since 1.14.0: a gateway that reports the thermostat's own boost (a later gateway) — the plan of the heating uses it
-    if (c.boost === true) caps.boost = true;
     state = { reachable, type: 'temperature', value: finite(v.temperature) };
     if (finite(v.setpoint) != null) state.setpoint = v.setpoint;
     if (MODES.includes(v.mode)) state.mode = v.mode;
     if (typeof v.heating === 'boolean') state.heating = v.heating;
     if (finite(v.valve) != null) state.valve = Math.max(0, Math.min(100, Math.round(v.valve)));
+    // since 1.19.0: the device's own boost, its window and its preset — only from a gateway with z2m-thermostat-ext
+    // (the heating boosts with it and counts window_open like a contact); without it as in 1.18.0
+    if (ext) thermoExt(c, v, caps, state);
   } else if (kind === 'light' || kind === 'plug') {
     if (c.bri === true && kind === 'light') caps.bri = true;
     if (c.ct === true && kind === 'light') caps.ct = true;
@@ -181,6 +237,7 @@ async function sync(gc, { force = false } = {}) {
   const seen = new Set();
   const devices = new Set();
   const have = new Map((await resources(gc)).map((r) => [r.deconz_id, r]));
+  const ext = extGateways(out);
   for (const d of list.slice(0, 512)) {
     if (!d || typeof d.id !== 'string' || !ID_RE.test(d.id) || typeof d.ieee !== 'string' || !IEEE_RE.test(d.ieee) || devices.has(d.id)) continue;
     if (!KINDS[d.kind]) continue;
@@ -197,7 +254,7 @@ async function sync(gc, { force = false } = {}) {
         have.set(first.key, { ...old, deconz_id: first.key });
       }
     }
-    for (const part of parts) await upsertPart(gc, d, part, have.get(part.key), seen);
+    for (const part of parts) await upsertPart(gc, d, part, have.get(part.key), seen, ext.has(d.gatewayId));
   }
   // gone from its gateway's complete list, or the gateway runs deCONZ again: off here, owners stay
   for (const [id, r] of have) {
@@ -208,8 +265,8 @@ async function sync(gc, { force = false } = {}) {
 }
 
 /** One resource of a device (the device itself, or one of its channels): insert, or update when something changed. */
-async function upsertPart(gc, d, part, prev, seen) {
-  const r = resourceOf(d, prev, part.channel);
+async function upsertPart(gc, d, part, prev, seen, ext) {
+  const r = resourceOf(d, prev, part.channel, ext);
   if (!r) return;
   seen.add(part.key);
   const base = cleanText(d.name, NAME_MAX) || d.ieee;
@@ -257,6 +314,11 @@ async function setState(gc, resource, raw) {
     if (finite(p.setpoint) != null) set.setpoint = Math.round(Math.max(sp.min, Math.min(sp.max, Math.round(p.setpoint / sp.step) * sp.step)) * 10) / 10;
     if (typeof p.mode === 'string' && (caps.modes || []).includes(p.mode)) set.mode = p.mode;
     if (typeof p.boost === 'boolean' && caps.boost) set.boost = p.boost;
+    // since 1.19.0: the length of the device's own boost (its unit), within its limits
+    const bt = caps.boost_time;
+    if (bt && finite(p.boost_time) != null && set.boost === true) {
+      set.boost_time = Math.round(Math.max(bt.min, Math.min(bt.max, Math.round(p.boost_time / bt.step) * bt.step)) * 100) / 100;
+    }
   } else if (caps.channel) {
     // one output of a device with several: on/off, addressed by its channel
     if ('on' in p) { set.on = Boolean(p.on); set.channel = caps.channel; }
@@ -280,6 +342,7 @@ async function setState(gc, resource, raw) {
   if ('on' in set) st.on = set.on;
   if ('setpoint' in set) st.setpoint = set.setpoint;
   if ('mode' in set) st.mode = set.mode;
+  if ('boost' in set) st.boost = set.boost;
   if ('bri' in set) { st.bri = Math.round(set.bri); if (set.bri > 0) st.on = true; }
   if (set.cover === 'open' || set.cover === 'close') st.moving = set.cover === 'open' ? 'opening' : 'closing';
   if (set.cover === 'stop') st.moving = null;
@@ -327,4 +390,4 @@ async function ota(gc, resource, action) {
   return { ok: true, action };
 }
 
-module.exports = { Z2M_TYPE, CHANNEL_KINDS, available, sync, list, setState, rename, setKind, ota, resourceOf, channelsOf, _mem: mem };
+module.exports = { Z2M_TYPE, CHANNEL_KINDS, EXT, available, sync, list, setState, rename, setKind, ota, resourceOf, channelsOf, extGateways, _mem: mem };

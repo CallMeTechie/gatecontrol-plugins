@@ -42,6 +42,8 @@
 //             server part sends such a room only then): zigbee2mqtt/# is subscribed for them as for the chains (also
 //             from gc.store after a restart without the server), which setpoint a device has comes from
 //             zigbee2mqtt/bridge/devices (its exposes) or its report, zigbee2mqtt/<name>/availability marks it offline.
+//             Since 1.19.0 boost with the device's own boost when its exposes name a writable binary boost_heating
+//             (else boost) with value_on and value_off (boostOf) — else 30 °C as before.
 //
 // Capabilities (plugin.json edge.capabilities): mdns _shelly._tcp and _http._tcp, http.lan, mqtt shellies/# and
 // tasmota/#; optional (edge.optionalCapabilities, since 1.15.0): mqtt zigbee2mqtt/# (the chains, since 1.18.0 the heating too). On disk (gc.store) only the last list of logic chains, so they run after a restart of the gateway
@@ -111,6 +113,7 @@ const st = {
   z2m: new Map(),            // ieee → { kind, chs, name } — the zigbee2mqtt devices of the chains and the heating
   z2mChains: new Map(),      // … of the chains (the server part's list)
   z2mSp: new Map(),          // ieee → the setpoint a thermostat exposes (zigbee2mqtt/bridge/devices)
+  z2mBoost: new Map(),       // ieee → { prop, on, off }: its own boost (zigbee2mqtt/bridge/devices, since 1.19.0)
   z2mNames: new Map(),       // friendly name → ieee (zigbee2mqtt/bridge/devices; else the server part's names)
   z2mSub: null,              // the subscription of zigbee2mqtt/#
   z2mState: null,            // what the last try gave: ok | denied | error | off (MQTT not there) — event `z2m`
@@ -157,14 +160,43 @@ function onBridgeDevices(payload) {
   if (!Array.isArray(list)) return;
   const names = new Map();
   const sps = new Map();
+  const boosts = new Map();
   for (const d of list.slice(0, 512)) {
     if (!d || typeof d.ieee_address !== 'string' || !Z2M_IEEE_RE.test(d.ieee_address) || typeof d.friendly_name !== 'string') continue;
     if (d.friendly_name && d.friendly_name.length <= 128) names.set(d.friendly_name, d.ieee_address);
     const sp = setpointOf(d.definition && d.definition.exposes);
     if (sp) sps.set(d.ieee_address, sp);
+    const b = sp ? boostOf(d.definition.exposes) : null;
+    if (b) boosts.set(d.ieee_address, b);
   }
   st.z2mNames = names;
   st.z2mSp = sps;
+  st.z2mBoost = boosts;
+}
+
+/**
+ * The boost a thermostat exposes (since 1.19.0): a binary boost_heating, else boost, that can be set (access bit 2, or
+ * no access given) with its value_on and value_off (different, short) → { prop, on, off } — else null (30 °C).
+ */
+function boostOf(exposes) {
+  const found = new Map();
+  const walk = (list, depth) => {
+    if (!Array.isArray(list) || depth > 3) return;
+    for (const e of list.slice(0, 64)) {
+      if (!e || typeof e !== 'object') continue;
+      if (e.type === 'binary' && commands.Z2M_BOOSTS.includes(e.property) && !found.has(e.property)) found.set(e.property, e);
+      if (Array.isArray(e.features)) walk(e.features, depth + 1);
+    }
+  };
+  walk(exposes, 0);
+  for (const prop of commands.Z2M_BOOSTS) {
+    const e = found.get(prop);
+    if (!e) continue;
+    const writable = typeof e.access !== 'number' || (e.access & 2) === 2;
+    if (!writable || !commands.z2mBin(e.value_on) || !commands.z2mBin(e.value_off) || e.value_on === e.value_off) return null;
+    return { prop, on: e.value_on, off: e.value_off };
+  }
+  return null;
 }
 
 /** The setpoint a thermostat exposes (occupied_heating_setpoint first, as the GateControl gateway picks it), or null. */
@@ -193,7 +225,7 @@ function onZ2m(topic, payload, meta) {
   if (!ieee) { for (const [id, d] of st.z2m) if (d.name === name) { ieee = id; break; } }
   const info = ieee && st.z2m.get(ieee);
   if (!info) return;
-  const r = normalize.parseZ2m(z2mBase(ieee), payload, info.kind === 'thermostat' ? { ...info, sp: st.z2mSp.get(ieee) || null } : info);
+  const r = normalize.parseZ2m(z2mBase(ieee), payload, info.kind === 'thermostat' ? { ...info, sp: st.z2mSp.get(ieee) || null, boost: st.z2mBoost.get(ieee) || null } : info);
   if (!r) return;
   let dev = st.devices.get(r.base);
   if (!dev) {
@@ -622,6 +654,7 @@ module.exports = {
     st.z2m = new Map();
     st.z2mChains = new Map();
     st.z2mSp = new Map();
+    st.z2mBoost = new Map();
     st.z2mNames = new Map();
     st.z2mSub = null;
     st.z2mState = null;
@@ -637,6 +670,7 @@ module.exports = {
       },
       save: (applied) => storeHeat(undefined, applied),
       z2mTopic,
+      z2mBoost: (base) => st.z2mBoost.get(String(base || '').slice('zigbee2mqtt/'.length)) || null,
       log: gc.log,
     });
     st.engine = rules.create({
@@ -740,6 +774,7 @@ module.exports = {
     st.z2m = new Map();
     st.z2mChains = new Map();
     st.z2mSp = new Map();
+    st.z2mBoost = new Map();
     st.z2mNames = new Map();
     st.notes = [];
     if (st.heatSoon) clearTimeout(st.heatSoon);

@@ -142,7 +142,7 @@ function setZ2mEdge(gc, gatewayId, state) {
   const m = z2mMemOf(gatewayId);
   m.edge = state;
   if (state === 'denied' && m.logged !== 'denied') {
-    gc.log.warn(`zigbee2mqtt is not available on gateway ${Number(gatewayId)} yet (the gateway refuses zigbee2mqtt/#) — update the GateControl gateway (from gateway 1.46.0); the chains with zigbee2mqtt devices of that gateway do not run until then`);
+    gc.log.warn(`zigbee2mqtt is not available on gateway ${Number(gatewayId)} yet (the gateway refuses zigbee2mqtt/#) — update the GateControl gateway (from gateway 1.46.0); the chains with zigbee2mqtt devices of that gateway do not run until then, its heating rooms with zigbee2mqtt thermostats are run by the server`);
   }
   m.logged = state === 'denied' ? 'denied' : (m.logged === 'denied' ? null : m.logged);
 }

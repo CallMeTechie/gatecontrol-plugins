@@ -45,6 +45,14 @@
 // edge.capabilities do not change; nothing is asked for (zigbee2mqtt/# is asked for by the chains only). The hand-over
 // is the one of 1.17.0: from the moment the room is the gateway's this part sends nothing to it, the gateway sends only
 // what a thermostat does not report yet — a target the server already sent is not sent again.
+//
+// Since 1.19.0 (GateControl gateway 1.47.0, capability z2m-thermostat-ext — server/zigbee.js): a zigbee2mqtt thermostat
+// whose gateway names it and whose caps name its own boost boosts with it ({ boost: true }, the length as boost_time
+// when the device gives its unit; afterwards { boost: false } with the target) instead of 30 °C; one that reports
+// window_open counts like a window contact of its room (the same rules: the plan's setting, 1 / 2 / 5 minutes, the
+// gateway's ttl); its own preset is shown with the thermostat. Without the capability or the field: as in 1.18.0. On a
+// gateway edge/heat.js boosts with the device when its exposes (zigbee2mqtt/bridge/devices) name boost_heating / boost
+// with value_on / value_off — else 30 °C there.
 
 const store = require('./store');
 const battery = require('./battery');
@@ -77,6 +85,8 @@ const EDGE_TH_MAX = 8;              // thermostats per room on a gateway
 const EDGE_RETRY_MS = 5 * 60000;    // a configuration the gateway did not take: tried again (and with $online)
 const Z2M_CHECK_MS = 60000;         // whether zigbee2mqtt/# is confirmed for a gateway: asked at most so often
 const Z2M_EDGE_MODES = Object.freeze(['off', 'heat', 'auto']);
+// the unit of a device's boost_time → seconds per unit (any other unit: the length is not set)
+const BOOST_UNITS = Object.freeze({ s: 1, sec: 1, seconds: 1, min: 60, minutes: 60 });
 
 // the clock of the plan (tests replace it: _setClock)
 let clock = () => Date.now();
@@ -322,6 +332,11 @@ const isZ2m = (r) => r.deconz_type === 'z2m';
 const Z2M_HEX_RE = /^z2m:([0-9a-f]{16})$/;
 /** The thermostat does boost itself: deCONZ with a preset (Tuya and others), zigbee2mqtt when the gateway reports it. */
 const deviceBoost = (r) => !!(r.capabilities && (isDeconz(r) ? r.capabilities.preset === true : r.capabilities.boost === true));
+/** The thermostat reports a window of its own (zigbee2mqtt window_open from a gateway with z2m-thermostat-ext). */
+const devWindow = (r) => isZ2m(r) && !!(r.capabilities && r.capabilities.window_open === true) && typeof (r.state || {}).window_open === 'boolean';
+/** Is a window of the room open now: a contact or (since 1.19.0) a thermostat that says so — reachable ones only. */
+const windowOpen = (room) => room.contacts.some((c) => c.state.value === true && c.state.reachable !== false)
+  || (room.devWindows || []).some((r) => r.state.window_open === true && r.state.reachable !== false);
 /** The thermostat runs a plan of its own. */
 function ownSchedule(r) {
   const st = r.state || {};
@@ -343,6 +358,7 @@ function commandFor(r, want, prev, planned) {
   if (want.kind === 'off') {
     if (modes.includes('off')) cmd.mode = 'off';
     else cmd.setpoint = clamp(want.frost);
+    if (prev.kind === 'boost' && isZ2m(r) && deviceBoost(r)) cmd.boost = false; // its own boost ends too
     return cmd;
   }
   if (prev.kind === 'off' && modes.includes('off')) {
@@ -354,6 +370,10 @@ function commandFor(r, want, prev, planned) {
       if (isDeconz(r)) cmd.preset = 'boost';
       else cmd.boost = true;
       if (isEdge(r)) cmd.boost_minutes = Math.max(1, Math.ceil(((want.until || 0) - clock()) / 60000));
+      // zigbee2mqtt (1.19.0): the length, when the device says in which unit
+      const bt = isZ2m(r) ? caps.boost_time : null;
+      const per = bt && BOOST_UNITS[String(bt.unit || '').toLowerCase()];
+      if (per) cmd.boost_time = Math.max(1, Math.ceil(((want.until || 0) - clock()) / 1000 / per));
     } else cmd.setpoint = clamp(BOOST_SETPOINT);
   } else {
     cmd.setpoint = clamp(want.setpoint);
@@ -429,6 +449,8 @@ async function load(gc) {
     room.name = area || list[0].name || '';
     room.thermostats = list.sort((a, b) => String(a.name).localeCompare(String(b.name)) || a.id - b.id);
     room.contacts = area ? all.filter((r) => r.kind === 'sensor' && r.area === area && r.state && r.state.type === 'open') : [];
+    // since 1.19.0: thermostats that report a window of their own (zigbee2mqtt window_open, z2m-thermostat-ext)
+    room.devWindows = room.thermostats.filter(devWindow);
     const hum = area ? all.find((r) => r.kind === 'sensor' && r.area === area && r.state && (r.state.type === 'humidity' || (r.state.type === 'temperature' && r.state.humidity != null)) && r.state.reachable !== false) : null;
     room.humidity = hum ? finite(Number(hum.state.type === 'humidity' ? hum.state.value : hum.state.humidity)) : null;
     room.edge = edgeGatewayOf(room.thermostats);
@@ -513,7 +535,7 @@ function serial(fn) {
 async function windowStep(gc, room, ctx, now) {
   const plan = planOf(room, ctx);
   const cfg = plan ? plan.window : { on: true, min: WINDOW_DEFAULT };
-  const open = cfg.on && room.mode !== 'off' && room.contacts.some((c) => c.state.value === true && c.state.reachable !== false);
+  const open = cfg.on && room.mode !== 'off' && windowOpen(room);
   const w = room.window || null;
   if (!open) {
     if (w) { room.window = null; await saveRoom(gc, room.id, { window: null }); }
@@ -593,6 +615,15 @@ function edgePending(room, ctx, want) {
     const st = r.state || {};
     if (st.reachable === false) { n++; continue; }
     if (want.kind === 'boost' && isEdge(r) && deviceBoost(r)) continue;
+    // zigbee2mqtt on the gateway (1.19.0): edge/heat.js boosts with the device when its exposes name it, else 30 °C —
+    // done once it reports either; which way it goes is only known here from a gateway with z2m-thermostat-ext
+    if (want.kind === 'boost' && isZ2m(r)) {
+      const lim = limitsOf(r);
+      const at30 = finite(st.setpoint) != null && Math.abs(st.setpoint - Math.max(lim.min, Math.min(lim.max, BOOST_SETPOINT))) < 0.05;
+      if (st.boost === true || at30 || typeof st.boost !== 'boolean') continue;
+      n++;
+      continue;
+    }
     // a zigbee2mqtt thermostat with system_mode off: Aus is that mode (edge/heat.js)
     if (want.kind === 'off' && isZ2m(r) && ((r.capabilities && r.capabilities.modes) || []).includes('off')) { if (st.mode !== 'off') n++; continue; }
     const lim = limitsOf(r);
@@ -745,7 +776,9 @@ function roomView(room, ctx, now, viewer, lowAt) {
       gateway: isEdge(r) ? ((ctx.edgeNames && ctx.edgeNames.get(Number(r.capabilities && r.capabilities.gateway_id))) || null) : ((r.capabilities && r.capabilities.gateway) || null),
       value: finite(st.value), setpoint: finite(st.setpoint), valve: finite(st.valve), heating: st.heating === true, mode: st.mode || null,
       reachable: st.reachable !== false, lastupdated: st.lastupdated || null, battery: finite(st.battery), lowbattery: st.lowbattery === true,
-      battery_level: battery.levelOf(st, lowAt), own_schedule: ownSchedule(r), device_boost: room.edge && isZ2m(r) ? false : deviceBoost(r),
+      battery_level: battery.levelOf(st, lowAt), own_schedule: ownSchedule(r), device_boost: deviceBoost(r),
+      // since 1.19.0 (zigbee2mqtt, z2m-thermostat-ext): its own preset and its own window, as it reports them
+      device_preset: isZ2m(r) && typeof st.preset === 'string' ? st.preset : null, window_open: devWindow(r) ? st.window_open : null,
     };
   });
   const reach = ths.filter((x) => x.reachable);
@@ -774,10 +807,14 @@ function roomView(room, ctx, now, viewer, lowAt) {
     status: { kind: want.kind, preset: want.preset || null, setpoint: want.setpoint == null ? null : want.setpoint, until: want.until == null ? null : want.until, away: !!want.away },
     next: next ? { at: next.at, kind: next.kind, preset: next.preset || null, setpoint: next.setpoint == null ? null : next.setpoint } : null,
     after,
-    boost: want.kind === 'boost' ? { until: want.until, minutes: want.minutes } : null,
+    // device: every thermostat that answers boosts with its own boost (since 1.19.0 the status says "Boost (Gerät)")
+    boost: want.kind === 'boost' ? { until: want.until, minutes: want.minutes, device: reach.length > 0 && reach.every((x) => x.device_boost) } : null,
     boost_allowed: isAdmin(viewer) || room.max_setpoint == null,
     window: { contacts: room.contacts.map((c) => ({ id: c.id, name: c.name || '', open: c.state.value === true, reachable: c.state.reachable !== false })),
-      open: room.contacts.some((c) => c.state.value === true), since: room.window ? room.window.since : null, lowered: !!(room.window && room.window.lowered),
+      open: room.contacts.some((c) => c.state.value === true) || (room.devWindows || []).some((r) => r.state.window_open === true),
+      // since 1.19.0: thermostats that report a window of their own
+      devices: (room.devWindows || []).map((r) => ({ id: r.id, name: r.name || '', open: r.state.window_open === true, reachable: r.state.reachable !== false })),
+      since: room.window ? room.window.since : null, lowered: !!(room.window && room.window.lowered),
       on: plan ? plan.window.on : true, minutes: plan ? plan.window.min : WINDOW_DEFAULT },
     today: todayOf(room, ctx, now), now_min: minuteOf(d) + d.getSeconds() / 60,
     thermostats: ths, pending,
@@ -1159,7 +1196,7 @@ function statusText(v, lang, now) {
   switch (s.kind) {
     case 'off': out = t(lang, 'heat.st.off'); break;
     case 'window': out = t(lang, 'heat.st.window', { then: v.after ? thenText(v.after, lang) : '–' }); break;
-    case 'boost': out = t(lang, 'heat.st.boost', { min: Math.max(1, Math.ceil((s.until - now) / 60000)), then: v.after ? thenText(v.after, lang) : '–' }); break;
+    case 'boost': out = t(lang, v.boost && v.boost.device ? 'heat.st.boost_device' : 'heat.st.boost', { min: Math.max(1, Math.ceil((s.until - now) / 60000)), then: v.after ? thenText(v.after, lang) : '–' }); break;
     case 'override': out = (s.preset ? presetName(s.preset, lang) + ' · ' : '') + t(lang, 'heat.st.by_hand', { sp: num(s.setpoint, lang) }) + (next ? ' ' + next : ''); break;
     case 'vacation': out = t(lang, 'heat.st.vacation', { what: thenText(s, lang), at: v.next ? when(v.next.at, now, lang) : '–' }); break;
     case 'manual': out = t(lang, 'heat.st.manual', { sp: num(s.setpoint, lang) }); break;
@@ -1233,7 +1270,7 @@ function widgetOf(v, lang, now) {
   else if (st.kind === 'off') w.state = 'off';
   else if (v.heating || st.kind === 'boost') w.state = 'on';
   if (v.valve != null) w.badge = { icon: ICONS.flame, value: Math.round(v.valve), unit: '%', label: clip(t(lang, 'heat.valve'), 20), state: null };
-  if (v.window.contacts.length) w.readings.push({ id: 'window', label: clip(t(lang, 'heat.window'), 20), icon: ICONS.window, value: clip(t(lang, v.window.open ? 'heat.window_open' : 'heat.window_closed'), 16), state: v.window.open ? 'warn' : 'good' });
+  if (v.window.contacts.length || (v.window.devices || []).length) w.readings.push({ id: 'window', label: clip(t(lang, 'heat.window'), 20), icon: ICONS.window, value: clip(t(lang, v.window.open ? 'heat.window_open' : 'heat.window_closed'), 16), state: v.window.open ? 'warn' : 'good' });
   if (v.humidity != null) w.readings.push({ id: 'humidity', label: clip(t(lang, 'heat.humidity'), 20), icon: ICONS.drop, value: Math.round(v.humidity), unit: '%' });
   if (v.battery && (v.battery.pct != null || v.battery.flag)) {
     const r = { id: 'battery', label: clip(t(lang, 'heat.battery'), 20), icon: battery.OUTLINE, state: v.battery.level === 'good' ? null : v.battery.level };
