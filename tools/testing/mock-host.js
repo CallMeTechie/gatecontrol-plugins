@@ -376,6 +376,14 @@
 // list(gatewayId) → [{ username, label, acl, pluginId, locked, createdAt }] (no password); remove(gatewayId, username)
 // → true | false. The gateway must be switched on for the plugin (not_enabled), being online is not needed.
 // host.mqttAccounts: gatewayId → Map username → { username, label, acl, password } (the password only for tests).
+// GateControl 1.317.0 (opt-in: opts.gatecontrol: '1.317.0' or opts.edge.optional) — optional capabilities
+// (plugin.json edge.optionalCapabilities, only mqtt.topics; src/services/edge/index.js hostCapabilities /
+// hostRequestCapability): gc.edge.capabilities(gatewayId) → { gatewayId, optional, approved, requested } and
+// gc.edge.requestCapability(gatewayId, key) → { status: 'approved' | 'requested', notified } (one note per gateway and key
+// per 24 h, else notified false; a key the plugin does not declare as optional → ERR_INVALID). The gateway must be set up
+// for the plugin (listed, any state; else not_enabled). opts.edge.optional { <gatewayId>: [approved keys] } is read on
+// every call (keys like 'mqtt.topic:zigbee2mqtt/#'); host.edgeRequests records every request { gatewayId, key, notified }.
+// Confirmed optional topics count for gc.mqtt.accounts.create, too.
 //
 // GateControl 1.230.0 (opt-in: opts.gatecontrol: '1.230.0' or opts.homeNetwork) — presence over the home network
 // (src/services/homePresence.js, docs/plugins.md "Presence over the home network"): only a plugin with
@@ -2961,6 +2969,40 @@ async function createHost(pluginDir, opts = {}) {
     edgeConfigs.set(id, data === undefined ? null : data);
     return { sent: true };
   };
+  // optional capabilities (GateControl ≥ 1.317.0, src/services/edge/index.js hostCapabilities / hostRequestCapability)
+  const edgeOptionalOn = edgeOn && (atLeast(317) || !!(edgeOpt && edgeOpt.optional));
+  const edgeOptionalList = () => {
+    const o = edgeOn && manifest.edge.optionalCapabilities && manifest.edge.optionalCapabilities.mqtt;
+    return o && Array.isArray(o.topics) ? o.topics.map((t) => 'mqtt.topic:' + t) : [];
+  };
+  const edgeApproved = (id) => {
+    const v = edgeOpt && edgeOpt.optional && typeof edgeOpt.optional === 'object' ? edgeOpt.optional[id] : null;
+    return Array.isArray(v) ? edgeOptionalList().filter((k) => v.includes(k)) : [];
+  };
+  const edgeRequests = [];
+  const edgeRequestedAt = new Map(); // '<gatewayId> <key>' → ms
+  const edgeAssigned = (v) => {
+    const id = Number(v);
+    if (!Number.isSafeInteger(id) || id <= 0) throw hostError('ERR_INVALID', 'invalid gateway id');
+    if (!edgeGateways().some((x) => x.id === id)) throw hostError('not_enabled', 'the edge part is not set up for this gateway (not_assigned)');
+    return id;
+  };
+  api['edge.capabilities'] = async ({ gatewayId }) => {
+    const id = edgeAssigned(gatewayId);
+    const optional = edgeOptionalList();
+    const approved = edgeApproved(id);
+    return { gatewayId: id, optional, approved, requested: optional.filter((k) => !approved.includes(k) && edgeRequestedAt.has(`${id} ${k}`)) };
+  };
+  api['edge.requestCapability'] = async ({ gatewayId, key }) => {
+    if (typeof key !== 'string' || !edgeOptionalList().includes(key)) throw hostError('ERR_INVALID', 'not an optional capability of this plugin (plugin.json edge.optionalCapabilities)');
+    const id = edgeAssigned(gatewayId);
+    if (edgeApproved(id).includes(key)) return { status: 'approved', notified: false };
+    const last = edgeRequestedAt.get(`${id} ${key}`);
+    const notified = !(last != null && Date.now() - last < 24 * 3600 * 1000);
+    if (notified) edgeRequestedAt.set(`${id} ${key}`, Date.now());
+    edgeRequests.push({ gatewayId: id, key, notified });
+    return { status: 'requested', notified };
+  };
   // gc.mqtt.accounts (GateControl ≥ 1.228.0): device accounts of a gateway's broker, below the plugin's mqtt topics
   const mqttTopics = edgeOn && manifest.edge.capabilities && manifest.edge.capabilities.mqtt && Array.isArray(manifest.edge.capabilities.mqtt.topics)
     ? manifest.edge.capabilities.mqtt.topics : null;
@@ -2990,7 +3032,8 @@ async function createHost(pluginDir, opts = {}) {
       acl.push({ access, topic: x.topic });
     }
     if (!acl.length) throw hostError('ERR_INVALID', 'topics: at least one');
-    if (!acl.every((e) => mqttTopics.some((t) => mqttFilterCovers(t, e.topic)))) throw hostError('denied', 'topics outside the plugin\'s MQTT topics');
+    const allowed = edgeOptionalOn ? mqttTopics.concat(edgeApproved(Number(gatewayId)).map((k) => k.slice('mqtt.topic:'.length))) : mqttTopics;
+    if (!acl.every((e) => allowed.some((t) => mqttFilterCovers(t, e.topic)))) throw hostError('denied', 'topics outside the plugin\'s MQTT topics');
     const name = o.name == null ? require('node:crypto').randomBytes(4).toString('hex') : String(o.name).toLowerCase();
     if (!MQTT_ACCOUNT_NAME_RE.test(name)) throw hostError('ERR_INVALID', 'invalid name');
     const username = `${manifest.id}-${name}`.slice(0, 48);
@@ -3620,6 +3663,11 @@ async function createHost(pluginDir, opts = {}) {
           return () => { const l = edgeHandlers.get(name) || []; const i = l.indexOf(handler); if (i >= 0) l.splice(i, 1); };
         },
         configure: (gatewayId, data) => call('edge.configure', { gatewayId, data: data === undefined ? null : data }),
+        // GateControl ≥ 1.317.0: optional capabilities (plugin.json edge.optionalCapabilities)
+        ...(edgeOptionalOn ? {
+          capabilities: (gatewayId) => call('edge.capabilities', { gatewayId }),
+          requestCapability: (gatewayId, key) => call('edge.requestCapability', { gatewayId, key }),
+        } : {}),
       }),
     } : {}),
     // GateControl ≥ 1.228.0: gc.mqtt.accounts only with plugin.json edge.capabilities.mqtt (like the child bootstrap)
@@ -4313,6 +4361,8 @@ async function createHost(pluginDir, opts = {}) {
     edgeEvent: (gatewayId, name, data, o) => edgeEvent(gatewayId, name, data, o),
     edgeCalls,
     edgeConfigs,
+    /** GateControl ≥ 1.317.0: every gc.edge.requestCapability ({ gatewayId, key, notified }) */
+    edgeRequests,
     /** gc.mqtt.accounts: gatewayId → Map username → { username, label, acl, password, createdAt } */
     mqttAccounts,
     /**

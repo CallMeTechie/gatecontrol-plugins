@@ -1,4 +1,4 @@
-<!-- version: 1.14.0 -->
+<!-- version: 1.15.0 -->
 # Smart Home
 
 ## Was das Plugin kann
@@ -8,18 +8,19 @@
 - **Bluetooth-Sensoren** über ein GateControl-Gateway (ab 1.8.0): Thermometer und Sensoren, die du in GateControl unter Funk übernommen hast – auch verschlüsselte, wenn ihr Schlüssel dort eingetragen ist.
 - **Zigbee-Geräte von zigbee2mqtt** über ein GateControl-Gateway (ab 1.9.0): Lichter, Steckdosen, Rollläden, Sensoren und Taster, die du in GateControl unter Funk mit zigbee2mqtt angelernt hast. Ab 1.10.0 auch Schalter mit mehreren Kanälen, Thermostate und Firmware-Updates.
 - **Besitzer und Bereiche:** Du weist Geräte Personen zu. Diese Personen bedienen sie im Portal „Zuhause“ und in der App.
-- **Logikketten:** für deCONZ auf dem deCONZ-Gateway; für Shelly und Tasmota auf dem GateControl-Gateway (ab 1.10.0) – seit 1.11.0 mit Tastern, Uhrzeit, Bedingungen mit UND/ODER, Schritten mit Wartezeiten, Testlauf und Protokoll; seit 1.12.0 mit Sonnenauf-/untergang, „seit X min“, Ketten über mehrere Gateways und mit zigbee2mqtt (am Server), Mitteilungen und Schnellaktionen in der App.
+- **Logikketten:** für deCONZ auf dem deCONZ-Gateway; für Shelly und Tasmota auf dem GateControl-Gateway (ab 1.10.0) – seit 1.11.0 mit Tastern, Uhrzeit, Bedingungen mit UND/ODER, Schritten mit Wartezeiten, Testlauf und Protokoll; seit 1.12.0 mit Sonnenauf-/untergang, „seit X min“, Ketten über mehrere Gateways (am Server), Mitteilungen und Schnellaktionen in der App; seit 1.15.0 auch mit Geräten von zigbee2mqtt am Gateway, sobald ein Admin das für das Gateway bestätigt hat.
 - **Heizung** (ab 1.14.0): Heizkörper-Thermostate von zigbee2mqtt und deCONZ je Raum mit Presets, Wochenplänen, Boost, „Fenster offen“, Urlaub und „Heizung abwesend“ ([Heizung](#heizung)).
 - **Mitteilungen:** Alarm (Wasser, Rauch, CO), Fenster lange offen, Batterie schwach, Gateway nicht erreichbar.
 - **Schnellaktionen und Widgets** in den GateControl-Apps für die eigenen Geräte – seit 1.13.0 mit dem Batteriestand von Batteriegeräten.
 
 ## Voraussetzungen
 
-- GateControl **1.228.1** oder neuer.
+- GateControl **1.317.0** oder neuer (seit 1.15.0).
 - Für deCONZ: ein Phoscon/deCONZ-Gateway, das GateControl erreicht (über eine Route, ein VPN-Gerät oder eine Adresse).
 - Für Shelly und Tasmota: ein GateControl-Gateway **1.19.0** oder neuer im selben Heimnetz, mit den Diensten `edge` und `mqtt` in seiner Compose-Datei.
 - Für Bluetooth-Sensoren: ein GateControl mit Funk (Reiter „Funk“ beim Gateway) und ein Gateway mit Bluetooth.
 - Für zigbee2mqtt: ein GateControl, das zigbee2mqtt kennt, und ein Gateway nach 1.30.0 mit „zigbee2mqtt“ im Reiter „Funk“ (dafür sind Edge und MQTT des Gateways an). Für mehrere Kanäle, Thermostate und Firmware-Updates: GateControl nach 1.258.4 und ein Gateway nach 1.34.2.
+- Für zigbee2mqtt in Logikketten am Gateway (ab 1.15.0): ein Gateway nach 1.45.2 und die Bestätigung unter **Gateways › Gateway › Edge-Plugins** ([zigbee2mqtt am Gateway](#logikketten-z2m)).
 
 ## Einrichten
 
@@ -102,19 +103,30 @@ Darunter legst du fest, was passiert, wenn die Kette **ausgelöst wird, während
 
 Die Ketten laufen im Edge-Teil auf dem Gateway, auch wenn der Server gerade nicht erreichbar ist. Uhrzeiten gelten in der Zeitzone des Servers; das Gateway rechnet sie selbst. Je Gateway gehen höchstens 40 Ketten. Alle Geräte einer Kette müssen am selben Gateway hängen.
 
+### zigbee2mqtt am Gateway (ab 1.15.0) {#logikketten-z2m}
+
+Auch Geräte von zigbee2mqtt am selben Gateway – Lichter, Steckdosen, Schalter mit mehreren Kanälen, Rollläden, Kontakte, Bewegungsmelder, Wassersensoren und Fernbedienungen (als Taster) – können in einer Kette am Gateway stehen. Sie laufen dann wie Shelly und Tasmota auf dem Gateway, auch ohne Server. Thermostate bleiben bei der Heizung am Server.
+
+- **Bestätigung:** Dafür braucht der Edge-Teil zusätzlich das MQTT-Thema `zigbee2mqtt/#`. Das ist eine **optionale Fähigkeit**: Smart Home läuft auf allen Gateways ohne neue Bestätigung weiter, nur zigbee2mqtt in Ketten muss ein Admin je Gateway freigeben – unter **Gateways › Gateway › Edge-Plugins › Zusätzliche Rechte (optional)**.
+- **Beim Speichern** einer Kette mit einem zigbee2mqtt-Gerät fragt Smart Home diese Freigabe an (Hinweis im Aktivitätsprotokoll, höchstens einmal am Tag). Die Kette wird gespeichert; der Editor und die Liste zeigen **„wartet auf Bestätigung“** mit dem Hinweis „Für zigbee2mqtt bitte unter Gateways › Gateway › Edge-Plugins bestätigen“ und dem Knopf **„Zum Gateway“**. Bis dahin laufen nur diese Ketten nicht – alle anderen Ketten des Gateways laufen weiter.
+- **Nach der Bestätigung** bekommt das Gateway die Ketten innerhalb von etwa einer halben Minute; der Hinweis verschwindet. Nimmt ein Admin die Freigabe zurück, warten die Ketten wieder.
+- **Ältere Gateways** (bis 1.45.2) kennen optionale Fähigkeiten noch nicht und lehnen `zigbee2mqtt/#` ab. Die Kette steht dann mit **„Gateway zu alt“** in der Liste; Shelly und Tasmota laufen weiter. Nach einem Update des Gateways geht es von selbst.
+- Die Geräte heißen in zigbee2mqtt so, wie zigbee2mqtt sie nennt (`zigbee2mqtt/bridge/devices`); ein Umbenennen in zigbee2mqtt stört die Ketten nicht.
+- Mit einem GateControl vor 1.317.0 stehen zigbee2mqtt-Geräte nur in [Ketten am Server](#logikketten-server) zur Verfügung.
+
 **Bestehende Regeln (bis 1.10)** laufen unverändert weiter. Im Editor erscheinen ihre Auslöser als **„wird wahr: A und B“**; beim Speichern wird daraus eine Kette im neuen Format.
 
 ### Sonne, „seit X min“, andere Ketten, Mitteilungen (ab 1.12.0) {#logikketten-stufe-2}
 
 - **Sonnenauf- und -untergang:** „+ Uhrzeit / Sonne“ löst bei Sonnenaufgang oder -untergang aus, mit Minuten davor (−) oder danach. Auch **„Zeit zwischen“** kennt die Sonne, z. B. „Sonnenuntergang–23:30“. Dafür braucht die Kette den **Standort des Gateways**: Fehlt er, zeigt der Editor einen Hinweis mit zwei Feldern für Breite und Länge (auf 0,01° gerundet, etwa 1 km). Ohne Standort löst „Sonne“ nie aus, und „Zeit zwischen“ mit Sonne gilt als offen. Der Testlauf zeigt die Sonnenzeit des Tages, z. B. „Sonnenuntergang (16:31)“.
 - **„seit X min“:** Ein Zustand oder Wert muss so lange gelten – als Auslöser („Waschmaschine unter 5 W seit 3 min“) und als Bedingung („Stehlampe ist aus seit 10 min“). Steigt der Wert vorher wieder, passiert nichts. Nach einem Neustart des Gateways zählt die Zeit neu.
-- **Kontakte, Bewegung, Wasser** (zigbee2mqtt, deCONZ, Bluetooth) sind Auslöser und Bedingungen in Ketten am Server („Kellertür wird geöffnet“, „Bewegung erkannt“).
+- **Kontakte, Bewegung, Wasser** (zigbee2mqtt, deCONZ, Bluetooth) sind Auslöser und Bedingungen in Ketten am Server („Kellertür wird geöffnet“, „Bewegung erkannt“) – zigbee2mqtt seit 1.15.0 auch am Gateway ([zigbee2mqtt am Gateway](#logikketten-z2m)).
 - **Andere Kette starten:** Ein Schritt startet eine andere Kette desselben Orts. Sie prüft ihr eigenes „Nur wenn“. Ketten, die sich ohne „Nur wenn“ gegenseitig starten, lassen sich nicht speichern; mit „Nur wenn“ gibt es einen Hinweis. Eine Kette startet sich nicht selbst, und nach vier Ketten hintereinander ist Schluss.
 - **Mitteilung senden:** Ein Schritt schickt eine Mitteilung über das Thema **„Logikketten“** (System › Benachrichtigungen) – an alle, die es abonniert haben, oder nur an die angehakten Personen. Den Versand übernimmt der Server: Eine Kette am Gateway schaltet auch ohne Server weiter, ihre Mitteilung kommt dann, sobald das Gateway wieder verbunden ist (bis zu einer Stunde). In der Liste steht dann „+ Mitteilung über Server“.
 
 ### Ketten über mehrere Gateways (läuft am Server) {#logikketten-server}
 
-Wählst du im Editor als Ort **„Mehrere Gateways (über Server)“**, kannst du Geräte aller Gateways verbinden – auch deCONZ und Geräte von zigbee2mqtt (Lichter, Steckdosen, Rollläden, Sensoren) sowie Bluetooth-Sensoren. Geräte von zigbee2mqtt gibt es in Ketten nur hier; Ketten am Gateway bleiben bei Shelly und Tasmota. Die Box oben wird gelb, die Kette trägt die gelbe Pille **„läuft am Server“**. Solche Ketten laufen nicht offline: Ohne Server oder mit einem getrennten Gateway passiert nichts. Sie reagieren mit 2–3 Sekunden Verzögerung, deCONZ-Geräte mit dem Abfrageintervall. Taster gehen nur in Ketten an ihrem Gateway. Testlauf, Protokoll, Bremse und Schleifenprüfung gelten wie am Gateway. Für die Sonne nimmt der Server den eigenen Standort oder den eines Gateways.
+Wählst du im Editor als Ort **„Mehrere Gateways (über Server)“**, kannst du Geräte aller Gateways verbinden – auch deCONZ und Geräte von zigbee2mqtt (Lichter, Steckdosen, Rollläden, Sensoren) sowie Bluetooth-Sensoren. Geräte von zigbee2mqtt eines Gateways gehen seit 1.15.0 auch in Ketten an diesem Gateway ([zigbee2mqtt am Gateway](#logikketten-z2m)); hier verbindest du sie mit Geräten anderer Gateways. Die Box oben wird gelb, die Kette trägt die gelbe Pille **„läuft am Server“**. Solche Ketten laufen nicht offline: Ohne Server oder mit einem getrennten Gateway passiert nichts. Sie reagieren mit 2–3 Sekunden Verzögerung, deCONZ-Geräte mit dem Abfrageintervall. Taster gehen nur in Ketten an ihrem Gateway. Testlauf, Protokoll, Bremse und Schleifenprüfung gelten wie am Gateway. Für die Sonne nimmt der Server den eigenen Standort oder den eines Gateways.
 
 ### Von Hand (App): Ketten als Schnellaktion {#logikketten-app}
 
@@ -222,8 +234,17 @@ Das Gerät schläft (Batteriegerät: einmal betätigen) oder zigbee2mqtt erreich
 **Das automatische Einrichten scheitert.**
 Richte das Gerät „Von Hand …“ ein. Die Anleitung steht im Fenster.
 
+**Eine Kette mit zigbee2mqtt am Gateway läuft nicht („wartet auf Bestätigung“ / „Gateway zu alt“).**
+„Wartet auf Bestätigung“: Ein Admin gibt unter **Gateways › Gateway › Edge-Plugins** die zusätzliche Fähigkeit `zigbee2mqtt/#` frei. „Gateway zu alt“: das Gateway auf eine Version nach 1.45.2 aktualisieren ([zigbee2mqtt am Gateway](#logikketten-z2m)).
+
 **Ein Gerät von zigbee2mqtt lässt sich nicht schalten („zigbee2mqtt auf dem Gateway antwortet gerade nicht“).**
 Im Reiter „Funk“ des Gateways nachsehen: Läuft zigbee2mqtt, sind Edge und MQTT an? Neue Geräte erscheinen spätestens nach einer halben Minute.
+
+## Neu in 1.15.0
+
+- **zigbee2mqtt in Ketten am Gateway:** Lichter, Steckdosen, Rollläden, Kontakte, Bewegung, Wasser und Fernbedienungen von zigbee2mqtt laufen in Ketten am Gateway – auch ohne Server ([zigbee2mqtt am Gateway](#logikketten-z2m)).
+- Dafür bestätigt ein Admin je Gateway die optionale Fähigkeit `zigbee2mqtt/#`; Smart Home fragt beim Speichern danach. Bis dahin laufen nur diese Ketten nicht.
+- Das Update braucht keine neue Bestätigung am Gateway: Shelly, Tasmota, die bisherigen Ketten und die Heizung laufen ohne Unterbrechung weiter. Es braucht GateControl 1.317.0.
 
 ## Neu in 1.14.0
 

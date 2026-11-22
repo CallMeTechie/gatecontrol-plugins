@@ -14,6 +14,9 @@
 // deCONZ, run by the server part (server/serverchains.js). A version 2 chain with the trigger "Von Hand (App)" is a
 // quick action of the apps; quick_users (migrations/005_chain_quick.sql) are the portal viewers an administrator
 // released it for.
+// Since 1.15.0 a gateway's chain may use zigbee2mqtt devices of that gateway (server/edgerules.js): saving one asks for
+// the optional capability zigbee2mqtt/# when it is not confirmed yet; rule.z2m 'approval' | 'unavailable' | null and
+// rule.z2m_link (where an administrator confirms it) tell the page why such a chain does not run.
 
 const store = require('./store');
 const service = require('./service');
@@ -95,15 +98,24 @@ async function list(gc, gatewayId, source = 'deconz') {
       ? (await gc.db.query("SELECT * FROM rules WHERE source = 'server' ORDER BY id")).rows
       : (await gc.db.query("SELECT * FROM rules WHERE source = 'edge' AND gateway_id = ? ORDER BY id", [gatewayId])).rows;
     const ids = new Set(rows.map((x) => x.id));
-    return rows.map((row) => {
+    let approved = null; // zigbee2mqtt/# on this gateway — asked once per list, only when a chain needs it
+    const out = rows.map((row) => {
       const r = parseRow(row);
       const refs = edgerules.refsOf(r.definition);
       r.orphaned = !refs.resources.every((id) => byId.has(Number(id))) || !refs.devices.every((id) => devById.has(Number(id))) || !refs.chains.every((id) => ids.has(Number(id)));
       // the new editor edits version 2: a version 1 chain is shown as one ("wird wahr: A und B")
       r.v2 = edgerules.toV2(r.definition);
       r.runs_today = today.get(r.id) || 0;
+      r.z2m = source === 'edge' && edgerules.usesZ2m(r.definition, byId) ? 'pending' : null;
       return r;
     });
+    if (out.some((r) => r.z2m)) approved = await edgerules.z2mApproved(gc, gatewayId);
+    for (const r of out) {
+      if (!r.z2m) continue;
+      r.z2m = edgerules.z2mStatus(gatewayId, approved);
+      if (r.z2m) r.z2m_link = edgerules.z2mLink(gatewayId);
+    }
+    return out;
   }
   const resources = new Map((await store.listResources(gc, gatewayId)).map((r) => [r.id, r]));
   const rows = (await gc.db.query("SELECT * FROM rules WHERE source = 'deconz' AND gateway_id = ? ORDER BY id", [gatewayId])).rows;
@@ -186,6 +198,20 @@ async function deleteObjects(gc, client, row) {
 }
 
 /**
+ * A gateway's chain with zigbee2mqtt devices: zigbee2mqtt/# confirmed? If not, ask an administrator (GateControl notes it
+ * at most once a day) → the rule with z2m 'approval' and the link, 'unavailable' (an older gateway) or null.
+ */
+async function withZ2m(gc, rule) {
+  if (!rule || rule.source !== 'edge') return rule;
+  const byId = await edgerules.resourcesOf(gc, rule.gateway_id);
+  if (!edgerules.usesZ2m(rule.definition, byId)) return { ...rule, z2m: null };
+  let approved = await edgerules.z2mApproved(gc, rule.gateway_id);
+  if (!approved) approved = (await edgerules.z2mRequest(gc, rule.gateway_id)) === 'approved';
+  const z2m = edgerules.z2mStatus(rule.gateway_id, approved);
+  return { ...rule, z2m, ...(z2m ? { z2m_link: edgerules.z2mLink(rule.gateway_id) } : {}) };
+}
+
+/**
  * A chain (edge: on a GateControl gateway — stored, then the gateway's list goes to its edge part, now or when the
  * gateway is back; server: on the server — its engine takes the new list).
  */
@@ -196,7 +222,7 @@ async function createChain(gc, gatewayId, name, definition, source, quickUsers) 
   const id = Number((await gc.db.run('INSERT INTO rules (gateway_id, name, enabled, definition_json, source, quick_users) VALUES (?, ?, 1, ?, ?, ?)',
     [place, name, JSON.stringify(definition), source, quickUsers && quickUsers.length ? JSON.stringify(quickUsers) : null])).lastInsertRowid);
   await pushPlace(gc, source, place);
-  return get(gc, id);
+  return withZ2m(gc, await get(gc, id));
 }
 
 async function create(gc, gatewayId, name, definition, source = 'deconz', { quickUsers } = {}) {
@@ -229,7 +255,7 @@ async function update(gc, id, name, definition, { quickUsers } = {}) {
     await gc.db.run("UPDATE rules SET name = ?, definition_json = ?, updated_at = datetime('now') WHERE id = ?", [name, JSON.stringify(definition), row.id]);
     if (qu !== undefined) await gc.db.run('UPDATE rules SET quick_users = ? WHERE id = ?', [qu && qu.length ? JSON.stringify(qu) : null, row.id]);
     await pushPlace(gc, row.source, row.gateway_id);
-    return get(gc, row.id);
+    return withZ2m(gc, await get(gc, row.id));
   }
   const client = await clientFactory(gc, row.gateway_id);
   const resolve = await resolverFor(gc, row.gateway_id);

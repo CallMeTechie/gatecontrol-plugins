@@ -1,9 +1,9 @@
 'use strict';
 
 // Logikketten Stufe 2 (1.12.0) — the server part: the new parts of a chain compiled for the edge part (sun, "seit",
-// contacts and motion (server), "Von Hand (App)", "Andere Kette starten", "Mitteilung senden"), the place of a gateway for the
-// sun, zigbee2mqtt devices only in the chains on the server (no new edge capability), the loop check with chains that
-// start chains, the chains that run on the server ("Mehrere Gateways"), the notifications of both, and the quick actions of the apps with who may
+// contacts and motion, "Von Hand (App)", "Andere Kette starten", "Mitteilung senden"), the place of a gateway for the
+// sun, zigbee2mqtt devices of a gateway in its chains, the loop check with chains that start chains, the chains that
+// run on the server ("Mehrere Gateways"), the notifications of both, and the quick actions of the apps with who may
 // start what (administrators always, portal viewers only when released) — plus the Tasmota buttons (SetOption73) the
 // server's set-up job passes on.
 
@@ -30,7 +30,9 @@ async function withEdge(o, fn) {
     if (method === 'test' && state.test) return state.test(params, gatewayId);
     throw hostError('edge_error', `unknown_method: unknown method ${method}`);
   };
-  const host = await createHost(DIR, { users: USERS, gatecontrol: '1.228.1', edge: { gateways: [GW7, GW8], call } });
+  // GateControl 1.317.0: zigbee2mqtt/# confirmed for both gateways (test/z2m_gateway_chains.test.js: not confirmed yet)
+  const optional = o.optional || { 7: ['mqtt.topic:zigbee2mqtt/#'], 8: ['mqtt.topic:zigbee2mqtt/#'] };
+  const host = await createHost(DIR, { users: USERS, gatecontrol: '1.317.0', edge: { gateways: [GW7, GW8], call, optional } });
   try {
     await host.start();
     await fn(host, calls, state);
@@ -78,12 +80,12 @@ async function house(host) {
 const post = (host, name, definition, extra = {}) => admin(host, 'POST', '/rules', { gateway_id: 7, source: 'edge', name, definition, ...extra });
 const BASE = (triggers, steps, conditions = { mode: 'all', list: [] }) => ({ version: 2, triggers, conditions, steps, retrigger: 'restart' });
 
-test('stage 2 parts are compiled for the gateway — sun, "seit", Von Hand, another chain, a notification — and the edge part takes them', () => withEdge({}, async (host) => {
+test('stage 2 parts are compiled for the gateway — sun, "seit", contact of zigbee2mqtt, Von Hand, another chain, a notification — and the edge part takes them', () => withEdge({}, async (host) => {
   const h = await house(host);
   const two = (await post(host, 'Gute Nacht', BASE([{ kind: 'manual' }], [{ kind: 'action', resourceId: h.id('Flurlicht'), set: { on: false } }]))).json.rule;
   const def = BASE(
-    [{ kind: 'sun', event: 'sunset', offset: -15 }, { kind: 'power', resourceId: h.id('Waschmaschine'), op: 'lt', value: 5, for: 3 }, { kind: 'manual' }],
-    [{ kind: 'action', resourceId: h.id('Flurlicht'), set: { bri: 60 } }, { kind: 'chain', ruleId: two.id }, { kind: 'notify', text: 'Die Waschmaschine ist fertig.', users: [ADA.id] }],
+    [{ kind: 'sun', event: 'sunset', offset: -15 }, { kind: 'power', resourceId: h.id('Waschmaschine'), op: 'lt', value: 5, for: 3 }, { kind: 'contact', resourceId: h.tuer, event: 'open' }, { kind: 'manual' }],
+    [{ kind: 'action', resourceId: h.keller, set: { bri: 60 } }, { kind: 'chain', ruleId: two.id }, { kind: 'notify', text: 'Die Waschmaschine ist fertig.', users: [ADA.id] }],
     { mode: 'all', list: [{ kind: 'time', from: { sun: 'sunset', offset: 0 }, to: '23:30' }, { kind: 'state', resourceId: h.id('Flurlicht'), is: 'off', for: 2 }] },
   );
   const r = await post(host, 'Wäsche fertig', def, { quick_users: [ADA.id] });
@@ -93,21 +95,13 @@ test('stage 2 parts are compiled for the gateway — sun, "seit", Von Hand, anot
   assert.deepEqual(sent.when, [
     { k: 'sun', ev: 'set', off: -15 },
     { k: 'dev', base: h.base.plug, ch: 'switch:0', field: 'power', op: 'lt', value: 5, for: 3 },
+    { k: 'dev', base: 'zigbee2mqtt/0x00158d0000000001', ch: 'sensor', field: 'open', op: 'eq', value: true },
     { k: 'man' },
   ]);
   assert.deepEqual(sent.cond.list, [{ k: 'time', from: { sun: 'set', off: 0 }, to: '23:30' }, { k: 'dev', base: h.base.flur, ch: 'light:0', field: 'on', op: 'eq', value: false, for: 2 }]);
-  assert.deepEqual(sent.steps, [{ k: 'act', base: h.base.flur, family: 'shelly2', ch: 'light:0', op: 'bri', value: 60 }, { k: 'chain', id: two.id }, { k: 'note' }]);
+  assert.deepEqual(sent.steps, [{ k: 'act', base: 'zigbee2mqtt/0x00158d00000000aa', family: 'z2m', ch: 'light:0', op: 'bri', value: 60 }, { k: 'chain', id: two.id }, { k: 'note' }]);
   assert.deepEqual(edgeRules.cleanRule(JSON.parse(JSON.stringify(sent))), sent, 'the edge part takes it as it is');
-  assert.equal('z2m' in cfg, false, 'nothing of zigbee2mqtt goes to the gateway');
-  // zigbee2mqtt devices are not part of a gateway's chains (that would need a new edge capability): on the server only
-  for (const d of [BASE([{ kind: 'contact', resourceId: h.tuer, event: 'open' }], [{ kind: 'action', resourceId: h.id('Flurlicht'), set: { on: true } }]),
-    BASE([{ kind: 'time', at: '07:00' }], [{ kind: 'action', resourceId: h.keller, set: { on: true } }])]) {
-    assert.equal((await post(host, 'Z', d)).json.detail, 'foreign_resource');
-  }
-  const z = await admin(host, 'POST', '/rules', { source: 'server', name: 'Kellertür', definition: BASE([{ kind: 'contact', resourceId: h.tuer, event: 'open' }], [{ kind: 'action', resourceId: h.keller, set: { bri: 60 } }]) });
-  assert.equal(z.status, 200, JSON.stringify(z.json));
-  const wrong = await admin(host, 'POST', '/rules', { source: 'server', name: 'Falsch', definition: BASE([{ kind: 'motion', resourceId: h.tuer, event: 'detected' }], [{ kind: 'action', resourceId: h.keller, set: { on: true } }]) });
-  assert.equal(wrong.json.detail, 'bad_motion_trigger', 'a contact is no motion sensor');
+  assert.deepEqual(cfg.z2m.map((d) => [d.ieee, d.kind, d.name]), [['0x00158d0000000001', 'sensor', 'Kellertür'], ['0x00158d00000000aa', 'light', 'Kellerlicht']]);
   assert.equal(cfg.sun, null, 'no place yet');
   const listed = (await admin(host, 'GET', '/rules?gateway_id=7&source=edge')).json;
   assert.deepEqual(listed.rules.find((x) => x.id === r.json.rule.id).quick_users, [ADA.id]);
@@ -129,11 +123,12 @@ test('stage 2 parts are compiled for the gateway — sun, "seit", Von Hand, anot
   const cases = [
     [{ ...ok, triggers: [{ kind: 'power', resourceId: h.id('Waschmaschine'), op: 'lt', value: 5, for: 0 }] }, 'bad_for'],
     [{ ...ok, triggers: [{ kind: 'power', resourceId: h.id('Waschmaschine'), op: 'lt', value: 5, for: 1441 }] }, 'bad_for'],
+    [{ ...ok, triggers: [{ kind: 'motion', resourceId: h.tuer, event: 'detected' }] }, 'bad_motion_trigger'],
     [{ ...ok, conditions: { mode: 'all', list: [{ kind: 'time', from: { sun: 'noon' }, to: '23:00' }] } }, 'bad_time_condition'],
     [{ ...ok, steps: [{ kind: 'chain', ruleId: 99999 }] }, 'foreign_chain'],
     [{ ...ok, steps: [{ kind: 'notify', text: 'x'.repeat(201) }] }, 'bad_notify_step'],
     [{ ...ok, steps: [{ kind: 'notify', text: 'Hallo', users: ['ada'] }] }, 'bad_notify_step'],
-    [{ ...ok, steps: [{ kind: 'action', resourceId: h.id('Flurlicht'), set: { pos: 20 } }] }, 'bad_action'],      // a lamp has no position
+    [{ ...ok, steps: [{ kind: 'action', resourceId: h.keller, set: { pos: 20 } }] }, 'bad_action'],      // a lamp has no position
   ];
   for (const [d, detail] of cases) {
     const x = await post(host, 'X', d);
@@ -202,7 +197,7 @@ test('a chain on the server ("Mehrere Gateways"): a plug on one gateway switches
   const devs = (await admin(host, 'GET', '/rules/devices?server=1')).json.resources;
   assert.deepEqual(['Hoflicht', 'Kellertür'].map((x) => devs.find((d) => d.name === x).place), ['Pi Garage', 'Pi Keller']);
   const gw7 = (await admin(host, 'GET', '/rules/devices?gateway_id=7')).json;
-  assert.deepEqual(gw7.resources.map((x) => x.name).sort(), ['Flurlicht', 'Waschmaschine']);
+  assert.deepEqual(gw7.resources.map((x) => x.name).sort(), ['Flurlicht', 'Kellerlicht', 'Kellertür', 'Waschmaschine']);
   assert.deepEqual(gw7.devices.map((d) => d.name).sort(), ['Flurlicht', 'Waschmaschine']);
   // off: the engine forgets it
   await admin(host, 'POST', `/rules/${r.json.rule.id}/enabled`, { enabled: false });

@@ -17,7 +17,8 @@
 //          since 1.12.0 source 'server': chains with devices of several gateways / of deCONZ, run by the server part
 //          (server/serverchains.js; POST /rules { source: 'server', … } without gateway_id, GET /rules?source=server);
 //          quick_users [ids] in POST / PUT /rules: the portal viewers a chain with "Von Hand (App)" is released for
-//     GET  /rules/devices?gateway_id | ?server=1   what the editor offers for a place (resources, buttons)
+//     GET  /rules/devices?gateway_id | ?server=1   what the editor offers for a place (resources, buttons; z2m { approved,
+//          status, link } when a gateway has zigbee2mqtt devices — since 1.15.0)
 //     GET  /rules/people               the people for "freigegeben für" / "Mitteilung an" ({ id, username, admin })
 //     GET  /rules/location?gateway_id | ?server=1 · PUT /rules/location { gateway_id | server: true, lat, lon } | { …, location: null }
 //          where a place is (sunrise / sunset)
@@ -748,7 +749,14 @@ async function editorDevices(gc, place) {
   }
   const byId = await edgerules.resourcesOf(gc, place);
   const devices = (await require('./edgestore').listDevices(gc, place)).map((d) => ({ id: d.id, name: d.name, family: d.family }));
-  return { resources: [...byId.values()].map(({ resource: r }) => view(r, null)), devices };
+  const resources = [...byId.values()].map(({ resource: r }) => view(r, null));
+  // zigbee2mqtt devices of the gateway (since 1.15.0, GateControl ≥ 1.317.0): confirmed for it? (the editor's hint)
+  let z2m = null;
+  if (resources.some((r) => r.source === 'z2m')) {
+    const approved = await edgerules.z2mApproved(gc, place);
+    z2m = { approved, status: edgerules.z2mStatus(place, approved), link: edgerules.z2mLink(place) };
+  }
+  return { resources, devices, z2m };
 }
 
 /** The heating's admin API (administrators: every room, the plans, the house). */

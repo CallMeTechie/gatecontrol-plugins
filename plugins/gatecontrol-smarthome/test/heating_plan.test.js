@@ -489,10 +489,11 @@ describe('Heizung: deCONZ thermostats', () => {
 });
 
 describe('Heizung: the manifest', () => {
-  it('no new edge capability (no confirmation on the gateways), version 1.14.0, the page "Heizung"', () => {
+  it('no new edge capability (no confirmation on the gateways), version 1.14.0 or later, the page "Heizung"', () => {
     const manifest = require('../plugin.json');
     assert.deepEqual(manifest.edge.capabilities, { mdns: { services: ['_shelly._tcp', '_http._tcp'] }, http: { lan: true }, mqtt: { topics: ['shellies/#', 'tasmota/#'] } });
-    assert.equal(manifest.version, '1.14.0');
+    const [maj, min] = manifest.version.split('.').map(Number);
+    assert.ok(maj > 1 || (maj === 1 && min >= 14), manifest.version);
     assert.ok(manifest.ui.pages.some((p) => p.id === 'heating'));
     assert.equal(manifest.permissions.background.intervalSeconds, 30, 'the plan runs about every 30 s');
   });

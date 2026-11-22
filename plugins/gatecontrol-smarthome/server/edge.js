@@ -16,8 +16,11 @@
 // (gc.edge.configure { devices: [{ base, family }], rules, tz }) and the runs the server part missed (gc.edge.call
 // 'runs'); `fired` { rules: [{ id, at }] } → a logic chain ran, `runs` { runs: [run] } → its protocol
 // (server/edgerules.js); `notify` { notes: [{ r, i, at, u }] } (since 1.12.0) → a step "Mitteilung senden" ran — the
-// notification goes out here (server/serverchains.js sendNote). The configuration carries where the gateway is (sun —
-// since 1.12.0).
+// notification goes out here (server/serverchains.js sendNote). The configuration carries the zigbee2mqtt devices the
+// gateway's chains use and where the gateway is (z2m, sun). Since 1.15.0 zigbee2mqtt on a gateway needs the optional
+// capability zigbee2mqtt/# (server/edgerules.js): `z2m` { state: 'ok' | 'denied' | 'error' | 'off' } → whether the
+// gateway let the edge part subscribe to it; tick() notices when an administrator confirmed (or revoked) it and sends the
+// gateway its chains again.
 
 const crypto = require('node:crypto');
 const store = require('./store');
@@ -48,6 +51,7 @@ const mem = {
   jobs: new Map(),    // job id → set-up job (with the account password while it runs)
   ready: false,
   orphanAt: 0,
+  z2mSeen: false,     // recheckZ2m looked at the gateways' chains once since the start
 };
 
 const available = (gc) => !!(gc.edge && gc.mqtt && gc.mqtt.accounts);
@@ -118,9 +122,9 @@ async function configureGateway(gc, gatewayId) {
   if (!available(gc)) return false;
   const devices = (await es.listDevices(gc, gatewayId)).map((d) => ({ base: d.base, family: d.family }));
   // the gateway's logic chains run in its edge part (edge/rules.js); an older edge part ignores them
-  const { rules, tz, sun } = await edgerules.configFor(gc, gatewayId);
+  const { rules, tz, z2m, sun } = await edgerules.configFor(gc, gatewayId);
   try {
-    await gc.edge.configure(Number(gatewayId), { devices, rules, tz, sun });
+    await gc.edge.configure(Number(gatewayId), { devices, rules, tz, z2m, sun });
     return true;
   } catch (e) {
     gc.log.debug('edge configure failed', gatewayId, edgeErr(e));
@@ -355,6 +359,8 @@ function setup(gc) {
   mem.found.clear();
   mem.jobs.clear();
   mem.orphanAt = 0;
+  mem.z2mSeen = false;
+  edgerules._z2mMem.clear();
   mem.ready = available(gc);
   if (!gc.edge) return false;
   gc.edge.on('$started', ({ gatewayId }) => configureGateway(gc, gatewayId).then(() => catchUp(gc, gatewayId)));
@@ -369,6 +375,7 @@ function setup(gc) {
     }
   });
   gc.edge.on('found', ({ gatewayId, data }) => rememberFound(gatewayId, data && data.devices));
+  gc.edge.on('z2m', ({ gatewayId, data }) => edgerules.setZ2mEdge(gc, gatewayId, data && data.state));
   gc.edge.on('fired', ({ gatewayId, data }) => edgerules.markFired(gc, gatewayId, data).catch((e) => gc.log.warn('edge rule mark failed', (e && (e.code || e.message)) || e)));
   return true;
 }
@@ -873,9 +880,36 @@ async function tick(gc, now = Date.now()) {
     mem.orphanAt = now;
     await retryOrphans(gc).catch(() => null);
   }
+  await recheckZ2m(gc);
+}
+
+/**
+ * The chains with zigbee2mqtt devices of a gateway wait for zigbee2mqtt/# (server/edgerules.js configFor): once an
+ * administrator confirmed it (or took it back) the gateway gets its list again. GateControl tells the plugin nothing
+ * about it, so every tick asks for the gateways that have such chains.
+ */
+async function recheckZ2m(gc) {
+  if (!available(gc) || !edgerules.z2mHost(gc)) return;
+  if (!mem.z2mSeen) {
+    // after a start of the plugin: a gateway with chains not configured since is looked at once (configFor tells
+    // which use zigbee2mqtt); one that does gets its list, whatever was confirmed meanwhile
+    mem.z2mSeen = true;
+    const ids = (await gc.db.query("SELECT DISTINCT gateway_id FROM rules WHERE source = 'edge' AND enabled = 1")).rows.map((r) => Number(r.gateway_id));
+    for (const id of ids) {
+      if (edgerules._z2mMem.has(id)) continue;
+      await edgerules.configFor(gc, id).catch(() => null);
+      const m = edgerules._z2mMem.get(id);
+      if (m && m.uses) await configureGateway(gc, id);
+    }
+  }
+  for (const [gatewayId, m] of edgerules._z2mMem) {
+    if (!m.uses) continue;
+    const approved = await edgerules.z2mApproved(gc, gatewayId);
+    if (approved !== m.approved) await configureGateway(gc, gatewayId);
+  }
 }
 
 module.exports = {
-  available, setup, gateways, configureGateway, catchUp, testRule, route, tick, setState, applySnapshot, syncResources, reachableOf, sleeperOf, httpUserOf, slugify, semverAtLeast,
+  available, setup, gateways, configureGateway, catchUp, testRule, route, tick, recheckZ2m, setState, applySnapshot, syncResources, reachableOf, sleeperOf, httpUserOf, slugify, semverAtLeast,
   jobView, MIN_GATEWAY, STALE_MS, SENSOR_STALE_MS, _mem: mem,
 };

@@ -6,7 +6,7 @@
 // is away (edge/index.js keeps the last list in gc.store).
 //
 //   create({ publish(messages), device(base), now(), setTimer(fn, ms), clearTimer(t), log, fired(id, at),
-//            record(run), runId(), act(step), notify(note) })
+//            record(run), runId(), z2mTopic(base), act(step), notify(note) })
 //     .set({ rules, tz, sun })   the server part's list (server/edgerules.js compiles the definitions); everything in
 //                           it is checked again here. A rule that did not change keeps its state and its timer.
 //                           sun { lat, lon }: where the house is (sunrise / sunset, since 1.12.0), or none.
@@ -48,11 +48,12 @@
 //      { k: 'dev', …, for: 1…1440 }                       the state holds for <for> minutes ("seit 3 min")
 //   c  { k: 'time', from, to } — from / to also { sun: 'rise' | 'set', off } ("Sonnenuntergang–23:30")
 //      { k: 'dev', …, for }                               holds and has held for <for> minutes
-//      fields open / presence / water (eq true | false) on 'sensor': contacts, motion, water (chains on the server)
+//      fields open / presence / water (eq true | false) on 'sensor': contacts, motion, water (zigbee2mqtt, server)
 //   s  { k: 'chain', id }   start another chain of this list (its NUR WENN is checked; at most 4 chains deep)
 //      { k: 'note' }        a notification: io.notify({ r, i, at, u }) — the server part sends it (needs the server)
-//   act steps of the chains that run on the server (server/serverchains.js): family 'res' with base 'res/<resource
-//   id>' and io.act(step) instead of MQTT (op 'scene' activates a scene).
+//   act steps of family 'z2m' (zigbee2mqtt on this gateway, io.z2mTopic names the device) — and, for the chains that
+//   run on the server (server/serverchains.js), family 'res' with base 'res/<resource id>' and io.act(step) instead of
+//   MQTT (op 'scene' activates a scene).
 //
 // Brakes (both kinds): a chain that starts more than 10 times within a minute is stopped (a run record with result
 // 'stopped', the server part switches it off and shows why); at most 60 commands a minute leave this gateway; a
@@ -129,7 +130,8 @@ function cleanAction(a) {
   if (!a || typeof a !== 'object') return null;
   const c = { base: a.base, family: a.family, ch: a.ch, op: a.op };
   if (a.value !== undefined) c.value = a.value;
-  if (c.family === 'res') return checkRes(c) ? c : null;
+  if (a.zch !== undefined) c.zch = a.zch;
+  if (c.family === 'res') return c.zch === undefined && checkRes(c) ? c : null;
   try { commands.check(c); } catch { return null; }
   return c;
 }
@@ -320,8 +322,8 @@ function create(io) {
   const iso = (ms) => new Date(ms).toISOString();
   const warnOnce = (key, line) => { if (st.warned.has(key) || !io.log) return; st.warned.add(key); io.log.warn(line); };
 
-  /** The MQTT messages of a command. */
-  function messagesOf(a) { return commands.messages(a); }
+  /** The MQTT messages of a command (zigbee2mqtt: io.z2mTopic names the device). */
+  function messagesOf(a) { return commands.messages(a, { z2mTopic: io.z2mTopic }); }
 
   function emit(rec) { if (io.record) { try { io.record(JSON.parse(JSON.stringify(rec))); } catch { /* the record is information only */ } } }
   function newRecord(rt, ms, by, tr) { return { u: runId(), r: rt.def.id, at: iso(ms), by, tr: tr == null ? null : tr, res: 'running', why: null, ev: [], end: null }; }
@@ -540,7 +542,7 @@ function create(io) {
       if (!mayCommand(ms)) { ev(run.rec, ms, 'limit', idx); run.partial = 'limit'; continue; }
       const dev = io.device(s.base);
       let list = [];
-      if (!io.act) { try { list = messagesOf({ ...s, family: (dev && dev.family) || s.family }); } catch { /* checked in cleanRule */ } }
+      if (!io.act) { try { list = messagesOf({ ...s, family: (dev && dev.family) || s.family }); } catch { /* checked in cleanRule; z2m: its name is not known yet */ } }
       rt.echo.set(keyOf(s), ms + ECHO_MS);
       ev(run.rec, ms, 'act', idx);
       if (reached(s, dev, false)) ev(run.rec, ms, 'ack', idx);

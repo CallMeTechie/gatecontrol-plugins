@@ -22,6 +22,14 @@
 //   cover   { pos (0–100 % open, null = not calibrated), moving ('opening' | 'closing' | null), power }
 // sensor { temperature (°C), humidity (%), battery (%), external (on USB power, Gen2+) }, online true | false | null
 // (LWT / "online").
+//
+// Since 1.12.0 also zigbee2mqtt on the gateway, for the logic chains only (the server part gets these devices from
+// GateControl, gc.radio.zigbee): parseZ2m(base, payload, { kind, chs }) → { patch, events? } for a device's state
+// message zigbee2mqtt/<friendly name> (edge/index.js maps the name to base zigbee2mqtt/0x<IEEE address>). kind light →
+// light:0 { on, bri }, plug → switch:0 (with chs ['l1', 'l2', …] switch:<i> per channel state_<chs[i]>), cover →
+// cover:0 { pos, moving }; power on the first channel; sensor { temperature, humidity, battery, open (contact false),
+// presence (occupancy / presence), water (water_leak) }; `action` single / double / triple / hold (also 1_single,
+// button_2_double …) → events like a button.
 
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
 const COMP_RE = /^(switch|light|cover|temperature|humidity|devicepower):(\d{1,2})$/;
@@ -296,6 +304,66 @@ function parse(topic, payload) {
   return out.events ? { base, family: out.family, patch: out.patch, events: out.events } : { base, family: out.family, patch: out.patch };
 }
 
+// ─── zigbee2mqtt (the logic chains on the gateway) ───
+
+const Z2M_ACTIONS = { single: 'single', double: 'double', triple: 'triple', hold: 'long', long: 'long' };
+const Z2M_ACTION_RE = /^(?:button_)?(?:([1-8])_)?(single|double|triple|hold|long)$/;
+
+function z2mOn(v) {
+  if (v === true || v === false) return v;
+  const s = String(v == null ? '' : v).toUpperCase();
+  return s === 'ON' ? true : (s === 'OFF' ? false : null);
+}
+
+function parseZ2m(base, payload, info) {
+  const o = json(payload);
+  if (!o) return null;
+  const kind = info && info.kind;
+  const chs = info && Array.isArray(info.chs) ? info.chs : null;
+  const patch = { ch: {}, sensor: {} };
+  if (kind === 'light' || kind === 'plug') {
+    const first = kind === 'light' ? 'light:0' : 'switch:0';
+    if (chs && chs.length) {
+      chs.forEach((c, i) => { const on = z2mOn(o[`state_${c}`]); if (on != null) patch.ch[`switch:${i}`] = { on }; });
+    } else {
+      const c = {};
+      const on = z2mOn(o.state);
+      if (on != null) c.on = on;
+      const b = num(o.brightness);
+      if (kind === 'light' && b != null) c.bri = Math.max(1, Math.min(100, Math.round((b * 100) / 254)));
+      if (Object.keys(c).length) patch.ch[first] = c;
+    }
+    const w = round(o.power, 1);
+    const key = chs && chs.length ? 'switch:0' : first;
+    if (w != null) patch.ch[key] = { ...(patch.ch[key] || {}), power: w };
+  } else if (kind === 'cover') {
+    const c = {};
+    const pos = pct(o.position);
+    if (pos != null) c.pos = pos;
+    const run = String(o.moving || o.motor_state || '').toUpperCase();
+    if (run === 'UP' || run === 'OPENING') c.moving = 'opening';
+    else if (run === 'DOWN' || run === 'CLOSING') c.moving = 'closing';
+    else if (run === 'STOP' || run === 'STOPPED' || o.moving === false) c.moving = null;
+    if (Object.keys(c).length) patch.ch['cover:0'] = c;
+  }
+  const t = round(o.temperature, 1);
+  if (t != null) patch.sensor.temperature = t;
+  const h = round(o.humidity, 1);
+  if (h != null) patch.sensor.humidity = h;
+  const bat = pct(o.battery);
+  if (bat != null) patch.sensor.battery = bat;
+  if (typeof o.contact === 'boolean') patch.sensor.open = !o.contact;
+  const occ = typeof o.occupancy === 'boolean' ? o.occupancy : (typeof o.presence === 'boolean' ? o.presence : null);
+  if (occ != null) patch.sensor.presence = occ;
+  if (typeof o.water_leak === 'boolean') patch.sensor.water = o.water_leak;
+  if (!Object.keys(patch.ch).length) delete patch.ch;
+  if (!Object.keys(patch.sensor).length) delete patch.sensor;
+  const m = typeof o.action === 'string' ? Z2M_ACTION_RE.exec(o.action) : null;
+  const events = m ? [{ input: m[1] ? Number(m[1]) - 1 : 0, ev: Z2M_ACTIONS[m[2]] }] : null;
+  if (events) return { base, family: 'z2m', patch, events };
+  return Object.keys(patch).length ? { base, family: 'z2m', patch } : null;
+}
+
 // ─── Device records ─────────────────────────────
 
 function newDevice(base, family) {
@@ -369,4 +437,4 @@ function snapshot(dev) {
   };
 }
 
-module.exports = { parse, apply, snapshot, newDevice };
+module.exports = { parse, parseZ2m, apply, snapshot, newDevice };
