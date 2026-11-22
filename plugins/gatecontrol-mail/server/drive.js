@@ -38,7 +38,9 @@ async function available(gc) {
 const CODES = { not_found: 'not_found', forbidden: 'forbidden', no_seat: 'forbidden', not_licensed: 'drive_unavailable', links_disabled: 'links_disabled',
   no_public_url: 'links_disabled', encrypted: 'forbidden', too_large: 'too_large', invalid: 'invalid', quota: 'too_large', upload_invalid: 'invalid', unavailable: 'drive_unavailable', exists: 'invalid',
   // Drive ≥ 1.19.0: its file is held back by GateControl's virus scan (give_file, share_link)
-  quarantined: 'quarantined', scan_pending: 'scan_pending', scan_blocked: 'scan_blocked' };
+  quarantined: 'quarantined', scan_pending: 'scan_pending', scan_blocked: 'scan_blocked',
+  // 1.17.3: Drive takes no file of this type (its hand-over refused with ERR_MEDIA_TYPE)
+  unsupported: 'unsupported_type', unsupported_type: 'unsupported_type' };
 
 /** A Drive service for person `userId` → its answer (ok) or throws the API code. */
 async function call(gc, userId, service, payload) {
@@ -82,6 +84,8 @@ async function handed(gc, userId, m, tt) {
     if (e && e.code === 'ERR_MEDIA_SCAN_PENDING') throw fail('scan_pending');
     if (e && e.code === 'ERR_MEDIA_BLOCKED') throw fail('scan_blocked');
     if (e && e.code === 'ERR_MEDIA_TOO_LARGE') throw fail('too_large');
+    // 1.17.3: Drive takes no file of this type — 415 unsupported_type, not "Drive ist nicht erreichbar"
+    if (e && e.code === 'ERR_MEDIA_TYPE') throw fail('unsupported_type');
     if (e && e.code === 'ERR_RATE_LIMIT') throw fail('rate_limited');
     throw fail('drive_unavailable', { reason: (e && e.code) || 'handover' });
   }

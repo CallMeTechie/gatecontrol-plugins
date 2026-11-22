@@ -2,6 +2,27 @@
 
 Alle E-Mail-Konten an einem Ort – im eigenen Tab der GateControl-Apps und im Portal.
 
+## 1.17.3
+
+Fehlerbehebung (Server-Log): „In Drive speichern“ eines Anhangs mit unbekanntem oder ungewöhnlichem Typ endete mit 500.
+
+- **Ursache** (`server/graph.js` `download`): Microsoft-Anhänge holt Mail mit `gc.media.fetch` und gab dabei Graphs
+  `contentType` als erzwungenen Typ mit. GateControl speichert für Mail nur Typen aus `media.types` (plugin.json) und nie
+  einen der Sperrliste (HTML, XML, JSON, SVG …) – `message/rfc822`, `text/html`, `application/json`, `unknown/unknown`
+  u. a. wurden mit `ERR_MEDIA_TYPE` abgelehnt. Der Code war Mail unbekannt: 500 „internal“ für
+  `POST messages/<id>/attachments/<n>/drive/suggest` (und `…/drive/save`, das Öffnen des Anhangs). IMAP-Anhänge waren
+  nicht betroffen (GateControl übernimmt dort jeden gültigen Typ).
+- **Typ mit Rückfall** (`server/util.js` `storeType`): der eigene Typ (Grundtyp ohne Parameter wie `; name=…`), wenn
+  GateControl ihn für Mail annimmt, sonst der Typ der Dateiendung (pdf, docx, jpg, …), sonst
+  `application/octet-stream` (ein Download – HTML öffnet nie als Seite). Lehnt GateControl trotzdem ab (eine andere
+  Liste), ein zweiter Versuch als `application/octet-stream`.
+- **415 statt 500** (`server/index.js`, `server/drive.js`, `server/util.js`, `server/texts.json`): neuer Fehlercode
+  `unsupported_type` (415) mit Meldung (de/en) für `ERR_MEDIA_TYPE` von GateControl und für eine Übergabe an Drive, die
+  Drive wegen des Typs ablehnt (vorher 409 `drive_unavailable`).
+- **Tests** (`test/attachments.test.js`): `storeType` (Parameter, Groß-/Kleinschreibung, Endung, gesperrte Typen);
+  Microsoft-Mail mit `.eml`, HTML, `unknown/unknown`, ohne Typ und mit `; name=…` – Vorschlag und Speichern 200,
+  geholt mit dem erwarteten Typ; Drive ohne passenden Typ → 415 `unsupported_type` mit Meldung auf Deutsch und Englisch.
+
 ## 1.17.2
 
 Fehlerbehebungen (Befunde aus PR #246): ältere Mails nach Datum statt UID, Ordnerflag `complete`, deterministischer

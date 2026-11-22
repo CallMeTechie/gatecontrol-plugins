@@ -46,7 +46,8 @@ const searchIndex = require('./search');
 const { t } = require('./text');
 const { STATUS, fail, isKnown } = require('./util');
 
-const HOST_CODES = { ERR_MEDIA_QUOTA: 'too_large', ERR_RATE_LIMIT: 'rate_limited',
+// 1.17.3: ERR_MEDIA_TYPE (GateControl takes no file of this type) is a 415 with its words, never a 500
+const HOST_CODES = { ERR_MEDIA_QUOTA: 'too_large', ERR_RATE_LIMIT: 'rate_limited', ERR_MEDIA_TYPE: 'unsupported_type',
   // 1.8.0: GateControl's virus scan holds a file back / deleted it at once
   ERR_MEDIA_QUARANTINED: 'quarantined', ERR_MEDIA_SCAN_PENDING: 'scan_pending', ERR_MEDIA_BLOCKED: 'scan_blocked', ERR_MEDIA_INFECTED: 'attachment_removed' };
 const CLEAN_MS = 5 * 60000;

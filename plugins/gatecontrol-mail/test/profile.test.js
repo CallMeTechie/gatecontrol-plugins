@@ -20,7 +20,7 @@ const PROFILE = { people: { [ANNA.id]: { firstName: 'Anna', lastName: 'Berger', 
 
 test('plugin.json: version 1.17.0, the profile fields first and last name only — no telephone numbers', () => {
   const m = JSON.parse(fs.readFileSync(path.join(DIR, 'plugin.json'), 'utf8'));
-  assert.equal(m.version, '1.17.2');
+  assert.equal(m.version, '1.17.3');
   assert.deepEqual(m.permissions.profile, ['firstName', 'lastName']);
   assert.equal(m.permissions.users, true);
   assert.equal(m.gatecontrol, '>=1.219.0', 'an older GateControl ignores permissions.profile');

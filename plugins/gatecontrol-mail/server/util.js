@@ -63,6 +63,8 @@ const STATUS = {
   rule_violation: 409,
   already_decided: 409,
   not_bookable: 403,
+  // 1.17.3: GateControl does not take a file of this type (media.types of Mail or of Drive) — never a 500 any more
+  unsupported_type: 415,
   internal: 500,
 };
 
@@ -177,7 +179,46 @@ const DAY = 86400000;
 /** UTF-8 bytes of a string. */
 const bytesOf = (s) => (s == null ? 0 : Buffer.byteLength(String(s), 'utf8'));
 
+// ─── 1.17.3: the type an attachment is stored with ─
+//
+// GateControl stores a file Mail fetches (gc.media.fetch — Microsoft) only with a type of Mail's media.types
+// (plugin.json), never one of GateControl's deny list (HTML, XML, JSON, SVG …, whatever is declared): another type is
+// refused with ERR_MEDIA_TYPE. Mail's own types, the deny list as GateControl has it (manifest.js MIME_DENY_RE).
+const MEDIA_TYPES = require('../plugin.json').media.types;
+const MIME_RE = /^[a-z][a-z0-9-]{0,30}\/[a-z0-9][a-z0-9.+_-]{0,99}$/;
+const MIME_DENY_RE = /^(?:text\/(?:html|xml|css|javascript|ecmascript|x-javascript)|application\/(?:xhtml\+xml|xml|javascript|x-javascript|ecmascript|json|x-www-form-urlencoded)|image\/svg\+xml)$|\+(?:xml|json)$/;
+const OCTET = 'application/octet-stream';
+// the usual endings of attachments that come without a usable type ("unknown/unknown", "binary", none)
+const BY_EXT = {
+  pdf: 'application/pdf', zip: 'application/zip', doc: 'application/msword', xls: 'application/vnd.ms-excel', ppt: 'application/vnd.ms-powerpoint',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', odt: 'application/vnd.oasis.opendocument.text',
+  ods: 'application/vnd.oasis.opendocument.spreadsheet', rtf: 'application/rtf', '7z': 'application/x-7z-compressed', gz: 'application/gzip',
+  jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', heic: 'image/heic', tif: 'image/tiff', tiff: 'image/tiff',
+  mp3: 'audio/mpeg', m4a: 'audio/mp4', wav: 'audio/wav', ogg: 'audio/ogg', mp4: 'video/mp4', mov: 'video/quicktime',
+  txt: 'text/plain', csv: 'text/csv', ics: 'text/calendar', vcf: 'text/vcard',
+};
+
+/** May GateControl store a file of base type `m` for Mail? (declared — listed or its family — and not denied) */
+function storable(m) {
+  if (!MIME_RE.test(m) || MIME_DENY_RE.test(m)) return false;
+  return MEDIA_TYPES.includes(m) || MEDIA_TYPES.includes(m.split('/')[0] + '/*');
+}
+
+/**
+ * The type attachment `name` / `mime` is stored with: its own (base type, lower case, without parameters such as
+ * "; name=…") when GateControl takes it for Mail, else the one of its ending, else application/octet-stream (a
+ * download — HTML or XML never opens as a page). Before 1.17.3 the given type went as it was: ERR_MEDIA_TYPE, a 500.
+ */
+function storeType(name, mime) {
+  const base = String(mime || '').split(';')[0].trim().toLowerCase();
+  if (base && storable(base)) return base;
+  const ext = /\.([a-z0-9]{1,5})$/i.exec(String(name || '').trim());
+  const byExt = ext && BY_EXT[ext[1].toLowerCase()];
+  return byExt && storable(byExt) ? byExt : OCTET;
+}
+
 module.exports = {
   STATUS, fail, isKnown, posInt, line, clip, email, person, people, parse, htmlText, snippet, esc, textHtml, bytesOf,
-  COLOR_RE, PALETTE, MONTH, DAY, EMAIL_RE,
+  COLOR_RE, PALETTE, MONTH, DAY, EMAIL_RE, storeType, OCTET,
 };

@@ -1,4 +1,4 @@
-<!-- version: 1.17.2 -->
+<!-- version: 1.17.3 -->
 # Mail
 
 ## What the plugin does
@@ -109,6 +109,11 @@ When attachments live on a storage target that is unreachable, Mail tries again 
 
 **Free/busy shows “unknown”.**
 The person switched free/busy off or is not in GateControl. Colleagues in Microsoft 365 appear through your Microsoft account.
+
+## New in 1.17.3
+
+- **“Save to Drive” for unusual attachments:** Attachments with an unusual or missing file type – forwarded mails (.eml), HTML pages or files without a type, for example – now open and save to Drive in Microsoft accounts; Mail then takes the type from the file ending or keeps the file as a download. Before, this ended in “Something went wrong”.
+- **A clear message instead of an error:** When GateControl or Drive still does not take a file of this kind, Mail now says so (“GateControl cannot take this kind of file”) instead of “Something went wrong” or “Drive cannot be reached”.
 
 ## New in 1.17.2
 

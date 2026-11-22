@@ -7,7 +7,8 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { withMail, settle, ANNA } = require('./helpers');
+const { withMail, settle, fakeDrive, ANNA } = require('./helpers');
+const { storeType } = require('../server/util');
 
 const CLIENT = { microsoft: { registration: 'custom', customClientId: '11111111-2222-3333-4444-555555555555' } };
 const PKCE = { code: 'CODE-OK', codeVerifier: 'v'.repeat(43), redirectUri: 'msauth://com.gatecontrol.client/abc%3D' };
@@ -23,7 +24,8 @@ function graphWorld(o = {}) {
     toRecipients: [{ emailAddress: { address: 'anna@outlook.com' } }], receivedDateTime: new Date().toISOString(), isRead: false, flag: { flagStatus: 'notFlagged' },
     hasAttachments: true, inferenceClassification: 'focused',
   };
-  const origAtts = [{ id: 'a1', name: 'Vertrag.pdf', contentType: 'application/pdf', size: 1200, isInline: false }, { id: 'a2', name: 'Alt.pdf', contentType: 'application/pdf', size: 800, isInline: false }];
+  // o.atts: the original's attachments (1.17.3: with odd types); their bytes at …/attachments/<id>/$value
+  const origAtts = o.atts || [{ id: 'a1', name: 'Vertrag.pdf', contentType: 'application/pdf', size: 1200, isInline: false }, { id: 'a2', name: 'Alt.pdf', contentType: 'application/pdf', size: 800, isInline: false }];
   st.fetch = async (url, x) => {
     const u = new URL(url);
     const rec = { method: x.method || 'GET', host: u.host, path: u.pathname.replace('/v1.0', ''), query: u.search, json: x.json, headers: x.headers || {}, body: x.body, bodyMedia: x.bodyMedia };
@@ -55,6 +57,8 @@ function graphWorld(o = {}) {
     if (/\/messages\/delta$/.test(p)) return json(200, { value: p.includes('F-inbox') ? [msg] : [], '@odata.deltaLink': `https://graph.microsoft.com/v1.0${p}?$deltatoken=t1` });
     if (p === '/me/messages/g1' && rec.method === 'GET') return json(200, { body: { contentType: 'html', content: '<p>anbei</p>' }, internetMessageHeaders: [], hasAttachments: true });
     if (p === '/me/messages/g1/attachments') return json(200, { value: origAtts.map((t) => ({ '@odata.type': '#microsoft.graph.fileAttachment', ...t })) });
+    const val = /^\/me\/messages\/g1\/attachments\/([^/]+)\/\$value$/.exec(p);
+    if (val && origAtts.some((t) => t.id === val[1])) return { status: 200, headers: { 'content-type': 'application/octet-stream' }, body: Buffer.from(`bytes-${val[1]}`) };
     if (p === '/me/messages' && rec.method === 'POST') return json(201, { id: `new-${++st.seq}` });
     const act = /^\/me\/messages\/([^/]+)\/(createReply|createReplyAll|createForward|send)$/.exec(p);
     if (act) return act[2] === 'send' ? { status: 202, headers: {}, body: '' } : json(201, { id: `draft-${act[1]}` });
@@ -239,4 +243,72 @@ test('SMTP on 1.217.0: a new account and a new password are checked with gc.mail
     assert.equal(r.status, 200, 'an older GateControl checks SMTP with the first send');
     assert.deepEqual(host.mailVerified, []);
   });
+});
+
+// 1.17.3: an attachment with a type GateControl does not store for Mail (Graph's contentType as it was: message/rfc822,
+// text/html, application/json, "unknown/unknown", none) ended in ERR_MEDIA_TYPE — a 500 for the attachment and for
+// „In Drive speichern“. Now: its own type when GateControl takes it, else the one of its ending, else octet-stream.
+test('storeType: the own type without parameters, else the ending, else application/octet-stream — never a denied one', () => {
+  assert.equal(storeType('Rechnung.pdf', 'application/pdf; name="Rechnung.pdf"'), 'application/pdf');
+  assert.equal(storeType('Foto.JPG', 'IMAGE/JPEG'), 'image/jpeg');
+  assert.equal(storeType('Scan.pdf', 'unknown/unknown'), 'application/pdf');
+  assert.equal(storeType('Bild.png', 'binary'), 'image/png');
+  assert.equal(storeType('Brief.docx', ''), 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+  assert.equal(storeType('daten', null), 'application/octet-stream');
+  assert.equal(storeType('Weiterleitung.eml', 'message/rfc822'), 'application/octet-stream');
+  assert.equal(storeType('seite.htm', 'text/html'), 'application/octet-stream', 'HTML never stored as a page');
+  assert.equal(storeType('daten.json', 'application/json'), 'application/octet-stream');
+  assert.equal(storeType('logo.svg', 'image/svg+xml'), 'application/octet-stream');
+  assert.equal(storeType('termin.ics', 'text/calendar; method=REQUEST'), 'text/calendar');
+});
+
+test('Microsoft: attachments with odd or missing types are fetched with a type GateControl takes — suggest and save in Drive answer 200', () => {
+  const atts = [
+    { id: 'a1', name: 'Weiterleitung.eml', contentType: 'message/rfc822', size: 300, isInline: false },
+    { id: 'a2', name: 'seite.htm', contentType: 'text/html', size: 200, isInline: false },
+    { id: 'a3', name: 'Scan.pdf', contentType: 'unknown/unknown', size: 400, isInline: false },
+    { id: 'a4', name: 'daten', size: 100, isInline: false },
+    { id: 'a5', name: 'Beleg.pdf', contentType: 'application/pdf; name="Beleg.pdf"', size: 500, isInline: false },
+  ];
+  const w = graphWorld({ atts });
+  return withMail({ gatecontrol: '1.217.0', fetch: w.fetch }, async (host, c) => {
+    await microsoftAccount(c);
+    const [s] = (await c.list(ANNA, {})).items;
+    const m = (await c.as(ANNA)('GET', `messages/${s.id}`)).json;
+    assert.deepEqual(m.attachments.map((t) => t.name), atts.map((t) => t.name));
+    for (const t of m.attachments) {
+      const r = await c.as(ANNA)('POST', `messages/${s.id}/attachments/${t.id}/drive/suggest`, null, { lang: 'de' });
+      assert.equal(r.status, 200, `${t.name}: ${JSON.stringify(r.json)}`);
+      assert.equal(r.json.suggestion.folderId, 11);
+    }
+    const fetched = host.fetches.filter((f) => /\/attachments\/a\d\/\$value$/.test(f.url)).map((f) => [/(a\d)\/\$value$/.exec(f.url)[1], f.opts.mime]);
+    assert.deepEqual(fetched, [['a1', 'application/octet-stream'], ['a2', 'application/octet-stream'], ['a3', 'application/pdf'], ['a4', 'application/octet-stream'], ['a5', 'application/pdf']]);
+    const eml = m.attachments[0];
+    const saved = await c.as(ANNA)('POST', `messages/${s.id}/attachments/${eml.id}/drive/save`, {});
+    assert.equal(saved.status, 200, JSON.stringify(saved.json));
+    assert.equal(c.drive.calls.filter((x) => x.name === 'save_file').pop().payload.name, 'Weiterleitung.eml', 'the name stays');
+    // the attachment itself opens too (as a download)
+    const got = await c.as(ANNA)('GET', `messages/${s.id}/attachments/${m.attachments[1].id}`);
+    assert.deepEqual([got.status, got.json.mime], [200, 'application/octet-stream']);
+  });
+});
+
+test('Drive takes no file of this type: 415 unsupported_type with its words (de/en), not 500 or "Drive ist nicht erreichbar"', async () => {
+  for (const lang of ['de', 'en']) {
+    const drive = fakeDrive();
+    drive.media = { maxBytes: 104857600, types: ['application/pdf'], quotaDefault: '10GB' };
+    await withMail({ drive, lang }, async (host, c) => {
+      c.mail.login('anna@gmx.de', 'geheim-123');
+      c.mail.mail('anna@gmx.de', 'INBOX', { subject: 'Weitergeleitet', text: 'x', attachments: [{ filename: 'Weiterleitung.eml', contentType: 'message/rfc822', data: 'From: a@example.com' }] });
+      await c.addGmx(ANNA);
+      await c.tick();
+      const [s] = (await c.list(ANNA, {})).items;
+      const m = (await c.as(ANNA)('GET', `messages/${s.id}`)).json;
+      const r = await c.as(ANNA)('POST', `messages/${s.id}/attachments/${m.attachments[0].id}/drive/suggest`);
+      assert.deepEqual([r.status, r.json.error.code], [415, 'unsupported_type']);
+      assert.match(r.json.error.message, lang === 'de' ? /Diese Art von Datei/ : /cannot take this kind of file/);
+      const sv = await c.as(ANNA)('POST', `messages/${s.id}/attachments/${m.attachments[0].id}/drive/save`, { folderId: 11 });
+      assert.deepEqual([sv.status, sv.json.error.code], [415, 'unsupported_type']);
+    });
+  }
 });
