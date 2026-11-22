@@ -174,9 +174,9 @@ describe('Thermostate Stufe 2: Shelly TRV and BLU TRV, the plan on the gateway',
     assert.deepEqual((await roomOf('Gast')).runs_at, { kind: 'server' });
   }));
 
-  it('the manifest: version 1.17.0, edge.capabilities unchanged (no update_pending), zigbee2mqtt/# still optional only', () => {
+  it('the manifest: version 1.18.0, edge.capabilities unchanged (no update_pending), zigbee2mqtt/# still optional only', () => {
     const manifest = require('../plugin.json');
-    assert.equal(manifest.version, '1.17.0');
+    assert.equal(manifest.version, '1.18.0');
     assert.deepEqual(manifest.edge.capabilities, { mdns: { services: ['_shelly._tcp', '_http._tcp'] }, http: { lan: true }, mqtt: { topics: ['shellies/#', 'tasmota/#'] } });
     assert.deepEqual(manifest.edge.optionalCapabilities, { mqtt: { topics: ['zigbee2mqtt/#'] } });
   });

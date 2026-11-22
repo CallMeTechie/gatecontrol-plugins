@@ -38,9 +38,13 @@
 //             without it (edge/heat.js; every 30 s and when one of their thermostats reports). The configuration and
 //             what was applied are kept in gc.store `heat`, so the plan goes on after a restart while the server is
 //             away. A configuration without `heat` (an older server part) leaves the rooms as they are.
+//             Since 1.18.0 also zigbee2mqtt thermostats of this gateway (only once zigbee2mqtt/# is confirmed — the
+//             server part sends such a room only then): zigbee2mqtt/# is subscribed for them as for the chains (also
+//             from gc.store after a restart without the server), which setpoint a device has comes from
+//             zigbee2mqtt/bridge/devices (its exposes) or its report, zigbee2mqtt/<name>/availability marks it offline.
 //
 // Capabilities (plugin.json edge.capabilities): mdns _shelly._tcp and _http._tcp, http.lan, mqtt shellies/# and
-// tasmota/#; optional (edge.optionalCapabilities, since 1.15.0): mqtt zigbee2mqtt/#. On disk (gc.store) only the last list of logic chains, so they run after a restart of the gateway
+// tasmota/#; optional (edge.optionalCapabilities, since 1.15.0): mqtt zigbee2mqtt/# (the chains, since 1.18.0 the heating too). On disk (gc.store) only the last list of logic chains, so they run after a restart of the gateway
 // while the server is away, the last runs of the chains and the heating plan of this gateway's rooms (`heat`) — no device
 // password, no MQTT password.
 
@@ -104,7 +108,9 @@ const st = {
   runsDirty: false,          // the ring changed since it was last written
   stoppedKey: '[]',          // the chains the brake stopped, as last written
   presses: new Map(),        // base → { input → event_cnt } (Shelly Gen1 repeats a press with the same counter)
-  z2m: new Map(),            // ieee → { kind, chs, name } — the zigbee2mqtt devices of the chains (server part's list)
+  z2m: new Map(),            // ieee → { kind, chs, name } — the zigbee2mqtt devices of the chains and the heating
+  z2mChains: new Map(),      // … of the chains (the server part's list)
+  z2mSp: new Map(),          // ieee → the setpoint a thermostat exposes (zigbee2mqtt/bridge/devices)
   z2mNames: new Map(),       // friendly name → ieee (zigbee2mqtt/bridge/devices; else the server part's names)
   z2mSub: null,              // the subscription of zigbee2mqtt/#
   z2mState: null,            // what the last try gave: ok | denied | error | off (MQTT not there) — event `z2m`
@@ -150,11 +156,30 @@ function onBridgeDevices(payload) {
   try { list = JSON.parse(Buffer.isBuffer(payload) ? payload.toString('utf8') : String(payload)); } catch { return; }
   if (!Array.isArray(list)) return;
   const names = new Map();
+  const sps = new Map();
   for (const d of list.slice(0, 512)) {
     if (!d || typeof d.ieee_address !== 'string' || !Z2M_IEEE_RE.test(d.ieee_address) || typeof d.friendly_name !== 'string') continue;
     if (d.friendly_name && d.friendly_name.length <= 128) names.set(d.friendly_name, d.ieee_address);
+    const sp = setpointOf(d.definition && d.definition.exposes);
+    if (sp) sps.set(d.ieee_address, sp);
   }
   st.z2mNames = names;
+  st.z2mSp = sps;
+}
+
+/** The setpoint a thermostat exposes (occupied_heating_setpoint first, as the GateControl gateway picks it), or null. */
+function setpointOf(exposes) {
+  const found = new Set();
+  const walk = (list, depth) => {
+    if (!Array.isArray(list) || depth > 3) return;
+    for (const e of list.slice(0, 64)) {
+      if (!e || typeof e !== 'object') continue;
+      if (commands.Z2M_SETPOINTS.includes(e.property)) found.add(e.property);
+      if (Array.isArray(e.features)) walk(e.features, depth + 1);
+    }
+  };
+  walk(exposes, 0);
+  return commands.Z2M_SETPOINTS.find((k) => found.has(k)) || null;
 }
 
 function onZ2m(topic, payload, meta) {
@@ -162,12 +187,13 @@ function onZ2m(topic, payload, meta) {
   if (rest === 'bridge/devices') { onBridgeDevices(payload); return; }
   if (rest.startsWith('bridge/') || !st.z2m.size) return;
   const name = rest;
+  if (name.endsWith('/availability') && !st.z2mNames.has(name)) { onZ2mAvailability(name.slice(0, -'/availability'.length), payload); return; }
   if (/\/(set|get|availability)(\/.*)?$/.test(name) && !st.z2mNames.has(name)) return; // our commands, zigbee2mqtt's extras
   let ieee = st.z2mNames.get(name);
   if (!ieee) { for (const [id, d] of st.z2m) if (d.name === name) { ieee = id; break; } }
   const info = ieee && st.z2m.get(ieee);
   if (!info) return;
-  const r = normalize.parseZ2m(z2mBase(ieee), payload, info);
+  const r = normalize.parseZ2m(z2mBase(ieee), payload, info.kind === 'thermostat' ? { ...info, sp: st.z2mSp.get(ieee) || null } : info);
   if (!r) return;
   let dev = st.devices.get(r.base);
   if (!dev) {
@@ -178,7 +204,23 @@ function onZ2m(topic, payload, meta) {
   normalize.apply(dev, r.patch);
   dev.seenAt = new Date().toISOString();
   if (st.engine) st.engine.onDevice(r.base);
+  if (st.heat && st.heat.onDevice(r.base)) heatSoon();
   if (r.events && st.engine && !(meta && meta.retain)) st.engine.onEvent(r.base, r.events);
+}
+
+/** zigbee2mqtt/<name>/availability ("online" / "offline", or { state }): a thermostat of the heating that is away waits. */
+function onZ2mAvailability(name, payload) {
+  let ieee = st.z2mNames.get(name);
+  if (!ieee) { for (const [id, d] of st.z2m) if (d.name === name) { ieee = id; break; } }
+  const dev = ieee && st.devices.get(z2mBase(ieee));
+  if (!dev) return;
+  const raw = Buffer.isBuffer(payload) ? payload.toString('utf8') : String(payload == null ? '' : payload);
+  let v = raw.trim();
+  try { const j = JSON.parse(raw); if (j && typeof j === 'object' && typeof j.state === 'string') v = j.state; } catch { /* plain text */ }
+  if (v === 'online' || v === 'offline') {
+    dev.online = v === 'online';
+    if (dev.online && st.heat && st.heat.onDevice(dev.base)) heatSoon();
+  }
 }
 
 /** Tell the server part what became of zigbee2mqtt/# (only while it lists devices; `force`: also when unchanged). */
@@ -225,6 +267,18 @@ async function subscribeZ2m(force = false) {
   }
 }
 
+/** The devices zigbee2mqtt/# is subscribed for: the chains' and the heating's thermostats (`force`: tell the server part). */
+function mergeZ2m(force) {
+  const next = new Map(st.z2mChains);
+  for (const t of st.heat ? st.heat.z2m() : []) {
+    if (next.size >= Z2M_MAX) break;
+    if (Z2M_IEEE_RE.test(t.ieee) && !next.has(t.ieee)) next.set(t.ieee, { kind: 'thermostat', chs: null, name: t.name });
+  }
+  const changed = JSON.stringify([...next]) !== JSON.stringify([...st.z2m]);
+  st.z2m = next;
+  if (changed || force) subscribeZ2m(force);
+}
+
 function onZ2mConfig(list) {
   const next = new Map();
   for (const d of (Array.isArray(list) ? list : []).slice(0, Z2M_MAX)) {
@@ -232,8 +286,8 @@ function onZ2mConfig(list) {
     const chs = Array.isArray(d.chs) ? d.chs.filter((c) => typeof c === 'string' && /^[a-z0-9_]{1,8}$/.test(c)).slice(0, 8) : null;
     next.set(d.ieee, { kind: d.kind === 'switch' ? 'sensor' : d.kind, chs: chs && chs.length >= 2 ? chs : null, name: typeof d.name === 'string' && d.name.length <= 128 ? d.name : null });
   }
-  st.z2m = next;
-  subscribeZ2m(true);
+  st.z2mChains = next;
+  mergeZ2m(true);
 }
 
 function onMessage(topic, payload, meta) {
@@ -384,6 +438,7 @@ function setHeat(cfg, fromServer) {
     st.heatKey = key;
     st.heat.set(cfg);
     if (fromServer) storeHeat(cfg, undefined);
+    mergeZ2m(false);
     heatSoon();
   }
 }
@@ -565,6 +620,8 @@ module.exports = {
     st.stoppedKey = '[]';
     st.presses.clear();
     st.z2m = new Map();
+    st.z2mChains = new Map();
+    st.z2mSp = new Map();
     st.z2mNames = new Map();
     st.z2mSub = null;
     st.z2mState = null;
@@ -579,6 +636,7 @@ module.exports = {
         await publishAll(list);
       },
       save: (applied) => storeHeat(undefined, applied),
+      z2mTopic,
       log: gc.log,
     });
     st.engine = rules.create({
@@ -680,6 +738,8 @@ module.exports = {
     st.z2mSub = null;
     st.z2mState = null;
     st.z2m = new Map();
+    st.z2mChains = new Map();
+    st.z2mSp = new Map();
     st.z2mNames = new Map();
     st.notes = [];
     if (st.heatSoon) clearTimeout(st.heatSoon);

@@ -1,4 +1,4 @@
-<!-- version: 1.17.0 -->
+<!-- version: 1.18.0 -->
 # Smart Home
 
 ## Was das Plugin kann
@@ -9,7 +9,7 @@
 - **Zigbee-Geräte von zigbee2mqtt** über ein GateControl-Gateway (ab 1.9.0): Lichter, Steckdosen, Rollläden, Sensoren und Taster, die du in GateControl unter Funk mit zigbee2mqtt angelernt hast. Ab 1.10.0 auch Schalter mit mehreren Kanälen, Thermostate und Firmware-Updates.
 - **Besitzer und Bereiche:** Du weist Geräte Personen zu. Diese Personen bedienen sie im Portal „Zuhause“ und in der App.
 - **Logikketten:** für deCONZ auf dem deCONZ-Gateway; für Shelly und Tasmota auf dem GateControl-Gateway (ab 1.10.0) – seit 1.11.0 mit Tastern, Uhrzeit, Bedingungen mit UND/ODER, Schritten mit Wartezeiten, Testlauf und Protokoll; seit 1.12.0 mit Sonnenauf-/untergang, „seit X min“, Ketten über mehrere Gateways (am Server), Mitteilungen und Schnellaktionen in der App; seit 1.15.0 auch mit Geräten von zigbee2mqtt am Gateway, sobald ein Admin das für das Gateway bestätigt hat.
-- **Heizung** (ab 1.14.0): Heizkörper-Thermostate von zigbee2mqtt, deCONZ und – ab 1.17.0 – Shelly TRV und Shelly BLU TRV je Raum mit Presets, Wochenplänen, Boost, „Fenster offen“, Urlaub und „Heizung abwesend“ ([Heizung](#heizung)). Hängen alle Thermostate eines Raums an einem Gateway (Shelly TRV, BLU TRV), läuft sein Plan dort – auch ohne Server.
+- **Heizung** (ab 1.14.0): Heizkörper-Thermostate von zigbee2mqtt, deCONZ und – ab 1.17.0 – Shelly TRV und Shelly BLU TRV je Raum mit Presets, Wochenplänen, Boost, „Fenster offen“, Urlaub und „Heizung abwesend“ ([Heizung](#heizung)). Hängen alle Thermostate eines Raums an einem Gateway (Shelly TRV, BLU TRV, ab 1.18.0 auch zigbee2mqtt nach Bestätigung), läuft sein Plan dort – auch ohne Server.
 - **Mitteilungen:** Alarm (Wasser, Rauch, CO), Fenster lange offen, Batterie schwach, Gateway nicht erreichbar.
 - **Schnellaktionen und Widgets** in den GateControl-Apps für die eigenen Geräte – seit 1.13.0 mit dem Batteriestand von Batteriegeräten.
 
@@ -166,12 +166,14 @@ Hat ein Thermostat einen **eigenen Wochenplan im Gerät** (Modus „Automatik“
 
 Sind alle Thermostate eines Raums Shelly TRV oder BLU TRV **desselben Gateways** (höchstens 8 je Raum, 24 Räume je Gateway), läuft der Plan dieses Raums **am Gateway**. Die Raumseite zeigt dann „Plan läuft am Gateway“.
 
+**zigbee2mqtt-Thermostate (ab 1.18.0)** zählen auch dazu – allein oder zusammen mit Shelly TRV / BLU TRV desselben Gateways –, sobald ein Admin für dieses Gateway die zusätzliche Fähigkeit `zigbee2mqtt/#` unter **Gateways › Gateway › Edge-Plugins** bestätigt hat (dieselbe wie für [zigbee2mqtt am Gateway](#logikketten-z2m), ab Gateway 1.46.0). Ohne Bestätigung bleibt der Raum am Server wie bisher; nach der Bestätigung wechselt er spätestens nach einer Minute ans Gateway, ohne dass ein Soll doppelt geschickt wird. Am Gateway gilt: das Soll geht direkt an zigbee2mqtt (das Feld, das das Thermostat anbietet), **Aus** schaltet das Thermostat aus, wo es das kann (sonst Frostschutz), ein eigener Plan im Gerät („Automatik“) wird auf „Heizen“ gestellt, **Boost** stellt 30 °C.
+
 - Das Gateway stellt die Thermostate zu jedem Schaltpunkt selbst – auch wenn der Server nicht erreichbar ist und auch nach einem Neustart des Gateways.
 - Für diese Räume schickt **nur das Gateway** Befehle, der Server nie. Was du änderst (Plan, Presets, von Hand, Boost, Betrieb, Urlaub, „Heizung abwesend“), schickt der Server dem Gateway als neuen Plan; das Gateway setzt es sofort um. Kommt der Server nach einem Ausfall zurück, wird nichts doppelt geschickt.
 - Eine Änderung von Hand gilt auch am Gateway bis zum nächsten Schaltpunkt, ein Boost bis zu seinem Ende.
 - **Fenster offen** meldet der Server (Kontakte aller Quellen). Ist er weg, gilt ein offenes Fenster am Gateway höchstens noch 2 Stunden, danach wieder der Plan.
 - Ohne Server kommen keine neuen Änderungen dazu; „Wird übertragen“ zeigt die Raumkarte, bis das Thermostat das neue Soll meldet. Ein Thermostat, das sein Soll nach drei Versuchen nicht meldet, bleibt bis zum nächsten Schaltpunkt in Ruhe – so wird ein Dreh am Gerät nicht überschrieben.
-- Räume mit Thermostaten von zigbee2mqtt oder deCONZ – auch zusammen mit einem Shelly TRV – oder mit TRVs an zwei Gateways laufen weiter am Server; ein Shelly TRV darin bekommt sein Soll über sein Gateway.
+- Räume mit Thermostaten von deCONZ, mit Thermostaten an zwei Gateways oder mit zigbee2mqtt ohne Bestätigung laufen weiter am Server; ein Shelly TRV darin bekommt sein Soll über sein Gateway.
 
 ### Raumseite und Betrieb
 
@@ -252,6 +254,11 @@ Richte das Gerät „Von Hand …“ ein. Die Anleitung steht im Fenster.
 
 **Ein Gerät von zigbee2mqtt lässt sich nicht schalten („zigbee2mqtt auf dem Gateway antwortet gerade nicht“).**
 Im Reiter „Funk“ des Gateways nachsehen: Läuft zigbee2mqtt, sind Edge und MQTT an? Neue Geräte erscheinen spätestens nach einer halben Minute.
+
+## Neu in 1.18.0
+
+- **zigbee2mqtt-Thermostate im Plan am Gateway:** Hängen alle Thermostate eines Raums am selben Gateway (zigbee2mqtt und/oder Shelly TRV / BLU TRV), läuft sein Wochenplan dort – auch ohne Server ([Plan am Gateway](#heizung-gateway)).
+- Für zigbee2mqtt braucht es die Bestätigung von `zigbee2mqtt/#` am Gateway (wie für Logikketten); ohne sie bleibt alles wie bisher am Server. Sonst braucht das Update keine neue Bestätigung.
 
 ## Neu in 1.17.0
 
