@@ -85,7 +85,7 @@ test('deCONZ sensors on batteries: battery in the state, cards with the badge, t
   const temp = card('Temp Bad');
   assert.equal(temp.title, 'Temp Bad');
   assert.deepEqual(temp.widget, { label: 'Temperatur', value: '21,5', unit: '°C', status: 'Temperatur', state: null, readings: [], controls: [], power: false,
-    badge: { icon: EMPTY, value: 12, unit: '%', state: 'warn', label: 'Batterie' } });
+    badge: { icon: EMPTY, value: 12, unit: '%', state: 'warn', label: 'Batterie' }, timeline: null });
   assert.deepEqual(card('Fenster').widget.badge, { icon: battery.EMPTY_ICON, value: 'schwach', unit: null, state: 'crit', label: 'Batterie' });
   assert.deepEqual([card('Fenster').widget.value, card('Fenster').widget.state], ['offen', 'warn']);
   assert.deepEqual([card('Feuchte Bad').widget.value, card('Feuchte Bad').widget.unit, card('Feuchte Bad').widget.badge.value], ['48,1', '%', 90]);
@@ -144,7 +144,7 @@ test('zigbee2mqtt on batteries: the badge on a cover, a dimmable light and a pla
   assert.equal(bulb.widget.controls[0].id, 'bri', 'the widget stays the brightness widget');
   const plug = of('Akkudose')[0];
   assert.deepEqual(plug.widget, { label: null, value: 'Aus', unit: null, status: 'Steckdose', state: 'off', readings: [], controls: [], power: true,
-    badge: { icon: FULL, value: 80, unit: '%', state: 'good', label: 'Batterie' } });
+    badge: { icon: FULL, value: 80, unit: '%', state: 'good', label: 'Batterie' }, timeline: null });
   const open = of('Rollo Bad').find((a) => a.id.endsWith(':open'));
   assert.deepEqual(open.widget.badge, { icon: EMPTY, value: 9, unit: '%', state: 'warn', label: 'Batterie' });
   // the answer of a run carries the badge too

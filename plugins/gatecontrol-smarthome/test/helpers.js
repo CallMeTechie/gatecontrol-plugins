@@ -113,6 +113,8 @@ async function withHost(o, fn) {
   const gateways = o.gateways || [];
   const host = await createHost(DIR, {
     users: o.users || USERS,
+    // the host this version needs (plugin.json "gatecontrol"): quick action widgets with timeline / disabled controls
+    gatecontrol: o.gatecontrol || '1.317.1',
     settings: o.settings,
     license: o.license,
     targets: { gateway: gateways.map((g, i) => ({ label: `phoscon-${i}.example.com`, fetch: g.fetch })) },

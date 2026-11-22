@@ -962,19 +962,55 @@ function statusText(v, lang, now) {
   return clip(out, 60);
 }
 
-/** The preset the choice shows: the one that applies, else an extra option for what applies instead (no preset). */
-function choiceOf(v, lang) {
+/**
+ * The preset the choice shows: the one that applies, else null (GateControl ≥ 1.317.1: no option active — boost, a
+ * target by hand, window open, off; the status line says what applies).
+ */
+function choiceOf(v, lang, disabled) {
   const options = PRESETS.map((p) => ({ id: p, label: clip(t(lang, 'heat.preset_short.' + p), 20), icon: PRESET_ICONS[p] }));
   const s = v.status;
-  let value = s.preset && PRESETS.includes(s.preset) && s.kind !== 'window' ? s.preset : null;
-  if (!value) {
-    // the host shows the first option when the value is none of them (GateControl without choice.value null): an extra
-    // option for what applies, so nothing wrong lights up — choosing it changes nothing
-    const extra = { boost: ['boost', ICONS.flame], window: ['window', ICONS.window], off: ['off', ICONS.off] }[s.kind] || ['manual', ICONS.clock];
-    options.push({ id: extra[0], label: clip(t(lang, 'heat.choice.' + extra[0]), 20), icon: extra[1] });
-    value = extra[0];
+  const value = s.preset && PRESETS.includes(s.preset) && s.kind !== 'window' ? s.preset : null;
+  return { id: 'preset', kind: 'choice', label: clip(t(lang, 'heat.preset'), 20), value, options, ...(disabled ? { disabled: true } : {}) };
+}
+
+// The colours of the presets on the day bar (one each, readable on light and dark cards: at least 3:1 against both).
+const SEGMENT_COLORS = Object.freeze({ comfort: '#ea580c', eco: '#16a36a', night: '#5b7cf5', frost: '#2b93b5', setpoint: '#8b6be8' });
+const SEGMENTS_MAX = 12; // the host's limit
+
+/**
+ * The day bar of a room (GateControl ≥ 1.317.1, display only): today's plan (roomView.today) in hours, a segment per
+ * preset or target (by hand, hold), nothing where nothing applies; more than 12 → the shortest neighbours merge (the
+ * longer one names the result). null without a segment.
+ */
+function timelineOf(v, lang) {
+  const today = Array.isArray(v.today) ? v.today : [];
+  if (!today.length) return null;
+  const end = today[today.length - 1].to / 60; // 24 (23 / 25 on the days the clocks change)
+  let segs = [];
+  for (const x of today) {
+    if (x.preset && PRESETS.includes(x.preset)) segs.push({ from: x.from / 60, to: x.to / 60, color: SEGMENT_COLORS[x.preset], label: clip(presetName(x.preset, lang), 20) });
+    else if (x.setpoint != null) segs.push({ from: x.from / 60, to: x.to / 60, color: SEGMENT_COLORS.setpoint, label: clip(`${num(x.setpoint, lang)} °C`, 20) });
   }
-  return { id: 'preset', kind: 'choice', label: clip(t(lang, 'heat.preset'), 20), value, options };
+  segs = segs.filter((x) => x.from < x.to);
+  while (segs.length > SEGMENTS_MAX) {
+    let best = -1;
+    for (let i = 0; i + 1 < segs.length; i++) {
+      if (segs[i].to !== segs[i + 1].from) continue;
+      if (best < 0 || segs[i + 1].to - segs[i].from < segs[best + 1].to - segs[best].from) best = i;
+    }
+    if (best < 0) { // only gaps between them: the shortest goes
+      let k = 0;
+      segs.forEach((x, i) => { if (x.to - x.from < segs[k].to - segs[k].from) k = i; });
+      segs.splice(k, 1);
+      continue;
+    }
+    const [a, b] = [segs[best], segs[best + 1]];
+    const keep = b.to - b.from > a.to - a.from ? b : a;
+    segs.splice(best, 2, { from: a.from, to: b.to, color: keep.color, label: keep.label });
+  }
+  if (!segs.length) return null;
+  const now = Number.isFinite(v.now_min) ? Math.max(0, Math.min(end, v.now_min / 60)) : null;
+  return { from: 0, to: end, ...(now == null ? {} : { now }), segments: segs };
 }
 
 /** The widget of a room's card. */
@@ -995,13 +1031,15 @@ function widgetOf(v, lang, now) {
     if (v.battery.pct != null) { r.value = v.battery.pct; r.unit = '%'; } else r.value = clip(t(lang, 'heat.battery_low'), 16);
     w.readings.push(r);
   }
-  // nothing to set while no thermostat answers or the window turned the room down (the host has no locked controls yet)
-  if (v.reachable !== 'none' && st.kind !== 'window' && st.kind !== 'off') {
-    const lim = v.limits;
-    const cur = v.setpoint != null ? v.setpoint : (v.device_setpoint != null ? v.device_setpoint : lim.min);
-    w.controls.push({ id: 'sp', kind: 'stepper', label: clip(t(lang, 'heat.target'), 20), value: Math.max(lim.min, Math.min(lim.max, cur)), min: lim.min, max: lim.max, step: 0.5, unit: '°C' });
-    w.controls.push(choiceOf(v, lang));
-  }
+  // locked (GateControl ≥ 1.317.1: shown greyed out, the host refuses runs) while no thermostat answers, the window
+  // turned the room down or the room is off — the status line says why
+  const locked = v.reachable === 'none' || st.kind === 'window' || st.kind === 'off';
+  const lim = v.limits;
+  const cur = v.setpoint != null ? v.setpoint : (v.device_setpoint != null ? v.device_setpoint : lim.min);
+  w.controls.push({ id: 'sp', kind: 'stepper', label: clip(t(lang, 'heat.target'), 20), value: Math.max(lim.min, Math.min(lim.max, cur)), min: lim.min, max: lim.max, step: 0.5, unit: '°C', ...(locked ? { disabled: true } : {}) });
+  w.controls.push(choiceOf(v, lang, locked));
+  const tl = st.kind === 'off' ? null : timelineOf(v, lang); // off: no plan applies today
+  if (tl) w.timeline = tl;
   return w;
 }
 
@@ -1067,8 +1105,8 @@ async function runQuickAction(gc, user, lang, id, control, value, target) {
     if (!Number.isFinite(v)) return { ok: false, message: t(lang, 'qa.unknown') };
     body = { action: 'setpoint', setpoint: v };
   } else if (control === 'preset') {
-    // the extra option (boost, by hand, window, off) changes nothing
-    if (PRESETS.includes(value)) body = { action: 'preset', preset: value };
+    if (!PRESETS.includes(value)) return { ok: false, message: t(lang, 'qa.unknown') };
+    body = { action: 'preset', preset: value };
   } else if (control !== undefined) return { ok: false, message: t(lang, 'qa.unknown') };
   try {
     const v = body ? await act(gc, roomId, body, viewer) : (await overview(gc, viewer)).rooms.find((r) => r.id === roomId);
@@ -1090,5 +1128,5 @@ module.exports = {
   PRESETS, HOUSE_DEFAULT, BOOST_MINUTES, BOOST_SETPOINT, WINDOW_MINUTES, PREHEAT_DEFAULT, ICONS,
   normalizeWeek, presetAt, sectionsOf, changesOf, slotStart, baseAt, decide, nextChange, todayOf, commandFor, ownSchedule, deviceBoost,
   load, tick, overview, act, setRoom, setHouse, setVacation, savePlan, deletePlan, loweredContacts, awayOf,
-  quickActions, runQuickAction, statusText, widgetOf, roomKeyOf, _setClock, now: () => clock(),
+  quickActions, runQuickAction, statusText, widgetOf, timelineOf, SEGMENT_COLORS, roomKeyOf, _setClock, now: () => clock(),
 };

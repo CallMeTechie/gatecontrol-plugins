@@ -3,6 +3,23 @@
 Phoscon/deCONZ-Integration als GateControl-Plugin – bisher fest in GateControl eingebaut; seit 1.7.0 auch Shelly und
 Tasmota über ein GateControl-Gateway.
 
+## 1.16.0
+
+- **Heizungs-Karte der Apps** mit den Widget-Erweiterungen von GateControl 1.317.1 (`"gatecontrol": ">=1.317.1"`):
+  - **Ohne Behelfs-Option:** die choice der Presets hat nur noch Komfort / Eco / Nacht / Frost; gilt kein Preset
+    (Boost, von Hand, Fenster offen, Aus), ist `value: null` – der Status-Text sagt weiter, was gilt. Die fünfte
+    Option („Boost“, „Von Hand“, „Fenster“, „Aus“) und ihre Texte `heat.choice.window/off/manual` sind entfernt; ein
+    Lauf mit einer anderen id als einem Preset → `qa.unknown`.
+  - **Tagesbalken** `widget.timeline` aus `roomView.today` (Stunden, `now` = jetzt), je Preset eine Farbe, die auf
+    hellen und dunklen Karten mindestens 3:1 erreicht (Komfort `#ea580c`, Eco `#16a36a`, Nacht `#5b7cf5`, Frost
+    `#2b93b5`, Soll von Hand / gehalten `#8b6be8`); Lücken, wo nichts gilt; mehr als 12 Abschnitte → die kürzesten
+    Nachbarn werden zusammengefasst; an Tagen der Zeitumstellung reicht der Balken bis 23 bzw. 25; im Betrieb „Aus“ kein Balken.
+  - **Gesperrte Regler:** bei offenem Fenster, ohne erreichbares Thermostat oder im Betrieb „Aus“ bleiben Stepper
+    und choice mit `disabled: true` (statt weggelassen); der Host lehnt ihre Läufe mit 409 `control_disabled` ab.
+- `edge.capabilities` unverändert – kein `update_pending`.
+- Mock-Host (GateControl 1.317.1, `opts.gatecontrol`): choice `value: null`, `control.disabled` (409
+  `control_disabled`), `widget.timeline`; `gatecontrol.ref` auf v1.317.1. Smart-Home-Tests laufen gegen 1.317.1.
+
 ## 1.15.0
 
 - **zigbee2mqtt in Logikketten am Gateway** über die optionale Edge-Fähigkeit von GateControl 1.317.0

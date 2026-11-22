@@ -2,8 +2,9 @@
 
 // Heizung (1.14.0): who may do what (administrators every room, plans, presets of the house, holiday; assigned persons
 // in their rooms the target within the room's upper limit, a preset and boost) and the quick actions of the apps (a
-// card per room: actual value, target stepper in half degrees, presets as a choice with an extra option while no
-// preset applies, valve / window / battery, Boost and "Zurück zum Plan" beside it, the toggle "Heizung abwesend").
+// card per room: actual value, target stepper in half degrees, presets as a choice without a selection while no
+// preset applies (1.16.0), today's plan as a day bar, valve / window / battery, controls locked while the window is
+// open or no thermostat answers, Boost and "Zurück zum Plan" beside it, the toggle "Heizung abwesend").
 // All rooms, names and values are made up.
 
 const { describe, it, beforeEach, after } = require('node:test');
@@ -123,20 +124,29 @@ describe('Heizung: quick actions of the apps', () => {
     assert.equal(w.status, 'Komfort · nach Plan bis 08:00, dann Eco 18,0 °C');
     assert.deepEqual([w.badge.value, w.badge.unit, w.badge.label], [40, '%', 'Ventil']);
     assert.deepEqual(w.readings.map((x) => [x.id, x.value, x.unit]), [['battery', 64, '%']]);
-    assert.deepEqual(w.controls[0], { id: 'sp', kind: 'stepper', label: 'Soll', value: 21, min: 5, max: 30, step: 0.5, unit: '°C' });
-    assert.deepEqual([w.controls[1].kind, w.controls[1].value, w.controls[1].options.map((o) => o.label)], ['choice', 'comfort', ['Komfort', 'Eco', 'Nacht', 'Frost']]);
+    assert.deepEqual(w.controls[0], { id: 'sp', kind: 'stepper', label: 'Soll', value: 21, min: 5, max: 30, step: 0.5, unit: '°C', disabled: false });
+    assert.deepEqual([w.controls[1].kind, w.controls[1].value, w.controls[1].disabled, w.controls[1].options.map((o) => o.label)], ['choice', 'comfort', false, ['Komfort', 'Eco', 'Nacht', 'Frost']]);
+    // the day bar: today's plan in hours, a colour per preset, now 07:00
+    const C = heating.SEGMENT_COLORS;
+    assert.deepEqual(w.timeline, { from: 0, to: 24, now: 7, segments: [
+      { from: 0, to: 6, tone: null, color: C.night, label: 'Nacht' }, { from: 6, to: 8, tone: null, color: C.comfort, label: 'Komfort' },
+      { from: 8, to: 16, tone: null, color: C.eco, label: 'Eco' }, { from: 16, to: 22.5, tone: null, color: C.comfort, label: 'Komfort' },
+      { from: 22.5, to: 24, tone: null, color: C.night, label: 'Nacht' },
+    ] });
     // 21.5 °C stays 21.5 °C
     let r = await host.runQuickAction(ADA, `heat:${wz}`, 'de', { control: 'sp', value: 21.5 });
     assert.equal(r.status, 200, JSON.stringify(r.body));
     assert.deepEqual(sent.splice(0), [['01', { setpoint: 21.5 }], ['02', { setpoint: 21.5 }]]);
     assert.equal(r.body.widget.status, 'Von Hand 21,5 °C bis 08:00, dann Eco 18,0 °C');
-    // no preset applies: an extra option "Von Hand" lights up instead of Komfort
+    // no preset applies: no option is active (no extra option any more), the status line says what applies
     const choice = r.body.widget.controls[1];
-    assert.deepEqual([choice.value, choice.options.map((o) => o.id)], ['manual', ['comfort', 'eco', 'night', 'frost', 'manual']]);
+    assert.deepEqual([choice.value, choice.disabled, choice.options.map((o) => o.id)], [null, false, ['comfort', 'eco', 'night', 'frost']]);
+    assert.equal(r.body.widget.timeline.segments.length, 5, 'the bar shows the plan, not what is set by hand');
     qa = await host.quickActions(ADA);
     assert.ok(qa.some((a) => a.id === `heat:${wz}:plan` && a.title === 'Zurück zum Plan'));
     r = await host.runQuickAction(ADA, `heat:${wz}`, 'de', { control: 'preset', value: 'manual' });
-    assert.deepEqual([r.status, sent.length], [200, 0], 'the extra option changes nothing');
+    assert.deepEqual([r.status, r.body.error, sent.length], [400, 'invalid_value', 0], 'the old extra option is gone');
+    assert.deepEqual(await heating.runQuickAction(host.gc, { ...ADA, portal: true, loggedIn: true }, 'de', `heat:${wz}`, 'preset', 'boost'), { ok: false, message: 'Diese Aktion gibt es nicht mehr.' });
     r = await host.runQuickAction(ADA, `heat:${wz}`, 'de', { control: 'preset', value: 'eco' });
     assert.deepEqual(sent.splice(0), [['01', { setpoint: 18 }], ['02', { setpoint: 18 }]]);
     assert.equal(r.body.widget.controls[1].value, 'eco');
@@ -144,14 +154,14 @@ describe('Heizung: quick actions of the apps', () => {
     r = await host.runQuickAction(ADA, `heat:${wz}:plan`);
     assert.deepEqual([r.body.message, r.body.widget.controls[1].value], ['Wohnzimmer: wieder nach Plan', 'comfort']);
     sent.splice(0);
-    // boost: the card says so, the choice shows "Boost", the button ends it
+    // boost: the card says so, no preset is active, the button ends it
     r = await host.runQuickAction(ADA, `heat:${wz}:boost`);
     assert.equal(r.body.message, 'Wohnzimmer: Boost läuft');
     assert.deepEqual(sent.splice(0), [['01', { setpoint: 30 }], ['02', { setpoint: 30 }]]);
     qa = await host.quickActions(ADA);
     const card = qa.find((a) => a.id === `heat:${wz}`).widget;
     assert.equal(card.status, 'Boost · noch 30 min, danach Komfort 21,0 °C');
-    assert.equal(card.controls[1].value, 'boost');
+    assert.deepEqual([card.controls[1].value, card.controls[1].options.length], [null, 4]);
     assert.equal(qa.find((a) => a.id === `heat:${wz}:boost`).title, 'Boost beenden');
     now = T(0, 7, 12);
     assert.equal((await host.quickActions(ADA)).find((a) => a.id === `heat:${wz}`).widget.status, 'Boost · noch 18 min, danach Komfort 21,0 °C');
@@ -164,7 +174,7 @@ describe('Heizung: quick actions of the apps', () => {
     assert.deepEqual(await heating.runQuickAction(host.gc, { ...BOB, portal: true, loggedIn: true }, 'de', `heat:${wz}`, 'sp', 21), { ok: false, message: 'Dieses Gerät gehört dir nicht.' });
   }));
 
-  it('window open or no thermostat answering: no controls (the host has no locked ones yet), the card says why', () => withRooms([TRV(1), CONTACT()], async (host, { set, st, sync }) => {
+  it('window open or no thermostat answering: the controls are locked (disabled), the card says why', () => withRooms([TRV(1), CONTACT()], async (host, { set, st, sync, sent }) => {
     await set('Heizkörper 1', 'Schlafzimmer', [ADA.id]);
     await set('Fensterkontakt Terrasse', 'Schlafzimmer');
     const sz = await roomId(host, 'Schlafzimmer');
@@ -176,7 +186,14 @@ describe('Heizung: quick actions of the apps', () => {
     await heating.tick(host.gc);
     let qa = await host.quickActions(ADA);
     let w = qa.find((a) => a.id === `heat:${sz}`).widget;
-    assert.deepEqual([w.state, w.controls, w.status], ['warn', [], 'Fenster offen: Frostschutz, danach Komfort 21,0 °C']);
+    assert.deepEqual([w.state, w.status], ['warn', 'Fenster offen: Frostschutz, danach Komfort 21,0 °C']);
+    assert.deepEqual(w.controls.map((c) => [c.id, c.disabled, c.value]), [['sp', true, 7], ['preset', true, null]], 'greyed out, not left away; Frost by the window is no preset choice');
+    sent.splice(0);
+    let r = await host.runQuickAction(ADA, `heat:${sz}`, 'de', { control: 'sp', value: 21 });
+    assert.deepEqual([r.status, r.body.error, sent.length], [409, 'control_disabled', 0], 'the host refuses it');
+    r = await host.runQuickAction(ADA, `heat:${sz}`, 'de', { control: 'preset', value: 'comfort' });
+    assert.deepEqual([r.status, r.body.error], [409, 'control_disabled']);
+    assert.equal(w.timeline.segments.length, 5, 'the day bar stays');
     assert.deepEqual(w.readings.find((x) => x.id === 'window'), { id: 'window', label: 'Fenster', value: 'offen', unit: null, icon: heating.ICONS.window, state: 'warn' });
     assert.deepEqual(qa.map((a) => a.id), [`heat:${sz}`], 'no boost, no plan button');
     st.devices[1].values = { window: false };
@@ -186,7 +203,7 @@ describe('Heizung: quick actions of the apps', () => {
     await heating.tick(host.gc);
     qa = await host.quickActions(ADA, 'en');
     w = qa[0].widget;
-    assert.deepEqual([w.state, w.controls.length], ['warn', 0]);
+    assert.deepEqual([w.state, w.controls.map((c) => c.disabled)], ['warn', [true, true]]);
     assert.match(w.status, /^Unreachable · last 20\.0 °C/, "what the thermostat reported last");
   }));
 
@@ -210,4 +227,34 @@ describe('Heizung: quick actions of the apps', () => {
     assert.equal(r.body.state, 'on', 'a plain run switches over');
     assert.equal((await heating.runQuickAction(host.gc, { ...ADA, portal: true, loggedIn: true }, 'de', 'heat:away')).ok, false);
   }));
+});
+
+describe('Heizung: the day bar of the card (timelineOf)', () => {
+  const P = ['comfort', 'eco', 'night', 'frost'];
+  const C = heating.SEGMENT_COLORS;
+  it('a segment per preset or target, gaps where nothing applies, colours as #rrggbb, now in hours', () => {
+    const tl = heating.timelineOf({ now_min: 450, today: [
+      { from: 0, to: 360, kind: 'plan', preset: 'night' }, { from: 360, to: 600, kind: 'none', preset: null, setpoint: null },
+      { from: 600, to: 1440, kind: 'manual', preset: null, setpoint: 19.5 },
+    ] }, 'de');
+    assert.deepEqual(tl, { from: 0, to: 24, now: 7.5, segments: [{ from: 0, to: 6, color: C.night, label: 'Nacht' }, { from: 10, to: 24, color: C.setpoint, label: '19,5 °C' }] });
+    for (const c of Object.values(C)) assert.match(c, /^#[0-9a-f]{6}$/);
+    assert.equal(heating.timelineOf({ now_min: 0, today: [{ from: 0, to: 1440, kind: 'none' }] }, 'de'), null, 'nothing applies: no bar');
+    assert.equal(heating.timelineOf({ today: [] }, 'de'), null);
+    assert.equal(heating.timelineOf({ now_min: 1500, today: [{ from: 0, to: 1500, kind: 'plan', preset: 'eco' }] }, 'en').to, 25, 'the day the clocks go back');
+  });
+
+  it('more than 12 segments: the shortest neighbours merge, the bar stays whole and in order', () => {
+    // 16 segments: 15 of 90 minutes and the shortest pairs at the start (30 minutes each)
+    const today = [];
+    let at = 0;
+    for (let i = 0; i < 16; i++) { const len = i < 2 ? 30 : (i === 15 ? 1440 - at : 90); today.push({ from: at, to: at + len, kind: 'plan', preset: P[i % 4] }); at += len; }
+    const tl = heating.timelineOf({ now_min: 0, today }, 'en');
+    assert.equal(tl.segments.length, 12);
+    let end = 0;
+    for (const x of tl.segments) { assert.equal(x.from, end); assert.ok(x.from < x.to); end = x.to; }
+    assert.equal(end, 24);
+    // 0–0:30 and 0:30–1:00 first (one hour), then that hour with 1:00–2:30 (shorter than two of 90 minutes): Night names it
+    assert.deepEqual(tl.segments[0], { from: 0, to: 2.5, color: C.night, label: 'Night' }, 'the shortest neighbours became one');
+  });
 });

@@ -145,6 +145,59 @@ test('mock host quick action widgets: checked like the host, controls run throug
   }
 });
 
+test('mock host quick action widgets (GateControl ≥ 1.317.1): choice without a selection, disabled controls, timeline', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'qa-timeline-plugin-'));
+  try {
+    fs.mkdirSync(path.join(tmp, 'server'));
+    fs.writeFileSync(path.join(tmp, 'plugin.json'), JSON.stringify({ id: 'qa-timeline-test', name: 'QA', version: '1.0.0', entry: 'server/index.js', permissions: { portal: true } }));
+    fs.writeFileSync(path.join(tmp, 'server', 'index.js'), `
+      let widget = null;
+      module.exports = {
+        _set(w) { widget = w; },
+        async quickActions() { return [{ id: 'th:1', title: 'Bad', widget }]; },
+        async runQuickAction(a) { return { ok: true, message: String(a.control) + ' ' + String(a.value), widget }; },
+      };`);
+    const w = {
+      status: 'Fenster offen',
+      controls: [
+        { id: 'sp', kind: 'stepper', value: 7, min: 5, max: 30, step: 0.5, disabled: true },
+        { id: 'preset', kind: 'choice', value: null, options: [{ id: 'eco', label: 'Eco' }, { id: 'night', label: 'Nacht' }] },
+      ],
+      timeline: { now: 6.5, segments: [{ from: 0, to: 6, color: '#5B7CF5', label: 'Nacht' }, { from: 8, to: 24, tone: 'good' }] },
+    };
+    const ada = { id: 2, name: 'Ada', role: 'user' };
+    const old = await createHost(tmp);
+    try {
+      old.plugin._set(w);
+      await assert.rejects(old.quickActions(ada), { code: 'ERR_INVALID' }, 'older hosts: no disabled / timeline / value null');
+    } finally { await old.close(); }
+    const host = await createHost(tmp, { gatecontrol: '1.317.1' });
+    try {
+      host.plugin._set(w);
+      const got = (await host.quickActions(ada))[0].widget;
+      assert.deepEqual(got.controls.map((c) => [c.id, c.value, c.disabled]), [['sp', 7, true], ['preset', null, false]]);
+      assert.deepEqual(got.timeline, { from: 0, to: 24, now: 6.5, segments: [{ from: 0, to: 6, tone: null, color: '#5b7cf5', label: 'Nacht' }, { from: 8, to: 24, tone: 'good', color: null, label: null }] });
+      assert.deepEqual(await host.runQuickAction(ada, 'th:1', 'de', { control: 'sp', value: 21 }), { status: 409, body: { ok: false, error: 'control_disabled' } });
+      assert.equal((await host.runQuickAction(ada, 'th:1', 'de', { control: 'preset', value: 'eco' })).body.message, 'preset eco', 'a choice without a selection takes an option');
+      host.plugin._set({ value: 1 });
+      assert.equal((await host.quickActions(ada))[0].widget.timeline, null, 'no timeline → null');
+      const tl = (t) => ({ ...w, timeline: { ...w.timeline, ...t } });
+      const seg = (x) => tl({ segments: [{ from: 0, to: 6, ...x }] });
+      for (const bad of [
+        tl({ from: 5, to: 5 }), tl({ now: 25 }), tl({ segments: [] }), tl({ segments: Array.from({ length: 13 }, (_, i) => ({ from: i, to: i + 1 })) }),
+        tl({ segments: [{ from: 6, to: 8 }, { from: 0, to: 6 }] }), tl({ segments: [{ from: 0, to: 7 }, { from: 6, to: 8 }] }), seg({ to: 25 }), seg({ from: 6 }),
+        seg({ tone: 'on' }), seg({ color: 'red' }), seg({ color: '#12345' }), seg({ color: 'rgb(1,2,3)' }), seg({ label: 'x'.repeat(21) }), 'x',
+        { controls: [{ ...w.controls[0], disabled: 'yes' }] }, { controls: [{ ...w.controls[1], value: 'heat' }] },
+      ]) {
+        host.plugin._set(bad);
+        await assert.rejects(host.quickActions(ada), { code: 'ERR_INVALID' }, JSON.stringify(bad).slice(0, 80));
+      }
+    } finally { await host.close(); }
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test('mock host devices (GateControl ≥ 1.172.0): device, look, confirmWhen, widget label/readings/power, tile items', async () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'qa-device-plugin-'));
   try {

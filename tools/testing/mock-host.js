@@ -64,6 +64,12 @@
 //   text ≤ 8 or a number, unit ≤ 4 and only with a value, state good|warn|crit, label ≤ 20; the
 //   widget's last key, always in the answer, null without one; where the host nulls the badge or a
 //   part of it this throws) — shown right of the device name in the widget head.
+//   GateControl ≥ 1.317.1 (opt-in: opts.gatecontrol: '1.317.1'): a choice's `value` may be null (no
+//   option active), a control may carry `disabled: true` (answer: always the key; a control run of
+//   it → { status: 409, body: { ok: false, error: 'control_disabled' } }) and a widget `timeline`
+//   { from?, to?, now?, segments: [{ from, to, tone?, color?, label? }] } (1–12, in order, not
+//   overlapping; tone good|warn|crit|neutral, color #rgb|#rrggbb, label ≤ 20; the widget's last key,
+//   always in the answer, null without one; where the host nulls it this throws).
 //   Start tiles: host.portalTiles(user) answers what the hook returned (the portal ignores
 //   `items`), but a tile's `items` (≤ 4, { label, icon?, value?, unit?, state? } with value or
 //   icon) are checked like the host; host.clientTiles(user) answers like the apps' GET
@@ -542,6 +548,8 @@ const QA_CONTROL_KINDS = new Set(['stepper', 'slider', 'choice']);
 const QA_WIDGET_CONTROLS = 4;
 const QA_TONES = new Set(['good', 'warn', 'crit', 'neutral']);
 const QA_READINGS = 4;
+const QA_SEGMENTS = 12;
+const QA_COLOR_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 const TILE_ITEMS = 4;
 const TILE_STATES = new Set(['on', 'off', 'good', 'warn', 'crit']);
 const PLUGIN_ID_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -845,7 +853,7 @@ function qaNumber(v, what) {
  * sanitizeWidget); null without one. The host nulls the whole widget where this throws ERR_INVALID
  * (and clamps a stepper/slider value into min…max, falls back to the first option of a choice).
  */
-function checkQuickWidget(w, what) {
+function checkQuickWidget(w, what, gc3171 = false) {
   if (w == null) return null;
   if (typeof w !== 'object' || Array.isArray(w)) throw hostError('ERR_INVALID', `${what}: widget must be an object`);
   const value = w.value == null ? null : (typeof w.value === 'number' ? qaNumber(w.value, `${what}: widget value`) : qaText(w.value, 24, `${what} widget value`));
@@ -861,6 +869,8 @@ function checkQuickWidget(w, what) {
       ids.add(c.id);
       if (!QA_CONTROL_KINDS.has(c.kind)) throw hostError('ERR_INVALID', `${what}: control ${c.id}: bad kind ${JSON.stringify(c.kind)}`);
       const label = qaText(c.label, 20, `${what} control ${c.id} label`, true);
+      if (c.disabled != null && (!gc3171 || typeof c.disabled !== 'boolean')) throw hostError('ERR_INVALID', `${what}: control ${c.id}: disabled ${gc3171 ? 'must be a boolean' : 'needs GateControl 1.317.1'}`);
+      const dis = gc3171 ? { disabled: c.disabled === true } : {};
       if (c.kind === 'choice') {
         if (!Array.isArray(c.options) || c.options.length < 2 || c.options.length > 8) throw hostError('ERR_INVALID', `${what}: control ${c.id}: 2–8 options`);
         const oids = new Set();
@@ -870,13 +880,14 @@ function checkQuickWidget(w, what) {
           oids.add(o.id);
           return { id: o.id, label: qaText(o.label, 20, `${what} control ${c.id} option ${o.id} label`) };
         });
-        if (typeof c.value !== 'string' || !oids.has(c.value)) throw hostError('ERR_INVALID', `${what}: control ${c.id}: value ${JSON.stringify(c.value)} is no option`);
-        controls.push({ id: c.id, kind: c.kind, label, value: c.value, options });
+        // GateControl ≥ 1.317.1: null = no option is active (older hosts show the first option)
+        if (!(gc3171 && c.value === null) && (typeof c.value !== 'string' || !oids.has(c.value))) throw hostError('ERR_INVALID', `${what}: control ${c.id}: value ${JSON.stringify(c.value)} is no option`);
+        controls.push({ id: c.id, kind: c.kind, label, value: c.value, options, ...dis });
       } else {
         const [value, min, max, step] = ['value', 'min', 'max', 'step'].map((k) => qaNumber(c[k], `${what}: control ${c.id} ${k}`));
         if (!(min < max) || !(step > 0)) throw hostError('ERR_INVALID', `${what}: control ${c.id}: min < max and step > 0`);
         if (value < min || value > max) throw hostError('ERR_INVALID', `${what}: control ${c.id}: value ${value} outside ${min}…${max}`);
-        controls.push({ id: c.id, kind: c.kind, label, value, min, max, step, unit: qaText(c.unit, 8, `${what} control ${c.id} unit`, true) });
+        controls.push({ id: c.id, kind: c.kind, label, value, min, max, step, unit: qaText(c.unit, 8, `${what} control ${c.id} unit`, true), ...dis });
       }
     }
   }
@@ -897,7 +908,37 @@ function checkQuickWidget(w, what) {
     label: qaText(w.label, 24, `${what} widget label`, true), value, unit: qaText(w.unit, 8, `${what} widget unit`, true),
     status: qaText(w.status, 60, `${what} widget status`, true), state: w.state == null ? null : w.state, controls, readings, power: w.power !== false,
     badge: checkQuickBadge(w.badge, what),
+    ...(gc3171 ? { timeline: checkQuickTimeline(w.timeline, what) } : (w.timeline != null ? (() => { throw hostError('ERR_INVALID', `${what}: widget timeline needs GateControl 1.317.1`); })() : {})),
   };
+}
+
+/**
+ * A widget's timeline → { from, to, now, segments } as the host passes it on (GateControl ≥ 1.317.1,
+ * quickActions.js sanitizeTimeline; display only); null without one. Throws where the host nulls it:
+ * from < to (default 0 / 24), now within [from, to], 1–12 segments in order and not overlapping, each
+ * from < to within the range, tone good|warn|crit|neutral, color #rgb|#rrggbb (lowercased), label 1–20.
+ */
+function checkQuickTimeline(t, what) {
+  if (t == null) return null;
+  if (typeof t !== 'object' || Array.isArray(t)) throw hostError('ERR_INVALID', `${what}: widget timeline must be an object`);
+  const from = t.from == null ? 0 : qaNumber(t.from, `${what}: timeline from`);
+  const to = t.to == null ? 24 : qaNumber(t.to, `${what}: timeline to`);
+  if (!(from < to)) throw hostError('ERR_INVALID', `${what}: timeline from < to`);
+  const now = t.now == null ? null : qaNumber(t.now, `${what}: timeline now`);
+  if (now != null && (now < from || now > to)) throw hostError('ERR_INVALID', `${what}: timeline now ${now} outside ${from}…${to}`);
+  if (!Array.isArray(t.segments) || t.segments.length < 1 || t.segments.length > QA_SEGMENTS) throw hostError('ERR_INVALID', `${what}: timeline needs 1–${QA_SEGMENTS} segments`);
+  let end = from;
+  const segments = t.segments.map((s, i) => {
+    if (!s || typeof s !== 'object' || Array.isArray(s)) throw hostError('ERR_INVALID', `${what}: segment ${i} is not an object`);
+    const a = qaNumber(s.from, `${what}: segment ${i} from`);
+    const b = qaNumber(s.to, `${what}: segment ${i} to`);
+    if (!(a < b) || a < end || b > to) throw hostError('ERR_INVALID', `${what}: segment ${i} ${a}…${b} out of order, overlapping or outside ${from}…${to}`);
+    end = b;
+    if (s.tone != null && !QA_TONES.has(s.tone)) throw hostError('ERR_INVALID', `${what}: segment ${i} tone ${JSON.stringify(s.tone)}`);
+    if (s.color != null && (typeof s.color !== 'string' || !QA_COLOR_RE.test(s.color))) throw hostError('ERR_INVALID', `${what}: segment ${i} color ${JSON.stringify(s.color)}`);
+    return { from: a, to: b, tone: s.tone == null ? null : s.tone, color: s.color == null ? null : s.color.toLowerCase(), label: qaText(s.label, 20, `${what} segment ${i} label`, true) };
+  });
+  return { from, to, now, segments };
 }
 
 /**
@@ -992,7 +1033,7 @@ function checkQuickVerbs(v, what) {
 }
 
 /** quickActions answer → the list the host passes on; throws ERR_INVALID where the host would drop or cut. */
-function checkQuickActions(out) {
+function checkQuickActions(out, gc3171 = false) {
   if (!Array.isArray(out)) throw hostError('ERR_INVALID', 'quickActions must return an array');
   if (out.length > QA_MAX) throw hostError('ERR_INVALID', `quickActions: ${out.length} entries, at most ${QA_MAX}`);
   const seen = new Set();
@@ -1018,7 +1059,7 @@ function checkQuickActions(out) {
       confirmWhen: a.confirmWhen == null ? null : a.confirmWhen, look: checkQuickLook(a.look, `quick action ${a.id}`),
       verbs: checkQuickVerbs(a.verbs, `quick action ${a.id}`), targets: a.targets === true,
       device: checkQuickDevice(a.device, `quick action ${a.id}`),
-      widget: checkQuickWidget(a.widget, `quick action ${a.id}`),
+      widget: checkQuickWidget(a.widget, `quick action ${a.id}`, gc3171),
     };
   });
 }
@@ -1239,6 +1280,7 @@ async function createHost(pluginDir, opts = {}) {
   const gc215 = hostAtLeast('1.215.0'); // gc.media.copy, files links with paths
   const mediaCopies = [];
   const gc211 = hostAtLeast('1.211.0'); // public endpoints (permissions.publicEndpoints)
+  const gc3171 = hostAtLeast('1.317.1'); // quick action widgets: choice without a selection, disabled controls, timeline
 
   // Storage: the plugin's own SQLite database with its migrations applied.
   let db = null;
@@ -2370,7 +2412,7 @@ async function createHost(pluginDir, opts = {}) {
     if (args.interactive === true) return { user: { id: u.id, name: u.name, role: u.role, portal: true, loggedIn: true, automation: false, interactive: true, via: manifest.id }, lang: lang || 'de' };
     return { user: { id: u.id, name: u.name, role: u.role, portal: true, loggedIn: true, automation: true, via: manifest.id }, lang: lang || 'de' };
   };
-  const listOf = async (p, viewer, lang) => checkQuickActions(wire(typeof p.quickActions === 'function' ? await p.quickActions(wire(viewer), lang) : (p.actions || [])));
+  const listOf = async (p, viewer, lang) => checkQuickActions(wire(typeof p.quickActions === 'function' ? await p.quickActions(wire(viewer), lang) : (p.actions || [])), gc3171);
   api['actions.list'] = async (args) => {
     const { user, lang } = automationViewer(args);
     const out = [];
@@ -4272,7 +4314,7 @@ async function createHost(pluginDir, opts = {}) {
     /** quickActions hook: the app's quick actions for this viewer, checked like the host (no hook → []) */
     async quickActions(user, lang = 'de') {
       if (!perms.portal || typeof plugin.quickActions !== 'function') return [];
-      return checkQuickActions(await hook('quickActions', { user: { portal: true, loggedIn: true, app: true, ...user }, lang }));
+      return checkQuickActions(await hook('quickActions', { user: { portal: true, loggedIn: true, app: true, ...user }, lang }), gc3171);
     },
     /**
      * runQuickAction hook as the host's route runs it: only an id listed for this viewer → { status, body }.
@@ -4288,7 +4330,7 @@ async function createHost(pluginDir, opts = {}) {
         ? { id: user.id, name: user.name, role: user.role, portal: true, loggedIn: true, automation: true, via }
         : { portal: true, loggedIn: true, app: true, ...user };
       if (!perms.portal || typeof plugin.runQuickAction !== 'function' || typeof id !== 'string' || !QA_ID_RE.test(id)) return { status: 404, body: { ok: false, error: 'not_found' } };
-      const listed = checkQuickActions(await hook('quickActions', { user: viewer, lang }));
+      const listed = checkQuickActions(await hook('quickActions', { user: viewer, lang }), gc3171);
       const action = listed.find((a) => a.id === id);
       if (!action) return { status: 404, body: { ok: false, error: 'not_found' } };
       const args = { user: viewer, lang, id, via, automation: auto };
@@ -4304,6 +4346,7 @@ async function createHost(pluginDir, opts = {}) {
         if (auto) throw hostError('ERR_INVALID', 'an automation run carries no control');
         const c = typeof o.control === 'string' && action.widget ? action.widget.controls.find((x) => x.id === o.control) : null;
         if (!c) return { status: 400, body: { ok: false, error: 'invalid_control' } };
+        if (c.disabled === true) return { status: 409, body: { ok: false, error: 'control_disabled' } };
         const value = controlValue(c, o.value);
         if (value === undefined) return { status: 400, body: { ok: false, error: 'invalid_value' } };
         args.control = c.id;
@@ -4314,7 +4357,7 @@ async function createHost(pluginDir, opts = {}) {
       if (out.state != null && !QA_STATES.has(out.state)) throw hostError('ERR_INVALID', `runQuickAction: state ${JSON.stringify(out.state)}`);
       return {
         status: 200,
-        body: { ok: out.ok !== false, message: qaText(out.message, 120, 'message', true), state: out.state == null ? null : out.state, widget: checkQuickWidget(out.widget, 'runQuickAction'), unchanged: false },
+        body: { ok: out.ok !== false, message: qaText(out.message, 120, 'message', true), state: out.state == null ? null : out.state, widget: checkQuickWidget(out.widget, 'runQuickAction', gc3171), unchanged: false },
       };
     },
     /** appVisible hook (permissions.app + ui.app, GateControl ≥ 1.164.0): called as appVisible(user, gc) with the
