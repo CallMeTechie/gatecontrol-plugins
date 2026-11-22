@@ -1,4 +1,4 @@
-<!-- version: 1.15.0 -->
+<!-- version: 1.16.0 -->
 # Smart Home
 
 ## What the plugin does
@@ -187,7 +187,7 @@ If a contact in the room stays open longer than set in the plan (default 2 minut
 
 ### In the app
 
-Every room is a card: temperature, valve, window, humidity and battery, below the plan as text (“Comfort · by plan until 08:00, then Eco 18.0 °C”), the target with − / + in half degrees and the four presets. Beside it the buttons **Boost 30 min** / **End boost** and **Back to plan** when they make sense. While no preset applies (boost, by hand), a fifth button (“Boost”, “By hand”) lights up instead of a wrong preset. With a window open or no thermostat answering, the card only shows the reason.
+Every room is a card: temperature, valve, window, humidity and battery, below the plan as text (“Comfort · by plan until 08:00, then Eco 18.0 °C”), the target with − / + in half degrees, the four presets and a day bar with today's plan (a colour per preset, a mark for now). Beside it the buttons **Boost 30 min** / **End boost** and **Back to plan** when they make sense. While no preset applies (boost, by hand, window open, off), none of the four is highlighted; the text says what applies. With a window open, no thermostat answering or the room off, target and presets stay visible but locked (grey) – the text says why.
 
 ## Permissions
 
@@ -239,6 +239,13 @@ Set the device up “By hand …”. The instructions are in the window.
 
 **A zigbee2mqtt device cannot be switched (“zigbee2mqtt on the gateway is not answering right now”).**
 Look at the gateway's tab “Radio”: does zigbee2mqtt run, are edge and MQTT on? New devices show up within half a minute.
+
+## New in 1.16.0
+
+- **Heating in the app:** every room card shows a **day bar** with today's plan.
+- With a window open or no thermostat answering, target and presets are **locked** (grey) instead of hidden; the card says why.
+- While no preset applies (boost, by hand), none is highlighted – the fifth button (“Boost”, “By hand”) is gone.
+- Needs GateControl 1.317.1 and a current app. The update needs no new confirmation on the gateway.
 
 ## New in 1.15.0
 

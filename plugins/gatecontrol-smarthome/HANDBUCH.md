@@ -1,4 +1,4 @@
-<!-- version: 1.15.0 -->
+<!-- version: 1.16.0 -->
 # Smart Home
 
 ## Was das Plugin kann
@@ -187,7 +187,7 @@ Ist ein Kontakt im Raum länger offen als im Plan eingestellt (Vorgabe 2 Minuten
 
 ### In der App
 
-Jeder Raum ist eine Karte: Ist-Temperatur, Ventil, Fenster, Feuchte und Batterie, darunter der Plan als Text („Komfort · nach Plan bis 08:00, dann Eco 18,0 °C“), das Soll mit − / + in halben Grad und die vier Presets. Daneben die Knöpfe **Boost 30 min** / **Boost beenden** und **Zurück zum Plan**, wenn es passt. Gilt gerade kein Preset (Boost, von Hand), leuchtet ein fünfter Knopf („Boost“, „Von Hand“) statt eines falschen Presets. Bei offenem Fenster oder wenn kein Thermostat antwortet, zeigt die Karte nur den Grund.
+Jeder Raum ist eine Karte: Ist-Temperatur, Ventil, Fenster, Feuchte und Batterie, darunter der Plan als Text („Komfort · nach Plan bis 08:00, dann Eco 18,0 °C“), das Soll mit − / + in halben Grad, die vier Presets und ein Tagesbalken mit dem heutigen Plan (je Preset eine Farbe, eine Marke für jetzt). Daneben die Knöpfe **Boost 30 min** / **Boost beenden** und **Zurück zum Plan**, wenn es passt. Gilt gerade kein Preset (Boost, von Hand, Fenster offen, Aus), ist keines der vier hervorgehoben; was gilt, steht im Text. Bei offenem Fenster, wenn kein Thermostat antwortet oder der Raum aus ist, bleiben Soll und Presets sichtbar, sind aber gesperrt (grau) – der Grund steht im Text.
 
 ## Berechtigungen
 
@@ -239,6 +239,13 @@ Richte das Gerät „Von Hand …“ ein. Die Anleitung steht im Fenster.
 
 **Ein Gerät von zigbee2mqtt lässt sich nicht schalten („zigbee2mqtt auf dem Gateway antwortet gerade nicht“).**
 Im Reiter „Funk“ des Gateways nachsehen: Läuft zigbee2mqtt, sind Edge und MQTT an? Neue Geräte erscheinen spätestens nach einer halben Minute.
+
+## Neu in 1.16.0
+
+- **Heizung in der App:** Jede Raumkarte zeigt einen **Tagesbalken** mit dem heutigen Plan.
+- Bei offenem Fenster oder wenn kein Thermostat antwortet, sind Soll und Presets **gesperrt** (grau) statt ausgeblendet; der Grund steht auf der Karte.
+- Gilt gerade kein Preset (Boost, von Hand), ist keines hervorgehoben – den fünften Knopf („Boost“, „Von Hand“) gibt es nicht mehr.
+- Braucht GateControl 1.317.1 und eine aktuelle App. Das Update braucht keine neue Bestätigung am Gateway.
 
 ## Neu in 1.15.0
 

@@ -79,7 +79,7 @@ async function everything(host) {
   return parts.join('\n');
 }
 
-test('without gc.edge (GateControl < 1.228.1): the deCONZ part as before, the edge API says unavailable', () => withHost({ gateways: [fakeDeconz()] }, async (host) => {
+test('without gc.edge (GateControl < 1.228.1): the deCONZ part as before, the edge API says unavailable', () => withHost({ gateways: [fakeDeconz()], gatecontrol: '1.177.0' }, async (host) => {
   assert.equal(host.gc.edge, undefined);
   const r = await admin(host, 'GET', '/edge/gateways');
   assert.deepEqual(r.json, { ok: true, available: false, gateways: [] });
