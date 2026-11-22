@@ -3,6 +3,32 @@
 Phoscon/deCONZ-Integration als GateControl-Plugin – bisher fest in GateControl eingebaut; seit 1.7.0 auch Shelly und
 Tasmota über ein GateControl-Gateway.
 
+## 1.15.0
+
+- **zigbee2mqtt in Logikketten am Gateway** über die optionale Edge-Fähigkeit von GateControl 1.317.0
+  (`edge.optionalCapabilities: { mqtt: { topics: ['zigbee2mqtt/#'] } }`, `"gatecontrol": ">=1.317.0"`).
+  `edge.capabilities` bleiben unverändert (`shellies/#`, `tasmota/#`, mDNS, LAN) – kein `update_pending`, Smart Home
+  läuft auf allen Gateways ohne neue Bestätigung weiter.
+  - **Edge-Teil:** abonniert `zigbee2mqtt/#` nur, wenn der Server-Teil eine Liste von zigbee2mqtt-Geräten schickt
+    (nur für bestätigte Gateways, deren Ketten solche Geräte nutzen); Namen aus `zigbee2mqtt/bridge/devices`,
+    Zustände über `normalize.parseZ2m`, Befehle an `zigbee2mqtt/<Name>/set` (Vorlage: die in 1.12.0 entfernte
+    Umsetzung, angepasst – auch Kanäle der Art „Schalter“). Antwortet das Gateway mit `denied` (Gateway vor 1.46.0
+    ohne optionale Fähigkeiten – sie gibt es ab Gateway 1.46.0 –, oder die Bestätigung ist noch nicht angekommen), laufen Shelly und Tasmota weiter, der
+    Edge-Teil versucht es jede Minute neu und meldet Ereignis `z2m` { state } (`info` zeigt `z2m`).
+  - **Server-Teil:** zigbee2mqtt-Geräte eines Gateways sind Ressourcen seiner Ketten, wenn der Host
+    `gc.edge.capabilities` / `requestCapability` kennt (sonst wie bisher `foreign_resource`; Version-1-Ketten nehmen
+    sie nie). Beim Speichern einer Kette mit solchen Geräten ohne Bestätigung → `gc.edge.requestCapability`
+    (Hinweis höchstens 1×/24 h), die Kette wird gespeichert, aber nicht ans Gateway geschickt; `rule.z2m`
+    `approval` / `unavailable` und `rule.z2m_link` (`/gateways#gw/<id>/edge`), `GET /rules/devices` liefert `z2m`.
+    Der Hintergrund prüft je Gateway mit solchen Ketten, ob bestätigt (oder zurückgenommen) wurde, und schickt die
+    Liste neu. Protokoll des Plugins: „chains … wait for zigbee2mqtt/#“ bzw. „not available on gateway … yet“.
+  - **Seite:** Hinweis im Editor „Für zigbee2mqtt bitte unter Gateways › <Gateway> › Edge-Plugins bestätigen“ mit
+    Knopf „Zum Gateway“, Pille „wartet auf Bestätigung“ / „ab Gateway 1.46.0“ und Hinweis an der Kette, Meldung nach
+    dem Speichern.
+- Heizung (1.14.0) unverändert am Server.
+- Mock-Host: `gc.edge.capabilities` / `requestCapability` (GateControl 1.317.0, `opts.edge.optional`,
+  `host.edgeRequests`); `gatecontrol.ref` auf v1.317.0.
+
 ## 1.14.0
 
 - **Heizung** (freigegebener Entwurf „Thermostate“, Stufe 1a; neu `server/heating.js`, Migration `006_heating.sql`:

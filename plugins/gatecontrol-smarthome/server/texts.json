@@ -541,7 +541,7 @@
   "chain.wait_restart": "neue Auslösung startet die Kette von vorn",
   "chain.wait_cancel": "bricht ab, wenn „Nur wenn“ nicht mehr gilt",
   "chain.where_title": "Läuft am Gateway „{{name}}“.",
-  "chain.where": "Alle Geräte hängen an diesem Gateway; die Kette schaltet auch ohne Server. Uhrzeit und Sonnenstand rechnet das Gateway selbst (Zeitzone des Servers); nur „Mitteilung“ braucht den Server.",
+  "chain.where": "Alle Geräte hängen an diesem Gateway (Shelly, Tasmota und – nach Bestätigung – zigbee2mqtt); die Kette schaltet auch ohne Server. Uhrzeit und Sonnenstand rechnet das Gateway selbst (Zeitzone des Servers); nur „Mitteilung“ braucht den Server.",
   "chain.when_sub": "eines davon passiert",
   "chain.add_device": "+ Gerät",
   "chain.add_time": "+ Uhrzeit / Sonne",
@@ -697,7 +697,7 @@
   "chain.server_note": "Reagiert mit 2–3 s Verzögerung (deCONZ-Geräte mit dem Abfrageintervall). Ohne Server oder bei getrenntem Gateway passiert nichts.",
   "chain.group_server": "{{n}} von {{max}} Ketten · über den Server, nicht offline",
   "chain.where_server_title": "Läuft am Server – nicht offline.",
-  "chain.where_server": "Geräte mehrerer Gateways, von deCONZ und zigbee2mqtt: der Server verbindet sie. Reagiert mit 2–3 s Verzögerung; ohne Server oder bei getrenntem Gateway passiert nichts. Taster gehen nur in Ketten an ihrem Gateway.",
+  "chain.where_server": "Geräte mehrerer Gateways, von deCONZ, Bluetooth und zigbee2mqtt: der Server verbindet sie. Reagiert mit 2–3 s Verzögerung; ohne Server oder bei getrenntem Gateway passiert nichts. Taster gehen nur in Ketten an ihrem Gateway.",
   "chain.by_app": "aus der App",
   "chain.by_chain": "von einer anderen Kette",
   "chain.tl_note": "{{what}} – an den Server übergeben",
@@ -925,7 +925,13 @@
   "heat.ui.vacation_to": "Rückkehr",
   "heat.ui.view": "Ansicht",
   "heat.ui.week": "Woche",
-  "heat.ui.week_hint": "Einen Abschnitt antippen, um ihn zu bearbeiten. Schaltpunkte rasten auf 15 Minuten."
+  "heat.ui.week_hint": "Einen Abschnitt antippen, um ihn zu bearbeiten. Schaltpunkte rasten auf 15 Minuten.",
+  "chain.z2m_approve": "Für zigbee2mqtt bitte unter Gateways › {{gw}} › Edge-Plugins bestätigen. Bis dahin läuft diese Kette nicht – die anderen schon.",
+  "chain.z2m_open": "Zum Gateway",
+  "chain.z2m_unavailable": "zigbee2mqtt ist auf dem Gateway „{{gw}}“ noch nicht verfügbar – bitte das GateControl-Gateway aktualisieren (zigbee2mqtt in Ketten ab Gateway 1.46.0). Shelly und Tasmota laufen weiter.",
+  "chain.z2m_saved": "Gespeichert. Für zigbee2mqtt bitte unter Gateways › {{gw}} › Edge-Plugins bestätigen – bis dahin läuft die Kette nicht.",
+  "chain.z2m_pill": "wartet auf Bestätigung",
+  "chain.z2m_pill_old": "ab Gateway 1.46.0"
  },
  "en": {
   "error.gateway_not_found": "Smart Home gateway not found",
@@ -1469,7 +1475,7 @@
   "chain.wait_restart": "a new trigger starts the chain again",
   "chain.wait_cancel": "stops when “Only if” no longer holds",
   "chain.where_title": "Runs on the gateway “{{name}}”.",
-  "chain.where": "All devices are behind this gateway; the chain switches without the server too. The gateway keeps the time and the sun itself (the server’s time zone); only “notification” needs the server.",
+  "chain.where": "All devices are behind this gateway (Shelly, Tasmota and – once confirmed – zigbee2mqtt); the chain switches without the server too. The gateway keeps the time and the sun itself (the server’s time zone); only “notification” needs the server.",
   "chain.when_sub": "one of these happens",
   "chain.add_device": "+ Device",
   "chain.add_time": "+ Time / sun",
@@ -1625,7 +1631,7 @@
   "chain.server_note": "Reacts with a delay of 2–3 s (deCONZ devices with the polling interval). Without the server or with a gateway disconnected nothing happens.",
   "chain.group_server": "{{n}} of {{max}} chains · through the server, not offline",
   "chain.where_server_title": "Runs on the server – not offline.",
-  "chain.where_server": "Devices of several gateways, of deCONZ and zigbee2mqtt: the server connects them. Reacts with a delay of 2–3 s; without the server or with a gateway disconnected nothing happens. Buttons only work in chains on their gateway.",
+  "chain.where_server": "Devices of several gateways, of deCONZ, Bluetooth and zigbee2mqtt: the server connects them. Reacts with a delay of 2–3 s; without the server or with a gateway disconnected nothing happens. Buttons only work in chains on their gateway.",
   "chain.by_app": "from the app",
   "chain.by_chain": "by another chain",
   "chain.tl_note": "{{what}} – handed to the server",
@@ -1853,6 +1859,12 @@
   "heat.ui.vacation_to": "Return",
   "heat.ui.view": "View",
   "heat.ui.week": "Week",
-  "heat.ui.week_hint": "Tap a section to edit it. Switching points snap to 15 minutes."
+  "heat.ui.week_hint": "Tap a section to edit it. Switching points snap to 15 minutes.",
+  "chain.z2m_approve": "For zigbee2mqtt please confirm it under Gateways › {{gw}} › Edge plugins. Until then this chain does not run – the others do.",
+  "chain.z2m_open": "Open the gateway",
+  "chain.z2m_unavailable": "zigbee2mqtt is not available on the gateway “{{gw}}” yet – please update the GateControl gateway (zigbee2mqtt in chains from gateway 1.46.0). Shelly and Tasmota go on.",
+  "chain.z2m_saved": "Saved. For zigbee2mqtt please confirm it under Gateways › {{gw}} › Edge plugins – until then the chain does not run.",
+  "chain.z2m_pill": "waiting for confirmation",
+  "chain.z2m_pill_old": "from gateway 1.46.0"
  }
 }

@@ -1,4 +1,4 @@
-<!-- version: 1.14.0 -->
+<!-- version: 1.15.0 -->
 # Smart Home
 
 ## What the plugin does
@@ -8,18 +8,19 @@
 - **Bluetooth sensors** through a GateControl gateway (since 1.8.0): thermometers and sensors you took over in GateControl under radio – encrypted ones too, once their key is entered there.
 - **Zigbee devices of zigbee2mqtt** through a GateControl gateway (since 1.9.0): lights, plugs, shutters, sensors and buttons you paired in GateControl under radio with zigbee2mqtt. Since 1.10.0 also switches with several channels, thermostats and firmware updates.
 - **Owners and areas:** you assign devices to people. They use them in the portal “Home” and in the app.
-- **Logic chains:** for deCONZ on the deCONZ gateway; for Shelly and Tasmota on the GateControl gateway (since 1.10.0) – since 1.11.0 with buttons, times, conditions with AND/OR, steps with waits, test run and log; since 1.12.0 with sunrise/sunset, “for X min”, chains across several gateways and with zigbee2mqtt (on the server), notifications and quick actions in the app.
+- **Logic chains:** for deCONZ on the deCONZ gateway; for Shelly and Tasmota on the GateControl gateway (since 1.10.0) – since 1.11.0 with buttons, times, conditions with AND/OR, steps with waits, test run and log; since 1.12.0 with sunrise/sunset, “for X min”, chains across several gateways (on the server), notifications and quick actions in the app; since 1.15.0 with zigbee2mqtt devices on the gateway too, once an administrator confirmed it for the gateway.
 - **Heating** (since 1.14.0): radiator thermostats of zigbee2mqtt and deCONZ per room with presets, weekly plans, boost, “window open”, holiday and “Heating away” ([Heating](#heizung)).
 - **Notifications:** alarm (water, smoke, CO), window open too long, battery low, gateway unreachable.
 - **Quick actions and widgets** in the GateControl apps for your own devices – since 1.13.0 with the battery level of battery devices.
 
 ## Requirements
 
-- GateControl **1.228.1** or later.
+- GateControl **1.317.0** or later (since 1.15.0).
 - For deCONZ: a Phoscon/deCONZ gateway GateControl can reach (through a route, a VPN device or an address).
 - For Shelly and Tasmota: a GateControl gateway **1.19.0** or later in the same home network, with the services `edge` and `mqtt` in its compose file.
 - For Bluetooth sensors: a GateControl with radio (tab “Radio” of the gateway) and a gateway with Bluetooth.
 - For zigbee2mqtt: a GateControl that knows zigbee2mqtt and a gateway newer than 1.30.0 with “zigbee2mqtt” in the tab “Radio” (edge and MQTT of the gateway are on for it). For several channels, thermostats and firmware updates: GateControl newer than 1.258.4 and a gateway newer than 1.34.2.
+- For zigbee2mqtt in logic chains on the gateway (since 1.15.0): from gateway 1.46.0, and the confirmation under **Gateways › gateway › Edge plugins** ([zigbee2mqtt on the gateway](#logikketten-z2m)).
 
 ## Setting up
 
@@ -102,19 +103,30 @@ Below, choose what happens when the chain is **triggered while it is still runni
 
 The chains run in the edge part on the gateway, also while the server cannot be reached. Times are in the server's time zone; the gateway keeps them itself. A gateway takes at most 40 chains. All devices of a chain must be on the same gateway.
 
+### zigbee2mqtt on the gateway (since 1.15.0) {#logikketten-z2m}
+
+zigbee2mqtt devices behind the same gateway – lights, plugs, switches with several channels, shutters, contacts, motion sensors, water sensors and remotes (as buttons) – can be part of a chain on the gateway too. They then run on the gateway like Shelly and Tasmota, without the server as well. Thermostats stay with the heating on the server.
+
+- **Confirmation:** for this the edge part needs the MQTT topic `zigbee2mqtt/#` as well. It is an **optional capability**: Smart Home keeps running on every gateway without a new confirmation, only zigbee2mqtt in chains has to be released by an administrator per gateway – under **Gateways › gateway › Edge plugins › Additional permissions (optional)**.
+- **When you save** a chain with a zigbee2mqtt device, Smart Home asks for that release (a note in the activity log, at most once a day). The chain is saved; the editor and the list show **“waiting for confirmation”** with the hint “For zigbee2mqtt please confirm it under Gateways › gateway › Edge plugins” and the button **“Open the gateway”**. Until then only these chains do not run – every other chain of the gateway goes on.
+- **Once confirmed**, the gateway gets the chains within about half a minute and the hint goes away. If an administrator takes the release back, the chains wait again.
+- **Older gateways** (before gateway 1.46.0) do not know optional capabilities yet and refuse `zigbee2mqtt/#`. The chain then shows the pill **“from gateway 1.46.0”** in the list; Shelly and Tasmota go on. After an update to gateway 1.46.0 or later it works by itself.
+- The devices are found by the names zigbee2mqtt gives them (`zigbee2mqtt/bridge/devices`); renaming a device in zigbee2mqtt does not break the chains.
+- With a GateControl before 1.317.0, zigbee2mqtt devices are only available in [chains on the server](#logikketten-server).
+
 **Existing rules (up to 1.10)** keep running unchanged. The editor shows their triggers as **“becomes true: A and B”**; saved, they become a chain in the new format.
 
 ### Sun, “for X min”, other chains, notifications (since 1.12.0) {#logikketten-stufe-2}
 
 - **Sunrise and sunset:** “+ Time / sun” fires at sunrise or sunset, with minutes before (−) or after. **“Time between”** knows the sun too, e.g. “Sunset–23:30”. The chain needs the **location of the gateway** for that: without one the editor shows a hint with two fields for latitude and longitude (rounded to 0.01°, about 1 km). Without a location “sun” never fires, and “time between” with the sun stays open. The test run shows the day's sun time, e.g. “Sunset (16:31)”.
 - **“for X min”:** a state or value has to hold that long – as a trigger (“washing machine below 5 W for 3 min”) and as a condition (“floor lamp is off for 10 min”). If the value rises before, nothing happens. After a restart of the gateway the time starts again.
-- **Contacts, motion, water** (zigbee2mqtt, deCONZ, Bluetooth) are triggers and conditions in chains on the server (“cellar door opens”, “motion detected”).
+- **Contacts, motion, water** (zigbee2mqtt, deCONZ, Bluetooth) are triggers and conditions in chains on the server (“cellar door opens”, “motion detected”) – zigbee2mqtt since 1.15.0 on the gateway too ([zigbee2mqtt on the gateway](#logikketten-z2m)).
 - **Start another chain:** a step starts another chain of the same place. It checks its own “Only if”. Chains that start each other without “Only if” cannot be saved; with “Only if” there is a hint. A chain does not start itself, and four chains in a row is the end.
 - **Send a notification:** a step sends a notification on the topic **“Logic chains”** (System › Notifications) – to everybody who subscribed, or only to the people ticked. The server sends it: a chain on a gateway keeps switching without the server, its notification comes once the gateway is connected again (up to an hour). The list then says “+ notification through the server”.
 
 ### Chains across several gateways (runs on the server) {#logikketten-server}
 
-Choose **“Several gateways (through the server)”** as the place in the editor to connect devices of all gateways – deCONZ and devices of zigbee2mqtt (lights, plugs, shutters, sensors) and Bluetooth sensors too. zigbee2mqtt devices are part of chains only here; chains on a gateway stay with Shelly and Tasmota. The box at the top turns yellow, the chain carries the yellow pill **“runs on the server”**. Such chains do not run offline: without the server or with a gateway disconnected nothing happens. They react with a delay of 2–3 seconds, deCONZ devices with the polling interval. Buttons only work in chains on their gateway. Test run, protocol, brake and loop check work as on a gateway. For the sun the server takes its own location or a gateway's.
+Choose **“Several gateways (through the server)”** as the place in the editor to connect devices of all gateways – deCONZ and devices of zigbee2mqtt (lights, plugs, shutters, sensors) and Bluetooth sensors too. Since 1.15.0 the zigbee2mqtt devices of a gateway also go into chains on that gateway ([zigbee2mqtt on the gateway](#logikketten-z2m)); here you connect them with devices of other gateways. The box at the top turns yellow, the chain carries the yellow pill **“runs on the server”**. Such chains do not run offline: without the server or with a gateway disconnected nothing happens. They react with a delay of 2–3 seconds, deCONZ devices with the polling interval. Buttons only work in chains on their gateway. Test run, protocol, brake and loop check work as on a gateway. For the sun the server takes its own location or a gateway's.
 
 ### By hand (app): chains as quick actions {#logikketten-app}
 
@@ -222,8 +234,17 @@ The device is asleep (battery device: operate it once) or zigbee2mqtt cannot rea
 **Automatic set-up fails.**
 Set the device up “By hand …”. The instructions are in the window.
 
+**A chain with zigbee2mqtt on the gateway does not run (“waiting for confirmation” / “from gateway 1.46.0”).**
+“Waiting for confirmation”: an administrator releases the additional capability `zigbee2mqtt/#` under **Gateways › gateway › Edge plugins**. “From gateway 1.46.0”: update the gateway – zigbee2mqtt in chains on the gateway works from gateway 1.46.0 ([zigbee2mqtt on the gateway](#logikketten-z2m)).
+
 **A zigbee2mqtt device cannot be switched (“zigbee2mqtt on the gateway is not answering right now”).**
 Look at the gateway's tab “Radio”: does zigbee2mqtt run, are edge and MQTT on? New devices show up within half a minute.
+
+## New in 1.15.0
+
+- **zigbee2mqtt in chains on the gateway:** lights, plugs, shutters, contacts, motion, water and remotes of zigbee2mqtt run in chains on the gateway – without the server too ([zigbee2mqtt on the gateway](#logikketten-z2m)).
+- For this an administrator confirms the optional capability `zigbee2mqtt/#` per gateway; Smart Home asks for it when you save. Until then only these chains do not run.
+- The update needs no new confirmation on the gateway: Shelly, Tasmota, the existing chains and the heating keep running without a break. It needs GateControl 1.317.0.
 
 ## New in 1.14.0
 

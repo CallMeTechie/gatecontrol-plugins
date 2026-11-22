@@ -22,12 +22,20 @@
 //             { epoch, runs, more } — what the server part missed while it was away (seq after `after`, 40 a call)
 //   test      gc.handle('test', { id } | { rule }, run?, by?) → what a chain would do now (edge/rules.js test); by
 //             'app': its trigger "Von Hand (App)" (a quick action of the apps, NUR WENN checked)
+//   zigbee2mqtt (since 1.15.0, logic chains only): MQTT zigbee2mqtt/# of the gateway's own zigbee2mqtt — the devices
+//             the server part lists (gc.edge.configure { z2m: [{ ieee, kind, chs, name }] }, only once an administrator
+//             confirmed the optional capability for this gateway); their names from zigbee2mqtt/bridge/devices (the
+//             server's name until that came), states via normalize.parseZ2m, commands to zigbee2mqtt/<name>/set.
+//             Subscribed only while that list has devices. A gateway that does not grant the topic (older than the
+//             optional capabilities, or not applied yet) answers `denied`: Shelly and Tasmota go on as before, the
+//             subscription is tried again every minute, event `z2m` { state: 'ok' | 'denied' | 'error' | 'off' }
+//             tells the server part (after every configuration that lists devices, and when it changes).
 //   notes     a step "Mitteilung senden" (since 1.12.0): event `notify` { notes: [{ r, i, at, u }] } — the server part
 //             sends the notification (the gateway keeps events up to an hour while the server is away)
 //   sun       gc.edge.configure { sun: { lat, lon } } — sunrise and sunset of the chains, computed here (edge/sun.js)
 //
 // Capabilities (plugin.json edge.capabilities): mdns _shelly._tcp and _http._tcp, http.lan, mqtt shellies/# and
-// tasmota/#. On disk (gc.store) only the last list of logic chains, so they run after a restart of the gateway
+// tasmota/#; optional (edge.optionalCapabilities, since 1.15.0): mqtt zigbee2mqtt/#. On disk (gc.store) only the last list of logic chains, so they run after a restart of the gateway
 // while the server is away, and the last runs of the chains — no device password, no MQTT password.
 
 const os = require('node:os');
@@ -46,6 +54,11 @@ const MAX_DEVICES = 256;
 const MAX_FOUND = 64;
 const PER_EVENT = 20;
 const TOPICS = ['shellies/#', 'tasmota/#'];
+const Z2M_TOPIC = 'zigbee2mqtt/#';
+const Z2M_MAX = 128;
+const Z2M_LIST_BYTES = 2 * 1024 * 1024;
+const Z2M_IEEE_RE = /^0x[0-9a-f]{16}$/;
+const Z2M_KINDS = ['light', 'plug', 'cover', 'sensor', 'switch'];
 const SERVICES = ['_shelly._tcp', '_http._tcp'];
 const RULES_KEY = 'rules';
 const RUNS_KEY = 'runs';
@@ -82,6 +95,10 @@ const st = {
   runsDirty: false,          // the ring changed since it was last written
   stoppedKey: '[]',          // the chains the brake stopped, as last written
   presses: new Map(),        // base → { input → event_cnt } (Shelly Gen1 repeats a press with the same counter)
+  z2m: new Map(),            // ieee → { kind, chs, name } — the zigbee2mqtt devices of the chains (server part's list)
+  z2mNames: new Map(),       // friendly name → ieee (zigbee2mqtt/bridge/devices; else the server part's names)
+  z2mSub: null,              // the subscription of zigbee2mqtt/#
+  z2mState: null,            // what the last try gave: ok | denied | error | off (MQTT not there) — event `z2m`
   notes: [],                 // { r, i, at, u } for the next flush
 };
 
@@ -100,7 +117,113 @@ function lan() {
 
 // ─── MQTT ───────────────────────────────────────
 
+// ─── zigbee2mqtt (the logic chains) ─────────────
+
+const z2mBase = (ieee) => `zigbee2mqtt/${ieee}`;
+
+/** The friendly name of a device of the chains (commands go to zigbee2mqtt/<name>/set). */
+function z2mTopic(base) {
+  const ieee = String(base || '').slice('zigbee2mqtt/'.length);
+  for (const [name, id] of st.z2mNames) if (id === ieee) return name;
+  const d = st.z2m.get(ieee);
+  return d && d.name ? d.name : null;
+}
+
+/** zigbee2mqtt/bridge/devices (retained, a list of every device): friendly name ↔ IEEE address. */
+function onBridgeDevices(payload) {
+  if (!payload || payload.length > Z2M_LIST_BYTES) return;
+  let list;
+  try { list = JSON.parse(Buffer.isBuffer(payload) ? payload.toString('utf8') : String(payload)); } catch { return; }
+  if (!Array.isArray(list)) return;
+  const names = new Map();
+  for (const d of list.slice(0, 512)) {
+    if (!d || typeof d.ieee_address !== 'string' || !Z2M_IEEE_RE.test(d.ieee_address) || typeof d.friendly_name !== 'string') continue;
+    if (d.friendly_name && d.friendly_name.length <= 128) names.set(d.friendly_name, d.ieee_address);
+  }
+  st.z2mNames = names;
+}
+
+function onZ2m(topic, payload, meta) {
+  const rest = topic.slice('zigbee2mqtt/'.length);
+  if (rest === 'bridge/devices') { onBridgeDevices(payload); return; }
+  if (rest.startsWith('bridge/') || !st.z2m.size) return;
+  const name = rest;
+  if (/\/(set|get|availability)(\/.*)?$/.test(name) && !st.z2mNames.has(name)) return; // our commands, zigbee2mqtt's extras
+  let ieee = st.z2mNames.get(name);
+  if (!ieee) { for (const [id, d] of st.z2m) if (d.name === name) { ieee = id; break; } }
+  const info = ieee && st.z2m.get(ieee);
+  if (!info) return;
+  const r = normalize.parseZ2m(z2mBase(ieee), payload, info);
+  if (!r) return;
+  let dev = st.devices.get(r.base);
+  if (!dev) {
+    if (st.devices.size >= MAX_DEVICES) return;
+    dev = normalize.newDevice(r.base, 'z2m');
+    st.devices.set(r.base, dev);
+  }
+  normalize.apply(dev, r.patch);
+  dev.seenAt = new Date().toISOString();
+  if (st.engine) st.engine.onDevice(r.base);
+  if (r.events && st.engine && !(meta && meta.retain)) st.engine.onEvent(r.base, r.events);
+}
+
+/** Tell the server part what became of zigbee2mqtt/# (only while it lists devices; `force`: also when unchanged). */
+function setZ2mState(state, force) {
+  const changed = st.z2mState !== state;
+  st.z2mState = state;
+  if ((changed || force) && st.gc && st.z2m.size) st.gc.emit('z2m', { state });
+}
+
+/**
+ * zigbee2mqtt/# only while the server part lists such devices. A refused topic (`denied`: a gateway that does not grant
+ * optional capabilities yet, or has not applied the confirmation yet) is no error for the rest: tried again every minute.
+ */
+async function subscribeZ2m(force = false) {
+  if (!st.z2m.size) {
+    if (st.z2mSub && typeof st.z2mSub === 'object') st.z2mSub.unsubscribe().catch(() => null);
+    st.z2mSub = null;
+    st.z2mState = null;
+    return;
+  }
+  if (st.mqtt !== 'ok') { setZ2mState('off', force); return; }
+  if (st.z2mSub) { if (st.z2mSub !== 'pending') setZ2mState('ok', force); return; }
+  st.z2mSub = 'pending';
+  const gc = st.gc;
+  try {
+    const sub = await gc.mqtt.subscribe(Z2M_TOPIC, onMessage);
+    if (st.gc !== gc || st.z2mSub !== 'pending') { sub.unsubscribe().catch(() => null); return; }
+    st.z2mSub = sub;
+    st.warned.delete('z2m:denied');
+    st.warned.delete('z2m:error');
+    gc.log.info('subscribed to', Z2M_TOPIC);
+    setZ2mState('ok', force);
+  } catch (e) {
+    if (st.gc !== gc) return;
+    st.z2mSub = null;
+    const code = (e && e.code) || 'error';
+    if (code === 'denied') {
+      warnOnce('z2m:denied', 'zigbee2mqtt for the logic chains is not available on this gateway yet (zigbee2mqtt/# denied) — the gateway needs an update (from gateway 1.46.0, optional capabilities); Shelly and Tasmota go on, tried again every minute');
+      setZ2mState('denied', force);
+    } else {
+      warnOnce('z2m:error', `zigbee2mqtt for the logic chains not available (${code}) — tried again every minute`);
+      setZ2mState('error', force);
+    }
+  }
+}
+
+function onZ2mConfig(list) {
+  const next = new Map();
+  for (const d of (Array.isArray(list) ? list : []).slice(0, Z2M_MAX)) {
+    if (!d || typeof d.ieee !== 'string' || !Z2M_IEEE_RE.test(d.ieee) || !Z2M_KINDS.includes(d.kind)) continue;
+    const chs = Array.isArray(d.chs) ? d.chs.filter((c) => typeof c === 'string' && /^[a-z0-9_]{1,8}$/.test(c)).slice(0, 8) : null;
+    next.set(d.ieee, { kind: d.kind === 'switch' ? 'sensor' : d.kind, chs: chs && chs.length >= 2 ? chs : null, name: typeof d.name === 'string' && d.name.length <= 128 ? d.name : null });
+  }
+  st.z2m = next;
+  subscribeZ2m(true);
+}
+
 function onMessage(topic, payload, meta) {
+  if (typeof topic === 'string' && topic.startsWith('zigbee2mqtt/')) { onZ2m(topic, payload, meta); return; }
   const r = normalize.parse(topic, payload);
   if (!r) return;
   let dev = st.devices.get(r.base);
@@ -142,6 +265,9 @@ async function doSubscribe() {
     st.warned.delete('mqtt:off');
     st.warned.delete('mqtt:error');
     st.gc.log.info('subscribed to', TOPICS.join(', '));
+    if (st.z2mSub && typeof st.z2mSub === 'object') st.z2mSub.unsubscribe().catch(() => null);
+    st.z2mSub = null;
+    subscribeZ2m();
     refreshAll();
   } catch (e) {
     for (const s of st.subs.splice(0)) s.unsubscribe().catch(() => null);
@@ -199,6 +325,7 @@ function onConfig(cfg) {
   }
   // forget what is no longer configured and has not reported for a while
   for (const base of [...st.devices.keys()]) if (!next.has(base) && st.devices.size > MAX_DEVICES / 2) st.devices.delete(base);
+  onZ2mConfig(cfg && cfg.z2m);
   // the server part's list is the truth (an older server part sends none: no chains)
   setRules({ rules: cfg && cfg.rules, tz: cfg && cfg.tz, sun: cfg && cfg.sun }, true);
 }
@@ -367,6 +494,10 @@ module.exports = {
     st.runsDirty = false;
     st.stoppedKey = '[]';
     st.presses.clear();
+    st.z2m = new Map();
+    st.z2mNames = new Map();
+    st.z2mSub = null;
+    st.z2mState = null;
     st.notes = [];
     st.engine = rules.create({
       device: (base) => st.devices.get(base) || null,
@@ -376,6 +507,7 @@ module.exports = {
       },
       fired: (id, at) => { if (st.fired.length < 200) st.fired.push({ id, at }); },
       notify: (n) => { if (st.notes.length >= 50) return false; st.notes.push(n); return true; },
+      z2mTopic,
       record,
       runId: () => { const r = ring(); r.n += 1; return `${r.epoch}:${r.n}`; },
       log: gc.log,
@@ -384,6 +516,7 @@ module.exports = {
     gc.handle('info', () => ({
       version: gc.version || null, startedAt: st.startedAt, mqtt: st.mqtt, lan: lan().map((a) => a.address).slice(0, 8),
       devices: st.configured ? st.configured.size : 0, found: st.found.size, rules: st.engine ? st.engine.count() : 0,
+      z2m: st.z2m.size ? st.z2mState : null,
     }));
 
     gc.handle('discover', async () => {
@@ -445,7 +578,7 @@ module.exports = {
     const every = (fn, ms) => { const t = setInterval(fn, ms); if (t.unref) t.unref(); st.timers.push(t); };
     every(flush, FLUSH_MS);
     every(refreshAll, REFRESH_MS);
-    every(() => { if (st.mqtt !== 'ok') subscribe(); }, RETRY_MQTT_MS);
+    every(() => { if (st.mqtt !== 'ok') subscribe(); else if (st.z2m.size && !st.z2mSub) subscribeZ2m(); }, RETRY_MQTT_MS);
     every(() => { saveRuns(); }, RUNS_SAVE_MS);
 
     subscribe();
@@ -456,6 +589,12 @@ module.exports = {
     for (const t of st.timers.splice(0)) clearInterval(t);
     for (const b of st.browses.splice(0)) b.stop();
     for (const s of st.subs.splice(0)) s.unsubscribe().catch(() => null);
+    if (st.z2mSub && typeof st.z2mSub === 'object') st.z2mSub.unsubscribe().catch(() => null);
+    st.z2mSub = null;
+    st.z2mState = null;
+    st.z2m = new Map();
+    st.z2mNames = new Map();
+    st.notes = [];
     if (st.gc) saveRuns();
     if (st.engine) st.engine.stop();
     st.engine = null;
@@ -467,7 +606,6 @@ module.exports = {
     st.runs = null;
     st.runsOut = [];
     st.presses.clear();
-    st.notes = [];
     st.devices.clear();
     st.dirty.clear();
     st.found.clear();

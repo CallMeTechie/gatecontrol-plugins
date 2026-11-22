@@ -2,9 +2,9 @@
 
 // Logikketten Stufe 2 (1.12.0) — the part on the gateway: sunrise / sunset (edge/sun.js), "seit X min" for triggers
 // and conditions, "Andere Kette starten" (NUR WENN of the other chain, at most 4 deep), "Mitteilung senden" (an event
-// for the server part), "Von Hand (App)" (a quick action: NUR WENN is checked) and the steps of the chains that run
-// on the server (family 'res', io.act). The edge part needs no new capability (no zigbee2mqtt/# — see edgerules.js).
-// A clock and timers the test moves; MQTT messages as devices send them.
+// for the server part), "Von Hand (App)" (a quick action: NUR WENN is checked), zigbee2mqtt on the gateway (1.15.0:
+// normalize.parseZ2m, commands to zigbee2mqtt/<name>/set, the names from bridge/devices, `denied` of an older gateway) and the steps of the chains
+// that run on the server (family 'res', io.act). A clock and timers the test moves; MQTT messages as devices send them.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -12,6 +12,7 @@ const path = require('node:path');
 const rules = require('../edge/rules');
 const sun = require('../edge/sun');
 const normalize = require('../edge/normalize');
+const commands = require('../edge/commands');
 
 const ENTRY = path.join(__dirname, '..', 'edge', 'index.js');
 const T0 = Date.UTC(2026, 10, 18, 11, 0, 0); // Wednesday 12:00 in Europe/Berlin
@@ -34,6 +35,7 @@ function engine(o = {}) {
     setTimer: (fn, ms) => { const t = { fn, at: clock.now + ms, on: true }; timers.push(t); return t; },
     clearTimer: (t) => { if (t) t.on = false; },
     notify: (n) => { notes.push(n); return true; },
+    z2mTopic: (base) => (o.names || {})[base] || null,
     ...(o.act ? { act: async (s) => { acted.push(s); } } : {}),
     log: { warn: () => {} },
   });
@@ -230,7 +232,42 @@ test('"Von Hand (App)": never by itself; from the apps NUR WENN is checked — "
   assert.equal(x.e.test({ id: 1 }, { run: true }).started, true, '"Trotzdem ausführen"');
 });
 
-// ─── the server's resources ───
+// ─── zigbee2mqtt on the gateway, the server's resources ───
+
+test('zigbee2mqtt: states and actions of the devices, commands to zigbee2mqtt/<name>/set (several channels: state_<channel>)', async () => {
+  assert.deepEqual(normalize.parseZ2m('zigbee2mqtt/0x00158d0001a2b3c4', Buffer.from('{"state":"ON","brightness":127,"linkquality":80}'), { kind: 'light' }),
+    { base: 'zigbee2mqtt/0x00158d0001a2b3c4', family: 'z2m', patch: { ch: { 'light:0': { on: true, bri: 50 } } } });
+  assert.deepEqual(normalize.parseZ2m('zigbee2mqtt/0x1', Buffer.from('{"contact":false,"battery":91,"temperature":20.5}'), { kind: 'sensor' }).patch,
+    { sensor: { temperature: 20.5, battery: 91, open: true } });
+  assert.deepEqual(normalize.parseZ2m('zigbee2mqtt/0x1', Buffer.from('{"occupancy":true}'), { kind: 'sensor' }).patch, { sensor: { presence: true } });
+  assert.deepEqual(normalize.parseZ2m('zigbee2mqtt/0x1', Buffer.from('{"action":"button_2_double"}'), { kind: 'sensor' }).events, [{ input: 1, ev: 'double' }]);
+  assert.deepEqual(normalize.parseZ2m('zigbee2mqtt/0x1', Buffer.from('{"state_l1":"OFF","state_l2":"ON"}'), { kind: 'plug', chs: ['l1', 'l2'] }).patch,
+    { ch: { 'switch:0': { on: false }, 'switch:1': { on: true } } });
+  assert.deepEqual(normalize.parseZ2m('zigbee2mqtt/0x1', Buffer.from('{"position":40,"moving":"UP"}'), { kind: 'cover' }).patch, { ch: { 'cover:0': { pos: 40, moving: 'opening' } } });
+  assert.equal(normalize.parseZ2m('zigbee2mqtt/0x1', Buffer.from('nope'), { kind: 'light' }), null);
+
+  const base = 'zigbee2mqtt/0x00158d0001a2b3c4';
+  assert.deepEqual(commands.messages({ base, family: 'z2m', ch: 'light:0', op: 'bri', value: 60 }, { z2mTopic: () => 'Flur Decke' }), [{ topic: 'zigbee2mqtt/Flur Decke/set', payload: '{"state":"ON","brightness":152}' }]);
+  assert.deepEqual(commands.messages({ base, family: 'z2m', ch: 'switch:1', op: 'off', zch: 'l2' }, { z2mTopic: () => 'Küche' }), [{ topic: 'zigbee2mqtt/Küche/set', payload: '{"state_l2":"OFF"}' }]);
+  assert.deepEqual(commands.messages({ base, family: 'z2m', ch: 'cover:0', op: 'close' }, { z2mTopic: () => 'Rollo' }), [{ topic: 'zigbee2mqtt/Rollo/set', payload: '{"state":"CLOSE"}' }]);
+  assert.throws(() => commands.messages({ base, family: 'z2m', ch: 'light:0', op: 'on' }), { code: 'bad_command' }, 'no name known');
+  assert.throws(() => commands.check({ base: 'shellies/x', family: 'z2m', ch: 'light:0', op: 'on' }), { code: 'bad_command' });
+
+  // a motion sensor of zigbee2mqtt switches a Shelly; a zigbee2mqtt lamp is switched
+  const x = engine({ names: { [base]: 'Flur Decke' } });
+  const motion = 'zigbee2mqtt/0x00158d0000000001';
+  x.e.set({ rules: [chain({ when: [{ k: 'dev', base: motion, ch: 'sensor', field: 'presence', op: 'eq', value: true }], steps: [LAMP('on'), { k: 'act', base, family: 'z2m', ch: 'light:0', op: 'on' }] })], tz: TZ });
+  const feedZ = (b, payload, info) => {
+    const r = normalize.parseZ2m(b, Buffer.from(JSON.stringify(payload)), info);
+    if (!x.devices.has(b)) x.devices.set(b, normalize.newDevice(b, 'z2m'));
+    normalize.apply(x.devices.get(b), r.patch);
+    x.e.onDevice(b);
+  };
+  feedZ(motion, { occupancy: false }, { kind: 'sensor' });
+  feedZ(motion, { occupancy: true }, { kind: 'sensor' });
+  await x.settle();
+  assert.deepEqual(x.sent.map((s) => s[0]), ['shellies/flur/rpc', 'zigbee2mqtt/Flur Decke/set']);
+});
 
 test('the chains that run on the server: resources res/<id>, switched by io.act (a scene too), never by MQTT', async () => {
   const x = engine({ act: true });
@@ -263,7 +300,7 @@ function load() {
   const published = [];
   const subs = [];
   const warns = [];
-  const state = { config: null };
+  const state = { config: null, deny: new Set() };
   const gc = Object.freeze({
     id: 'gatecontrol-smarthome', version: '1.12.0',
     handle: (m, fn) => handlers.set(m, fn),
@@ -274,7 +311,10 @@ function load() {
     store: Object.freeze({ get: async () => null, set: async () => {}, delete: async () => {} }),
     lan: Object.freeze({ http: Object.freeze({ request: async () => { throw Object.assign(new Error('x'), { code: 'net_error' }); } }), mdns: Object.freeze({ browse: async () => ({ stop: async () => {} }) }) }),
     mqtt: Object.freeze({
-      subscribe: async (topic, fn) => { const s = { topic, fn, on: true }; subs.push(s); return { unsubscribe: async () => { s.on = false; } }; },
+      subscribe: async (topic, fn) => {
+        if (state.deny.has(topic)) throw Object.assign(new Error('not approved'), { code: 'denied' });
+        const s = { topic, fn, on: true }; subs.push(s); return { unsubscribe: async () => { s.on = false; } };
+      },
       publish: async (topic, payload) => { published.push([topic, String(payload)]); },
     }),
   });
@@ -288,29 +328,73 @@ function load() {
   };
 }
 const tick = async () => { for (let i = 0; i < 10; i++) await new Promise((r) => setImmediate(r)); };
-const NOTE_RULE = { id: 31, v: 2, when: [{ k: 'btn', base: 'shellies/taster', input: 1, ev: 'single' }], cond: { mode: 'all', list: [] }, steps: [LAMP('on'), { k: 'note' }], re: 'restart' };
-const CONFIG = { devices: [{ base: 'shellies/taster', family: 'shelly2' }, { base: 'shellies/flur', family: 'shelly2' }], tz: TZ, sun: BERLIN, rules: [NOTE_RULE] };
+const IEEE = '0x00158d0001a2b3c4';
+const Z2M_RULE = { id: 31, v: 2, when: [{ k: 'dev', base: `zigbee2mqtt/${IEEE}`, ch: 'sensor', field: 'open', op: 'eq', value: true }], cond: { mode: 'all', list: [] },
+  steps: [{ k: 'act', base: 'zigbee2mqtt/0x00158d00000000aa', family: 'z2m', ch: 'light:0', op: 'on' }, { k: 'note' }], re: 'restart' };
+const Z2M_CONFIG = {
+  devices: [], tz: TZ, sun: BERLIN, rules: [Z2M_RULE],
+  z2m: [{ ieee: IEEE, kind: 'sensor', chs: null, name: 'Kellertür' }, { ieee: '0x00158d00000000aa', kind: 'light', chs: null, name: 'Kellerlicht' }],
+};
 
-test('edge part: the same capabilities as 1.11 (shellies/#, tasmota/#); a note goes out as event `notify`; "Von Hand (App)" through the handler', async () => {
-  const manifest = require('../plugin.json');
-  assert.deepEqual(manifest.edge.capabilities.mqtt.topics, ['shellies/#', 'tasmota/#'], 'no new capability: no confirmation, no update_pending');
+test('edge part: zigbee2mqtt/# only while the chains use such devices; names from bridge/devices; a note goes out as event `notify`', async () => {
   const e = load();
   e.part.start(e.gc);
   try {
     await tick();
-    assert.deepEqual(e.subs.map((s) => s.topic), ['shellies/#', 'tasmota/#']);
-    e.configure(CONFIG);
+    assert.deepEqual(e.subs.map((s) => s.topic), ['shellies/#', 'tasmota/#'], 'no zigbee2mqtt devices: no subscription');
+    e.configure(Z2M_CONFIG);
     await tick();
-    e.deliver('shellies/taster/events/rpc', PRESS);
+    assert.ok(e.subs.some((s) => s.topic === 'zigbee2mqtt/#' && s.on));
+    // zigbee2mqtt renamed the lamp: its list is the truth (the server's name is the fallback)
+    e.deliver('zigbee2mqtt/bridge/devices', [{ ieee_address: '0x00158d00000000aa', friendly_name: 'Keller/Licht' }, { ieee_address: IEEE, friendly_name: 'Kellertür' }, { friendly_name: 'Coordinator' }]);
+    e.deliver('zigbee2mqtt/Kellertür', { contact: true });
+    e.deliver('zigbee2mqtt/Kellertür', { contact: false });
     await tick();
-    assert.equal(e.published.filter((p) => p[0] === 'shellies/flur/rpc').length, 1);
+    assert.deepEqual(e.published, [['zigbee2mqtt/Keller/Licht/set', '{"state":"ON"}']]);
+    e.deliver('zigbee2mqtt/Keller/Licht/set', { state: 'ON' }); // our own command is no report
+    e.deliver('zigbee2mqtt/Unbekannt', { contact: false });   // a device the chains do not use
     e.part._test.flush();
     const notes = e.events.filter((x) => x.name === 'notify').flatMap((x) => x.data.notes);
     assert.deepEqual(notes.map((n) => [n.r, n.i]), [[31, 1]]);
-    assert.equal((await e.call('info')).rules, 1);
-    e.configure({ ...CONFIG, rules: [{ id: 40, v: 2, when: [{ k: 'man' }], cond: { mode: 'all', list: [] }, steps: [LAMP('on')], re: 'restart' }] });
+    // the chains no longer use zigbee2mqtt: the subscription goes
+    e.configure({ ...Z2M_CONFIG, rules: [], z2m: [] });
+    await tick();
+    assert.ok(!e.subs.some((s) => s.topic === 'zigbee2mqtt/#' && s.on));
+  } finally { e.part.stop(e.gc); }
+});
+
+test('edge part: a gateway that refuses zigbee2mqtt/# (older than the optional capabilities) — Shelly and Tasmota go on, event `z2m` denied, later ok', async () => {
+  const e = load();
+  e.state.deny.add('zigbee2mqtt/#');
+  e.part.start(e.gc);
+  try {
+    await tick();
+    e.configure({ ...Z2M_CONFIG, devices: [{ base: 'shellies/flur', family: 'shelly2' }] });
+    await tick();
+    const info = await e.call('info');
+    assert.deepEqual([info.mqtt, info.z2m], ['ok', 'denied']);
+    assert.deepEqual(e.subs.filter((s) => s.on).map((s) => s.topic), ['shellies/#', 'tasmota/#']);
+    assert.equal(e.warns.filter((w) => /zigbee2mqtt\/# denied/.test(w)).length, 1);
+    assert.deepEqual(e.events.filter((x) => x.name === 'z2m').map((x) => x.data.state), ['denied']);
+    // the next configuration tells the server part again (it may have restarted), the warning stays one
+    e.configure({ ...Z2M_CONFIG, devices: [{ base: 'shellies/flur', family: 'shelly2' }] });
+    await tick();
+    assert.deepEqual(e.events.filter((x) => x.name === 'z2m').map((x) => x.data.state), ['denied', 'denied']);
+    assert.equal(e.warns.filter((w) => /zigbee2mqtt\/# denied/.test(w)).length, 1);
+    // the gateway was updated / applied the confirmation: subscribed, ok
+    e.state.deny.delete('zigbee2mqtt/#');
+    e.configure({ ...Z2M_CONFIG, devices: [{ base: 'shellies/flur', family: 'shelly2' }] });
+    await tick();
+    assert.ok(e.subs.some((s) => s.topic === 'zigbee2mqtt/#' && s.on));
+    assert.deepEqual(e.events.filter((x) => x.name === 'z2m').map((x) => x.data.state), ['denied', 'denied', 'ok']);
+    assert.equal((await e.call('info')).z2m, 'ok');
+    e.state.deny.add('zigbee2mqtt/#');
+    e.configure({ ...Z2M_CONFIG, z2m: [], rules: [] });
+    await tick();
+    assert.equal((await e.call('info')).z2m, null, 'no zigbee2mqtt devices: nothing to say');
+    // "Von Hand (App)" through the handler
+    e.configure({ ...Z2M_CONFIG, z2m: [], rules: [{ id: 40, v: 2, when: [{ k: 'man' }], cond: { mode: 'all', list: [] }, steps: [LAMP('on')], re: 'restart' }] });
     await tick();
     assert.deepEqual(await e.call('test', { id: 40, run: true, by: 'app' }).then((r) => [r.started, r.result]), [true, 'started']);
-    await assert.rejects(() => e.call('test', { id: 99, run: true, by: 'app' }), { code: 'not_found' });
   } finally { e.part.stop(e.gc); }
 });

@@ -144,3 +144,33 @@ test('gc.mqtt.accounts: only with edge mqtt topics; topics below them, name rule
     assert.equal(await h.gc.mqtt.accounts.remove(1, 'edge-test-licht-flur'), false);
   } finally { await h.close(); p.done(); noTopics.done(); }
 });
+
+test('gc.edge optional capabilities (GateControl 1.317.0): capabilities, requestCapability once a day, approved topics for accounts', async () => {
+  const edge = { ...EDGE, capabilities: { mqtt: { topics: ['shellies/#'] } }, optionalCapabilities: { mqtt: { topics: ['zigbee2mqtt/#'] } } };
+  const p = plugin({ edge });
+  const KEY = 'mqtt.topic:zigbee2mqtt/#';
+  try {
+    const old = await createHost(p.dir, { gatecontrol: '1.316.0', edge: { gateways: [{ id: 1 }] } });
+    assert.equal(typeof old.gc.edge.requestCapability, 'undefined');
+    assert.equal(typeof old.gc.edge.capabilities, 'undefined');
+    await old.close();
+
+    const optional = {};
+    const h = await createHost(p.dir, { gatecontrol: '1.317.0', edge: { gateways: [{ id: 1, name: 'Keller' }, { id: 2, state: 'disabled' }], optional } });
+    try {
+      assert.deepEqual(await h.gc.edge.capabilities(1), { gatewayId: 1, optional: [KEY], approved: [], requested: [] });
+      assert.deepEqual(await h.gc.edge.requestCapability(1, KEY), { status: 'requested', notified: true });
+      assert.deepEqual(await h.gc.edge.requestCapability(1, KEY), { status: 'requested', notified: false });
+      assert.deepEqual((await h.gc.edge.capabilities(1)).requested, [KEY]);
+      await assert.rejects(h.gc.edge.requestCapability(1, 'mqtt.topic:tasmota/#'), (e) => e.code === 'ERR_INVALID');
+      await assert.rejects(h.gc.edge.capabilities(9), (e) => e.code === 'not_enabled');
+      assert.deepEqual((await h.gc.edge.capabilities(2)).approved, []); // set up but off: still answers
+      await assert.rejects(h.gc.mqtt.accounts.create(1, { topics: ['zigbee2mqtt/lamp/#'] }), (e) => e.code === 'denied');
+      optional[1] = [KEY];
+      assert.deepEqual(await h.gc.edge.capabilities(1), { gatewayId: 1, optional: [KEY], approved: [KEY], requested: [] });
+      assert.deepEqual(await h.gc.edge.requestCapability(1, KEY), { status: 'approved', notified: false });
+      assert.equal((await h.gc.mqtt.accounts.create(1, { topics: ['zigbee2mqtt/lamp/#'] })).acl[0].topic, 'zigbee2mqtt/lamp/#');
+      assert.deepEqual(h.edgeRequests.map((r) => r.notified), [true, false]);
+    } finally { await h.close(); }
+  } finally { p.done(); }
+});
