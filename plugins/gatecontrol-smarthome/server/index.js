@@ -49,6 +49,18 @@
 //     since 1.13.0: the battery of a device as the widget's badge (server/battery.js), sensors on batteries last as
 //     buttons sensor:<id> with a widget that only shows (its value, the badge; a run answers with it)
 //   PUT  /resources/:id { kind }     since 1.13.0: light | plug | relay for one output of a zigbee2mqtt device with several
+//   Heizung (since 1.14.0, server/heating.js — rooms = areas of the thermostats, presets, weekly plans, boost, window,
+//   holiday, "Heizung abwesend"; the plan runs in the background run)
+//     GET  /heating                    house, rooms, plans (administrators: every room)
+//     PUT  /heating/house { presets?, away? } · PUT /heating/vacation { from, to, preheat_h?, preset?, rooms? } · DELETE /heating/vacation
+//     POST /heating/plans · PUT /heating/plans/:id { name, week, presets?, window?, away?, rooms? } · DELETE /heating/plans/:id
+//     PUT  /heating/rooms/:id { presets?, max_setpoint? }
+//     POST /heating/rooms/:id { action: setpoint | preset | boost | boost_stop | resume | mode | skip_today, … }
+//     portal: GET /portal/heating (the viewer's rooms: those with a thermostat assigned to them) ·
+//             POST /portal/heating/rooms/:id { action … } (setpoint within the room's upper limit, preset, boost, resume;
+//             mode and skip_today only for administrators)
+//     quick actions: heat:<room> (a card: actual value, target stepper, presets), heat:<room>:boost, heat:<room>:plan,
+//             heat:away (administrators: the toggle "Heizung abwesend", targets — the rules of Familie switch it)
 //
 // Requests run with the requesting user's rights: req.user.portal = a portal
 // viewer, who only ever sees and controls what an administrator assigned to
@@ -68,6 +80,7 @@ const radio = require('./radio');
 const zigbee = require('./zigbee');
 const edgerules = require('./edgerules');
 const serverchains = require('./serverchains');
+const heating = require('./heating');
 const { validApiKey } = require('./deconz');
 const texts = require('./texts.json');
 
@@ -110,6 +123,11 @@ const ERRORS = {
   SMARTHOME_RADIO_UNAVAILABLE: [409, 'error.radio_unavailable'],
   SMARTHOME_RADIO_UNREACHABLE: [502, 'error.radio_unreachable'],
   SMARTHOME_PREFIX_TOO_LONG: [400, 'error.prefix_too_long'],
+  SMARTHOME_HEAT_INVALID: [400, 'error.heat_invalid'],
+  SMARTHOME_HEAT_ROOM_NOT_FOUND: [404, 'error.heat_room_not_found'],
+  SMARTHOME_HEAT_PLAN_NOT_FOUND: [404, 'error.heat_plan_not_found'],
+  SMARTHOME_HEAT_LIMIT: [403, 'error.heat_limit'],
+  SMARTHOME_HEAT_OFF: [409, 'error.heat_off'],
   FORBIDDEN: [403, 'error.forbidden'],
   NOT_FOUND: [404, 'error.not_found'],
   INVALID: [400, 'error.invalid'],
@@ -121,7 +139,7 @@ function errorResponse(e, lang) {
   const known = e && ERRORS[e.code];
   const [status, key] = known || [502, 'common.error'];
   const json = { ok: false, code: (e && e.code) || null, error: t(lang, key) };
-  if (e && e.code === 'SMARTHOME_RULE_INVALID' && typeof e.detail === 'string') json.detail = e.detail;
+  if (e && (e.code === 'SMARTHOME_RULE_INVALID' || e.code === 'SMARTHOME_HEAT_INVALID') && typeof e.detail === 'string') json.detail = e.detail;
   if (e && e.code === 'SMARTHOME_RULE_LOOP' && Array.isArray(e.chains)) json.chains = e.chains.slice(0, 20);
   return { status, json };
 }
@@ -572,6 +590,8 @@ async function quickActionsFor(gc, user, lang) {
   const scenes = devices.filter((d) => d.kind === 'scene');
   // the chains the viewer may start come first (at most 8), then the devices
   const out = (await startableChains(gc, user)).slice(0, CHAINS_MAX).map((x) => chainAction(x, lang));
+  // since 1.14.0: the heating — a card per room of the viewer (its thermostats stay out of the devices), at most 8
+  out.push(...(await heating.quickActions(gc, user, lang).catch((e) => { gc.log.warn('heating quick actions failed', (e && (e.code || e.message)) || e); return []; })));
   out.push(...toggles.map((d) => quickAction(d, lang, null, ctx)));
   for (const c of covers) if (out.length + 3 <= QA_MAX) out.push(...coverActions(c, lang, ctx));
   for (const d of scenes) {
@@ -598,6 +618,8 @@ async function widgetAfter(gc, r, lang, ctx) {
  * or close it. A resource with a widget answers with it.
  */
 async function runQuickActionFor(gc, user, lang, id, control, value, target) {
+  // the heating (since 1.14.0): its own checks; a target in half degrees (no rounding to whole numbers as below)
+  if (typeof id === 'string' && id.startsWith('heat:')) return heating.runQuickAction(gc, user, lang, id, control, value, target);
   const cm = typeof id === 'string' ? /^chain:([1-9][0-9]{0,9})$/.exec(id) : null;
   if (cm) {
     if (control !== undefined || target !== undefined) return { ok: false, message: t(lang, 'qa.unknown') };
@@ -664,6 +686,16 @@ async function runQuickActionFor(gc, user, lang, id, control, value, target) {
 async function portalRoute(req, gc, seg) {
   const user = req.user;
   if (req.method === 'GET' && seg.length === 1) return { json: { ok: true, ...(await portalData(gc, user.id)) } };
+  if (seg[1] === 'heating') {
+    const viewer = { id: user.id, role: user.role, lang: req.lang };
+    if (req.method === 'GET' && seg.length === 2) return { json: { ok: true, ...(await heating.overview(gc, viewer, req.lang)) } };
+    if (req.method === 'POST' && seg.length === 4 && seg[2] === 'rooms') {
+      const id = posInt(seg[3]);
+      if (!id) throw fail('NOT_FOUND');
+      return { json: { ok: true, room: await heating.act(gc, id, req.body, viewer) } };
+    }
+    throw fail('NOT_FOUND');
+  }
   if (seg[1] === 'chains') {
     if (req.method === 'GET' && seg.length === 2) return { json: { ok: true, chains: (await startableChains(gc, user)).map((x) => chainView(x, req.lang)) } };
     if (req.method === 'POST' && seg.length === 4 && seg[3] === 'run') {
@@ -717,6 +749,32 @@ async function editorDevices(gc, place) {
   const byId = await edgerules.resourcesOf(gc, place);
   const devices = (await require('./edgestore').listDevices(gc, place)).map((d) => ({ id: d.id, name: d.name, family: d.family }));
   return { resources: [...byId.values()].map(({ resource: r }) => view(r, null)), devices };
+}
+
+/** The heating's admin API (administrators: every room, the plans, the house). */
+async function heatingRoute(req, gc, seg, body) {
+  const m = req.method;
+  const [, b, c] = seg;
+  const viewer = { id: req.user.id, role: 'admin', all: true, lang: req.lang };
+  if (seg.length === 1 && m === 'GET') return { json: { ok: true, ...(await heating.overview(gc, viewer, req.lang)) } };
+  if (seg.length === 2 && b === 'house' && m === 'PUT') return { json: { ok: true, house: await heating.setHouse(gc, body) } };
+  if (seg.length === 2 && b === 'vacation' && m === 'PUT') return { json: { ok: true, house: await heating.setVacation(gc, body) } };
+  if (seg.length === 2 && b === 'vacation' && m === 'DELETE') return { json: { ok: true, house: await heating.setVacation(gc, null) } };
+  if (b === 'plans') {
+    if (seg.length === 2 && m === 'POST') return { json: { ok: true, plan: await heating.savePlan(gc, null, body) } };
+    const id = posInt(c);
+    if (!id || seg.length !== 3) throw fail('NOT_FOUND');
+    if (m === 'PUT') return { json: { ok: true, plan: await heating.savePlan(gc, id, body) } };
+    if (m === 'DELETE') return { json: await heating.deletePlan(gc, id) };
+    throw fail('NOT_FOUND');
+  }
+  if (b === 'rooms' && seg.length === 3) {
+    const id = posInt(c);
+    if (!id) throw fail('NOT_FOUND');
+    if (m === 'PUT') return { json: { ok: true, room: await heating.setRoom(gc, id, body) } };
+    if (m === 'POST') return { json: { ok: true, room: await heating.act(gc, id, body, viewer) } };
+  }
+  throw fail('NOT_FOUND');
 }
 
 async function adminRoute(req, gc, seg) {
@@ -841,6 +899,8 @@ async function adminRoute(req, gc, seg) {
   }
 
   if (a === 'edge') return edge.route(req, gc, seg.slice(1), body, usersById);
+
+  if (a === 'heating') return heatingRoute(req, gc, seg, body);
 
   if (a === 'rules') {
     const serverPlace = (q) => q && (q.server === '1' || q.server === true || q.source === 'server');
@@ -1022,6 +1082,8 @@ module.exports = {
     await edge.tick(gc).catch((e) => gc.log.warn('edge tick failed', (e && (e.code || e.message)) || e));
     await radio.sync(gc).catch((e) => gc.log.warn('radio sync failed', (e && (e.code || e.message)) || e));
     await zigbee.sync(gc).catch((e) => gc.log.warn('zigbee sync failed', (e && (e.code || e.message)) || e));
+    // the plan of the heating (since 1.14.0): what each room should have now, sent where it changed
+    await heating.tick(gc).catch((e) => gc.log.warn('heating failed', (e && (e.code || e.message)) || e));
     await serverchains.refresh(gc).catch(() => null);
     const s = await gc.settings.all();
     const interval = Math.max(30, Math.min(3600, Number(s.interval) || 30));

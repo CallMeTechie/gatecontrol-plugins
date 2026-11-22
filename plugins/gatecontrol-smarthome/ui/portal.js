@@ -165,8 +165,27 @@
       default: return { text: '–', tone: null };
     }
   }
+  // since 1.14.0: the heating — a card per room of the viewer, a room page on "Öffnen" (ui/heatui.js)
+  var H = window.SHH;
+  var heat = null;
+  var heatRoom = null;
+  function renderHeat() {
+    var sec = $('#pt-heat');
+    var body = S.clear($('#pt-heat-body'));
+    if (!heat || !heat.rooms.length) { sec.hidden = true; return; }
+    sec.hidden = false;
+    var v = heatRoom != null ? heat.rooms.filter(function (r) { return r.id === heatRoom; })[0] : null;
+    if (v) {
+      H.roomPage({ host: body, view: v, now: heat.now, admin: !!heat.admin, readOnly: !loggedIn, base: 'portal/heating',
+        back: function () { heatRoom = null; load(); } });
+      return;
+    }
+    heatRoom = null;
+    heat.rooms.forEach(function (r) { body.appendChild(H.roomCard(r, heat.now, function (id) { heatRoom = id; renderHeat(); })); });
+  }
   function render(data) {
-    var devices = data.devices || [];
+    // thermostats are part of the heating's rooms (above), not tiles of their own
+    var devices = (data.devices || []).filter(function (d) { return !(heat && d.kind === 'thermostat'); });
     var sensors = data.sensors || [];
     // devices with an area under it (sorted), the rest as before
     var named = {};
@@ -208,12 +227,15 @@
     var empty = $('#pt-sh-empty');
     empty.textContent = T('portal.empty');
     empty.hidden = devices.length + sensors.length > 0;
+    // only thermostats: the heating above is all there is
+    $('#pt-sh-card').hidden = !!(heat && heat.rooms.length) && !devices.length && !sensors.length;
     var hint = $('#pt-sh-hint');
     hint.textContent = T('portal.login_hint');
-    hint.hidden = loggedIn || !devices.length;
+    hint.hidden = loggedIn || !(devices.length || (heat && heat.rooms.length));
   }
   function load() {
-    return S.api('GET', 'portal').then(render, function () {
+    var h = S.api('GET', 'portal/heating').then(function (d) { heat = d && Array.isArray(d.rooms) ? d : null; }, function () { heat = null; });
+    return h.then(function () { renderHeat(); return S.api('GET', 'portal'); }).then(render, function () {
       var empty = $('#pt-sh-empty'); empty.textContent = T('portal.load_error'); empty.hidden = false;
     });
   }
@@ -221,7 +243,7 @@
   setInterval(function () {
     if (document.hidden) return;
     var ae = document.activeElement;
-    if (ae && ae.tagName === 'INPUT') return;
+    if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'SELECT')) return;
     load();
   }, 30000);
 }());

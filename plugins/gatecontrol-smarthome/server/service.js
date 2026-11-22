@@ -90,11 +90,56 @@ function lightKind(light) {
   return /plug/i.test(light.type || '') ? 'plug' : 'light';
 }
 
-// deCONZ /sensors mixes sensors, button remotes (ZHASwitch) and virtuals (null = skip).
+// deCONZ /sensors mixes sensors, button remotes (ZHASwitch), thermostats (ZHAThermostat, since 1.14.0 controllable)
+// and virtuals (null = skip).
 function sensorKind(sensor) {
   const t = sensor.type || '';
   if (t.startsWith('CLIP') || t === 'Daylight') return null;
+  if (/^ZHAThermostat$/i.test(t)) return 'thermostat';
   return /switch/i.test(t) ? 'switch' : 'sensor';
+}
+
+const DECONZ_MODES = ['off', 'heat', 'auto'];
+const numOr = (v, f) => (typeof v === 'number' && Number.isFinite(v) ? v : f);
+
+/**
+ * A deCONZ thermostat (ZHAThermostat, since 1.14.0) as a resource like the zigbee2mqtt ones: capabilities { reading,
+ * setpoint { min, max, step }, modes (when it has config.mode), preset (config.preset — Tuya and others: boost and
+ * manual), schedule (config.schedule_on) }, state { type 'temperature', value (measured), setpoint (config.heatsetpoint),
+ * mode, heating (state.on), valve (%), battery, lowbattery, preset, schedule_on, reachable }.
+ */
+function thermostatOf(sensor) {
+  const s = sensor.state || {};
+  const cfg = sensor.config || {};
+  const caps = { reading: 'temperature', setpoint: { min: 5, max: 30, step: 0.5 } };
+  if (typeof cfg.mode === 'string') caps.modes = DECONZ_MODES.slice();
+  if (typeof cfg.preset === 'string') caps.preset = true;
+  if (typeof cfg.schedule_on === 'boolean') caps.schedule = true;
+  const st = { type: 'temperature', value: typeof s.temperature === 'number' ? s.temperature / 100 : null, reachable: cfg.reachable !== false };
+  if (typeof cfg.heatsetpoint === 'number' && Number.isFinite(cfg.heatsetpoint)) st.setpoint = Math.round(cfg.heatsetpoint / 10) / 10;
+  if (typeof cfg.mode === 'string') st.mode = String(cfg.mode).toLowerCase().slice(0, 16);
+  if (typeof s.on === 'boolean') st.heating = s.on && cfg.mode !== 'off';
+  // deCONZ reports the valve 0–100 on most thermostats, 0–255 on some: above 100 it is the raw byte
+  if (typeof s.valve === 'number' && Number.isFinite(s.valve)) st.valve = Math.max(0, Math.min(100, Math.round(s.valve > 100 ? s.valve / 2.55 : s.valve)));
+  if (typeof cfg.battery === 'number' && Number.isFinite(cfg.battery)) st.battery = Math.max(0, Math.min(100, Math.round(cfg.battery)));
+  if (s.lowbattery === true) st.lowbattery = true;
+  if (typeof cfg.preset === 'string') st.preset = cfg.preset.slice(0, 16);
+  if (typeof cfg.schedule_on === 'boolean') st.schedule_on = cfg.schedule_on;
+  if (typeof s.lastupdated === 'string') st.lastupdated = s.lastupdated.slice(0, 40);
+  return { caps, state: st };
+}
+
+/** A command for a deCONZ thermostat → its config body: heatsetpoint (1/100 °C), mode, preset, schedule_on. */
+function thermostatConfig(resource, raw) {
+  const caps = resource.capabilities || {};
+  const sp = caps.setpoint || { min: 5, max: 30, step: 0.5 };
+  const body = {};
+  const set = numOr(raw.setpoint, null);
+  if (set != null) body.heatsetpoint = Math.round(Math.max(sp.min, Math.min(sp.max, Math.round(set / sp.step) * sp.step)) * 100);
+  if (typeof raw.mode === 'string' && (caps.modes || []).includes(raw.mode)) body.mode = raw.mode;
+  if (caps.preset && ['boost', 'manual'].includes(raw.preset)) body.preset = raw.preset;
+  if (caps.schedule && typeof raw.schedule_on === 'boolean') body.schedule_on = raw.schedule_on;
+  return body;
 }
 
 function entries(obj) {
@@ -156,7 +201,7 @@ async function syncGateway(gc, gatewayId) {
 async function syncGatewayFull(gc, gatewayId) {
   const gw = await store.getGateway(gc, gatewayId);
   const client = await clientForGateway(gc, gw);
-  const counts = { lights: 0, plugs: 0, groups: 0, scenes: 0, sensors: 0, switches: 0 };
+  const counts = { lights: 0, plugs: 0, groups: 0, scenes: 0, sensors: 0, switches: 0, thermostats: 0 };
   const seen = [];
   const observed = [];
   let answered = 0;
@@ -202,6 +247,12 @@ async function syncGatewayFull(gc, gatewayId) {
     for (const [id, s] of entries(await fetchOk(client.getSensors))) {
       const kind = sensorKind(s);
       if (!kind) continue;
+      if (kind === 'thermostat') {
+        const th = thermostatOf(s);
+        items.push({ gateway_id: gw.id, deconz_id: id, deconz_type: 'sensors', uniqueid: s.uniqueid || null, kind, name: s.name, capabilities: th.caps, state: th.state, seen: `sensors:${id}`, count: 'thermostats' });
+        observed.push(sensorObservation(id, s));
+        continue;
+      }
       const rd = sensorReading(s);
       items.push({ gateway_id: gw.id, deconz_id: id, deconz_type: 'sensors', uniqueid: s.uniqueid || null, kind, name: s.name, capabilities: { reading: rd.type }, state: rd, seen: `sensors:${id}`, count: kind === 'switch' ? 'switches' : 'sensors' });
       if (kind === 'sensor') observed.push(sensorObservation(id, s));
@@ -267,7 +318,20 @@ async function setResourceState(gc, resourceId, raw) {
     const [groupId, sceneId] = String(resource.deconz_id).split('/');
     return client.recallScene(groupId, sceneId);
   }
-  if (resource.kind === 'sensor' || resource.kind === 'switch') throw codeError('SMARTHOME_NOT_CONTROLLABLE', `resource ${resourceId} is not controllable`);
+  if (resource.kind === 'thermostat' && resource.deconz_type === 'sensors') {
+    // a deCONZ thermostat (since 1.14.0): its config; the cached state follows (the next sync brings the real one)
+    const body = thermostatConfig(resource, raw && typeof raw === 'object' ? raw : {});
+    if (!Object.keys(body).length) throw codeError('SMARTHOME_INVALID_PATCH', 'nothing to set');
+    const out = await client.setSensorConfig(resource.deconz_id, body);
+    const st = { ...(resource.state || {}) };
+    if ('heatsetpoint' in body) st.setpoint = body.heatsetpoint / 100;
+    if ('mode' in body) st.mode = body.mode;
+    if ('preset' in body) st.preset = body.preset;
+    if ('schedule_on' in body) st.schedule_on = body.schedule_on;
+    await gc.db.run("UPDATE resources SET state_json = ?, updated_at = datetime('now') WHERE id = ?", [JSON.stringify(st), resource.id]);
+    return out;
+  }
+  if (resource.kind === 'sensor' || resource.kind === 'switch' || resource.kind === 'thermostat') throw codeError('SMARTHOME_NOT_CONTROLLABLE', `resource ${resourceId} is not controllable`);
   const patch = validatePatch(resource, raw && typeof raw === 'object' ? raw : {});
   const out = resource.kind === 'group' ? await client.setGroupState(resource.deconz_id, patch) : await client.setLightState(resource.deconz_id, patch);
   const st = { ...(resource.state || {}) };
@@ -363,5 +427,5 @@ async function syncAll(gc) {
 module.exports = {
   xyFromHueSat,
   connectGateway, syncGateway, syncGatewayFull, setResourceState, renameResource, findFocus, testGateway, gatewayTargets, targetLabel, syncAll, clientForGateway,
-  capsFromLight, sensorReading, sensorObservation, lightKind, sensorKind, validatePatch,
+  capsFromLight, sensorReading, sensorObservation, lightKind, sensorKind, validatePatch, thermostatOf, thermostatConfig,
 };

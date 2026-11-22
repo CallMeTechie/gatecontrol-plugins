@@ -17,7 +17,9 @@ const FILES = {
   common: read('common.js'),
   main: { html: read('admin.html'), js: read('admin.js') },
   rules: { html: read('rules.html'), js: read('rules.js') },
-  portal: { html: read('portal.html'), js: read('portal.js'), css: read('portal.css') },
+  // since 1.14.0: the page "Heizung" and the heating in the portal share ui/heatui.js
+  heating: { html: read('heating.html'), js: read('heatui.js') + '\n' + read('heating.js') },
+  portal: { html: read('portal.html'), js: read('heatui.js') + '\n' + read('portal.js'), css: read('portal.css') },
 };
 
 function esc(s) {
@@ -41,8 +43,9 @@ function fill(html, t, lang) {
 function render(view, t) {
   const lang = view && view.lang === 'en' ? 'en' : 'de';
   const portal = view && view.view === 'portal';
-  const page = portal ? FILES.portal : (view && view.page === 'rules' ? FILES.rules : FILES.main);
-  const ctx = { lang, view: portal ? 'portal' : 'page', page: portal ? null : (view.page === 'rules' ? 'rules' : 'main'), loggedIn: portal ? !!view.loggedIn : true, texts: texts[lang] };
+  const pageId = view && (view.page === 'rules' || view.page === 'heating') ? view.page : 'main';
+  const page = portal ? FILES.portal : FILES[pageId];
+  const ctx = { lang, view: portal ? 'portal' : 'page', page: portal ? null : pageId, loggedIn: portal ? !!view.loggedIn : true, texts: texts[lang] };
   return '<style>' + FILES.css + (page.css || '') + '</style>'
     + fill(page.html, t, lang)
     + '<script>window.SH_CTX=' + island(ctx) + ';</script>'

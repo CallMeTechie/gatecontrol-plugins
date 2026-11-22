@@ -1,5 +1,10 @@
 <main class="pt-sh">
   <div class="pt-hint" id="pt-sh-hint" hidden></div>
+  <!-- since 1.14.0: the heating of the viewer's rooms (ui/heatui.js) -->
+  <section class="card pt-card" id="pt-heat" aria-labelledby="pt-c-heat" hidden>
+    <h2 class="pt-h2" id="pt-c-heat">{{t:heat.title}}</h2>
+    <div class="ht-rooms" id="pt-heat-body"></div>
+  </section>
   <section class="card pt-card" id="pt-sh-card" aria-labelledby="pt-c-sh">
     <h2 class="pt-h2" id="pt-c-sh">{{t:portal.title}}</h2>
     <div id="pt-sh-areas"></div>

@@ -87,6 +87,11 @@ function fakeDeconz(opts = {}) {
       if (o.json && typeof o.json.name === 'string') gw.sensors[seg[1]].name = o.json.name;
       return json([{ success: { [`/sensors/${seg[1]}/name`]: o.json && o.json.name } }]);
     }
+    // a thermostat's config (PUT /sensors/<id>/config { heatsetpoint, mode, preset, schedule_on }, since 1.14.0)
+    if (method === 'PUT' && coll === 'sensors' && seg.length === 3 && seg[2] === 'config' && gw.sensors[seg[1]]) {
+      gw.sensors[seg[1]].config = { ...(gw.sensors[seg[1]].config || {}), ...(o.json || {}) };
+      return json(Object.entries(o.json || {}).map(([k, v]) => ({ success: { [`/sensors/${seg[1]}/config/${k}`]: v } })));
+    }
     if (method === 'PUT' && ['rules', 'sensors'].includes(coll)) {
       const store = coll === 'rules' ? gw.rules : gw.clip;
       if (!store[seg[1]]) return json([{ error: { type: 3, description: 'not available' } }], 404);

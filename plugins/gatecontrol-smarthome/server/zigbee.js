@@ -120,6 +120,8 @@ function resourceOf(d, prev, channel) {
     caps.setpoint = setpointCaps(c);
     const modes = Array.isArray(c.modes) ? [...new Set(c.modes.filter((m) => MODES.includes(m)))] : [];
     if (modes.length) caps.modes = modes;
+    // since 1.14.0: a gateway that reports the thermostat's own boost (a later gateway) — the plan of the heating uses it
+    if (c.boost === true) caps.boost = true;
     state = { reachable, type: 'temperature', value: finite(v.temperature) };
     if (finite(v.setpoint) != null) state.setpoint = v.setpoint;
     if (MODES.includes(v.mode)) state.mode = v.mode;
@@ -254,6 +256,7 @@ async function setState(gc, resource, raw) {
     const sp = caps.setpoint || setpointCaps(null);
     if (finite(p.setpoint) != null) set.setpoint = Math.round(Math.max(sp.min, Math.min(sp.max, Math.round(p.setpoint / sp.step) * sp.step)) * 10) / 10;
     if (typeof p.mode === 'string' && (caps.modes || []).includes(p.mode)) set.mode = p.mode;
+    if (typeof p.boost === 'boolean' && caps.boost) set.boost = p.boost;
   } else if (caps.channel) {
     // one output of a device with several: on/off, addressed by its channel
     if ('on' in p) { set.on = Boolean(p.on); set.channel = caps.channel; }

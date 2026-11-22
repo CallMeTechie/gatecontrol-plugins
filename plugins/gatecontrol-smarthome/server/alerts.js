@@ -8,7 +8,9 @@
 //   alarm                water / smoke / CO / alarm sensor triggers (priority high);
 //                        an all-clear replaces it (same collapse key) when it ends
 //   window_open          contact open longer than N minutes (setting, default 15);
-//                        on a gateway with thermostats only while one of them heats
+//                        on a gateway with thermostats only while one of them heats — since 1.14.0, when the
+//                        heating turned the contact's room down (server/heating.js, "Fenster offen"), always and as
+//                        "Fenster offen, Heizung heruntergeregelt"
 //   battery_low          sensor battery below the threshold (setting, default 15 %)
 //                        or "low battery": once per device and day, one message per gateway
 //                        (1.6.1: the sensors of one device — same uniqueid before the first "-" —
@@ -38,6 +40,7 @@ const TEXTS = {
     'window.title': 'Fenster offen',
     'window.body': '{{name}} ist seit {{min}} Minuten offen',
     'window.heating': 'die Heizung läuft',
+    'window.lowered': 'Fenster offen, Heizung heruntergeregelt',
     'battery.title': 'Batterie schwach',
     'battery.empty': 'fast leer',
     'gateway.down': 'Gateway nicht erreichbar',
@@ -57,6 +60,7 @@ const TEXTS = {
     'window.title': 'Window open',
     'window.body': '{{name}} has been open for {{min}} minutes',
     'window.heating': 'the heating is on',
+    'window.lowered': 'Window open, heating turned down',
     'battery.title': 'Battery low',
     'battery.empty': 'almost empty',
     'gateway.down': 'Gateway unreachable',
@@ -109,7 +113,8 @@ function byDevice(list) {
  * Pure transition logic.
  * @param {object|null} prevMemo  last stored state (null = first run)
  * @param {Array<{ gateway: { id, name }, reachable: boolean, sensors: object[] }>} results  of the background sync
- * @param {{ windowMin, batteryLow, gatewayDownMin }} cfg
+ * @param {{ windowMin, batteryLow, gatewayDownMin, lowered? }} cfg  lowered: Set of 'gateway id:sensor id' — contacts whose
+ *   room the heating turned down (the message says so, and it comes whether a thermostat heats or not)
  * @param {number} now  ms
  * @returns {{ memo, events: Array<{ topic, kind, gateway, sensor?, items?, minutes? }> }}
  */
@@ -163,8 +168,9 @@ function evaluate(prevMemo, results, cfg, now) {
         cur.openSince = wasOpen ? prevS.openSince : now;
         cur.open = wasOpen ? prevS.open : (prevS ? 'pending' : 'muted');
         const minutes = (now - cur.openSince) / 60000;
-        if (cur.open === 'pending' && minutes >= cfg.windowMin && (!hasThermostat || heating)) {
-          events.push({ topic: 'window_open', kind: heating ? 'heating' : 'open', gateway: gw, sensor: o, minutes: Math.round(minutes) });
+        const lowered = !!(cfg.lowered && cfg.lowered.has(`${gw.id}:${o.id}`));
+        if (cur.open === 'pending' && minutes >= cfg.windowMin && (!hasThermostat || heating || lowered)) {
+          events.push({ topic: 'window_open', kind: lowered ? 'lowered' : (heating ? 'heating' : 'open'), gateway: gw, sensor: o, minutes: Math.round(minutes) });
           cur.open = 'announced';
         }
       } else if (o.open === false) {
@@ -220,7 +226,7 @@ function toNotification(gc, ev, cfg, owners) {
   if (ev.topic === 'window_open') {
     const body = tx('window.body', { name: ev.sensor.name, min: notify.num(ev.minutes, lang) }) + (ev.kind === 'heating' ? ` – ${tx('window.heating')}` : '');
     return {
-      topic: 'window_open', title: tx('window.title'), body, priority: 'normal', collapseKey: `window:${ev.gateway.id}:${ev.sensor.id}`, ttl: 6 * 3600,
+      topic: 'window_open', title: tx(ev.kind === 'lowered' ? 'window.lowered' : 'window.title'), body, priority: 'normal', collapseKey: `window:${ev.gateway.id}:${ev.sensor.id}`, ttl: 6 * 3600,
       users: owners && owners.length ? owners : null, data: { ...base, facts },
     };
   }
@@ -277,6 +283,7 @@ function check(gc, results, { now = Date.now() } = {}) {
     notifierFor(gc);
     const prev = await notify.loadState(gc, STATE_KEY);
     const cfg = configOf(await gc.settings.all());
+    cfg.lowered = await require('./heating').loweredContacts(gc);
     // gateways that no longer exist leave the stored state
     const known = new Set((await store.listGateways(gc)).map((g) => String(g.id)));
     const prevKnown = prev ? { ...prev, gateways: Object.fromEntries(Object.entries(prev.gateways || {}).filter(([id]) => known.has(id))) } : null;

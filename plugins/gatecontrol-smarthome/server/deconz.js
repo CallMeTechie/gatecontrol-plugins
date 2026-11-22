@@ -110,6 +110,8 @@ function createClient(gc, { index, apiKey = null, timeoutMs = 10000 } = {}) {
     // a name for a light / sensor (deCONZ keeps it; the next sync reads it back)
     renameLight: (id, name) => raw(api(`/lights/${seg(id)}`), { method: 'PUT', body: { name } }).then(assertNoError),
     renameSensor: (id, name) => raw(api(`/sensors/${seg(id)}`), { method: 'PUT', body: { name } }).then(assertNoError),
+    // since 1.14.0: a thermostat (ZHAThermostat) — heatsetpoint (1/100 °C), mode, preset, schedule_on
+    setSensorConfig: (id, config) => raw(api(`/sensors/${seg(id)}/config`), { method: 'PUT', body: config }).then(assertNoError),
     setLightState: (id, patch) => raw(api(`/lights/${seg(id)}/state`), { method: 'PUT', body: toDeconzBody(patch) }).then(assertNoError),
     setGroupState: (id, patch) => raw(api(`/groups/${seg(id)}/action`), { method: 'PUT', body: toDeconzBody(patch) }).then(assertNoError),
     recallScene: (groupId, sceneId) => raw(api(`/groups/${seg(groupId)}/scenes/${seg(sceneId)}/recall`), { method: 'PUT', body: {} }).then(assertNoError),
