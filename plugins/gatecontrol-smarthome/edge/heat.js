@@ -11,6 +11,9 @@
 // hands over such a room only then. Their target goes to zigbee2mqtt/<friendly name>/set with the setpoint the device
 // reports (occupied_heating_setpoint or current_heating_setpoint), Aus as system_mode off where the device has it, its own
 // plan (system_mode auto) is set to heat when the plan sends, boost is 30 °C (as for a BLU TRV).
+// Since 1.19.0 a zigbee2mqtt thermostat whose exposes name a boost of its own (io.z2mBoost(base) → { prop, on, off }:
+// a writable binary boost_heating, else boost, with value_on / value_off — edge/index.js boostOf) boosts with it:
+// { <prop>: value_on } instead of 30 °C, afterwards { <prop>: value_off } with the target. Without it: 30 °C.
 //
 //   heat  { v: 1, tz, plans: { <plan id>: week }, rooms: [room] }   week: 7 × [[start minute, preset], …], Monday first
 //   room  { id, th: [{ base, ch, fam, min, max, boost, (z2m:) name, step, modes }], temps: { comfort, eco, night, frost },
@@ -158,10 +161,11 @@ function decide(r, now, tz) {
 
 /**
  * What one thermostat gets: { setpoint?, boost? (minutes, 0 = end), schedule_off? } — a zigbee2mqtt thermostat
- * { setpoint?, mode? (off | heat), prop (the setpoint it reports) }.
+ * { setpoint?, mode? (off | heat), prop (the setpoint it reports), boost? (true | false: its own boost, `zb`) }.
+ * `zb`: the boost a zigbee2mqtt thermostat exposes ({ prop, on, off }) or null.
  */
-function commandFor(t, want, prevKind, planned, rep, now) {
-  if (t.fam === 'z2m') return z2mCommand(t, want, prevKind, planned, rep || {});
+function commandFor(t, want, prevKind, planned, rep, now, zb) {
+  if (t.fam === 'z2m') return z2mCommand(t, want, prevKind, planned, rep || {}, zb || null);
   const clamp = (v) => Math.max(t.min, Math.min(t.max, v));
   const cmd = {};
   if (want.kind === 'boost') {
@@ -176,12 +180,16 @@ function commandFor(t, want, prevKind, planned, rep, now) {
 }
 
 /** A zigbee2mqtt thermostat (as server/heating.js commandFor does it for one on the server). */
-function z2mCommand(t, want, prevKind, planned, rep) {
+function z2mCommand(t, want, prevKind, planned, rep, zb) {
   const step = t.step || 0.5;
   const clamp = (v) => Math.round(Math.max(t.min, Math.min(t.max, Math.round(v / step) * step)) * 10) / 10;
   const cmd = { prop: rep.sp || null };
+  if (zb) cmd.zb = zb;
+  // its own boost ends with what comes after (since 1.19.0)
+  if (zb && prevKind === 'boost' && want.kind !== 'boost') cmd.boost = false;
   if (want.kind === 'off' && t.modes.includes('off')) { cmd.mode = 'off'; return cmd; }
-  cmd.setpoint = clamp(want.kind === 'boost' ? BOOST_SETPOINT : want.setpoint);
+  if (want.kind === 'boost' && zb) cmd.boost = true;
+  else cmd.setpoint = clamp(want.kind === 'boost' ? BOOST_SETPOINT : want.setpoint);
   // back from Aus (system_mode off): heating again; its own plan (auto) gives way to the plan
   if (prevKind === 'off' && rep.mode === 'off' && t.modes.includes('off')) cmd.mode = t.modes.includes('heat') ? 'heat' : (t.modes.find((m) => m !== 'off') || null);
   else if (planned && rep.mode === 'auto' && t.modes.includes('heat')) cmd.mode = 'heat';
@@ -194,8 +202,11 @@ function messagesOf(t, cmd, name) {
   const out = [];
   if (t.fam === 'z2m') {
     const opts = { z2mTopic: () => name || t.name };
+    const boost = (value) => out.push(...commands.messages({ base: t.base, family: 'z2m', ch: t.ch, op: 'boost', value, prop: cmd.zb.prop, on: cmd.zb.on, off: cmd.zb.off }, opts));
+    if (cmd.boost === false && cmd.zb) boost(false);
     if (cmd.mode) out.push(...commands.messages({ base: t.base, family: 'z2m', ch: t.ch, op: 'mode', value: cmd.mode }, opts));
     if (cmd.setpoint != null) out.push(...commands.messages({ base: t.base, family: 'z2m', ch: t.ch, op: 'setpoint', value: cmd.setpoint, prop: cmd.prop }, opts));
+    if (cmd.boost === true && cmd.zb) boost(true);
     return out;
   }
   const one = (op, value) => out.push(...commands.messages({ base: t.base, family: t.fam, ch: t.ch, op, ...(value === undefined ? {} : { value }) }));
@@ -255,12 +266,16 @@ function create(io) {
       if (ap.done.has(k)) continue;
       const rep = reachable(t);
       if (!rep) { waiting++; continue; }
-      const cmd = commandFor(t, want, ap.prev, planned, rep, t0);
+      const zb = t.fam === 'z2m' && io.z2mBoost ? io.z2mBoost(t.base) : null;
+      const cmd = commandFor(t, want, ap.prev, planned, rep, t0, zb);
       const tr = ap.tries.get(k) || { n: 0, at: 0 };
       // the device has it (reported): done — also before anything was sent (nothing twice after a restart, nothing
-      // twice when the server part hands a room over that it already sent to)
-      const has = (cmd.setpoint != null || cmd.mode != null) && (cmd.setpoint == null || same(rep.target, cmd.setpoint)) && (cmd.mode == null || rep.mode === cmd.mode);
-      if (has && !cmd.schedule_off && cmd.boost == null) { ap.done.add(k); continue; }
+      // twice when the server part hands a room over that it already sent to); a zigbee2mqtt boost of its own counts
+      // once the device reports it (its end also when the device does not report its boost at all: the target decides)
+      const zBoost = t.fam === 'z2m' && typeof cmd.boost === 'boolean';
+      const has = (cmd.setpoint != null || cmd.mode != null || zBoost) && (cmd.setpoint == null || same(rep.target, cmd.setpoint)) && (cmd.mode == null || rep.mode === cmd.mode)
+        && (cmd.boost == null || (zBoost && (rep.boost === cmd.boost || (cmd.boost === false && typeof rep.boost !== 'boolean'))));
+      if (has && !cmd.schedule_off) { ap.done.add(k); continue; }
       // a zigbee2mqtt thermostat that did not report which setpoint it has yet: waits for its first report
       if (t.fam === 'z2m' && cmd.setpoint != null && !cmd.prop) { waiting++; continue; }
       if (tr.n >= TRIES) { ap.done.add(k); debug('heating: thermostat did not confirm its target', t.base, t.ch); continue; }

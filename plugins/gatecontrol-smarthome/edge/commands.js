@@ -23,6 +23,8 @@
 // message to zigbee2mqtt/<friendly name>/set as zigbee2mqtt offers it itself:
 //   setpoint (value 4–31 °C; prop occupied_heating_setpoint | current_heating_setpoint, what the device exposes)
 //   mode     (value off | heat | auto → system_mode)
+// Since 1.19.0 also the device's own boost (only when its exposes name it — edge/index.js boostOf):
+//   boost    (value true | false; prop boost_heating | boost, on / off its value_on / value_off)
 
 const BASE_RE = /^(?:(shellies|tasmota)\/[A-Za-z0-9][A-Za-z0-9_.-]{0,63}|zigbee2mqtt\/0x[0-9a-f]{16})$/;
 const Z2M_RE = /^zigbee2mqtt\/0x[0-9a-f]{16}$/;
@@ -35,6 +37,9 @@ const OPS = {
 };
 const Z2M_SETPOINTS = ['occupied_heating_setpoint', 'current_heating_setpoint'];
 const Z2M_MODES = ['off', 'heat', 'auto'];
+const Z2M_BOOSTS = ['boost_heating', 'boost'];
+/** value_on / value_off of a binary zigbee2mqtt property: a short string or true / false. */
+const z2mBin = (v) => (typeof v === 'string' && v.length >= 1 && v.length <= 16) || typeof v === 'boolean';
 
 function bad(msg) { return Object.assign(new Error(msg), { code: 'bad_command' }); }
 
@@ -46,7 +51,11 @@ function rpc(base, method, params) {
 
 /** zigbee2mqtt: the JSON of the /set message. */
 function z2mPayload(c, type, value) {
-  if (type === 'thermostat') return c.op === 'mode' ? { system_mode: value } : { [c.prop]: value };
+  if (type === 'thermostat') {
+    if (c.op === 'mode') return { system_mode: value };
+    if (c.op === 'boost') return { [c.prop]: value ? c.on : c.off };
+    return { [c.prop]: value };
+  }
   if (type === 'cover') {
     if (c.op === 'pos') return { position: value };
     return { state: { open: 'OPEN', close: 'CLOSE', stop: 'STOP' }[c.op] };
@@ -69,9 +78,13 @@ function check(cmd) {
   if (!OPS[type].includes(c.op)) throw bad('invalid operation');
   let value = null;
   if (type === 'thermostat' && c.family === 'z2m') {
-    if (idx !== 0 || !['setpoint', 'mode'].includes(c.op)) throw bad('invalid operation');
+    if (idx !== 0 || !['setpoint', 'mode', 'boost'].includes(c.op)) throw bad('invalid operation');
     if (c.op === 'mode') {
       if (!Z2M_MODES.includes(c.value)) throw bad('invalid value');
+      value = c.value;
+    } else if (c.op === 'boost') {
+      if (!Z2M_BOOSTS.includes(c.prop) || !z2mBin(c.on) || !z2mBin(c.off) || c.on === c.off) throw bad('invalid operation');
+      if (typeof c.value !== 'boolean') throw bad('invalid value');
       value = c.value;
     } else {
       if (!Z2M_SETPOINTS.includes(c.prop)) throw bad('invalid operation');
@@ -144,4 +157,4 @@ function refresh(dev) {
   return [];
 }
 
-module.exports = { messages, check, refresh, BASE_RE, Z2M_RE, Z2M_SETPOINTS, Z2M_MODES };
+module.exports = { messages, check, refresh, BASE_RE, Z2M_RE, Z2M_SETPOINTS, Z2M_MODES, Z2M_BOOSTS, z2mBin };

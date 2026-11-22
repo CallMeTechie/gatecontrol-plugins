@@ -3,6 +3,37 @@
 Phoscon/deCONZ-Integration als GateControl-Plugin – bisher fest in GateControl eingebaut; seit 1.7.0 auch Shelly und
 Tasmota über ein GateControl-Gateway.
 
+## 1.19.0
+
+- **zigbee2mqtt-Thermostate mit Preset, Boost und Fenster** (GateControl-Gateway 1.47.0, gatecontrol-gateway#75,
+  Kennung `z2m-thermostat-ext`). Alles nur, wenn das Gateway die Kennung meldet und die caps des Geräts das Feld nennen
+  – sonst wie 1.18.0.
+  - **Server-Teil:** `server/zigbee.js` liest die Kennung aus `gc.radio.zigbee().gateways[].capabilities` (oder
+    `.features`) und übernimmt dann für Thermostate `caps.boost` → `capabilities.boost` / `state.boost`, `caps.boostTime`
+    → `capabilities.boost_time { min, max, step, unit }`, `caps.windowOpen` / `caps.windowDetection` →
+    `capabilities.window_open` / `state.window_open`, `caps.presets` → `capabilities.presets`, `values.preset` →
+    `state.preset`; `setState` schickt `boost` und – nur zusammen mit `boost: true` – `boost_time` (auf Grenzen und
+    Schritt). Ohne Kennung kommt auch ein `caps.boost` nicht mehr in die Ressource (bisher vorweggenommen seit 1.14.0).
+  - **Heizung am Server:** Boost über den Boost des Geräts (`{ boost: true }`, mit `boost_time` in der Einheit des
+    Geräts, wenn es `s` oder `min` nennt), danach `{ setpoint, boost: false }`; „Aus“ nach einem Boost schaltet ihn mit
+    aus. `window_open: true` eines Thermostats zählt wie ein Fensterkontakt des Raums (gleiche Regeln: Einstellung des
+    Plans, 1 / 2 / 5 min, Frostschutz, `ttl` 2 h am Gateway). Raumansicht: `thermostats[].device_preset`, `.window_open`,
+    `window.devices`, `boost.device`; Status „Boost (Gerät)“ (de/en), wenn jedes erreichbare Thermostat selbst boostet.
+    „Wird übertragen“ für zigbee2mqtt-Thermostate am Gateway während eines Boosts: erledigt, sobald das Gerät seinen
+    Boost oder 30 °C meldet; ohne Kennung weiß der Server nicht, welchen Weg das Gateway nimmt, und zählt es nicht.
+  - **Plan am Gateway:** `edge/index.js` liest aus den Exposes (`zigbee2mqtt/bridge/devices`) einen setzbaren binären
+    Boost (`boost_heating` vor `boost`) mit `value_on` und `value_off`; dann schickt `edge/heat.js` `{ <prop>: value_on }`
+    statt 30 °C und am Ende `{ <prop>: value_off }` mit dem Soll (erledigt, sobald das Gerät es meldet; ein schon
+    laufender Boost wird nicht noch einmal geschickt). Fehlt etwas davon: 30 °C wie bisher. `commands` kennt für
+    zigbee2mqtt-Thermostate `boost` (mit `prop`, `on`, `off`), `normalize` liest den gemeldeten Boost.
+  - **Seiten:** nur vorhandene Elemente – Status-Text / Hinweis „Boost (Gerät)“, beim Thermostat „Preset am Gerät“,
+    „Fenster offen (Gerät)“ und die Fensterregel; die Fenster-Anzeige der App-Karte auch für Geräte-Fenster.
+- Die Warnung bei „zigbee2mqtt abgelehnt“ (Log und Hinweis `chain.z2m_unavailable` de/en) nennt auch die Heizung.
+- `edge.capabilities`, `edge.optionalCapabilities` und `gatecontrol` unverändert – kein `update_pending`.
+  Hinweis: GateControl reicht die neuen Felder und die Kennung heute noch nicht an Plugins durch (`homeRadio.js`
+  `cleanZigbeeCaps` / `cleanZigbeeValues` / `cleanCommand`, `pluginZigbee().gateways`); bis dahin gilt am Server
+  1.18.0, der Boost am Gateway (Exposes) wirkt schon.
+
 ## 1.18.0
 
 - **zigbee2mqtt-Thermostate im Plan am Gateway** (Fortsetzung von 1.17.0, gleiche Entscheidungen: Zuständigkeit Gateway vs.

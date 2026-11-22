@@ -187,7 +187,7 @@
     var ov = null;
     if (s.kind === 'override') ov = [s.preset ? T('heat.ui.ov_preset', { p: pname(s.preset), sp: deg(s.setpoint) }) : T('heat.ui.ov_manual', { sp: deg(s.setpoint) }), v.next ? T('heat.ui.ov_until', { at: when(v.next.at, now), what: then(v.next) }) : ''];
     else if (s.kind === 'manual') ov = [T('heat.ui.ov_permanent', { sp: deg(s.setpoint) }), ''];
-    else if (s.kind === 'boost') ov = [T('heat.ui.ov_boost', { min: Math.max(1, Math.ceil((s.until - now) / 60000)) }), T('heat.ui.ov_after', { what: then(v.after) })];
+    else if (s.kind === 'boost') ov = [T(v.boost && v.boost.device ? 'heat.ui.ov_boost_device' : 'heat.ui.ov_boost', { min: Math.max(1, Math.ceil((s.until - now) / 60000)) }), T('heat.ui.ov_after', { what: then(v.after) })];
     else if (s.kind === 'window') ov = [T('heat.ui.ov_window'), T('heat.ui.ov_after', { what: then(v.after) })];
     else if (s.kind === 'vacation') ov = [T('heat.ui.ov_vacation', { p: pname(s.preset), sp: deg(s.setpoint) }), v.next ? T('heat.ui.ov_vacation_end', { at: when(v.next.at, now) }) : ''];
     else if (s.kind === 'off') ov = [T('heat.ui.ov_off'), ''];
@@ -251,12 +251,16 @@
         vals.appendChild(el('span', { text: deg(x.value) }));
         if (x.setpoint != null) vals.appendChild(el('span', { text: T('heat.target') + ' ' + deg(x.setpoint) }));
         if (x.valve != null) vals.appendChild(el('span', { text: T('heat.valve') + ' ' + x.valve + ' %' }));
+        // since 1.19.0: the window a thermostat reports itself (zigbee2mqtt)
+        if (x.window_open === true) vals.appendChild(el('span', { class: 'sh-pill is-warn', text: T('heat.ui.window_device_open') }));
       }
       var chip = S.batteryChip({ battery: x.battery, lowbattery: x.lowbattery }, x.battery_level);
       if (chip) vals.appendChild(chip);
       var sub = [x.source === 'deconz' ? 'deCONZ' : (x.source === 'shelly' ? 'Shelly' : 'zigbee2mqtt')];
       if (x.gateway) sub.push(x.gateway);
       if (x.own_schedule) sub.push(T('heat.ui.own_schedule'));
+      if (x.device_preset) sub.push(T('heat.ui.device_preset', { p: x.device_preset }));
+      if (x.window_open != null) sub.push(v.window.on ? T('heat.ui.contact_rule', { min: v.window.minutes }) : T('heat.ui.contact_off'));
       list.appendChild(el('div', { class: 'ht-devrow' }, [el('div', { class: 'grow' }, [el('b', { text: x.name }), el('small', { text: sub.join(' · ') })]), vals]));
     });
     v.window.contacts.forEach(function (c) {

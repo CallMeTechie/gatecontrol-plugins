@@ -365,7 +365,7 @@ const Z2M_SETPOINTS = ['occupied_heating_setpoint', 'current_heating_setpoint'];
 const Z2M_MODES = ['off', 'heat', 'auto', 'cool', 'fan_only', 'dry'];
 
 /** A thermostat of zigbee2mqtt → thermostat:0 (null: none of its fields in this message). */
-function z2mThermostat(o, sp) {
+function z2mThermostat(o, sp, boost) {
   const c = { kind: 'z2m' };
   const prop = Z2M_SETPOINTS.includes(sp) ? sp : Z2M_SETPOINTS.find((k) => num(o[k]) != null);
   if (prop && num(o[prop]) != null) { c.target = round(o[prop], 1); c.sp = prop; } else if (prop) c.sp = prop;
@@ -374,6 +374,11 @@ function z2mThermostat(o, sp) {
   if (typeof o.system_mode === 'string' && Z2M_MODES.includes(o.system_mode)) c.mode = o.system_mode;
   const v = pct(o.pi_heating_demand);
   if (v != null) c.valve = v;
+  // since 1.19.0: its own boost (what edge/index.js read from its exposes: { prop, on, off })
+  if (boost && typeof boost === 'object' && boost.prop in o) {
+    if (o[boost.prop] === boost.on) c.boost = true;
+    else if (o[boost.prop] === boost.off) c.boost = false;
+  }
   return Object.keys(c).length > 1 ? c : null;
 }
 
@@ -414,7 +419,7 @@ function parseZ2m(base, payload, info) {
     else if (run === 'STOP' || run === 'STOPPED' || o.moving === false) c.moving = null;
     if (Object.keys(c).length) patch.ch['cover:0'] = c;
   } else if (kind === 'thermostat') {
-    const c = z2mThermostat(o, info && info.sp);
+    const c = z2mThermostat(o, info && info.sp, info && info.boost);
     if (c) patch.ch['thermostat:0'] = c;
   }
   const t = round(o.temperature, 1);

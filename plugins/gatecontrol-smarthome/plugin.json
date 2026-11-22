@@ -4,7 +4,7 @@
     "de": "Smart Home",
     "en": "Smart Home"
   },
-  "version": "1.18.0",
+  "version": "1.19.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Phoscon/deCONZ-Gateways, Shelly- und Tasmota-Geräte, Zigbee-Geräte von zigbee2mqtt und Bluetooth-Sensoren über ein GateControl-Gateway einbinden: Lichter, Steckdosen, Schalter, Rollläden, Gruppen, Szenen und Sensoren steuern, Haushaltsmitgliedern zuweisen (Portal „Zuhause“), Heizkörper-Thermostate (Plan am Gateway für Shelly TRV, BLU TRV und bestätigtes zigbee2mqtt) mit Presets und Wochenplänen je Raum steuern und Logikketten anlegen – für deCONZ auf dem deCONZ-Gateway, für Shelly, Tasmota und – nach Bestätigung – zigbee2mqtt auf dem GateControl-Gateway, über mehrere Gateways auf dem Server.",
