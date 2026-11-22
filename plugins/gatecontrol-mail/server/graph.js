@@ -13,7 +13,7 @@
 const store = require('./store');
 const mailstore = require('./mailstore');
 const ms = require('./microsoft');
-const { fail, line } = require('./util');
+const { fail, line, storeType, OCTET } = require('./util');
 
 const WELL_KNOWN = { inbox: 'inbox', sentitems: 'sent', drafts: 'drafts', archive: 'archive', junkemail: 'junk', deleteditems: 'trash' };
 const SELECT = 'id,internetMessageId,conversationId,subject,bodyPreview,from,toRecipients,ccRecipients,bccRecipients,replyTo,receivedDateTime,isRead,flag,hasAttachments,inferenceClassification';
@@ -265,9 +265,27 @@ async function message(gc, a, m) {
   return { html, text, attachments, headers };
 }
 
-/** An attachment into the plugin's media (gc.media.fetch with the token) → { mediaId, bytes, mime, name }. */
+/**
+ * An attachment into the plugin's media (gc.media.fetch with the token) → { mediaId, bytes, mime, name }. 1.17.3: with
+ * a type GateControl takes for Mail (util.storeType — its own, the one of its ending or application/octet-stream);
+ * refused all the same (ERR_MEDIA_TYPE: a GateControl with another list) once more as application/octet-stream, then
+ * 415 unsupported_type. Before, Graph's contentType went as it was (message/rfc822, text/html, application/json …):
+ * ERR_MEDIA_TYPE, a 500 for the attachment and for „In Drive speichern“.
+ */
 async function download(gc, a, m, att, maxBytes) {
-  return mediaFetch(gc, a, `/me/messages/${encodeURIComponent(m.remote_id)}/attachments/${encodeURIComponent(att.remote_id)}/$value`, { name: att.name, mime: att.mime, maxBytes, timeoutMs: 60000 });
+  const p = `/me/messages/${encodeURIComponent(m.remote_id)}/attachments/${encodeURIComponent(att.remote_id)}/$value`;
+  const mime = storeType(att.name, att.mime);
+  try {
+    return await mediaFetch(gc, a, p, { name: att.name, mime, maxBytes, timeoutMs: 60000 });
+  } catch (e) {
+    if (!(e && e.code === 'ERR_MEDIA_TYPE')) throw e;
+    if (mime === OCTET) throw fail('unsupported_type');
+  }
+  try {
+    return await mediaFetch(gc, a, p, { name: att.name, mime: OCTET, maxBytes, timeoutMs: 60000 });
+  } catch (e) {
+    throw e && e.code === 'ERR_MEDIA_TYPE' ? fail('unsupported_type') : e;
+  }
 }
 
 /** A Graph file (`path` below v1.0) into the plugin's media with the account's token → gc.media.fetch's answer. */

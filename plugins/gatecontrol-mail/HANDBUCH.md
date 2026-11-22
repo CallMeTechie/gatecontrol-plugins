@@ -1,4 +1,4 @@
-<!-- version: 1.17.2 -->
+<!-- version: 1.17.3 -->
 # Mail
 
 ## Was das Plugin kann
@@ -109,6 +109,11 @@ Liegen die Anhänge auf einem Speicherziel, das nicht erreichbar ist, versucht M
 
 **Frei/Gebucht zeigt „unbekannt“.**
 Die Person hat Frei/Gebucht abgeschaltet oder ist nicht in GateControl. Kolleginnen in Microsoft 365 erscheinen über dein Microsoft-Konto.
+
+## Neu in 1.17.3
+
+- **„In Drive speichern“ bei ungewöhnlichen Anhängen:** Anhänge mit einem ungewöhnlichen oder fehlenden Dateityp – zum Beispiel weitergeleitete Mails (.eml), HTML-Seiten oder Dateien ohne Typangabe – lassen sich in Microsoft-Konten jetzt öffnen und in Drive speichern; Mail bestimmt den Typ dann aus der Dateiendung oder legt die Datei als Download ab. Vorher endete das mit „Etwas ist schiefgegangen“.
+- **Klare Meldung statt Fehler:** Nimmt GateControl oder Drive eine Datei dieser Art trotzdem nicht an, sagt Mail das jetzt so („Diese Art von Datei kann GateControl nicht annehmen“) statt „Etwas ist schiefgegangen“ oder „Drive ist nicht erreichbar“.
 
 ## Neu in 1.17.2
 
