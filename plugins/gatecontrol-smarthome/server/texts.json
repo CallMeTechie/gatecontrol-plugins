@@ -928,10 +928,10 @@
   "heat.ui.week_hint": "Einen Abschnitt antippen, um ihn zu bearbeiten. Schaltpunkte rasten auf 15 Minuten.",
   "chain.z2m_approve": "Für zigbee2mqtt bitte unter Gateways › {{gw}} › Edge-Plugins bestätigen. Bis dahin läuft diese Kette nicht – die anderen schon.",
   "chain.z2m_open": "Zum Gateway",
-  "chain.z2m_unavailable": "zigbee2mqtt ist auf dem Gateway „{{gw}}“ noch nicht verfügbar – bitte das GateControl-Gateway aktualisieren. Shelly und Tasmota laufen weiter.",
+  "chain.z2m_unavailable": "zigbee2mqtt ist auf dem Gateway „{{gw}}“ noch nicht verfügbar – bitte das GateControl-Gateway aktualisieren (zigbee2mqtt in Ketten ab Gateway 1.46.0). Shelly und Tasmota laufen weiter.",
   "chain.z2m_saved": "Gespeichert. Für zigbee2mqtt bitte unter Gateways › {{gw}} › Edge-Plugins bestätigen – bis dahin läuft die Kette nicht.",
   "chain.z2m_pill": "wartet auf Bestätigung",
-  "chain.z2m_pill_old": "Gateway zu alt"
+  "chain.z2m_pill_old": "ab Gateway 1.46.0"
  },
  "en": {
   "error.gateway_not_found": "Smart Home gateway not found",
@@ -1862,9 +1862,9 @@
   "heat.ui.week_hint": "Tap a section to edit it. Switching points snap to 15 minutes.",
   "chain.z2m_approve": "For zigbee2mqtt please confirm it under Gateways › {{gw}} › Edge plugins. Until then this chain does not run – the others do.",
   "chain.z2m_open": "Open the gateway",
-  "chain.z2m_unavailable": "zigbee2mqtt is not available on the gateway “{{gw}}” yet – please update the GateControl gateway. Shelly and Tasmota go on.",
+  "chain.z2m_unavailable": "zigbee2mqtt is not available on the gateway “{{gw}}” yet – please update the GateControl gateway (zigbee2mqtt in chains from gateway 1.46.0). Shelly and Tasmota go on.",
   "chain.z2m_saved": "Saved. For zigbee2mqtt please confirm it under Gateways › {{gw}} › Edge plugins – until then the chain does not run.",
   "chain.z2m_pill": "waiting for confirmation",
-  "chain.z2m_pill_old": "gateway too old"
+  "chain.z2m_pill_old": "from gateway 1.46.0"
  }
 }

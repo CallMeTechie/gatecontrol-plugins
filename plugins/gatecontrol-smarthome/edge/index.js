@@ -202,7 +202,7 @@ async function subscribeZ2m(force = false) {
     st.z2mSub = null;
     const code = (e && e.code) || 'error';
     if (code === 'denied') {
-      warnOnce('z2m:denied', 'zigbee2mqtt for the logic chains is not available on this gateway yet (zigbee2mqtt/# denied) — the gateway needs an update that grants optional capabilities; Shelly and Tasmota go on, tried again every minute');
+      warnOnce('z2m:denied', 'zigbee2mqtt for the logic chains is not available on this gateway yet (zigbee2mqtt/# denied) — the gateway needs an update (from gateway 1.46.0, optional capabilities); Shelly and Tasmota go on, tried again every minute');
       setZ2mState('denied', force);
     } else {
       warnOnce('z2m:error', `zigbee2mqtt for the logic chains not available (${code}) — tried again every minute`);

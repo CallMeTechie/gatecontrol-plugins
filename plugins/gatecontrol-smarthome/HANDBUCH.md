@@ -20,7 +20,7 @@
 - Für Shelly und Tasmota: ein GateControl-Gateway **1.19.0** oder neuer im selben Heimnetz, mit den Diensten `edge` und `mqtt` in seiner Compose-Datei.
 - Für Bluetooth-Sensoren: ein GateControl mit Funk (Reiter „Funk“ beim Gateway) und ein Gateway mit Bluetooth.
 - Für zigbee2mqtt: ein GateControl, das zigbee2mqtt kennt, und ein Gateway nach 1.30.0 mit „zigbee2mqtt“ im Reiter „Funk“ (dafür sind Edge und MQTT des Gateways an). Für mehrere Kanäle, Thermostate und Firmware-Updates: GateControl nach 1.258.4 und ein Gateway nach 1.34.2.
-- Für zigbee2mqtt in Logikketten am Gateway (ab 1.15.0): ein Gateway nach 1.45.2 und die Bestätigung unter **Gateways › Gateway › Edge-Plugins** ([zigbee2mqtt am Gateway](#logikketten-z2m)).
+- Für zigbee2mqtt in Logikketten am Gateway (ab 1.15.0): ab Gateway 1.46.0 und die Bestätigung unter **Gateways › Gateway › Edge-Plugins** ([zigbee2mqtt am Gateway](#logikketten-z2m)).
 
 ## Einrichten
 
@@ -110,7 +110,7 @@ Auch Geräte von zigbee2mqtt am selben Gateway – Lichter, Steckdosen, Schalter
 - **Bestätigung:** Dafür braucht der Edge-Teil zusätzlich das MQTT-Thema `zigbee2mqtt/#`. Das ist eine **optionale Fähigkeit**: Smart Home läuft auf allen Gateways ohne neue Bestätigung weiter, nur zigbee2mqtt in Ketten muss ein Admin je Gateway freigeben – unter **Gateways › Gateway › Edge-Plugins › Zusätzliche Rechte (optional)**.
 - **Beim Speichern** einer Kette mit einem zigbee2mqtt-Gerät fragt Smart Home diese Freigabe an (Hinweis im Aktivitätsprotokoll, höchstens einmal am Tag). Die Kette wird gespeichert; der Editor und die Liste zeigen **„wartet auf Bestätigung“** mit dem Hinweis „Für zigbee2mqtt bitte unter Gateways › Gateway › Edge-Plugins bestätigen“ und dem Knopf **„Zum Gateway“**. Bis dahin laufen nur diese Ketten nicht – alle anderen Ketten des Gateways laufen weiter.
 - **Nach der Bestätigung** bekommt das Gateway die Ketten innerhalb von etwa einer halben Minute; der Hinweis verschwindet. Nimmt ein Admin die Freigabe zurück, warten die Ketten wieder.
-- **Ältere Gateways** (bis 1.45.2) kennen optionale Fähigkeiten noch nicht und lehnen `zigbee2mqtt/#` ab. Die Kette steht dann mit **„Gateway zu alt“** in der Liste; Shelly und Tasmota laufen weiter. Nach einem Update des Gateways geht es von selbst.
+- **Ältere Gateways** (vor Gateway 1.46.0) kennen optionale Fähigkeiten noch nicht und lehnen `zigbee2mqtt/#` ab. Die Kette steht dann mit der Pille **„ab Gateway 1.46.0“** in der Liste; Shelly und Tasmota laufen weiter. Nach einem Update ab Gateway 1.46.0 geht es von selbst.
 - Die Geräte heißen in zigbee2mqtt so, wie zigbee2mqtt sie nennt (`zigbee2mqtt/bridge/devices`); ein Umbenennen in zigbee2mqtt stört die Ketten nicht.
 - Mit einem GateControl vor 1.317.0 stehen zigbee2mqtt-Geräte nur in [Ketten am Server](#logikketten-server) zur Verfügung.
 
@@ -234,8 +234,8 @@ Das Gerät schläft (Batteriegerät: einmal betätigen) oder zigbee2mqtt erreich
 **Das automatische Einrichten scheitert.**
 Richte das Gerät „Von Hand …“ ein. Die Anleitung steht im Fenster.
 
-**Eine Kette mit zigbee2mqtt am Gateway läuft nicht („wartet auf Bestätigung“ / „Gateway zu alt“).**
-„Wartet auf Bestätigung“: Ein Admin gibt unter **Gateways › Gateway › Edge-Plugins** die zusätzliche Fähigkeit `zigbee2mqtt/#` frei. „Gateway zu alt“: das Gateway auf eine Version nach 1.45.2 aktualisieren ([zigbee2mqtt am Gateway](#logikketten-z2m)).
+**Eine Kette mit zigbee2mqtt am Gateway läuft nicht („wartet auf Bestätigung“ / „ab Gateway 1.46.0“).**
+„Wartet auf Bestätigung“: Ein Admin gibt unter **Gateways › Gateway › Edge-Plugins** die zusätzliche Fähigkeit `zigbee2mqtt/#` frei. „ab Gateway 1.46.0“: das Gateway aktualisieren – zigbee2mqtt in Ketten am Gateway gibt es ab Gateway 1.46.0 ([zigbee2mqtt am Gateway](#logikketten-z2m)).
 
 **Ein Gerät von zigbee2mqtt lässt sich nicht schalten („zigbee2mqtt auf dem Gateway antwortet gerade nicht“).**
 Im Reiter „Funk“ des Gateways nachsehen: Läuft zigbee2mqtt, sind Edge und MQTT an? Neue Geräte erscheinen spätestens nach einer halben Minute.

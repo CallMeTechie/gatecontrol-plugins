@@ -20,7 +20,7 @@
 - For Shelly and Tasmota: a GateControl gateway **1.19.0** or later in the same home network, with the services `edge` and `mqtt` in its compose file.
 - For Bluetooth sensors: a GateControl with radio (tab “Radio” of the gateway) and a gateway with Bluetooth.
 - For zigbee2mqtt: a GateControl that knows zigbee2mqtt and a gateway newer than 1.30.0 with “zigbee2mqtt” in the tab “Radio” (edge and MQTT of the gateway are on for it). For several channels, thermostats and firmware updates: GateControl newer than 1.258.4 and a gateway newer than 1.34.2.
-- For zigbee2mqtt in logic chains on the gateway (since 1.15.0): a gateway newer than 1.45.2 and the confirmation under **Gateways › gateway › Edge plugins** ([zigbee2mqtt on the gateway](#logikketten-z2m)).
+- For zigbee2mqtt in logic chains on the gateway (since 1.15.0): from gateway 1.46.0, and the confirmation under **Gateways › gateway › Edge plugins** ([zigbee2mqtt on the gateway](#logikketten-z2m)).
 
 ## Setting up
 
@@ -110,7 +110,7 @@ zigbee2mqtt devices behind the same gateway – lights, plugs, switches with sev
 - **Confirmation:** for this the edge part needs the MQTT topic `zigbee2mqtt/#` as well. It is an **optional capability**: Smart Home keeps running on every gateway without a new confirmation, only zigbee2mqtt in chains has to be released by an administrator per gateway – under **Gateways › gateway › Edge plugins › Additional permissions (optional)**.
 - **When you save** a chain with a zigbee2mqtt device, Smart Home asks for that release (a note in the activity log, at most once a day). The chain is saved; the editor and the list show **“waiting for confirmation”** with the hint “For zigbee2mqtt please confirm it under Gateways › gateway › Edge plugins” and the button **“Open the gateway”**. Until then only these chains do not run – every other chain of the gateway goes on.
 - **Once confirmed**, the gateway gets the chains within about half a minute and the hint goes away. If an administrator takes the release back, the chains wait again.
-- **Older gateways** (up to 1.45.2) do not know optional capabilities yet and refuse `zigbee2mqtt/#`. The chain then shows **“gateway too old”** in the list; Shelly and Tasmota go on. After an update of the gateway it works by itself.
+- **Older gateways** (before gateway 1.46.0) do not know optional capabilities yet and refuse `zigbee2mqtt/#`. The chain then shows the pill **“from gateway 1.46.0”** in the list; Shelly and Tasmota go on. After an update to gateway 1.46.0 or later it works by itself.
 - The devices are found by the names zigbee2mqtt gives them (`zigbee2mqtt/bridge/devices`); renaming a device in zigbee2mqtt does not break the chains.
 - With a GateControl before 1.317.0, zigbee2mqtt devices are only available in [chains on the server](#logikketten-server).
 
@@ -234,8 +234,8 @@ The device is asleep (battery device: operate it once) or zigbee2mqtt cannot rea
 **Automatic set-up fails.**
 Set the device up “By hand …”. The instructions are in the window.
 
-**A chain with zigbee2mqtt on the gateway does not run (“waiting for confirmation” / “gateway too old”).**
-“Waiting for confirmation”: an administrator releases the additional capability `zigbee2mqtt/#` under **Gateways › gateway › Edge plugins**. “Gateway too old”: update the gateway to a version newer than 1.45.2 ([zigbee2mqtt on the gateway](#logikketten-z2m)).
+**A chain with zigbee2mqtt on the gateway does not run (“waiting for confirmation” / “from gateway 1.46.0”).**
+“Waiting for confirmation”: an administrator releases the additional capability `zigbee2mqtt/#` under **Gateways › gateway › Edge plugins**. “From gateway 1.46.0”: update the gateway – zigbee2mqtt in chains on the gateway works from gateway 1.46.0 ([zigbee2mqtt on the gateway](#logikketten-z2m)).
 
 **A zigbee2mqtt device cannot be switched (“zigbee2mqtt on the gateway is not answering right now”).**
 Look at the gateway's tab “Radio”: does zigbee2mqtt run, are edge and MQTT on? New devices show up within half a minute.

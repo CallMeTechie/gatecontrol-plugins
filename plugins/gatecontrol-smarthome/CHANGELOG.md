@@ -12,8 +12,8 @@ Tasmota über ein GateControl-Gateway.
   - **Edge-Teil:** abonniert `zigbee2mqtt/#` nur, wenn der Server-Teil eine Liste von zigbee2mqtt-Geräten schickt
     (nur für bestätigte Gateways, deren Ketten solche Geräte nutzen); Namen aus `zigbee2mqtt/bridge/devices`,
     Zustände über `normalize.parseZ2m`, Befehle an `zigbee2mqtt/<Name>/set` (Vorlage: die in 1.12.0 entfernte
-    Umsetzung, angepasst – auch Kanäle der Art „Schalter“). Antwortet das Gateway mit `denied` (älteres Gateway
-    ohne optionale Fähigkeiten, oder die Bestätigung ist noch nicht angekommen), laufen Shelly und Tasmota weiter, der
+    Umsetzung, angepasst – auch Kanäle der Art „Schalter“). Antwortet das Gateway mit `denied` (Gateway vor 1.46.0
+    ohne optionale Fähigkeiten – sie gibt es ab Gateway 1.46.0 –, oder die Bestätigung ist noch nicht angekommen), laufen Shelly und Tasmota weiter, der
     Edge-Teil versucht es jede Minute neu und meldet Ereignis `z2m` { state } (`info` zeigt `z2m`).
   - **Server-Teil:** zigbee2mqtt-Geräte eines Gateways sind Ressourcen seiner Ketten, wenn der Host
     `gc.edge.capabilities` / `requestCapability` kennt (sonst wie bisher `foreign_resource`; Version-1-Ketten nehmen
@@ -23,7 +23,7 @@ Tasmota über ein GateControl-Gateway.
     Der Hintergrund prüft je Gateway mit solchen Ketten, ob bestätigt (oder zurückgenommen) wurde, und schickt die
     Liste neu. Protokoll des Plugins: „chains … wait for zigbee2mqtt/#“ bzw. „not available on gateway … yet“.
   - **Seite:** Hinweis im Editor „Für zigbee2mqtt bitte unter Gateways › <Gateway> › Edge-Plugins bestätigen“ mit
-    Knopf „Zum Gateway“, Pille „wartet auf Bestätigung“ / „Gateway zu alt“ und Hinweis an der Kette, Meldung nach
+    Knopf „Zum Gateway“, Pille „wartet auf Bestätigung“ / „ab Gateway 1.46.0“ und Hinweis an der Kette, Meldung nach
     dem Speichern.
 - Heizung (1.14.0) unverändert am Server.
 - Mock-Host: `gc.edge.capabilities` / `requestCapability` (GateControl 1.317.0, `opts.edge.optional`,
