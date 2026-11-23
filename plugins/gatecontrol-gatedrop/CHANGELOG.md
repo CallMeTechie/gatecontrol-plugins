@@ -2,6 +2,18 @@
 
 Teilen wie Quick Share – über den eigenen GateControl-Server.
 
+## 1.7.0
+
+- **GateControl TV als Empfänger:** Die TV-App ist ein GateDrop-Gerät. `GET targets` listet sie unter `devices` bzw.
+  (für alle freigegeben) `peopleDevices` mit `platform: 'android-tv'` – die Apps zeigen sie mit TV-Symbol. GateControl
+  führt den TV in `gc.devices.list` als Android-Gerät; GateDrop erkennt ihn an `platform` oder `clientType`
+  `android-tv` (`people.platformOf`) und meldet ihn überall so (Ziele, Admin-Übersicht „Android TV“).
+  Ohne diese Angabe von GateControl erscheint der TV wie bisher als Android-Gerät und empfängt trotzdem.
+- **Nur über den Server:** Der TV meldet keine Präsenz, `direct` ist für ihn immer `false`; Sendungen an ihn gehen per
+  Push über den Server (`GET pending`, `items/<id>`, `POST sends/<id>/opened` wie bei jedem Gerät). Ein Direktangebot
+  beantwortet er mit `POST transfers/<id>/result { ok: false, error: 'unsupported' }` – GateDrop nimmt sofort den
+  Server-Weg (Dateien auf dem Server → Push, sonst lädt der Absender sie hoch); der Absender sieht den Grund in `peer`.
+
 ## 1.6.0
 
 - **Nur Geräte mit GateDrop als Ziel:** `GET targets` listet unter `devices` und `peopleDevices` nur noch App-Installationen

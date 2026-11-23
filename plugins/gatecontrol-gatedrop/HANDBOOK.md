@@ -1,4 +1,4 @@
-<!-- version: 1.6.0 -->
+<!-- version: 1.7.0 -->
 # GateDrop
 
 ## What the plugin does
@@ -7,7 +7,7 @@ Sharing like Quick Share – through your own GateControl server:
 
 - Send **files** (1 to 20 per send, up to 2 GB each), a **text** or a **link**.
 - **To people:** as a message in the Messenger.
-- **To your own devices** (Android, Windows): directly device to device on the same Wi-Fi, otherwise through the server.
+- **To your own devices** (Android, Windows): directly device to device on the same Wi-Fi, otherwise through the server. GateControl TV always receives through the server.
 - **Into NAS folders** (the NAS (Synology) plugin) and **into your own Drive** (the Drive plugin).
 - **As a link for outsiders:** time-limited, optionally with a PIN.
 - What you receive stays on the server until it is picked up – an administrator sets for how long (default 7 days).
@@ -19,7 +19,7 @@ Sharing like Quick Share – through your own GateControl server:
 - To send to people: the **Messenger** plugin.
 - For NAS folders: the **NAS (Synology)** plugin with shared folders (“Folders for GateDrop”).
 - For your own Drive: the **Drive** plugin 1.4.0 or later and a Drive seat for the person.
-- For devices: the GateControl app on Android or the Windows client.
+- For devices: the GateControl app on Android, the Windows client or GateControl TV (receiving through the server only).
 
 ## Setting up
 
@@ -64,7 +64,7 @@ Storage used, arrived sends, the way (direct or through the server), what is not
 An administrator switches them on under Settings › Plugins › GateDrop › Permissions › “Allow public links”.
 
 **My device is not listed as a target.**
-Only app installations that have used GateDrop before are listed as your devices – the Android app and the Windows client. Open the app's GateDrop page once. The Linux agent, gateways and iOS are never listed; they cannot receive.
+Only app installations that have used GateDrop before are listed as your devices – the Android app, the Windows client and GateControl TV. Open the app's GateDrop page once. The Linux agent, gateways and iOS are never listed; they cannot receive.
 
 **A direct send shows "direct …" for a moment.**
 It counts as delivered only once the receiving device confirms it saved everything. Without that confirmation within 20 seconds GateDrop takes the way through the server by itself – the device still gets the send, once.
@@ -77,6 +77,10 @@ Send again later. Blocked files are never passed on.
 
 **A send says “Removed by the admin”.**
 An administrator deleted its files on the server.
+
+## New in 1.7.0
+
+- **The TV as a target:** GateControl TV shows up under “Send to” as one of your devices (or as someone else's shared device) with a TV icon and receives files, text and links. The TV never takes a send directly on the Wi-Fi – GateDrop sends everything to it through the server, by itself and without a second delivery.
 
 ## New in 1.6.0
 

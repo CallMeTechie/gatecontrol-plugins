@@ -121,20 +121,28 @@ async function drive(gc, userId, now = Date.now()) {
   return value;
 }
 
+// The TV app (GateControl TV, X-Client-Platform 'android-tv'): GateControl lists it in gc.devices.list as an Android device
+// (platform 'android', the documented list); it names the TV as `platform` or `clientType` 'android-tv' where it tells
+// the TV apart. GateDrop lists it as 'android-tv' (since 1.7.0) so the apps show it as a TV.
+const TV = 'android-tv';
+const platformOf = (d) => (d.platform === TV || d.clientType === TV ? TV : d.platform || null);
+
 /** The person's own app installations (no web clients) → [{ id, name, platform, online, lastSeen, via }]. */
 async function devicesOf(gc, userId) {
   if (!gc.devices || typeof gc.devices.list !== 'function') return [];
   let list = [];
   try { list = await gc.devices.list({ userId }); } catch { list = []; }
   return (Array.isArray(list) ? list : []).filter((d) => d && typeof d.id === 'string' && d.platform !== 'web')
-    .map((d) => ({ id: d.id, name: typeof d.name === 'string' && d.name ? d.name.slice(0, 80) : d.id, platform: d.platform || null, online: d.online === true, lastSeen: d.lastSeen || null, via: d.via || null }));
+    .map((d) => ({ id: d.id, name: typeof d.name === 'string' && d.name ? d.name.slice(0, 80) : d.id, platform: platformOf(d), online: d.online === true, lastSeen: d.lastSeen || null, via: d.via || null }));
 }
 
-// The platforms that have GateDrop (since 1.6.0): the Android app and the Windows apps (Pro, Community). gc.devices.list
-// also names the Linux agent (platform 'linux', "Fernzugriff"), gateways and scripts with an app token (platform unknown)
-// and iOS — none of them fetches a send. Both GateDrop apps send X-Client-Platform with every request, so GateControl
-// always knows their platform.
-const GATEDROP_PLATFORMS = new Set(['android', 'windows']);
+// The platforms that have GateDrop (since 1.6.0): the Android app and the Windows apps (Pro, Community); since 1.7.0 also
+// the TV app ('android-tv', devicesOf) — it receives only through the server: it reports no presence, and a direct
+// offer it answers with POST transfers/<id>/result { ok: false, error: 'unsupported' } → the server way.
+// gc.devices.list also names the Linux agent (platform 'linux', "Fernzugriff"), gateways and scripts with an app token
+// (platform unknown) and iOS — none of them fetches a send. The GateDrop apps send X-Client-Platform with every request,
+// so GateControl always knows their platform.
+const GATEDROP_PLATFORMS = new Set(['android', 'windows', 'android-tv']);
 
 /** Can this device (one of devicesOf) receive with GateDrop at all? */
 const hasGateDrop = (d) => !!d && GATEDROP_PLATFORMS.has(d.platform);
@@ -177,4 +185,4 @@ async function langOf(gc, userId) {
   return r && r.lang === 'en' ? 'en' : 'de';
 }
 
-module.exports = { MESSENGER, SYNOLOGY, FAMILIE, DRIVE, users, available, roles, canShare, folders, linksEnabled, forgetLinks, drive, setDrive, devicesOf, hasGateDrop, GATEDROP_PLATFORMS, touch, markKiosk, kioskIds, langOf, reset, TOUCH_EVERY_MS };
+module.exports = { MESSENGER, SYNOLOGY, FAMILIE, DRIVE, users, available, roles, canShare, folders, linksEnabled, forgetLinks, drive, setDrive, devicesOf, hasGateDrop, GATEDROP_PLATFORMS, platformOf, touch, markKiosk, kioskIds, langOf, reset, TOUCH_EVERY_MS };
