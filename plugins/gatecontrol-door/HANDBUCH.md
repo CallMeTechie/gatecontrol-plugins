@@ -1,4 +1,4 @@
-<!-- version: 1.8.0 -->
+<!-- version: 1.9.0 -->
 # Tür & Kamera
 
 ## Was das Plugin kann
@@ -58,6 +58,7 @@ Auf **„Geräte“** › **„Schloss hinzufügen“**:
 2. Den **Bestätigungscode** eingeben, den Ring dir per SMS, E-Mail oder Authenticator-App schickt.
 3. In der Ring-App erscheint danach ein angemeldetes Gerät „GateControl“.
 4. Unter „Kameras & Klingeln“ jede Kamera mit einem **Schloss verknüpfen**. Kameras ohne Schloss (z. B. am Briefkasten) gibst du stattdessen auf der Seite „Berechtigungen“ frei.
+5. Hast du [Kameras im Heimnetz](#kameras-einrichten), wählst du dort bei der Klingel unter **„Livebild beim Klingeln (Heimkamera)“** die Kamera, die die Haustür zeigt. Beim Klingeln öffnen der GateControl-TV und die Apps dann direkt deren Livebild – für alle, die diese Kamera sehen dürfen (Seite „Berechtigungen“, Spalte „sieht“).
 
 Das Passwort geht nur für diese Anmeldung an Ring und wird nicht gespeichert. Gespeichert wird nur ein Token, das sich laufend erneuert.
 
@@ -236,6 +237,11 @@ Firefox spielt das Live-Bild ab GateControl 1.242.0 über den eingebauten Player
 
 **Es werden keine Clips aufgenommen.**
 Prüfe unter „Aufnahmen“ den Modus. Bei „nur wenn niemand zu Hause ist“ muss die Anwesenheit der Familie bekannt sein. Unter 1 GB freiem Platz nimmt das Gateway nichts auf.
+
+## Neu in 1.9.0
+
+- **Livebild beim Klingeln:** Auf der Seite „Geräte“ verknüpfst du eine Ring-Klingel mit einer Kamera im Heimnetz („Livebild beim Klingeln (Heimkamera)“). Klingelt es, wissen der GateControl-TV und die Apps, welche Kamera sie live zeigen sollen – auch bei Bewegungs-Mitteilungen. Wer die Heimkamera nicht sehen darf, bekommt die Mitteilung wie bisher.
+- Sonst ändert sich nichts; ohne Verknüpfung bleibt alles wie gewohnt.
 
 ## Neu in 1.8.0
 

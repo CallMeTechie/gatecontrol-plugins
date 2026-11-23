@@ -41,6 +41,7 @@ const notify = require('./notify');
 const modes = require('./modes');
 const tz = require('./tz');
 const chat = require('./chat');
+const home = require('./home');
 const { fail, rateLimiter } = require('./util');
 
 const STATUS_KEY = 'door.ring';
@@ -294,11 +295,45 @@ async function diagnosis(gc) {
   };
 }
 
+/**
+ * 1.9.0: the camera in the home network linked to this Ring camera (admin page „Geräte“) — its id when it still
+ * exists at GateControl (gc.cameras), else null. Never throws.
+ */
+async function linkedHome(gc, camera) {
+  const id = camera && camera.home_camera_id;
+  if (!id || !home.has(gc)) return null;
+  try { return (await gc.cameras.list()).some((c) => c.id === id) ? id : null; } catch { return null; }
+}
+
+/**
+ * 1.9.0: what a push / GET /me tells a person about the linked home camera — only to people who see that camera
+ * (admin page „Berechtigungen“, column „sieht“): { homeCameraId, live: { source: 'home', cameraId, path } } or {}.
+ * `path` is the person API's live route (relative to the plugin's api/).
+ */
+function homeFields(r, userId, homeId) {
+  if (!homeId || !home.sees(r, userId, homeId)) return {};
+  return { homeCameraId: homeId, live: { source: 'home', cameraId: homeId, path: `cameras/home/${homeId}/live` } };
+}
+
+/** 1.9.0: the ids of GateControl's home cameras (Set; empty without gc.cameras or on an error). */
+async function homeIds(gc) {
+  if (!home.has(gc)) return new Set();
+  try { return new Set((await gc.cameras.list()).map((c) => c.id)); } catch { return new Set(); }
+}
+
 /** The pushes of one event (doorbell / motion) to `users`. */
 async function pushEvent(gc, cfg, { ev, camera, lock, users, r, pic, hid, time }) {
   const lang = cfg.notifyLang;
   const image = pic ? { data: pic.buf.toString('base64'), mime: 'image/jpeg' } : undefined;
   const door = { type: ev.kind, eventId: hid, cameraId: camera.id, lockId: lock ? lock.id : null };
+  // 1.9.0: the linked home camera — in its own send for the people who see it (the others get the push as before)
+  const homeId = await linkedHome(gc, camera);
+  const split = (list) => {
+    if (!homeId) return [[list, door]];
+    const yes = list.filter((u) => home.sees(r, u, homeId));
+    const no = list.filter((u) => !home.sees(r, u, homeId));
+    return [[yes, { ...door, ...homeFields(r, yes[0], homeId) }], [no, door]].filter(([l]) => l.length);
+  };
   const base = {
     topic: ev.kind === 'ding' ? 'doorbell' : 'motion', priority: ev.kind === 'ding' ? 'high' : 'normal', collapseKey: `ring:${camera.id}`, ttl: 3600, image,
     title: ev.kind === 'ding' ? push.t(lang, 'ding.title', { name: lock ? lock.name : camera.name }) : push.t(lang, 'motion.title', { camera: camera.name }),
@@ -309,9 +344,9 @@ async function pushEvent(gc, cfg, { ev, camera, lock, users, r, pic, hid, time }
   const others = users.filter((u) => !openers.includes(u));
   if (openers.length) {
     const label = push.t(lang, Number(lock.device_type) === 2 ? 'action.buzz' : 'action.open');
-    await push.send(gc, { ...base, users: openers, data: { door, actions: [push.quickAction(label, lock.id, 'open', { confirm: true, auth: 'device' }), push.viewAction(lang)] } });
+    for (const [list, d] of split(openers)) await push.send(gc, { ...base, users: list, data: { door: d, actions: [push.quickAction(label, lock.id, 'open', { confirm: true, auth: 'device' }), push.viewAction(lang)] } });
   }
-  if (others.length) await push.send(gc, { ...base, users: others, data: { door, actions: [push.viewAction(lang)] } });
+  if (others.length) for (const [list, d] of split(others)) await push.send(gc, { ...base, users: list, data: { door: d, actions: [push.viewAction(lang)] } });
 }
 
 /**
@@ -418,5 +453,5 @@ async function snapshot(gc, cfg, camera, { refresh = false, userId = 0 } = {}, n
 
 module.exports = {
   STATUS_KEY, MAX_EVENT_AGE_MS, DING_MAX_AGE_MS, DING_PUSH_MAX_AGE_MS, IMAGE_MAX, EVENTS_EVERY_MS, EVENTS_FAST_MS, ACTIVE_OFF_MS, SYNC_EVERY_MS, DIAG_KEY,
-  reset, status, loggedIn, loggedOut, all, get, sync, blocked, tick, handleEvent, snapshot, usableImage, jpegSize, prefsOf, diagnosis, _mem: mem,
+  reset, status, loggedIn, loggedOut, all, get, sync, blocked, tick, handleEvent, snapshot, usableImage, jpegSize, prefsOf, diagnosis, linkedHome, homeFields, homeIds, _mem: mem,
 };

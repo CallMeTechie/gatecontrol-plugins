@@ -240,6 +240,8 @@ async function adminRoute(gc, method, seg, body, query, cfg, now) {
         await store.run(gc, 'DELETE FROM home_camera_prefs WHERE camera_id = ?', [id]);
         await store.run(gc, 'DELETE FROM home_camera_rights WHERE camera_id = ?', [id]);
         await store.run(gc, 'DELETE FROM home_camera_user_prefs WHERE camera_id = ?', [id]);
+        // 1.9.0: a Ring camera linked to it is linked to none now
+        await store.run(gc, 'UPDATE cameras SET home_camera_id = NULL WHERE home_camera_id = ?', [id]);
       });
       return {};
     }

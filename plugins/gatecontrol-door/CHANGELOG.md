@@ -8,6 +8,22 @@ bleibt auf dem eigenen Server. Einrichtung, Risiken, Datenschutz und die App-API
 an; das Plugin nutzt die, die auch die Open-Source-Projekte ring-client-api (Homebridge) und
 python-ring-doorbell (Home Assistant) verwenden. Sie kann sich jederzeit ändern oder wegfallen.
 
+## 1.9.0
+
+- **Klingel und Heimkamera verknüpft:** Auf der Seite „Geräte“ bekommt jede Ring-Kamera/-Klingel die Auswahl
+  „Livebild beim Klingeln (Heimkamera)“ – eine Kamera im Heimnetz (`gc.cameras`), nur sichtbar, solange es welche
+  gibt. Admin-API `PATCH admin/cameras/<id> { homeCameraId: 'c…' | null }` (unbekannte ID: `400 invalid { field:
+  'homeCameraId' }`), `GET admin/status` liefert `homeCameras [{ id, name }]` und je Kamera `homeCameraId`.
+  Migration 009 (`cameras.home_camera_id`); wird die Heimkamera gelöscht, fällt die Verknüpfung weg.
+- **Klingel- und Bewegungs-Push** (`doorbell`, `motion`) tragen in `data.door` zusätzlich `homeCameraId` und `live:
+  { source: 'home', cameraId, path: 'cameras/home/<id>/live' }` – nur für Personen, die diese Heimkamera sehen (Seite
+  „Berechtigungen“, Spalte „sieht“), und nur, solange sie bei GateControl existiert; die anderen bekommen den Push
+  unverändert (eigener Versand). So zeigen der GateControl-TV und die Apps beim Klingeln direkt das Livebild der
+  richtigen Kamera (`GET cameras/home/<id>/live`, im VPN live, sonst Standbild alle 10 s).
+- **`GET me`** (`cameras[]`) und **`GET events/<id>`** tragen dieselben Felder unter denselben Bedingungen.
+- Rückwärtskompatibel: nur neue Felder; ohne Verknüpfung ist alles wie bisher. Tests `ring_home_camera.test.js`.
+- Braucht weiterhin **GateControl ≥ 1.169.0** (Heimkameras ab 1.240.0).
+
 ## 1.8.0
 
 - **Nuki-Batteriestand in den Schnellaktionen/Widgets der Apps** (`widget.badge` von GateControl, ab 1.175.0; ältere

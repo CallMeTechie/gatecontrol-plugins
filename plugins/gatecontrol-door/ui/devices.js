@@ -182,6 +182,10 @@
     S.cameras.forEach(function (c) {
       var sel = el('select', { class: 'form-select', on: { change: function () { D.api('PATCH', 'admin/cameras/' + c.id, { lockId: sel.value ? Number(sel.value) : null }).then(function () { D.toast(T('common.saved')); }).catch(D.warn); } } },
         [opt('', T('dev.camera_none'), !c.lockId)].concat(S.locks.map(function (l) { return opt(l.id, l.name, l.id === c.lockId); })));
+      // 1.9.0: the camera in the home network the TV and the apps show live on a ring (only with home cameras)
+      var homes = S.homeCameras || [];
+      var hsel = homes.length ? el('select', { class: 'form-select', on: { change: function () { D.api('PATCH', 'admin/cameras/' + c.id, { homeCameraId: hsel.value || null }).then(function () { D.toast(T('common.saved')); }).catch(D.warn); } } },
+        [opt('', T('dev.camera_none'), !c.homeCameraId)].concat(homes.map(function (h) { return opt(h.id, h.name, h.id === c.homeCameraId); }))) : null;
       var en = el('input', { type: 'checkbox', checked: c.enabled, on: { change: function () { D.api('PATCH', 'admin/cameras/' + c.id, { enabled: en.checked }).catch(D.warn); } } });
       box.appendChild(el('div', { class: 'dr-item' }, [
         el('div', { class: 'dr-item-main' }, [
@@ -189,6 +193,7 @@
           el('div', { class: 'dr-item-sub', text: [c.kind, c.online === false ? T('dev.offline') : null, c.battery != null ? T('dev.battery', { n: c.battery }) : null].filter(Boolean).join(' · ') }),
         ]),
         el('div', { class: 'form-group', style: 'margin:0;min-width:180px' }, [el('label', { class: 'form-label', text: T('dev.camera_lock') }), sel]),
+        hsel ? el('div', { class: 'form-group', style: 'margin:0;min-width:180px' }, [el('label', { class: 'form-label', text: T('dev.camera_home') }), hsel]) : null,
         el('label', { class: 'check' }, [en, T('dev.camera_enabled')]),
         el('button', { type: 'button', class: 'btn btn-sm', text: T('portal.new_image'), on: { click: function () { D.api('GET', 'admin/cameras/' + c.id + '/snapshot?refresh=1').then(function (r) { D.showImage(r.snapshot); }).catch(D.warn); } } }),
       ]));

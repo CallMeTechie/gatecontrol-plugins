@@ -10,6 +10,8 @@
 //   PUT  cameras/<id>/prefs { ding?, motion? }   own doorbell / motion pushes for that camera
 //   GET  history[?cursor=&limit=&lockId=]    own events; all events of locks with `open`; rings of viewable cameras
 //   GET  events/<id>                     one ring / motion event with its picture (push "Ansehen")
+//   1.9.0: Ring cameras in GET me and an event carry homeCameraId and live { source: 'home', cameraId, path } — the
+//   linked home camera, only for people who see it (as in the doorbell / motion push data.door)
 //   1.6.0 Kameras im Heimnetz (server/home.js, only cameras the person sees — column "sieht"):
 //   GET  cameras/home                    { supported, minGatecontrol, every, cameras: [{ id, name, online, snapshotUrl, settings, … }] }
 //   GET  cameras/home/<id>/live          { live: { mode: 'live', hls, mp4, … } in the VPN | { mode: 'snapshot', snapshot, every: 10 } }
@@ -76,13 +78,16 @@ async function me(gc, c) {
   for (const p of await store.all(gc, 'SELECT camera_id, ding, motion FROM camera_prefs WHERE user_id = ?', [c.user.id])) camPrefs.set(p.camera_id, { ding: p.ding === 1, motion: p.motion === 1 });
   const lastAt = await history.lastMediaAt(gc, c.now);
   const st = await cameras.status(gc, c.now);
+  // 1.9.0: the linked home camera of a Ring camera, while it exists and the person sees it
+  const homeIds = cams.some((x) => x.home_camera_id) ? await cameras.homeIds(gc) : new Set();
+  const homeOf = (cam) => cameras.homeFields(c.r, c.user.id, homeIds.has(cam.home_camera_id) ? cam.home_camera_id : null);
   return {
     me: {
       userId: c.user.id, name: c.user.name || null, canAct: rights.canAct(c.user),
       autoUnlock: c.prefs.autoUnlock, window: c.prefs.window, windowOpen: rights.windowAllows(c.prefs.window, c.now, c.cfg.timezone),
     },
     locks: c.mine.map((l) => views.lockView(l, { level: rights.levelOf(c.r, c.user.id, l.id), user: c.user, prefs: c.prefs, cfg: c.cfg, now: c.now })),
-    cameras: cams.map((cam) => views.cameraView(cam, { prefs: camPrefs.get(cam.id), lastImageAt: lastAt.get(cam.id) })),
+    cameras: cams.map((cam) => views.cameraView(cam, { prefs: camPrefs.get(cam.id), lastImageAt: lastAt.get(cam.id), homeFields: homeOf(cam) })),
     ring: { connected: st.connected, broken: st.broken },
     // 1.4.0: the last ring and its chat card, for people who see a camera (the apps' „Haus-Aktionen“ screen)
     doorbell: cams.length ? await doorbellView(gc) : null,
@@ -172,9 +177,11 @@ async function event(gc, c, id, { admin = false } = {}) {
   const camMap = new Map(cam ? [[cam.id, cam]] : []);
   const lock = lockId ? lockMap.get(lockId) : null;
   const ev = history.view(row, { locks: lockMap, cameras: camMap, t: c.t, lang: c.lang, mediaOk: new Set(m ? [m.id] : []) });
+  // 1.9.0: the linked home camera (as in the push), for people who see it
+  const homeId = cam ? await cameras.linkedHome(gc, cam) : null;
   return {
     event: {
-      ...ev, lockId: lock ? lock.id : null, lockName: lock ? lock.name : null, image: views.imageView(m),
+      ...ev, ...cameras.homeFields(c.r, c.user.id, homeId), lockId: lock ? lock.id : null, lockName: lock ? lock.name : null, image: views.imageView(m),
       lock: lock && level ? views.lockView(lock, { level, user: c.user, prefs: c.prefs, cfg: c.cfg, now: c.now }) : null,
     },
   };

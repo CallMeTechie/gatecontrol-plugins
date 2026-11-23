@@ -358,7 +358,10 @@ state). Show `stale: true` with `lock: "unknown"` as "Zustand unklar" / "State u
 { "id": 4, "name": "Klingel Haustür", "kind": "doorbell_v4", "doorbell": true, "lockId": 1,
   "online": true, "battery": 87,          // online/battery may be null
   "prefs": { "ding": true, "motion": false },   // this person's pushes for this camera
-  "lastImageAt": "2026-10-14T07:59:40Z" } // newest stored picture or null
+  "lastImageAt": "2026-10-14T07:59:40Z", // newest stored picture or null
+  // 1.9.0, only when an administrator linked a home camera and this person sees it (else both absent):
+  "homeCameraId": "c0123456789abcdef",
+  "live": { "source": "home", "cameraId": "c0123456789abcdef", "path": "cameras/home/c0123456789abcdef/live" } }
 ```
 
 ### `POST locks/<id>/<action>`
@@ -438,7 +441,8 @@ One ring or motion event (the push "Ansehen" opens it with `data.door.eventId`):
 { "ok": true, "event": {
     …history item fields…, "kind": "ding",
     "image": { "mime": "image/jpeg", "size": 48213, "at": "2026-10-14T08:00:05Z", "data": "<base64>" },   // or null (expired / none)
-    "lock": LockView                      // the linked lock for this person, or null → show "Tür öffnen" when lock.actions has "open"
+    "lock": LockView,                     // the linked lock for this person, or null → show "Tür öffnen" when lock.actions has "open"
+    "homeCameraId": "c…", "live": { … }   // 1.9.0: as in CameraView (absent without a link / the right)
 } }
 ```
 
@@ -505,8 +509,8 @@ plain run — the Familie rules with target states need 1.173.0 anyway).
 
 | Topic | `data.door` | `data.actions` |
 |---|---|---|
-| `doorbell` | `{ type: "ding", eventId, cameraId, lockId }` (+ picture) | `open` right: `{ type: "quick_action", label: "Tür öffnen" (opener "Summer"), plugin: "gatecontrol-door", id: "<lockId>:open", confirm: true, auth: "device" }`; all: `{ id: "open", type: "open_app_route", label: "Ansehen", target: "plg-gatecontrol-door" }` |
-| `motion` | `{ type: "motion", eventId, cameraId, lockId }` (+ picture) | "Ansehen" |
+| `doorbell` | `{ type: "ding", eventId, cameraId, lockId }` (+ picture); 1.9.0 + `homeCameraId`, `live` (see below) | `open` right: `{ type: "quick_action", label: "Tür öffnen" (opener "Summer"), plugin: "gatecontrol-door", id: "<lockId>:open", confirm: true, auth: "device" }`; all: `{ id: "open", type: "open_app_route", label: "Ansehen", target: "plg-gatecontrol-door" }` |
+| `motion` | `{ type: "motion", eventId, cameraId, lockId }` (+ picture); 1.9.0 + `homeCameraId`, `live` (see below) | "Ansehen" |
 | `auto` | `{ type: "auto_unlocked", lockId }` | `{ type: "quick_action", label: "Wieder zusperren", plugin, id: "<lockId>:lock" }`, "Ansehen" |
 | `auto` | `{ type: "auto_refused", lockId, reason }` · `{ type: "auto_relocked" \| "auto_relock_failed", lockId }` | "Ansehen" |
 | `auto` | `{ type: "auto_ask", lockId }` (no door sensor, 3 min) | `{ type: "quick_action", label: "Zusperren", plugin, id: "<lockId>:lock" }`, "Ansehen" |
@@ -514,6 +518,14 @@ plain run — the Familie rules with target states need 1.173.0 anyway).
 | `door` | `{ type: "night", lockId }` | `{ type: "quick_action", label: "Zusperren", plugin, id: "<lockId>:lock" }`, "Ansehen" |
 | `door` | `{ type: "ring_broken" }` (administrators, ≤ 1 per day) | – |
 | `kamera` | `{ type: "home_camera_event", cameraId: "c…", eventId: "e…" }` (+ snapshot; everybody who sees the camera, without who switched it off for themselves) | 1.7.0: "Ansehen" — the apps open that camera |
+
+**Linked home camera** (1.9.0): an administrator may link a Ring camera / doorbell to a camera in the home network
+(page „Geräte“, `PATCH admin/cameras/<id> { homeCameraId }`). Then `doorbell` and `motion` pushes carry, for the
+people who see that home camera (page „Berechtigungen“, column „sieht“) and while it still exists at GateControl,
+`data.door.homeCameraId` (`c` + 15 hex) and `data.door.live = { source: "home", cameraId, path:
+"cameras/home/<id>/live" }` — `path` is the person API's route (relative to the plugin's `api/`) that answers the live
+stream in the VPN or a snapshot every 10 s. The others get the same push without these fields (a send of its own).
+Apps and the TV open that camera's live picture at once; without the fields they behave as before.
 
 `collapseKey`: `ring:<cameraId>` (doorbell/motion), `auto:<lockId>`, `door:<lockId>:<type>`, `ring:broken`.
 Doorbell pushes have `ttl` 3600 s (the picture expires with it).
@@ -523,7 +535,8 @@ Doorbell pushes have `ttl` 3600 s (the picture expires with it).
 `/api/v1/plugins/gatecontrol-door/api/admin/…` — administrators in GateControl's admin UI only
 (portal/app callers get `403 forbidden`): `GET status`; `POST bridges`, `PATCH|DELETE bridges/<id>`,
 `GET bridges/<id>/devices`; `PUT web`, `GET web/devices`; `GET|POST locks`, `PATCH|DELETE locks/<id>`,
-`POST locks/<id>/refresh`; `POST ring/login|logout|sync`; `PATCH cameras/<id>`,
+`POST locks/<id>/refresh`; `POST ring/login|logout|sync`; `PATCH cameras/<id>` (1.9.0: `homeCameraId` — a home camera's
+id or `null`; `GET status` has `homeCameras [{ id, name }]` and each camera's `homeCameraId`),
 `GET cameras/<id>/snapshot`; `POST modes/<locationId>/<disarmed|home|away>`; `GET rights`,
 `PUT rights/<userId>`; `GET history`, `GET events/<id>`;
 `GET|PUT settings` (1.3.0: `familyChat` in `config`; both answer `chat: { api, available, last: { at, ok,

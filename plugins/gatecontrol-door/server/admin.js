@@ -8,7 +8,8 @@
 //   PUT    admin/web { token | null }        GET admin/web/devices
 //   POST   admin/locks { … }                 PATCH|DELETE admin/locks/<id>   POST admin/locks/<id>/refresh
 //   POST   admin/ring/login { email, password, code? }      POST admin/ring/logout · admin/ring/sync
-//   PATCH  admin/cameras/<id> { name?, lockId?, enabled? }  GET admin/cameras/<id>/snapshot[?refresh=1]
+//   PATCH  admin/cameras/<id> { name?, lockId?, enabled?, homeCameraId? }  GET admin/cameras/<id>/snapshot[?refresh=1]
+//                                            1.9.0: homeCameraId — a camera of gc.cameras (c + 15 hex) or null; status: homeCameras
 //   POST   admin/modes/<locationId>/<disarmed|home|away>    switch a Ring location's mode (server/modes.js)
 //   GET    admin/rights                      PUT admin/rights/<userId> { locks?, autoUnlock?, window?, cameras?, modes?, cameraRights? }
 //                                            1.5.0: cameraRights { <cameraId>: true|false } — who sees a camera without a lock
@@ -82,7 +83,14 @@ async function status(gc, cfg, now) {
     bridges: await bridgeViews(gc), targets: await targetList(gc), web: { hasToken: !!(await locks.webToken(gc)) },
     ring: await ringView(gc, now), locks: (await locks.all(gc)).map((l) => views.adminLockView(l, now)),
     cameras: (await cameras.all(gc)).map(views.adminCameraView), ringModes: (await modes.all(gc)).filter((l) => l.present === 1).map(modes.adminView), config: cfg,
+    // 1.9.0: the home cameras a Ring camera may be linked to ([] without gc.cameras)
+    homeCameras: await homeCameraList(gc),
   };
+}
+
+async function homeCameraList(gc) {
+  if (!home.has(gc)) return [];
+  try { return (await gc.cameras.list()).map((c) => ({ id: c.id, name: c.name })); } catch { return []; }
 }
 
 // ─── bridges & web ─────────────────────────────
@@ -293,6 +301,12 @@ async function switchMode(gc, req, cfg, now, t, id, mode) {
 async function updateCamera(gc, id, body) {
   const cam = await cameras.get(gc, id);
   if (!cam) throw fail('not_found');
+  // 1.9.0: the camera in the home network the TV and the apps show live on a ring (checked before the transaction)
+  let hid;
+  if (body.homeCameraId !== undefined) {
+    hid = body.homeCameraId === null || body.homeCameraId === '' ? null : body.homeCameraId;
+    if (hid !== null && (typeof hid !== 'string' || !(await homeCameraList(gc)).some((c) => c.id === hid))) throw fail('invalid', { field: 'homeCameraId' });
+  }
   await store.tx(gc, async () => {
     if (body.name !== undefined) await store.run(gc, 'UPDATE cameras SET name = ? WHERE id = ?', [text(body.name, 60), id]);
     if (body.enabled !== undefined) await store.run(gc, 'UPDATE cameras SET enabled = ? WHERE id = ?', [bool(body.enabled) ? 1 : 0, id]);
@@ -304,6 +318,7 @@ async function updateCamera(gc, id, body) {
       }
       await store.run(gc, 'UPDATE cameras SET lock_id = ? WHERE id = ?', [lockId, id]);
     }
+    if (hid !== undefined) await store.run(gc, 'UPDATE cameras SET home_camera_id = ? WHERE id = ?', [hid, id]);
   });
   return { camera: views.adminCameraView(await cameras.get(gc, id)) };
 }

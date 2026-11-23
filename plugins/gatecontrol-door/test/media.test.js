@@ -164,7 +164,7 @@ test('migration 008 on a database of 1.7.1: pictures and history stay as they we
   const { DatabaseSync } = require('node:sqlite');
   const db = new DatabaseSync(':memory:');
   const files = fs.readdirSync(MIGRATIONS).sort();
-  assert.equal(files[files.length - 1], '008_media_at.sql');
+  assert.ok(files.includes('008_media_at.sql'));
   const apply = (f) => db.exec('BEGIN;' + fs.readFileSync(path.join(MIGRATIONS, f), 'utf8') + ';COMMIT;');
   for (const f of files.filter((x) => Number(x.slice(0, 3)) <= 7)) apply(f);
   // what 1.7.1 left: cameras, pictures of 100–300 kB (one without its camera), history rows with and without a picture
