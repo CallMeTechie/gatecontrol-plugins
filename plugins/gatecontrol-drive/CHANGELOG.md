@@ -2,6 +2,28 @@
 
 Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3.
 
+## 1.31.0
+
+„Für Fotorahmen freigeben“ und der Fotorahmen auf dem GateControl-TV.
+
+- **Neue Routen `GET|POST|DELETE frame/photos`** (`server/frameshare.js`) für die Apps: einzelne Fotos (Knoten-IDs, ≤ 500)
+  für den Fotorahmen freigeben, wieder entfernen und abfragen (`?ids=1,2,3`: welche davon freigegeben sind). Die Fotos
+  liegen im eigenen Fotorahmen-Album der Person – ein gewöhnliches Album ihrer eigenen Dateien („Fotorahmen“ /
+  „Photo frame“, `frame: true`), das beim ersten Freigeben entsteht; Migration 025 (`albums.frame_owner`). Im Portal
+  ein Album wie jedes andere; gelöscht entsteht es beim nächsten Freigeben neu, ausgeschaltet schaltet es das nächste
+  Freigeben wieder ein. Antworten: `{ album | null, ids, count }`, beim Freigeben zusätzlich `added` und `skipped
+  [{ id, reason }]` (`not_found`, `not_image`, `vault`, `blocked`, `child`), beim Entfernen `removed`.
+- **Nur Bilder**, die die Person liest – keine Videos, nichts aus einem Tresor, nichts vom Virenscan Gesperrtes,
+  nichts aus dem Ordner eines Kindes. Ein Kind einer Familie gibt nichts frei (`403 forbidden { field: 'frame' }`,
+  wie `mayFrame`).
+- **`GET frame` auch für App-Geräte** (der GateControl-TV, Plattform `android-tv`, aber jedes App-Gerät der Person):
+  dieselben Felder `{ on, ready, seconds, order, items [{ url, takenAt }] }`, nur aus Fotorahmen-Alben in Bereichen,
+  die die Person liest, und davon nur Bilder, die sie liest (nie die privaten Fotos anderer – deren eigenes
+  Fotorahmen-Album liegt in ihren Dateien). Vorschau-only-URLs, für die Person signiert. `frame_on` gilt,
+  `frame_accounts` (Kiosk-Konten) nicht. Das Portal bekommt weiter keinen Fotorahmen (404); Kiosk-Geräte unverändert.
+- Das eigene Fotorahmen-Album lässt den Arbeitsordner nicht weg – jedes Foto darin wurde ausdrücklich freigegeben.
+- Feature-Wort **`framePhotos`** in `GET me` `features`.
+
 ## 1.30.1
 
 „Aufräumen“ der Android-App: entschiedene Fotos bleiben entschieden.

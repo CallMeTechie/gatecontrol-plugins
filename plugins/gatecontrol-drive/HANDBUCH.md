@@ -1,4 +1,4 @@
-<!-- version: 1.30.1 -->
+<!-- version: 1.31.0 -->
 # Drive
 
 ## Was das Plugin kann
@@ -6,7 +6,7 @@
 - **Dateien der Familie und des Teams auf deinem eigenen Speicher** – auf diesem Server, einer NAS oder in S3.
 - **Bereiche mit Rechten:** Meine Dateien, Familie, Ordner der Kinder und Team-Ordner.
 - **Versionen, Papierkorb, Links** für Personen ohne Konto und **Abgleich** mit allen Geräten (Apps).
-- **Fotos:** Zeitleiste, Alben, Erinnerungen, Orte und Personen, Fotorahmen auf dem Wand-Tablet.
+- **Fotos:** Zeitleiste, Alben, Erinnerungen, Orte und Personen, Fotorahmen auf dem Wand-Tablet und dem GateControl-TV.
 - **Tresor-Ordner:** Ende-zu-Ende verschlüsselte Ordner, die nur deine Geräte öffnen.
 - **KI für Dokumente:** Art, Name und Fristen erkennen, Fragen an deine Dateien, Scans in Dokumente umwandeln, Fristen in den Familienkalender.
 - **Schutz vor Erpressungstrojanern:** Drive stoppt ein Gerät, das ungewöhnlich viele Dateien ändert.
@@ -41,6 +41,7 @@ Drive ist ein eigenes Abo (Familie, Business oder Kombi, fünf Personen inklusiv
 - **Bilder und Videos ansehen:** Ein Klick auf ein Bild oder Video – in „Dateien“, in der Suche und in „Fotos“ – öffnet es groß, ohne es erst herunterzuladen. Mit den Pfeilen, den Pfeiltasten oder einem Wisch geht es zum nächsten Bild oder Video im selben Ordner. Bilder vergrößerst du mit dem Mausrad, „+“/„−“, einem Doppelklick oder zwei Fingern. Videos laufen direkt in Drive (Abspielen, Pause, Spulen, Ton, Vollbild); Drive merkt sich, wo du aufgehört hast, solange der Tab offen ist. Oben: Herunterladen, Teilen, Details und das Menü der Datei.
 - **PDFs und Texte ansehen (Apps):** In der Android-App und der Windows-App öffnet ein Tipp auf eine PDF-, Text- oder Markdown-Datei sie direkt in der App – in derselben Ansicht wie Tresor-Dateien. Texte lassen sich dort markieren und kopieren. „Mit anderer App öffnen“ (Android) bzw. „Mit anderem Programm öffnen“ (Windows) bleibt in der Ansicht. Sehr große Dateien (PDF über 100 MB, Text über 2 MB) und Office-Dateien öffnen weiter in einer anderen App. Im Portal bietet ein Klick auf eine PDF wie bisher „Herunterladen“ an.
 - **Fotos:** Zeitleiste nach Monat, „Nur Kamera-Uploads“, „Alle · Fotos · Videos“ (nur Fotos oder nur Videos zeigen; ein Video zeigt seine Länge, wenn das Gerät sie mitgeschickt hat), Alben, „Im Fotorahmen zeigen“, Suche nach Personen, Orten und Inhalt, Karte, „Wer ist das?“. Gesichter werden nur auf den Geräten erkannt; Drive speichert keine Gesichtsbilder.
+- **Fotorahmen und GateControl-TV:** In den Apps wählst du unter „Fotos“ ein oder mehrere Fotos aus und tippst auf **„Für Fotorahmen freigeben“** (zurück mit **„Aus Fotorahmen entfernen“**). Die Fotos landen in deinem Album **„Fotorahmen“** (unter „Alben“, beim ersten Freigeben angelegt). Der Fotorahmen auf deinem GateControl-TV zeigt nur, was ausdrücklich freigegeben ist: deine freigegebenen Fotos und Familien-Alben mit „Im Fotorahmen zeigen“ – nie private Fotos anderer. Freigeben lassen sich nur Bilder (keine Videos), nichts aus einem Tresor, nichts aus den Ordnern der Kinder und nichts, was der Virenscan zurückhält. Kinder können keine Fotos freigeben. Die Wand-Tablets zeigen die freigegebenen Fotos ebenfalls.
 - **Tresor-Ordner:** „Neu“ › „Neuer Tresor“, wer ihn öffnen darf (nur ich, Familie, Team-Ordner). Den Wiederherstellungsschlüssel sicher aufbewahren. Ein neues Gerät fragt mit „Freigabe anfragen“, ein schon freigegebenes gibt frei. Tresore sperren sich nach einigen Minuten ohne Eingabe; die KI liest sie nie. Ein Tipp auf eine Datei öffnet sie in der Tresor-Ansicht (Bilder, PDFs, Texte, in den Apps auch Videos) – siehe unten.
 - **Erinnerungen:** In der Übersicht öffnet „Alle“ die Seite **„Erinnerungen“** (Portal, Android- und Windows-App mit Drive 1.26.0). Dort stehen: **Heute vor X Jahren** (jedes frühere Jahr, in dem du an diesem Tag – einen Tag davor oder danach mitgerechnet – mehr als 10 Fotos gemacht hast), **Ausflüge und Reisen** (Tage am Stück an einem Ort, der mindestens 40 km von zu Hause weg ist, ab 10 Fotos), **Mit Noah** & Co. (deine benannten Personen ab 10 Fotos), **Diesen Monat vor X Jahren** (ab 20 Fotos), **Jahresrückblick** (jedes vergangene Jahr ab 50 Fotos) und **Orte** (z. B. „Langenlonsheim · 12 Fotos“, ab 10 Fotos). Ein Tipp auf eine Karte zeigt die Fotos; ein Tipp auf ein Foto öffnet es groß. „Zu Hause“ ist der Ort, an dem du an den meisten Tagen fotografiert hast. **Erinnerungen zeigen nur private Fotos:** nichts aus deinem Arbeitsordner, nichts, was noch unter „Prüfen“ wartet, nichts aus Team-Ordnern. Die Karten „Heute vor X Jahren“ der Übersicht erscheinen ebenfalls erst ab mehr als 10 Fotos am Tag; an anderen Tagen zeigt die Kachel „Erinnerungen“ andere Sammlungen der Seite (ab Drive 1.28.0).
 - **Videos finden:** In der Suche filtert „Alle · Fotos · Videos“ (Portal) bzw. „Videos“ (Apps) die Treffer. Ohne Suchwort zeigt „Videos“ die neuesten Videos.
@@ -120,6 +121,14 @@ Vollbild im Portal gibt es ab GateControl 1.244.0. Ältere Versionen zeigen das 
 
 **Zu Hause bauen sich die Fotos nicht schneller auf.**
 Die Vorschaubilder kommen erst nach und nach auf das Gateway (je Lauf einige Hundert, alle 15 Minuten). Prüfe am Gateway unter **Gateways › Zwischenspeicher**, dass er „aktiv“ ist und „Fotos“ bzw. „Drive“ eingeschaltet sind. Vorschaubilder aus dem Heimnetz braucht GateControl 1.249.0 und eine aktuelle App.
+
+## Neu in 1.31.0
+
+- **„Für Fotorahmen freigeben“:** In den Apps wählst du im Foto-Tab mehrere Fotos aus und gibst sie für den Fotorahmen frei – oder nimmst sie mit „Aus Fotorahmen entfernen“ wieder heraus (mit dem nächsten Update der Apps). Drive legt dafür beim ersten Mal dein Album **„Fotorahmen“** an; im Portal siehst und änderst du es wie jedes Album.
+- **Fotorahmen auf dem GateControl-TV:** Der TV zeigt nur ausdrücklich freigegebene Fotos – deine eigenen freigegebenen und die Familien-Alben, die ein Elternteil auf den Fotorahmen gelegt hat. Private Fotos anderer erscheinen dort nie. Sekunden je Bild und Reihenfolge stellt der Admin wie bisher unter Einstellungen › Plugins › Drive ein; „Fotorahmen“ aus schaltet ihn auch auf dem TV ab.
+- **Nur Bilder:** keine Videos, nichts aus einem Tresor, nichts aus den Ordnern der Kinder, nichts, was der Virenscan zurückhält. Kinder geben keine Fotos frei.
+- **Arbeitsfotos:** Ein Foto aus deinem Arbeitsordner, das du selbst freigibst, zeigt der Fotorahmen – du hast es ja ausdrücklich gewählt. In anderen Alben bleibt es wie bisher draußen.
+- **Wand-Tablets** zeigen wie bisher alle Fotorahmen-Alben – jetzt auch die freigegebenen Fotos.
 
 ## Neu in 1.30.1
 

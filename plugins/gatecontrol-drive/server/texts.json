@@ -1316,7 +1316,8 @@
     "p.dl_by_hub_hint": "An diese Frist erinnert „Notizen & Aufgaben“ – mit „Erledigt“ und „Später“.",
     "deadline.hub.on": "Fristen: Es erinnert „Notizen & Aufgaben“ ({{n}} übernommen). Drive schickt dafür keine eigene Mitteilung.",
     "deadline.hub.missing": "Fristen: „Notizen & Aufgaben“ ist gewählt, bietet das aber nicht an (ab 1.7.0, Berechtigung bestätigt?). Bis dahin erinnert Drive selbst.",
-    "deadline.hub.refused": "Fristen: „Notizen & Aufgaben“ übernimmt die Erinnerungen gerade nicht (dort ist die Quelle Drive aus oder die Berechtigung fehlt). Bis dahin erinnert Drive selbst."
+    "deadline.hub.refused": "Fristen: „Notizen & Aufgaben“ übernimmt die Erinnerungen gerade nicht (dort ist die Quelle Drive aus oder die Berechtigung fehlt). Bis dahin erinnert Drive selbst.",
+    "album.frame": "Fotorahmen"
   },
   "en": {
     "error.invalid": "Invalid input.",
@@ -2635,6 +2636,7 @@
     "p.dl_by_hub_hint": "“Notes & Tasks” reminds of this deadline – with “Done” and “Later”.",
     "deadline.hub.on": "Deadlines: “Notes & Tasks” reminds ({{n}} taken over). Drive sends no notification of its own for them.",
     "deadline.hub.missing": "Deadlines: “Notes & Tasks” is chosen but does not offer this (1.7.0 or later, permission confirmed?). Until then Drive reminds itself.",
-    "deadline.hub.refused": "Deadlines: “Notes & Tasks” is not taking the reminders right now (its source Drive is off there, or the permission is missing). Until then Drive reminds itself."
+    "deadline.hub.refused": "Deadlines: “Notes & Tasks” is not taking the reminders right now (its source Drive is off there, or the permission is missing). Until then Drive reminds itself.",
+    "album.frame": "Photo frame"
   }
 }

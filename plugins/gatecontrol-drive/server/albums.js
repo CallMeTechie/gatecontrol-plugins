@@ -218,4 +218,4 @@ async function removeItems(ctx, id, body, q) {
   return { album: await one(ctx, a.id) };
 }
 
-module.exports = { list, create, update, remove, get, addItems, removeItems, mayFrame, isChild, IDS_MAX };
+module.exports = { list, create, update, remove, get, addItems, removeItems, mayFrame, isChild, viewsOf: views, IDS_MAX };
