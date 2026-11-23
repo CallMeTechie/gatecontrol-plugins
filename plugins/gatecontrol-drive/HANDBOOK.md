@@ -1,4 +1,4 @@
-<!-- version: 1.30.1 -->
+<!-- version: 1.31.0 -->
 # Drive
 
 ## What the plugin does
@@ -6,7 +6,7 @@
 - **The files of the family and the team on your own storage** – this server, a NAS or S3.
 - **Areas with rights:** My files, Family, the children's folders and team folders.
 - **Versions, trash, links** for people without an account and **sync** with every device (apps).
-- **Photos:** timeline, albums, memories, places and people, a photo frame on the wall tablet.
+- **Photos:** timeline, albums, memories, places and people, a photo frame on the wall tablet and the GateControl TV.
 - **Vault folders:** end-to-end encrypted folders only your devices open.
 - **AI for documents:** recognise kind, name and deadlines, ask your files, turn scans into documents, deadlines into the family calendar.
 - **Ransomware protection:** Drive stops a device that changes unusually many files.
@@ -41,6 +41,7 @@ Drive is a subscription of its own (Family, Business or Combo, five people inclu
 - **Viewing pictures and videos:** a click on a picture or video – in “Files”, in the search and in “Photos” – opens it large, without downloading it first. The arrows, the arrow keys or a swipe go to the next picture or video in the same folder. Zoom pictures with the mouse wheel, “+”/“−”, a double click or two fingers. Videos play right in Drive (play, pause, seek, sound, full screen); Drive remembers where you stopped while the tab is open. At the top: download, share, details and the file's menu.
 - **Viewing PDFs and texts (apps):** in the Android app and the Windows app a tap on a PDF, text or Markdown file opens it right in the app – in the same view as vault files. Texts can be selected and copied there. “Open with another app” (Android) or “Open with another program” (Windows) stays in the view. Very large files (a PDF over 100 MB, a text over 2 MB) and Office files still open in another app. In the portal a click on a PDF still offers “Download”.
 - **Photos:** timeline by month, “camera uploads only”, “All · Photos · Videos” (show only photos or only videos; a video shows its length when the device sent it), albums, “show in the photo frame”, search by people, places and content, map, “Who is this?”. Faces are recognised on the devices only; Drive keeps no face pictures.
+- **Photo frame and GateControl TV:** in the apps pick one or more photos under “Photos” and tap **“Share for the photo frame”** (back with **“Remove from the photo frame”**). The photos go into your album **“Photo frame”** (under “Albums”, made when you first share). The photo frame on your GateControl TV shows only what was shared on purpose: your shared photos and family albums with “Show in the photo frame” – never other people's private photos. Only pictures can be shared (no videos), nothing from a vault, nothing from the children's folders and nothing the virus scan holds back. Children cannot share photos. The wall tablets show the shared photos too.
 - **Memories:** in the overview “All” opens the page **“Memories”** (portal, Android and Windows app with Drive 1.26.0). It has: **Today X years ago** (every earlier year in which you took more than 10 photos on this day – counting the day before and after), **Trips** (days in a row at a place at least 40 km from home, from 10 photos), **With Noah** and so on (your named people, from 10 photos), **This month X years ago** (from 20 photos), **Year in review** (every past year from 50 photos) and **Places** (e.g. “Langenlonsheim · 12 photos”, from 10 photos). Tap a card to see its photos; tap a photo to open it large. “Home” is the place where you took photos on the most days. **Memories show private photos only:** nothing from your work folder, nothing still waiting under “Check”, nothing from team folders. The overview's cards “Today X years ago” also need more than 10 photos on that day; on other days the tile “Memories” shows other collections of the page (since Drive 1.28.0).
 - **Vault folders:** “New” › “New vault”, who may open it (only me, family, team folder). Keep the recovery key safe. A new device asks with “Request access”, a device already approved grants it. Vaults lock after some minutes without input; the AI never reads them. A tap on a file opens it in the vault viewer (pictures, PDFs, texts, in the apps also videos) – see below.
 - **Finding videos:** in the search, “All · Photos · Videos” (portal) or “Videos” (apps) filters the hits. Without a search word “Videos” shows the newest videos.
@@ -120,6 +121,14 @@ Full screen in the portal needs GateControl 1.244.0. Older versions show the vid
 
 **At home the photos do not show up faster.**
 The previews reach the gateway bit by bit (a few hundred per run, every 15 minutes). Check at the gateway under **Gateways › Home cache** that it is “on” and that “Photos” or “Drive” are switched on. Previews from the home network need GateControl 1.249.0 and a current app.
+
+## New in 1.31.0
+
+- **“Share for the photo frame”:** in the apps pick several photos in the photos tab and share them for the photo frame – or take them out again with “Remove from the photo frame” (with the next update of the apps). The first time, Drive makes your album **“Photo frame”** for it; in the portal you see and change it like every album.
+- **Photo frame on the GateControl TV:** the TV shows only photos shared on purpose – your own shared ones and the family albums a parent put on the photo frame. Other people's private photos never show there. Seconds per picture and the order are set by the administrator as before under Settings › Plugins › Drive; “Photo frame” off also switches it off on the TV.
+- **Pictures only:** no videos, nothing from a vault, nothing from the children's folders, nothing the virus scan holds back. Children do not share photos.
+- **Work photos:** a photo from your work folder that you share yourself shows on the photo frame – you chose it on purpose. In other albums it stays out as before.
+- **Wall tablets** show every photo frame album as before – now including the shared photos.
 
 ## New in 1.30.1
 

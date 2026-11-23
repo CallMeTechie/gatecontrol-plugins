@@ -4,7 +4,7 @@
     "de": "Drive",
     "en": "Drive"
   },
-  "version": "1.30.1",
+  "version": "1.31.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3: Meine Dateien, Familie, Ordner der Kinder und Team-Ordner mit Rechten, Versionen, Papierkorb und Abgleich mit allen Geräten.",
@@ -283,12 +283,12 @@
         "key": "frame_on",
         "type": "boolean",
         "label": {
-          "de": "Fotorahmen auf Wandtablets",
-          "en": "Photo frame on wall tablets"
+          "de": "Fotorahmen auf Wandtablets und dem TV",
+          "en": "Photo frame on wall tablets and the TV"
         },
         "help": {
-          "de": "Alben mit „Im Fotorahmen zeigen“ laufen als Diashow im Bereich „Fotorahmen“ (Tab „Zuhause“) der Kiosk-Geräte – nur Vorschaubilder, ohne Namen. Kiosk-Geräte sehen sonst nichts von Drive.",
-          "en": "Albums with “Show in the photo frame” run as a slide show in the section “Photo frame” (tab “Home”) of the kiosk devices – previews only, without names. Kiosk devices see nothing else of Drive."
+          "de": "Alben mit „Im Fotorahmen zeigen“ und Fotos, die jemand in den Apps „Für Fotorahmen freigeben“ hat, laufen als Diashow im Bereich „Fotorahmen“ (Tab „Zuhause“) der Kiosk-Geräte – nur Vorschaubilder, ohne Namen. Kiosk-Geräte sehen sonst nichts von Drive. Auf dem GateControl-TV einer Person laufen nur die Fotorahmen-Fotos, die diese Person sehen darf.",
+          "en": "Albums with “Show in the photo frame” and photos someone chose “Share for the photo frame” for in the apps run as a slide show in the section “Photo frame” (tab “Home”) of the kiosk devices – previews only, without names. Kiosk devices see nothing else of Drive. On a person's GateControl TV only the photo frame photos that person may see run."
         },
         "default": true
       },

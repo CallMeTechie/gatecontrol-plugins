@@ -30,7 +30,9 @@
 //     since 1.10.0; GET photos/classes, GET|PUT photos/settings, POST photos/review and class= since 1.13.0 — work.js)
 //     · GET|POST albums · GET|PATCH|DELETE albums/<id>
 //     POST|DELETE albums/<id>/items (albums.js) · GET storage[?all=1] · POST storage/versions/prune (storage.js) — 1.7.0
-//     GET frame   a kiosk device only — the photo frame (frame.js, 1.7.0); every other route refuses a kiosk device
+//     GET frame   a kiosk device — the photo frame (frame.js, 1.7.0); every other route refuses a kiosk device; since
+//     1.31.0 also an app device (the GateControl TV): the frame of what its person reads · GET|POST|DELETE frame/photos
+//     ("Für Fotorahmen freigeben" — frameshare.js, 1.31.0)
 //     GET|POST nodes/<id>/insight · POST nodes/<id>/insight/apply · PATCH areas/<id> { docAi } (insights.js) · GET deadlines
 //     · POST|DELETE deadlines/<id>/remind (deadlines.js) — AI for documents, GateControl's gc.ai (1.8.0)
 //     import/sources|connect|connections/<id>|browse|jobs[/<id>[/resume]] — the import from Google Drive and OneDrive,
@@ -98,6 +100,7 @@ const memories = require('./memories');
 const work = require('./work');
 const albums = require('./albums');
 const frame = require('./frame');
+const frameshare = require('./frameshare');
 const storage = require('./storage');
 const insights = require('./insights');
 const deadlines = require('./deadlines');
@@ -254,6 +257,8 @@ async function me(ctx) {
   };
 }
 
+// framePhotos: "Für Fotorahmen freigeben" — GET|POST|DELETE frame/photos (the person's own frame album) and GET frame
+// from an app device (the GateControl TV: the frame of what the person reads) (1.31.0) ·
 // memoryPicks: GET overview memoryPicks — on a day without „Heute vor X Jahren“ ≤ 4 collections of GET memories (the
 // first trip, person, month, year, place, then the page's order) for the tile „Erinnerungen“; else [] (1.28.0) ·
 // memoryCollections: the page „Erinnerungen“ — GET memories (collections: this day, trips, people, this month, the
@@ -287,7 +292,7 @@ async function me(ctx) {
 // devices: GET/PUT/DELETE devices (1.5.0) · deleteAfter: DELETE nodes/<id>?after=, PATCH { deleteAt } (1.5.0) ·
 // emptyFiles: uploads/commit { size: 0 } without a mediaId (1.5.0) · wipes: DELETE ?everywhere=1 (1.2.0) ·
 // textSearch: uploads/commit { text } (1.3.0) · previews (1.1.0)
-const FEATURES = ['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles', 'links', 'guard', 'timeTravel', 'takenAt', 'photos', 'albums', 'frame', 'storage', 'vault', 'photosFolder', 'vaultsApart', 'bulk', 'photoClasses', 'photoSearch', 'photoPlaces', 'photoPeople', 'overview', 'scan', 'offline', 'mediaFilter', 'memoryCollections', 'memoryPicks'];
+const FEATURES = ['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles', 'links', 'guard', 'timeTravel', 'takenAt', 'photos', 'albums', 'frame', 'storage', 'vault', 'photosFolder', 'vaultsApart', 'bulk', 'photoClasses', 'photoSearch', 'photoPlaces', 'photoPeople', 'overview', 'scan', 'offline', 'mediaFilter', 'memoryCollections', 'memoryPicks', 'framePhotos'];
 
 /**
  * What needs GateControl's AI service or cloud accounts (1.8.0) — only while the host has it and it is allowed (the
@@ -493,6 +498,13 @@ async function route(ctx, req, seg) {
     if (seg.length === 3 && c === 'items' && m === 'POST') return ok(await albums.addItems(ctx, b, body));
     if (seg.length === 3 && c === 'items' && m === 'DELETE') return ok(await albums.removeItems(ctx, b, body, q));
   }
+  // the photo frame of the apps (1.31.0): what the person shares, and the frame of an app device (the GateControl TV)
+  if (a === 'frame') {
+    if (seg.length === 1 && m === 'GET' && ctx.app) return ok(await appFrame(ctx));
+    if (seg.length === 2 && b === 'photos' && m === 'GET') return ok(await frameshare.get(ctx, q));
+    if (seg.length === 2 && b === 'photos' && m === 'POST') return ok(await frameshare.add(ctx, body));
+    if (seg.length === 2 && b === 'photos' && m === 'DELETE') return ok(await frameshare.remove(ctx, body, q));
+  }
   if (a === 'devices') {
     if (seg.length === 1 && m === 'GET') return ok(await devices.list(ctx));
     if (seg.length === 2 && m === 'PUT') return ok(await devices.put(ctx, b, body));
@@ -674,6 +686,23 @@ async function kioskRequest(gc, req, seg, now) {
     asPerson: async (uid) => {
       if (!users.get(uid)) return null;
       const c = await context(gc, { id: uid, portal: true, loggedIn: true }, 'de', now);
+      return c.licence.valid && c.seat && c.user ? c : null;
+    },
+  });
+}
+
+/**
+ * GET frame from an app device (since 1.31.0, the GateControl TV): the frame albums of the areas the person reads —
+ * of each only the pictures the person reads too, while the one who switched it on still may (frame.js).
+ */
+async function appFrame(ctx) {
+  const settings = await ctx.gc.settings.all();
+  return frame.show(ctx.gc, { id: ctx.viewer }, {
+    settings, users: ctx.users, licensed: ctx.licence.valid, viewer: ctx,
+    asPerson: async (uid) => {
+      if (uid === ctx.viewer) return ctx;
+      if (!ctx.users.get(uid)) return null;
+      const c = await context(ctx.gc, { id: uid, portal: true, loggedIn: true }, 'de', ctx.now);
       return c.licence.valid && c.seat && c.user ? c : null;
     },
   });

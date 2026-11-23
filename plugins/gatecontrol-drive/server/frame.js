@@ -6,7 +6,8 @@
 // (ui.portal.sections, `section=frame`), shown to kiosk devices only — `portalVisible` answers it for them, the
 // rest of Drive stays closed to them (index.js: a kiosk viewer reaches `GET frame` and nothing else).
 //
-//   GET frame   (kiosk devices only) → { on, ready, seconds, order, items: [{ url, takenAt }] }
+//   GET frame   (kiosk devices; since 1.31.0 also an app device of a person — the GateControl TV)
+//               → { on, ready, seconds, order, items: [{ url, takenAt }] }
 //
 //   on      the setting frame_on, the kiosk account allowed (frame_accounts: names or ids; empty: every kiosk device)
 //           and Drive licensed
@@ -20,6 +21,13 @@
 //
 // Since 1.13.0 an album leaves out the work folder of the person who switched it on (work.js), while their setting
 // workInMemories is off (the default) — work photos never come onto the wall by accident.
+// Since 1.31.0 a person's own frame album ("Für Fotorahmen freigeben" in the apps, frameshare.js) keeps its work photos:
+// each was shared on purpose.
+//
+// An app device (since 1.31.0, the GateControl TV — `viewer`: the person's context): the same answer, but only frame
+// albums of areas that person reads and of each only the pictures that person reads too (never another one's private
+// photos: another person's own frame album lies in their own files). frame_accounts is about kiosk accounts and does
+// not apply; frame_on does. The URLs are preview-only and signed for the person.
 
 const store = require('./store');
 const nodes = require('./nodes');
@@ -61,11 +69,14 @@ async function any(gc) {
  * GET frame for kiosk viewer `user`. `asPerson(uid)` → the context of the person who switched an album on (their
  * rights now), or null (no seat, no licence, gone).
  */
-async function show(gc, user, { settings, users, licensed, asPerson }) {
+async function show(gc, user, { settings, users, licensed, asPerson, viewer = null }) {
   const s = settingsOf(settings);
   const base = { on: false, ready: true, seconds: s.seconds, order: s.order, items: [] };
-  if (!licensed || !allowed(s, user, users)) return base;
-  const rows = await store.all(gc, 'SELECT * FROM albums WHERE frame = 1 AND frame_by IS NOT NULL ORDER BY id');
+  if (!licensed || !(viewer ? s.on : allowed(s, user, users))) return base;
+  // an app device: only what its person reads (their areas)
+  const mineIds = viewer ? new Set((await viewer.visible()).map((x) => x.area.id)) : null;
+  const rows = (await store.all(gc, 'SELECT * FROM albums WHERE frame = 1 AND frame_by IS NOT NULL ORDER BY id'))
+    .filter((a) => !mineIds || mineIds.has(a.area_id));
   const people = new Map();
   const seen = new Set();
   const picked = [];
@@ -77,11 +88,11 @@ async function show(gc, user, { settings, users, licensed, asPerson }) {
     }
     const p = people.get(a.frame_by);
     if (!p || !(await albums.mayFrame(p, a))) continue;
-    const ids = (await p.visible()).map((x) => x.area.id);
+    const ids = (await p.visible()).map((x) => x.area.id).filter((id) => !mineIds || mineIds.has(id));
     if (!ids.length) continue;
-    // without that person's work folder unless they want it (since 1.13.0)
-    const w = await work.of(p);
-    const away = w.folder && !w.settings.workInMemories ? w.folder.id : null;
+    // without that person's work folder unless they want it (since 1.13.0) — or shared one by one (1.31.0)
+    const w = a.frame_owner != null ? null : await work.of(p);
+    const away = w && w.folder && !w.settings.workInMemories ? w.folder.id : null;
     const list = await store.all(gc, `SELECT id, media_id, taken_at, mtime, created_at FROM nodes WHERE id IN (SELECT node_id FROM album_items WHERE album_id = ?)
       AND area_id IN (${store.marks(ids.length)}) AND ${photos.MEDIA} AND mime LIKE 'image/%' AND media_id IS NOT NULL
       AND media_id NOT IN (SELECT media_id FROM media_scan WHERE blocked = 1)
