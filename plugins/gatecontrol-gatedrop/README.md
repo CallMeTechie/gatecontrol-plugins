@@ -2,7 +2,7 @@
 
 Sharing like Quick Share through one's own GateControl server: files (1–20 per send, ≤ 2 GB each), a text
 (≤ 20 000 characters) or a link go to **people** (a message of the sender in the Messenger), to one's **own
-devices** (Android, Windows — directly on the same Wi-Fi when possible, otherwise through the server), into **NAS
+devices** (Android, Windows — directly on the same Wi-Fi when possible, otherwise through the server; GateControl TV through the server), into **NAS
 folders** (the Synology plugin), into one's **own Drive** (the Drive plugin, since 1.3.0) or out as a **link for
 outsiders** (time-limited, optional PIN). Received files stay on the server until they are picked up — as long as an
 administrator sets (since 1.5.0; default 7 days, see "Retention").
@@ -78,7 +78,9 @@ anything else (HTML, XML, JSON, SVG, …) goes up as `application/octet-stream`.
 (any request with `user.device`; the migration took over what was known: presence, sends, receipts, direct transfers,
 `PUT device`), so an app without GateDrop is no longer offered; since 1.6.0 also only an app whose `platform` (from
 `gc.devices.list`, i.e. the apps' `X-Client-Platform`) is `android` or `windows` — never the Linux agent (`linux`), a
-gateway or script token (platform unknown) or iOS; the same for `peopleDevices`; `POST sends` still takes any own device id; `direct` = both have a presence report younger than 15 minutes
+gateway or script token (platform unknown) or iOS; since 1.7.0 also GateControl TV as `platform: "android-tv"` (GateControl
+lists it as `android`; GateDrop takes `platform` or `clientType` `android-tv`) — it reports no presence, so `direct` is
+always `false`, and answers a direct offer with `error: "unsupported"` (the server way); the same for `peopleDevices`; `POST sends` still takes any own device id; `direct` = both have a presence report younger than 15 minutes
 with addresses in the same private IPv4 network (10/8, 172.16/12, 192.168/16; the shorter prefix of both), the target is
 online, and one side listens (`mode`: `push` = the target listens, `pull` = the asking device listens). Show the link
 target only when `me.canLink && links.enabled`.

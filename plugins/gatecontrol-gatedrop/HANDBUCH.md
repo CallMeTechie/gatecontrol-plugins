@@ -1,4 +1,4 @@
-<!-- version: 1.6.0 -->
+<!-- version: 1.7.0 -->
 # GateDrop
 
 ## Was das Plugin kann
@@ -7,7 +7,7 @@ Teilen wie Quick Share – über deinen eigenen GateControl-Server:
 
 - **Dateien** (1 bis 20 je Sendung, bis 2 GB je Datei), einen **Text** oder einen **Link** senden.
 - **An Personen:** als Nachricht im Messenger.
-- **An die eigenen Geräte** (Android, Windows): im selben WLAN direkt von Gerät zu Gerät, sonst über den Server.
+- **An die eigenen Geräte** (Android, Windows): im selben WLAN direkt von Gerät zu Gerät, sonst über den Server. GateControl TV empfängt immer über den Server.
 - **In NAS-Ordner** (Plugin NAS (Synology)) und **ins eigene Drive** (Plugin Drive).
 - **Als Link für Externe:** zeitlich begrenzt, auf Wunsch mit PIN.
 - Empfangenes bleibt auf dem Server, bis es abgeholt ist – wie lange, legt ein Administrator fest (Standard 7 Tage).
@@ -19,7 +19,7 @@ Teilen wie Quick Share – über deinen eigenen GateControl-Server:
 - Zum Senden an Personen: das Plugin **Messenger**.
 - Für NAS-Ordner: das Plugin **NAS (Synology)** mit freigegebenen Ordnern („Ablage für GateDrop“).
 - Fürs eigene Drive: das Plugin **Drive** ab 1.4.0 und einen Drive-Platz für die Person.
-- Für Geräte: die GateControl-App auf Android oder der Windows-Client.
+- Für Geräte: die GateControl-App auf Android, der Windows-Client oder GateControl TV (nur Empfang über den Server).
 
 ## Einrichten
 
@@ -64,7 +64,7 @@ Belegter Speicher, angekommene Sendungen, der Weg (direkt oder über den Server)
 Ein Administrator schaltet sie unter Einstellungen › Plugins › GateDrop › Berechtigungen › „Öffentliche Links erlauben“ ein.
 
 **Mein Gerät erscheint nicht als Ziel.**
-Als eigene Geräte erscheinen nur App-Installationen, die GateDrop schon einmal benutzt haben – die Android-App und der Windows-Client. Öffne einmal die GateDrop-Seite der App. Der Linux-Agent, Gateways und iOS erscheinen nie, sie können nichts empfangen.
+Als eigene Geräte erscheinen nur App-Installationen, die GateDrop schon einmal benutzt haben – die Android-App, der Windows-Client und GateControl TV. Öffne einmal die GateDrop-Seite der App. Der Linux-Agent, Gateways und iOS erscheinen nie, sie können nichts empfangen.
 
 **Eine direkte Sendung steht kurz auf „direkt …“.**
 Sie gilt erst als zugestellt, wenn das empfangende Gerät bestätigt, dass es alles gespeichert hat. Kommt diese Bestätigung nicht innerhalb von 20 Sekunden, nimmt GateDrop von selbst den Weg über den Server – das Gerät bekommt die Sendung dann trotzdem, aber nur einmal.
@@ -77,6 +77,10 @@ Sende später noch einmal. Gesperrte Dateien gibt GateDrop nicht weiter.
 
 **Eine Sendung heißt „Vom Admin entfernt“.**
 Ein Administrator hat ihre Dateien auf dem Server gelöscht.
+
+## Neu in 1.7.0
+
+- **Der Fernseher als Ziel:** GateControl TV erscheint in „Senden an“ als eigenes Gerät (bzw. als freigegebenes Gerät eines anderen) mit TV-Symbol und empfängt Dateien, Text und Links. Der Fernseher nimmt nie direkt im WLAN an – GateDrop schickt alles an ihn über den Server, von selbst und ohne doppelte Zustellung.
 
 ## Neu in 1.6.0
 

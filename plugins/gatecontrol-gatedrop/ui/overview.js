@@ -38,7 +38,7 @@
     var s = T(k);
     return s === k ? T('admin.err.other', { code: code }) : s;
   }
-  function platform(p) { return { android: 'Android', windows: 'Windows', ios: 'iOS' }[p] || (p ? cap(p) : ''); }
+  function platform(p) { return { android: 'Android', 'android-tv': 'Android TV', windows: 'Windows', ios: 'iOS' }[p] || (p ? cap(p) : ''); }
   function pill(text, tone) { return el('span', { class: 'gd-pill' + (tone ? ' is-' + tone : ''), text: text }); }
   function cell(main, sub, cls) {
     return el('td', cls ? { class: cls } : null, [main == null ? '—' : main, sub ? el('span', { class: 'gd-sub', text: sub }) : null]);
