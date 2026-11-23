@@ -35,8 +35,10 @@ function adminLockView(lock, now = Date.now()) {
 }
 
 /** A camera for a viewer. */
-function cameraView(cam, { prefs, lastImageAt }) {
+function cameraView(cam, { prefs, lastImageAt, homeFields }) {
   return {
+    // 1.9.0: the linked home camera (homeCameraId, live) — only for people who see it
+    ...(homeFields || {}),
     id: cam.id, name: cam.name, kind: cam.kind || null, doorbell: cam.doorbell === 1, lockId: cam.lock_id || null,
     online: cam.online == null ? null : cam.online === 1, battery: cam.battery == null ? null : cam.battery,
     prefs: { ding: prefs ? prefs.ding : true, motion: prefs ? prefs.motion : false },
@@ -48,6 +50,7 @@ function adminCameraView(cam) {
   return {
     id: cam.id, name: cam.name, kind: cam.kind || null, doorbell: cam.doorbell === 1, lockId: cam.lock_id || null,
     enabled: cam.enabled === 1, present: cam.present === 1, online: cam.online == null ? null : cam.online === 1,
+    homeCameraId: cam.home_camera_id || null,
     battery: cam.battery == null ? null : cam.battery, updatedAt: iso(cam.updated_at),
   };
 }
