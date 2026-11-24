@@ -1,4 +1,4 @@
-<!-- version: 1.8.1 -->
+<!-- version: 1.9.0 -->
 # Fernzugriff – Handbuch
 
 ## Was das Plugin kann {#was-das-plugin-kann}
@@ -260,7 +260,7 @@ Beim SSH-Terminal wird aufgezeichnet, was das Terminal zeigt, keine Tastatureing
 
 **Im Portal:** Der Tab **Fernzugriff** zeigt deine Geräte mit Zustand. „Verbinden“ öffnet die Sitzung in einem neuen Tab. Erscheint stattdessen „Sitzung öffnen“, tippe darauf. „Aufwecken“ schickt ein Wake-on-LAN-Paket. Bei einem Windows-PC „Nur mit Code“ steht dort „Code eingeben“. Mit dem Recht „Support-Codes einlösen“ gibt es „Code eingeben“ auch oben, für PCs, die du nicht in der Liste hast.
 
-**In den Apps:** RDP-Geräte stehen wie bisher in den GateControl-Apps unter Remote Desktop. SSH-Geräte mit dem Terminal öffnen die Apps in einem eigenen Terminal, sobald die App das kann.
+**In den Apps:** RDP-Geräte stehen wie bisher in den GateControl-Apps unter Remote Desktop. Als Administrator siehst du dort alle Geräte und alle angemeldeten PCs und verbindest dich wie im Portal: mit einem PC „ohne Code“ direkt, mit einem PC „Nur mit Code“ nur mit dem Code und der Bestätigung am PC. Den Code gibst du im Portal unter „Code eingeben“ ein. SSH-Geräte mit dem Terminal öffnen die Apps in einem eigenen Terminal, sobald die App das kann.
 
 **Als Administrator:** Unter **Fernzugriff › Geräte** kannst du dich mit jedem Gerät verbinden – mit einem Windows-PC aus der App nur „ohne Code“, sonst wie alle mit dem Code. Unter **Sitzungen** siehst du den Verlauf, kannst offene Browser-Sitzungen beenden und alles als CSV laden. Der Filter **„Freigaben“** zeigt eingelöste und falsche Codes, Anfragen, Änderungen an „Ohne Code“ und das Öffnen und Schließen der Firewall.
 
@@ -277,7 +277,7 @@ Beim SSH-Terminal wird aufgezeichnet, was das Terminal zeigt, keine Tastatureing
 
 - Ein Recht setzt du je **Gruppe** oder je **Person**. „ja“ oder „nein“ bei der Person gilt vor ihren Gruppen.
 - Ohne Eintrag hat eine Person ein Recht, sobald eine ihrer Gruppen es hat.
-- **Administratoren** dürfen immer alles und erreichen jedes Gerät.
+- **Administratoren** dürfen immer alles und erreichen jedes Gerät. In den Apps sehen sie jeden angemeldeten PC; einen PC „Nur mit Code“ erreichen auch sie nur mit Code und Bestätigung am PC.
 - **Welche Geräte:** Je Gerät „Alle mit Recht“ oder „Nur ausgewählte“ Personen und Gruppen. Alte App-Token aus Remote Desktops gelten weiter, nur für die alten Apps.
 - „Was darf diese Person?“ (Klick auf den Namen) zeigt Rechte und erreichbare Geräte einer Person.
 
@@ -316,6 +316,11 @@ Das Recht wird bei jedem Verbinden neu geprüft.
 **„Zu viele falsche Codes“:** Warte 15 Minuten oder lass dir am PC einen neuen Code zeigen.
 
 **Im Browser fragt Windows nach der Anmeldung nicht:** Verlangt der PC die Anmeldung auf Netzwerkebene (NLA), braucht die Sitzung im Browser Benutzername und Passwort, die die Sitzungsseite noch nicht abfragt. Verbinde dich dann aus der GateControl-App.
+
+## Neu in 1.9.0 {#neu-1-9-0}
+
+- **Administratoren sehen in den Apps alle PCs:** Unter Remote Desktop stehen für Administratoren alle Geräte und alle angemeldeten PCs, auch solche „Nur mit Code“ und gerade nicht erreichbare.
+- **Verbinden wie im Portal:** Mit einem PC „ohne Code“ verbindest du dich als Administrator direkt, auch wenn er nicht für dich freigegeben ist; ein PC „Nur mit Code“ verlangt auch von dir den Code und die Bestätigung am PC. Für alle anderen bleibt alles wie bisher.
 
 ## Neu in 1.8.1 {#neu-1-8-1}
 

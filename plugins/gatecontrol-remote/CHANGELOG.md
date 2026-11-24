@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.9.0
+
+Mindestversion unverändert **GateControl 1.300.1**.
+
+- **Administratoren sehen in den Apps alle PCs** (alte App-Schnittstelle `/api/v1/client/rdp*`, `server/facade.js`):
+  `list`, `status`, `statusAdmin` und `statusAll` zeigen einem Administrator (Rolle `admin` aus `gc.users.get`, wie
+  überall im Plugin) jedes eingeschaltete RDP-Gerät und jeden angemeldeten PC – auch „Nur mit Code“ und offline. Bisher
+  galt für die Apps eines Administrators die Zugriffsliste wie für alle anderen.
+- **Verbinden wie im Portal:** Administratoren erreichen jedes Gerät (`rights.js`). Aus der App verbinden sie sich mit
+  jedem PC, auf dem „Ohne Code für Berechtigte“ an ist, ohne Code und ohne Frage, auch wenn sie nicht auf seiner
+  Zugriffsliste stehen (Firewall-Regel für die VPN-Adresse der App wie bei allen), und mit jedem Gerät von GateControl
+  wie auf der Admin-Seite. Ein PC „Nur mit Code“ oder mit gesperrtem „Ohne Code“ antwortet auch Administratoren mit
+  `403 code_required`: Code und Bestätigung am PC.
+- Für alle anderen Personen bleibt alles wie in 1.8.1. Portal, Admin-Seite und die neue App-Schnittstelle des Plugins
+  sind unverändert.
+- Tests (`test/facade.test.js`, `test/hosts.test.js`), Handbuch „Benutzen“, „Berechtigungen“, „Neu in 1.9.0“.
+
 ## 1.8.1
 
 Mindestversion **GateControl 1.300.1** (`gatecontrol.ref` = v1.300.1, gatecontrol#532).

@@ -174,7 +174,11 @@ Active in GateControl after the take-over. The plugin answers `list`, `status`, 
 `sessionStart`, `sessionHeartbeat`, `sessionEnd` in the old shape (booleans as booleans, `user_ids` & co. as the old
 JSON text, `connect_address` / `connect_port` like `resolveConnectEndpoint` — a gateway target with
 `payload.server.connectHost`). Scope `client:rdp` or `full-access`; the right of the person (administrators included)
-and the access list as before (no administrator bypass for apps); never the app's own computer (`user.selfIp`).
+and the access list as before; never the app's own computer (`user.selfIp`). 1.9: an administrator's app sees every
+enabled RDP device and every registered PC (also with a code or offline) in `list`, `status`, `statusAdmin`,
+`statusAll` and uses them like in the portal (administrators reach every device): `connect` to a PC "ohne Code"
+opens it without a code, also when its access list does not name the administrator; a PC "nur mit Code" (or with
+"ohne Code" locked) answers `403 code_required` to administrators, too. Everybody else: unchanged.
 `connect` names the vault handle (`fields`: `username, domain` for `user_only`) and the core encrypts with ECDH only
 (`400 ecdh_required` without `ecdhPublicKey`). `browserSession` answers `{ guac }`, the core makes the token. A
 GateControl without `payload.server` (1.281.0) gets `{ handled: false }` for every call: the core keeps answering from

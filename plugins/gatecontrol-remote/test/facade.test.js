@@ -40,9 +40,16 @@ test('list: the RDP devices of the app\'s person in the old shape, never its own
     // an old app's token without a person: only the device that lists the token
     const tok = await host.clientFacade('list', { user: { id: null, tokenId: 77, peerId: null, scopes: ['full-access'] } });
     assert.deepEqual(tok.body.routes.map((x) => x.id), [6]);
-    // an administrator's app sees what the lists give it, as before
+    // 1.9: an administrator's app sees every enabled RDP device, also the ones whose lists do not name them
     const adm = await host.clientFacade('list', { user: APP(ADMIN) });
-    assert.deepEqual(adm.body.routes.map((x) => x.id).sort(), [5]);
+    assert.deepEqual(adm.body.routes.map((x) => x.id).sort(), [3, 5, 6]);
+    assert.equal((await host.clientFacade('status', { id: 3, user: APP(ADMIN) })).status, 200);
+    assert.deepEqual(Object.keys((await host.clientFacade('statusAll', { user: APP(ADMIN) })).body.statuses).sort(), ['3', '5', '6']);
+    // a device of GateControl (no PC of a person): the administrator connects like on the admin page
+    assert.equal((await host.clientFacade('connect', { id: 3, user: APP(ADMIN), query: { ecdhPublicKey: 'K' } })).status, 200);
+    // everybody else: unchanged
+    assert.deepEqual((await host.clientFacade('list', { user: APP(SABINE) })).body.routes.map((x) => x.id), [5]);
+    assert.equal((await host.clientFacade('status', { id: 3, user: APP(SABINE) })).status, 403);
   } finally { await host.close(); }
 });
 

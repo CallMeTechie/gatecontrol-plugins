@@ -19,6 +19,11 @@
 // A PC that registered itself (kind host, stage 2) is in `list` only while it is shared "ohne Code" and
 // ready; `connect` opens its firewall for the app's own VPN address (selfIp) first, `sessionEnd` closes it.
 //
+// 1.9: as in the portal, administrators reach every device: an administrator's app sees every enabled RDP device
+// and every registered PC (also with a code, also offline) and its state, and connects to a PC "ohne Code" like
+// everybody on its list. A PC "nur mit Code" answers code_required to administrators, too (the code and the
+// confirmation at the PC). Everybody else sees and uses what the access lists give them, as before.
+//
 // The same rules as the portal: the right of the protocol and the access list
 // of the device (rights.js), the token's scope (client:rdp or full-access),
 // enabled, the maintenance window, never the app's own computer (selfIp).
@@ -78,19 +83,24 @@ async function personWithRole(gc, u) {
   return full ? { id: full.id, role: full.role, name: full.name } : null;
 }
 
-/**
- * May the app's person use the device? The rights of the person (administrators have all of them), but the
- * access list as before — an administrator's app sees what the list gives it, like the former Remote Desktops.
- */
+const isAdmin = (user) => !!(user && user.role === 'admin');
+
+/** May the app's person use the device by its access list? The rights of the person and the access list (role user). */
 async function allowed(gc, p, user, d, access, r) {
   return rights.mayUse(gc, user ? { id: user.id, role: 'user' } : null, d, access, { tokenId: p.user.tokenId, rights: r || (user ? await rights.of(gc, user) : undefined) });
+}
+
+/** 1.9: may the app's person see and use the device? Administrators every enabled one (as in the portal), everybody else what `allowed` gives. */
+async function visible(gc, p, user, d, access, r) {
+  if (isAdmin(user)) return !!d.enabled;
+  return allowed(gc, p, user, d, access, r);
 }
 
 async function deviceFor(gc, p, user) {
   const d = await devices.get(gc, p.id);
   if (!d) return { error: err(404, 'RDP route not found') };
   const access = (await devices.accessLists(gc)).get(d.id) || devices.emptyAccess();
-  return { d, access, ok: await allowed(gc, p, user, d, access) };
+  return { d, access, ok: await visible(gc, p, user, d, access) };
 }
 
 async function list(gc, p, user) {
@@ -102,10 +112,10 @@ async function list(gc, p, user) {
   for (const d of all) {
     if (d.protocol !== 'rdp' || !d.enabled) continue;
     if (selfIp && d.config.host === selfIp) continue;
-    // a PC: only "ohne Code" and ready (with a code the old apps cannot ask)
-    if (d.kind === 'host' && (devices.connectMode(d) !== 'open' || !devices.hostReady(d))) continue;
+    // a PC: only "ohne Code" and ready (with a code the old apps cannot ask); 1.9: an administrator every registered one
+    if (d.kind === 'host' && (isAdmin(user) ? !d.host.registered : (devices.connectMode(d) !== 'open' || !devices.hostReady(d)))) continue;
     const access = lists.get(d.id) || devices.emptyAccess();
-    if (!(await allowed(gc, p, user, d, access, r))) continue;
+    if (!(await visible(gc, p, user, d, access, r))) continue;
     out.push({ ...routeView(d, access, p.server), status: statusOf(d) });
   }
   return json(200, { ok: true, routes: out });
@@ -176,7 +186,7 @@ async function adminOp(gc, p, user) {
     const statuses = {};
     for (const d of await devices.all(gc)) {
       if (d.protocol !== 'rdp' || !d.enabled) continue;
-      if (!(await allowed(gc, p, user, d, lists.get(d.id) || devices.emptyAccess(), r))) continue;
+      if (!(await visible(gc, p, user, d, lists.get(d.id) || devices.emptyAccess(), r))) continue;
       statuses[d.id] = { online: d.status.online === true, responseTime: d.status.responseTime, lastCheck: iso(d.status.lastCheck) };
     }
     return json(200, { ok: true, statuses });

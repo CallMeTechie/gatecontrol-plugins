@@ -291,6 +291,47 @@ test('the old apps: a PC only "ohne Code"; connect opens the rule for the app, s
   } finally { await host.close(); }
 });
 
+test('1.9 the old apps: an administrator sees every registered PC and reaches it like in the portal', async () => {
+  const { host, app, adminReq } = await start();
+  try {
+    await host.legacyImport({ schema: 1, dataset: 'remote', exportedAt: new Date().toISOString(), routes: [], sessions: [], maintenance: [] });
+    const { host: h } = await app(MARC, PC, 'POST', '/host/register', REG);
+    await adminReq('PUT', 'rights/user/' + SABINE.id, { rdp: true });
+    const A = { id: ADMIN.id, tokenId: 811, peerId: 70, scopes: ['client', 'client:rdp'], platform: 'windows', selfIp: '10.8.0.70' };
+    const S = { id: SABINE.id, tokenId: 802, peerId: 62, scopes: ['client', 'client:rdp'], platform: 'windows', selfIp: '10.8.0.62' };
+    // the administrator sees Marc's PC, also "nur mit Code"; Sabine (right, no access) does not
+    const list = (await host.clientFacade('list', { user: A })).body.routes;
+    assert.deepEqual(list.map((x) => x.id), [h.deviceId]);
+    assert.equal(list[0].status.online, true);
+    assert.deepEqual((await host.clientFacade('list', { user: S })).body.routes, []);
+    // "nur mit Code": the code and the confirmation at the PC, for administrators too — the PC opens nothing
+    const opens = signals(host, 'remote.firewall.open').length;
+    const c = await host.clientFacade('connect', { id: h.deviceId, user: A, query: { ecdhPublicKey: 'K' } });
+    assert.deepEqual([c.status, c.body.error], [403, 'code_required']);
+    assert.equal(signals(host, 'remote.firewall.open').length, opens);
+    // its state: yes
+    assert.equal((await host.clientFacade('statusAdmin', { id: h.deviceId, user: A })).body.online, true);
+    assert.equal((await host.clientFacade('statusAll', { user: A })).body.statuses[h.deviceId].online, true);
+    // "ohne Code für Berechtigte": the administrator connects without a code, as in the portal (not on the PC's list)
+    await app(MARC, PC, 'PUT', '/host/share', { shareMode: 'open' });
+    const p = host.clientFacade('connect', { id: h.deviceId, user: A, query: { ecdhPublicKey: 'K' } });
+    await pcOpens(host, app, MARC, PC);
+    const ok = await p;
+    assert.equal(ok.status, 200, JSON.stringify(ok));
+    assert.equal(lastSignal(host, 'remote.firewall.open').data.allow, '10.8.0.70');
+    assert.equal(signals(host, 'remote.request').length, 0, 'no question at the PC');
+    // Sabine: still not shared with her
+    assert.deepEqual((await host.clientFacade('list', { user: S })).body.routes, []);
+    assert.equal((await host.clientFacade('connect', { id: h.deviceId, user: S, query: { ecdhPublicKey: 'K' } })).status, 403);
+    // the administrator locks "ohne Code": the code again, for administrators too
+    await adminReq('POST', 'devices/' + h.deviceId + '/allow-open', { allowOpen: false });
+    assert.equal((await host.clientFacade('connect', { id: h.deviceId, user: A, query: { ecdhPublicKey: 'K' } })).body.error, 'code_required');
+    // signed off: gone from the administrator's list
+    await app(MARC, PC, 'DELETE', '/host');
+    assert.deepEqual((await host.clientFacade('list', { user: A })).body.routes, []);
+  } finally { await host.close(); }
+});
+
 test('an app helper: redeem in the app, the rule for exactly the helper\'s device (peerAddress)', async () => {
   const { host, app, adminReq } = await start();
   try {
