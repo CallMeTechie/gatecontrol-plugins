@@ -8,11 +8,11 @@ Mindestversion unverändert **GateControl 1.300.1**.
   `list`, `status`, `statusAdmin` und `statusAll` zeigen einem Administrator (Rolle `admin` aus `gc.users.get`, wie
   überall im Plugin) jedes eingeschaltete RDP-Gerät und jeden angemeldeten PC – auch „Nur mit Code“ und offline. Bisher
   galt für die Apps eines Administrators die Zugriffsliste wie für alle anderen.
-- **Sehen heißt nicht hinein:** Steht der Administrator nicht auf der Zugriffsliste eines PCs, antwortet `connect` mit
-  `403 code_required` – auch wenn „Ohne Code für Berechtigte“ an ist. Keine Firewall-Regel, keine Sitzung
-  (`sessionStart` 403); der Weg bleibt der Code mit der Bestätigung am PC. Gibt der Besitzer den PC für den
-  Administrator frei, gilt „Ohne Code“ wie für alle auf der Liste. Geräte von GateControl selbst (keine PCs einer
-  Person) verbindet ein Administrator aus der App wie auf der Admin-Seite.
+- **Verbinden wie im Portal:** Administratoren erreichen jedes Gerät (`rights.js`). Aus der App verbinden sie sich mit
+  jedem PC, auf dem „Ohne Code für Berechtigte“ an ist, ohne Code und ohne Frage, auch wenn sie nicht auf seiner
+  Zugriffsliste stehen (Firewall-Regel für die VPN-Adresse der App wie bei allen), und mit jedem Gerät von GateControl
+  wie auf der Admin-Seite. Ein PC „Nur mit Code“ oder mit gesperrtem „Ohne Code“ antwortet auch Administratoren mit
+  `403 code_required`: Code und Bestätigung am PC.
 - Für alle anderen Personen bleibt alles wie in 1.8.1. Portal, Admin-Seite und die neue App-Schnittstelle des Plugins
   sind unverändert.
 - Tests (`test/facade.test.js`, `test/hosts.test.js`), Handbuch „Benutzen“, „Berechtigungen“, „Neu in 1.9.0“.

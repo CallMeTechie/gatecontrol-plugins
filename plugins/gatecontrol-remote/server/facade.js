@@ -19,10 +19,10 @@
 // A PC that registered itself (kind host, stage 2) is in `list` only while it is shared "ohne Code" and
 // ready; `connect` opens its firewall for the app's own VPN address (selfIp) first, `sessionEnd` closes it.
 //
-// 1.9: an administrator's app sees every enabled RDP device and every registered PC (also with a code, also
-// offline) and its state. Seeing is not getting in: a PC whose access list does not name the administrator
-// answers `connect` with code_required, also "ohne Code" — the code and the confirmation at the PC (portal,
-// "Code eingeben") stay the way in. Everybody else sees and uses what the access lists give them, as before.
+// 1.9: as in the portal, administrators reach every device: an administrator's app sees every enabled RDP device
+// and every registered PC (also with a code, also offline) and its state, and connects to a PC "ohne Code" like
+// everybody on its list. A PC "nur mit Code" answers code_required to administrators, too (the code and the
+// confirmation at the PC). Everybody else sees and uses what the access lists give them, as before.
 //
 // The same rules as the portal: the right of the protocol and the access list
 // of the device (rights.js), the token's scope (client:rdp or full-access),
@@ -85,32 +85,22 @@ async function personWithRole(gc, u) {
 
 const isAdmin = (user) => !!(user && user.role === 'admin');
 
-/**
- * May the app's person use the device by its access list? The rights of the person (administrators have all of
- * them), the access list as for anybody else — an administrator's role does not put them on a list.
- */
+/** May the app's person use the device by its access list? The rights of the person and the access list (role user). */
 async function allowed(gc, p, user, d, access, r) {
   return rights.mayUse(gc, user ? { id: user.id, role: 'user' } : null, d, access, { tokenId: p.user.tokenId, rights: r || (user ? await rights.of(gc, user) : undefined) });
 }
 
-/** 1.9: may the app's person see the device (list, state)? Administrators every enabled one, everybody else what `allowed` gives. */
+/** 1.9: may the app's person see and use the device? Administrators every enabled one (as in the portal), everybody else what `allowed` gives. */
 async function visible(gc, p, user, d, access, r) {
   if (isAdmin(user)) return !!d.enabled;
   return allowed(gc, p, user, d, access, r);
 }
 
-/**
- * The device of a call: `seen` (list, state, wake), `ok` (connect, session): a PC only by its access list
- * (an administrator who is not on it needs the code), any other device whoever sees it.
- */
 async function deviceFor(gc, p, user) {
   const d = await devices.get(gc, p.id);
   if (!d) return { error: err(404, 'RDP route not found') };
   const access = (await devices.accessLists(gc)).get(d.id) || devices.emptyAccess();
-  const r = user ? await rights.of(gc, user) : undefined;
-  const listed = await allowed(gc, p, user, d, access, r);
-  const seen = listed || await visible(gc, p, user, d, access, r);
-  return { d, access, seen, ok: d.kind === 'host' ? listed : seen };
+  return { d, access, ok: await visible(gc, p, user, d, access) };
 }
 
 async function list(gc, p, user) {
@@ -148,8 +138,6 @@ async function connectOp(gc, p, user) {
   if (d.protocol !== 'rdp') return err(400, 'Only RDP targets can be opened in the app');
   if (!d.enabled) return err(403, 'RDP route is disabled');
   if (p.user.selfIp && p.user.selfIp === d.config.host) return err(400, 'Cannot RDP to the host you are running on');
-  // 1.9: an administrator sees a PC that is not shared with them — in only with the code and the confirmation at the PC
-  if (!x.ok && x.seen && d.kind === 'host') return err(403, 'code_required');
   if (!x.ok) return err(403, 'Not authorized for this RDP route');
   if (maintenance.inWindow(d.config)) return err(503, 'Route is in maintenance window', { maintenance: true, maintenance_schedule: d.config.maintenance_schedule });
   if (d.kind === 'host') return connectHost(gc, p, user, d);
@@ -186,7 +174,7 @@ async function stateNow(gc, d) {
 async function statusOp(gc, p, user) {
   const x = await deviceFor(gc, p, user);
   if (x.error) return x.error;
-  if (!x.seen) return err(403, 'Not authorized for this RDP route');
+  if (!x.ok) return err(403, 'Not authorized for this RDP route');
   return json(200, { ok: true, status: await stateNow(gc, x.d) });
 }
 
@@ -205,7 +193,7 @@ async function adminOp(gc, p, user) {
   }
   const x = await deviceFor(gc, p, user);
   if (x.error) return x.error;
-  if (!x.seen) return err(403, 'Not authorized for this RDP route');
+  if (!x.ok) return err(403, 'Not authorized for this RDP route');
   if (p.op === 'statusAdmin') return json(200, { ok: true, id: x.d.id, ...(await stateNow(gc, x.d)) });
   if (!x.d.config.wol_enabled || !x.d.config.wol_mac_address) return err(400, 'Wake-on-LAN is not configured for this route');
   try {

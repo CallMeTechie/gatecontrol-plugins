@@ -176,9 +176,9 @@ JSON text, `connect_address` / `connect_port` like `resolveConnectEndpoint` — 
 `payload.server.connectHost`). Scope `client:rdp` or `full-access`; the right of the person (administrators included)
 and the access list as before; never the app's own computer (`user.selfIp`). 1.9: an administrator's app sees every
 enabled RDP device and every registered PC (also with a code or offline) in `list`, `status`, `statusAdmin`,
-`statusAll` and may `wake`, `connect` and `browserSession` a device of GateControl; a PC whose access list does not
-name the administrator answers `connect` with `403 code_required` (also "ohne Code") and `sessionStart` with 403 —
-the way in is the code and the confirmation at the PC. Everybody else: unchanged.
+`statusAll` and uses them like in the portal (administrators reach every device): `connect` to a PC "ohne Code"
+opens it without a code, also when its access list does not name the administrator; a PC "nur mit Code" (or with
+"ohne Code" locked) answers `403 code_required` to administrators, too. Everybody else: unchanged.
 `connect` names the vault handle (`fields`: `username, domain` for `user_only`) and the core encrypts with ECDH only
 (`400 ecdh_required` without `ecdhPublicKey`). `browserSession` answers `{ guac }`, the core makes the token. A
 GateControl without `payload.server` (1.281.0) gets `{ handled: false }` for every call: the core keeps answering from
