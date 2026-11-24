@@ -1,4 +1,4 @@
-<!-- version: 1.9.1 -->
+<!-- version: 1.9.2 -->
 # Fernzugriff – Handbuch
 
 ## Was das Plugin kann {#was-das-plugin-kann}
@@ -62,7 +62,9 @@ Wer bisher ein RDP- oder VNC-Ziel sehen konnte, bekommt das Recht „Remote Desk
 
 **„Erneut übernehmen“** holt den Stand aus „Remote Desktops“ noch einmal. Übernommene Geräte und ihr Verlauf werden dabei ersetzt, Änderungen daran gehen verloren. Geräte, die du im Plugin angelegt hast, bleiben. Ein Recht, das du schon gesetzt hast, nimmt die Übernahme nie weg.
 
-„Remote Desktops“ bleibt in GateControl erhalten, die Daten werden nur kopiert. Unter **Fernzugriff › Einstellungen** steht, wann zuletzt übernommen wurde.
+Die Übernahme kopiert, GateControl ändert dabei nichts an den alten Daten. Unter **Fernzugriff › Einstellungen** steht, wann zuletzt übernommen wurde.
+
+**„Remote Desktops“ gibt es in GateControl nicht mehr** (in den Versionen nach 1.320): kein Menüpunkt, keine eigene Seite – Fernzugriff ist die einzige Stelle für RDP, SSH, VNC und Telnet. Die alten Ziele bleiben in GateControl gespeichert (auch in Sicherungen), bis du sie übernommen hast. Solange etwas nicht übernommen ist – oder sich danach geändert hat, etwa durch eine Wiederherstellung –, steht auf dem Dashboard und über den Seiten von Fernzugriff **„Alte Remote Desktops noch nicht übernommen“** mit **„Jetzt übernehmen“**. Die Apps erreichen alte Ziele erst nach der Übernahme. Ein GateControl bis 1.320 behält „Remote Desktops“ noch.
 
 > **Hinweis:** Steht bei einem Gerät „Zugangsdaten neu eingeben“, konnte GateControl sie nicht mehr lesen, etwa nach einer Wiederherstellung auf einem anderen Server. Öffne das Gerät, gib Benutzername und Passwort neu ein und speichere.
 
@@ -294,7 +296,7 @@ Das Recht wird bei jedem Verbinden neu geprüft.
 
 **„Gateway-Port fehlt“:** Der Port auf dem Server ließ sich nicht einrichten, meist ist er belegt. Öffne das Gerät, wähle einen anderen „Port auf dem Server“ und speichere.
 
-**Die Apps zeigen andere Geräte als das Portal:** Die Apps zeigen nur RDP-Geräte. Bis GateControl die neue Schnittstelle hat, kommt ihre Liste noch aus „Remote Desktops“.
+**Die Apps zeigen andere Geräte als das Portal:** Die Apps zeigen nur RDP-Geräte. Ein Ziel, das noch in den alten „Remote Desktops“ steht, sehen sie erst nach der Übernahme. Ohne Fernzugriff zeigt ein GateControl nach 1.320 in den Apps keine Remote Desktops mehr (die Android-App meldet „RDP ist nicht verfügbar“).
 
 **„Der Host-Schlüssel des Geräts hat sich geändert“:** GateControl verbindet sich nicht, weil das Gerät einen anderen Schlüssel zeigt als beim ersten Mal. Hast du das Gerät neu aufgesetzt, setze den Schlüssel im Reiter Terminal zurück. Sonst: nicht verbinden und prüfen, wer da antwortet.
 
@@ -319,6 +321,10 @@ Das Recht wird bei jedem Verbinden neu geprüft.
 **Im Browser fragt Windows nach der Anmeldung nicht:** Verlangt der PC die Anmeldung auf Netzwerkebene (NLA), braucht die Sitzung im Browser Benutzername und Passwort, die die Sitzungsseite noch nicht abfragt. Hinterlege sie unter „Bearbeiten“ › Anmeldung oder verbinde dich aus der GateControl-App. Ist NLA am PC aus, zeigt Windows ohne hinterlegte Zugangsdaten seine Anmeldemaske (GateControl mit Fernzugriff-Schnittstelle Version 10; ein älteres GateControl versucht NLA trotzdem und meldet „Anmeldung fehlgeschlagen“).
 
 **Im Browser stimmen y/z oder Sonderzeichen nicht:** Stelle unter „Bearbeiten“ › Ressourcen die **Tastaturbelegung** des PCs ein. „Wie im Browser“ nimmt Deutsch bei einem deutschen Browser, sonst Englisch (US).
+
+## Neu in 1.9.2 {#neu-1-9-2}
+
+- **„Remote Desktops“ ist aus GateControl verschwunden:** Fernzugriff ist die einzige Stelle für RDP, SSH, VNC und Telnet. Nicht übernommene alte Ziele bleiben erhalten; GateControl zeigt dann „Alte Remote Desktops noch nicht übernommen – Jetzt übernehmen“ (siehe [Übernahme aus Remote Desktops](#uebernahme)). Am Plugin selbst ändert sich nichts.
 
 ## Neu in 1.9.1 {#neu-1-9-1}
 

@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.9.2
+
+Mindestversion unverändert **GateControl 1.300.1**. Nur Handbuch, kein Code.
+
+- **„Remote Desktops“ gibt es in GateControl nicht mehr** (gatecontrol#582): kein Menüpunkt, keine Seite `/rdp`, keine Admin-API `/api/v1/rdp`; die alte App-API `/api/v1/client/rdp*`
+  beantwortet nur noch dieses Plugin (`clientFacade`, auch vor der Übernahme), ohne Plugin `403 remote_plugin_required`.
+  Die alten Ziele bleiben in GateControl als Altbestand (Tabellen `rdp_routes`/`rdp_sessions`, auch in Sicherungen), bis sie
+  übernommen sind; bis dahin zeigt GateControl auf dem Dashboard, im Plugin-Bereich und über den Seiten dieses Plugins
+  „Alte Remote Desktops noch nicht übernommen – Jetzt übernehmen“ (auch nach einer Änderung oder einer
+  Wiederherstellung nach der letzten Übernahme). Der Hook `legacyImport`, der Datensatz `remote` und `gc.remote` bleiben
+  unverändert (Version 10).
+- Handbuch: „Übernahme aus Remote Desktops“ (der Satz „Remote Desktops bleibt in GateControl erhalten“ galt nur bis
+  GateControl 1.320.x), „Fehlersuche“ (die Liste der Apps kommt nur noch aus dem Plugin), „Neu in 1.9.2“.
+
 ## 1.9.1
 
 Mindestversion unverändert **GateControl 1.300.1**. Tastaturbelegung und RDP ohne NLA bei fehlenden Zugangsdaten brauchen

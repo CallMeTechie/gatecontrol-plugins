@@ -114,7 +114,7 @@ describe('pages and texts', () => {
   it('plugin.json: the permissions of the contract, an own licence, the profile section', () => {
     const m = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'plugin.json'), 'utf8'));
     assert.equal(m.id, 'gatecontrol-remote');
-    assert.equal(m.version, '1.9.1');
+    assert.equal(m.version, '1.9.2');
     assert.equal(m.name.de, 'Fernzugriff');
     assert.equal(m.permissions.remote, true);
     assert.equal(m.license.required, true);
