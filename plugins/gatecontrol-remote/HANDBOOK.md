@@ -1,4 +1,4 @@
-<!-- version: 1.9.1 -->
+<!-- version: 1.9.2 -->
 # Remote access – Handbook
 
 ## What the plugin does {#was-das-plugin-kann}
@@ -62,7 +62,9 @@ Whoever could see an RDP or VNC target gets the right "Use remote desktops". Who
 
 **"Take over again"** fetches the state of "Remote desktops" once more. Taken-over devices and their history are replaced; changes to them are lost. Devices you added in the plugin stay. The take-over never removes a right you already set.
 
-"Remote desktops" stays in GateControl; the data is only copied. **Remote access › Settings** shows when it was last taken over.
+The take-over copies; GateControl does not change the old data. **Remote access › Settings** shows when it was last taken over.
+
+**"Remote desktops" is gone from GateControl** (in the versions after 1.320): no menu entry, no page of its own – Remote access is the only place for RDP, SSH, VNC and Telnet. The old targets stay stored in GateControl (also in backups) until you took them over. While something is not taken over – or changed afterwards, e.g. by a restore –, the dashboard and the pages of Remote access show **"Old remote desktops not taken over yet"** with **"Take over now"**. The apps reach old targets only after the take-over. A GateControl up to 1.320 still keeps "Remote desktops".
 
 > **Note:** If a device says "Enter credentials again", GateControl could no longer read them, e.g. after a restore on another server. Open the device, enter username and password again and save.
 
@@ -294,7 +296,7 @@ The right is checked again on every connect.
 
 **"Gateway port missing":** the port on the server could not be set up, usually because it is in use. Open the device, pick another "Port on the server" and save.
 
-**The apps show other devices than the portal:** the apps show RDP devices only. Until GateControl has the new interface, their list still comes from "Remote desktops".
+**The apps show other devices than the portal:** the apps show RDP devices only. A target still in the old "Remote desktops" shows up there only after the take-over. Without Remote access, a GateControl after 1.320 shows no remote desktops in the apps any more (the Android app says "RDP is not available").
 
 **"The host key of the device has changed":** GateControl does not connect because the device shows another key than the first time. If you reinstalled the device, reset the key in the Terminal tab. Otherwise: do not connect and check who answers there.
 
@@ -319,6 +321,10 @@ The right is checked again on every connect.
 **In the browser Windows does not ask for the sign-in:** when the PC requires network level authentication (NLA), the session in the browser needs a user name and password that the session page does not ask for yet. Store them under “Edit” › Sign-in or connect from the GateControl app. With NLA off at the PC, Windows shows its sign-in screen when no credentials are stored (GateControl with remote access interface version 10; an older GateControl still tries NLA and reports “Authentication failed”).
 
 **In the browser y/z or special characters are wrong:** set the PC's **keyboard layout** under “Edit” › Resources. “Like the browser” takes German for a German browser, else English (US).
+
+## New in 1.9.2 {#neu-1-9-2}
+
+- **"Remote desktops" is gone from GateControl:** Remote access is the only place for RDP, SSH, VNC and Telnet. Old targets not taken over yet are kept; GateControl then shows "Old remote desktops not taken over yet – Take over now" (see [Take-over from Remote desktops](#uebernahme)). Nothing changes in the plugin itself.
 
 ## New in 1.9.1 {#neu-1-9-1}
 
