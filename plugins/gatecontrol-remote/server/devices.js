@@ -37,6 +37,9 @@ const HOST_OFFLINE_MS = 180000;
 const PHONE_OFFLINE_MS = 20 * 60000; // 1.3: a phone with the switch on — its app reports at least every 15 minutes
 
 // field → rule. 'bool', 'text:<max>', 'lines:<max>', 'port', 'int:<min>:<max>', 'id', [enum], 'tags', 'mac', 'host'
+// the keymaps of guacd 1.6 that GateControl (gc.remote version 10) takes as options.keyboard_layout
+const KEYBOARD_LAYOUTS = Object.freeze(['en-us-qwerty', 'en-gb-qwerty', 'de-de-qwertz', 'de-ch-qwertz', 'fr-fr-azerty', 'fr-be-azerty', 'fr-ch-qwertz', 'it-it-qwerty', 'es-es-qwerty', 'pt-br-qwerty', 'sv-se-qwerty', 'da-dk-qwerty', 'no-no-qwerty', 'hu-hu-qwertz', 'cs-cz-qwertz', 'pl-pl-qwerty', 'ja-jp-qwerty', 'tr-tr-qwerty']);
+
 const FIELDS = Object.freeze({
   description: 'lines:500',
   host: 'host',
@@ -89,6 +92,8 @@ const FIELDS = Object.freeze({
   tmux_enabled: 'bool',            // the terminal runs `tmux new -A -s <name>`: the session survives a lost connection
   tmux_name: 'tmux',               // default: gc-<short name of the device>
   recording: ['off', 'optional', 'always'],
+  // 1.9.1 (gc.remote version 10): the keyboard layout of the PC (guacd server-layout); auto: the language of the browser
+  keyboard_layout: ['auto', ...KEYBOARD_LAYOUTS],
 });
 
 // kept from the take-over and given back to the old apps, but not changed on the page in version 1
@@ -108,7 +113,7 @@ const DEFAULTS = Object.freeze({
   wol_enabled: false, wol_mac_address: null, maintenance_enabled: false, maintenance_schedule: null, credential_rotation_enabled: false,
   credential_rotation_days: null, credential_rotation_last: null, tags: [], notes: null, health_check_enabled: true, browser_enabled: false,
   browser_clipboard: false, rdp_disable_audio: false,
-  ssh_engine: 'term', tmux_enabled: true, tmux_name: null, recording: 'off',
+  ssh_engine: 'term', tmux_enabled: true, tmux_name: null, recording: 'off', keyboard_layout: 'auto',
 });
 
 function parseJson(s, fb) { try { const v = JSON.parse(s); return v && typeof v === 'object' ? v : fb; } catch { return fb; } }
@@ -546,7 +551,7 @@ async function setStatus(gc, id, s, now = Date.now()) {
     [s.online == null ? null : (s.online ? 1 : 0), Number.isFinite(s.responseTime) ? Math.round(s.responseTime) : null, now, id]);
 }
 
-module.exports = {
+module.exports = { KEYBOARD_LAYOUTS,
   PROTOCOLS, DEFAULT_PORT, ACCESS_MODES, FIELDS, KEPT, BOOLS, DEFAULTS, FIRST_OWN_ID, HOST_OFFLINE_MS, TMUX_RE, RECORDING, engineOf, tmuxOf,
   hostOf, hostView, connectMode, hostReady, isPhone, isLinux, sshOffered, desktopOffered, phoneCanControl, screenOffered, rdpOffered, screenCanControl, PHONE_OFFLINE_MS,
   get, need, all, accessLists, emptyAccess, targetOf, listenerKey, vaultInfo, credentialView, adminView, rotationDue, wayKind, authKind,

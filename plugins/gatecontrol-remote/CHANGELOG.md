@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.9.1
+
+Mindestversion unverändert **GateControl 1.300.1**. Tastaturbelegung und RDP ohne NLA bei fehlenden Zugangsdaten brauchen
+`gc.remote` **Version 10** (gatecontrol#580); ohne sie bleibt alles wie in 1.9.0.
+
+- **Browser-Sitzung zu einem angemeldeten Windows-PC** (`server/support.js` `connectTo`): Sind am PC Zugangsdaten hinterlegt
+  („Bearbeiten“ › Anmeldung), bekommt die Sitzung den Tresor-Handle wie jedes andere Gerät (`connect.js` `open`; „Der Browser
+  nutzt immer alles“) – GateControl verhandelt dann NLA (`security=any`). Ohne Zugangsdaten macht GateControl mit Version 10
+  `security=tls` statt `any`: Bisher forderte FreeRDP zuerst NLA an, Windows bot es an (nur nicht Pflicht) und CredSSP
+  scheiterte mit leeren Zugangsdaten („Authentication failure“), auch bei NLA aus am PC. Nicht lesbare Zugangsdaten:
+  `credential_unreadable`, bevor die Firewall aufgeht. Nie bei einem Linux-Gerät (dessen Eintrag ist der SSH-Schlüssel des Agenten).
+- **Alte App-Schnittstelle** (`server/facade.js` `connectHost`): Zugangsdaten eines PCs gehen an die App, soweit
+  „Anmeldedaten an die Apps“ (`credential_mode`) es erlaubt – wie bei `connect` jedes anderen Geräts nur als Tresor-Handle für
+  GateControls ECDH; `credential_mode`/`domain` stehen dann in der Antwort. Ein angemeldeter PC startet mit „Keine“, daher
+  unverändert, bis ein Administrator es umstellt. Nicht lesbar: 409 `credentials_invalid` vor der Firewall.
+- **Tastaturbelegung** (`keyboard_layout`, „Bearbeiten“ › Ressourcen): „Wie im Browser“ (`auto`, Vorgabe) oder eine der
+  Keymaps von guacd 1.6. Mit `gc.remote` Version 10 geht eine feste Belegung als `options.keyboard_layout` an die Sitzung
+  (Portal, Admin-Seite, alte App-API `browserSession`, PCs); bei `auto` wählt GateControl nach der Sprache des Browsers
+  (`de` → `de-de-qwertz`, sonst `en-us-qwerty`). Ein älteres GateControl bekommt die Option nie.
+- Mock-Host: `gc.remote` Version 10 (`opts.remote.v10`, `options.keyboard_layout`). Tests `test/rdp-pc.test.js`. Texte DE/EN,
+  Handbuch „Voraussetzungen“, „Fehlersuche“, „Neu in 1.9.1“.
+
 ## 1.9.0
 
 Mindestversion unverändert **GateControl 1.300.1**.

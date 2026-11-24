@@ -16,6 +16,9 @@
   var SSH = function (v) { return v.protocol === 'ssh'; };
   var TERM = function (v) { return v.protocol === 'ssh' && v.ssh_engine === 'term'; };
   var opts = function (prefix, list) { return list.map(function (x) { return { v: x, label: T(prefix + x) }; }); };
+  // 1.9.1: the keyboard layout of the PC (GateControl's server-layout); auto: the language of the browser
+  var KBD = ['auto', 'de-de-qwertz', 'de-ch-qwertz', 'en-us-qwerty', 'en-gb-qwerty', 'fr-fr-azerty', 'fr-be-azerty', 'fr-ch-qwertz', 'it-it-qwerty', 'es-es-qwerty',
+    'pt-br-qwerty', 'sv-se-qwerty', 'da-dk-qwerty', 'no-no-qwerty', 'hu-hu-qwertz', 'cs-cz-qwertz', 'pl-pl-qwerty', 'ja-jp-qwerty', 'tr-tr-qwerty'];
   var TABS = [
     { id: 'connection', fields: [
       { key: 'name', type: 'text', top: true, max: 100, wide: true },
@@ -56,6 +59,7 @@
       { key: 'redirect_usb', type: 'check' },
       { key: 'redirect_smartcard', type: 'check' },
       { key: 'audio_mode', type: 'select', options: opts('audio.', ['local', 'remote', 'off']) },
+      { key: 'keyboard_layout', type: 'select', options: opts('kbd.', KBD), hint: 'f.keyboard_layout_hint' },
     ] },
     { id: 'performance', show: RDP, fields: [
       { key: 'network_profile', type: 'select', options: opts('net.', ['auto', 'lan', 'broadband', 'modem']) },
@@ -187,7 +191,7 @@
    * rows show, and the body for the API. The old editor puts the rows on tabs, the editor of one page (1.7) into sections.
    */
   function fieldSet(dev) {
-    var v = dev ? Object.assign({ name: dev.name, protocol: dev.protocol, enabled: dev.enabled }, dev.config) : { name: '', protocol: 'rdp', enabled: true, port: 3389, access_mode: 'internal', credential_mode: 'full', resolution_mode: 'fullscreen', color_depth: 32, redirect_clipboard: true, audio_mode: 'local', network_profile: 'auto', nla_enabled: true, health_check_enabled: true, tags: [], ssh_engine: 'term', tmux_enabled: true, recording: 'off', browser_enabled: true };
+    var v = dev ? Object.assign({ name: dev.name, protocol: dev.protocol, enabled: dev.enabled }, dev.config) : { name: '', protocol: 'rdp', enabled: true, port: 3389, access_mode: 'internal', credential_mode: 'full', resolution_mode: 'fullscreen', color_depth: 32, redirect_clipboard: true, audio_mode: 'local', network_profile: 'auto', keyboard_layout: 'auto', nla_enabled: true, health_check_enabled: true, tags: [], ssh_engine: 'term', tmux_enabled: true, recording: 'off', browser_enabled: true };
     var cred = dev ? dev.credential : { set: false, has: {}, readable: true };
     var F = { inputs: {}, rows: {}, onChange: [] };
     F.values = function () {
@@ -395,7 +399,7 @@
     { id: 'access' },
     { id: 'wol', keys: ['wol_enabled', 'wol_mac_address', 'maintenance_enabled', 'maintenance_schedule', 'credential_rotation_enabled', 'credential_rotation_days'] },
     { id: 'display', show: function (v) { return v.protocol === 'rdp' || v.protocol === 'vnc'; }, keys: ['resolution_mode', 'resolution_width', 'resolution_height', 'color_depth', 'multi_monitor',
-      'redirect_clipboard', 'redirect_printers', 'redirect_drives', 'redirect_usb', 'redirect_smartcard', 'audio_mode', 'network_profile', 'bandwidth_limit', 'nla_enabled',
+      'redirect_clipboard', 'redirect_printers', 'redirect_drives', 'redirect_usb', 'redirect_smartcard', 'audio_mode', 'keyboard_layout', 'network_profile', 'bandwidth_limit', 'nla_enabled',
       'disable_wallpaper', 'disable_themes', 'disable_animations', 'session_timeout', 'admin_session', 'remote_app', 'start_program', 'gateway_host', 'gateway_port'] },
     { id: 'browser', keys: ['browser_enabled', 'browser_clipboard', 'rdp_disable_audio', 'recording', 'rec_always_note'] },
     { id: 'notes', keys: ['description', 'tags', 'notes'] },

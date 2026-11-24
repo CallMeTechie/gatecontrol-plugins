@@ -341,13 +341,18 @@ async function connectTo(gc, user, d, { mode = 'control', via = 'browser', helpe
     await open(gc, d, { allow, via: 'app', helperUserId: user.id, helperTokenId: helperDevice ? Number(helperDevice.id) : null, requestId, waitMs, port });
     return { connection: connectionOf(d, server) };
   }
+  // 1.9.1: credentials stored at a Windows PC („Bearbeiten“ › Anmeldung): the browser uses them like at any other
+  // device (credential_mode only says what the apps get) — GateControl then negotiates NLA; without them it skips
+  // NLA (gc.remote version 10) and Windows shows its sign-in screen. Never for a Linux device: its entry is the agent's SSH key.
+  const credential = !linux && d.credential ? d.credential : null;
+  if (!linux && d.credentialUnreadable) throw fail('credential_unreadable');
   if (typeof gc.remote.hubAddress !== 'function') throw fail('offline');
   const hub = await gc.remote.hubAddress();
   const row = await open(gc, d, { allow: hub, via: 'browser', helperUserId: user.id, requestId, waitMs, port });
   try {
     const target = linux ? { id: 'dev-' + d.id, name: d.name.slice(0, 120), host: d.config.host, port } : devices.targetOf(d);
-    const options = protocol === 'rdp' ? { browser_clipboard: !!d.config.browser_clipboard, nla_enabled: true } : { browser_clipboard: !!d.config.browser_clipboard };
-    const t = await gc.remote.session({ user: user.id, target, protocol, mode: mode === 'view' ? 'view' : 'control', options, ttlS: 120 });
+    const options = protocol === 'rdp' ? { browser_clipboard: !!d.config.browser_clipboard, nla_enabled: true, ...require('./connect').layoutOption(d, gc) } : { browser_clipboard: !!d.config.browser_clipboard };
+    const t = await gc.remote.session({ user: user.id, target, protocol, mode: mode === 'view' ? 'view' : 'control', ...(credential ? { credential } : {}), options, ttlS: 120 });
     await store.run(gc, 'UPDATE firewall SET ref = ? WHERE session_key = ?', [t.ref, row.session_key]);
     return { session: { ref: t.ref, expiresAt: t.expiresAt, protocol: t.protocol, mode: t.mode, device: { id: d.id, name: d.name } } };
   } catch (e) {

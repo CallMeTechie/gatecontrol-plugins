@@ -1,4 +1,4 @@
-<!-- version: 1.9.0 -->
+<!-- version: 1.9.1 -->
 # Remote access – Handbook
 
 ## What the plugin does {#was-das-plugin-kann}
@@ -29,6 +29,7 @@ Passwords and SSH keys are not stored by the plugin but in GateControl's encrypt
 ## Requirements {#voraussetzungen}
 
 - GateControl **1.300.1** or newer. From this version on GateControl also dims the header when a long dialog moves the page, and tells the plugin the free room correctly – the dialogs then fit the window exactly.
+- For the keyboard layout per device and browser sessions to a Windows PC without stored credentials: GateControl with remote access interface **version 10** (gatecontrol#580). With an older GateControl the session always uses the US layout, and without credentials the sign-in in the browser can fail (see [Troubleshooting](#fehlersuche)).
 - For “Set up the key automatically”, ending tmux sessions and codes for the Linux agent on the admin page: GateControl with remote access interface **version 9** (GateControl **1.297.0** or newer). With an older GateControl these buttons are missing; “Generate SSH key” stays, and you make the code for the agent as before under Users › Add device.
 - To control a phone: GateControl with remote access interface **version 5** (GateControl 1.287.0 or newer) and the GateControl app for Android **from GitHub** with the accessibility service "GateControl remote control" switched on. With an older GateControl or the app from Google Play only viewing works.
 - For screen sharing from a phone: GateControl **1.286.0** or newer (remote access interface version 4, the relay of the picture) and the GateControl app for Android with "Share screen". An older GateControl refuses the phone's registration.
@@ -315,7 +316,15 @@ The right is checked again on every connect.
 
 **"Too many wrong codes":** wait 15 minutes or let the PC show a new code.
 
-**In the browser Windows does not ask for the sign-in:** when the PC requires network level authentication (NLA), the session in the browser needs a user name and password that the session page does not ask for yet. Connect from the GateControl app then.
+**In the browser Windows does not ask for the sign-in:** when the PC requires network level authentication (NLA), the session in the browser needs a user name and password that the session page does not ask for yet. Store them under “Edit” › Sign-in or connect from the GateControl app. With NLA off at the PC, Windows shows its sign-in screen when no credentials are stored (GateControl with remote access interface version 10; an older GateControl still tries NLA and reports “Authentication failed”).
+
+**In the browser y/z or special characters are wrong:** set the PC's **keyboard layout** under “Edit” › Resources. “Like the browser” takes German for a German browser, else English (US).
+
+## New in 1.9.1 {#neu-1-9-1}
+
+- **Windows PC in the browser without credentials:** the session no longer tries network level authentication (NLA); Windows shows its sign-in screen. Before, it stopped with “Authentication failed”, even with NLA off at the PC. Needs GateControl with remote access interface version 10.
+- **Credentials at the PC:** when you stored a user name and password of a registered Windows PC under “Edit” › Sign-in, the browser session uses them as for any other device (with NLA). The apps get them as “Credentials for the apps” allows – for a registered PC it starts at “None”.
+- **Keyboard layout:** a new setting per device under “Edit” › Resources. “Like the browser” (default) takes the language of your browser: German → German layout, else English (US).
 
 ## New in 1.9.0 {#neu-1-9-0}
 
