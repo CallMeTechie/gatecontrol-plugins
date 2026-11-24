@@ -121,6 +121,8 @@ const HOST_RE = /^[A-Za-z0-9.-]{1,253}$/;
 const MAC_RE = /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/;
 const HANDLE_RE = /^rv_[0-9a-f]{32}$/;
 const HUB = '10.8.0.1';
+// GateControl with gc.remote version 10 (opt-in opts.remote.v10 — implies v9): gc.remote.version 10, session options.keyboard_layout
+//   (one of KEYBOARD_LAYOUTS; an older version refuses the unknown option with ERR_INVALID like GateControl)
 const TMUX_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/;
 const REC_RE = /^rr_[0-9a-f]{32}$/;
 const OPTION_RULES = {
@@ -128,6 +130,8 @@ const OPTION_RULES = {
   disable_wallpaper: 'bool', disable_themes: 'bool', disable_animations: 'bool', redirect_printers: 'bool', rdp_disable_audio: 'bool',
   resolution_mode: ['fullscreen', 'fixed', 'dynamic'], resolution_width: 'dim', resolution_height: 'dim', domain: 'text',
 };
+const KEYBOARD_LAYOUTS = ['en-us-qwerty', 'en-gb-qwerty', 'de-de-qwertz', 'de-ch-qwertz', 'fr-fr-azerty', 'fr-be-azerty', 'fr-ch-qwertz', 'it-it-qwerty',
+  'es-es-qwerty', 'pt-br-qwerty', 'sv-se-qwerty', 'da-dk-qwerty', 'no-no-qwerty', 'hu-hu-qwertz', 'cs-cz-qwertz', 'pl-pl-qwerty', 'ja-jp-qwerty', 'tr-tr-qwerty'];
 
 /** The address classes the host refuses (ipaddr.js ranges, as targets.js). */
 function blocked(ip) {
@@ -148,7 +152,8 @@ function install({ opts, perms, atLeast, enabledUser, hostError, license, person
   const next = !!(o && (o.gateways || o.pools || o.connectHost)) || atLeast(283);
   const v2 = !!(o && o.v2) || atLeast(284);
   const v3 = !!(o && o.v3) || atLeast(285);
-  const v9 = !!(o && o.v9);
+  const v10 = !!(o && o.v10);
+  const v9 = v10 || !!(o && o.v9);
   const v7 = v9 || !!(o && o.v7);
   const v6 = v7 || !!(o && o.v6) || atLeast(288);
   const v5 = v6 || !!(o && o.v5) || atLeast(287);
@@ -226,7 +231,7 @@ function install({ opts, perms, atLeast, enabledUser, hostError, license, person
     if (typeof x !== 'object' || Array.isArray(x)) throw hostError('ERR_INVALID', 'options: an object');
     for (const [k, v] of Object.entries(x)) {
       if (k === 'tmux' && v3) continue;
-      const rule = OPTION_RULES[k];
+      const rule = k === 'keyboard_layout' && v10 ? KEYBOARD_LAYOUTS : OPTION_RULES[k];
       if (!rule) throw hostError('ERR_INVALID', `options.${k}: unknown`);
       if (v == null) continue;
       if (rule === 'bool') { if (typeof v !== 'boolean') throw hostError('ERR_INVALID', `options.${k}: true or false`); out[k] = v; } else if (rule === 'dim') {
@@ -773,7 +778,7 @@ function install({ opts, perms, atLeast, enabledUser, hostError, license, person
     listener.remove = (key) => call('remote.listener.remove', { key });
     const ob = (x) => (x && typeof x === 'object' ? x : {});
     return Object.freeze({
-      version: v9 ? 9 : v7 ? 7 : v6 ? 6 : (v5 ? 5 : (v4 ? 4 : (v3 ? 3 : (v2 ? 2 : 1)))),
+      version: v10 ? 10 : v9 ? 9 : v7 ? 7 : v6 ? 6 : (v5 ? 5 : (v4 ? 4 : (v3 ? 3 : (v2 ? 2 : 1)))),
       ...(v4 ? { screen: (x) => call('remote.screen', ob(x)) } : {}),
       session: (x) => call('remote.session', ob(x)),
       end: (x) => call('remote.end', ob(x)),
@@ -937,7 +942,7 @@ function install({ opts, perms, atLeast, enabledUser, hostError, license, person
     e.handshakeAt = iso(Date.now());
   }
 
-  return { on, v2, v3, v4, v5, v9, api, gcPart, enrollRedeem, enrollHandshake, state, open, close, view, abortTerm, screenStart, screenEnd, screenMode, facade, vaultSeed: (entry, source) => vaultPut(entry, source), setUnreadable: (h) => { const e = state.vault.get(h); if (e) e.readable = false; } };
+  return { on, v2, v3, v4, v5, v9, v10, api, gcPart, enrollRedeem, enrollHandshake, state, open, close, view, abortTerm, screenStart, screenEnd, screenMode, facade, vaultSeed: (entry, source) => vaultPut(entry, source), setUnreadable: (h) => { const e = state.vault.get(h); if (e) e.readable = false; } };
 }
 
 module.exports = { install };

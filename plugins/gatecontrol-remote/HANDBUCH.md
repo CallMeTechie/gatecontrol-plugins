@@ -1,4 +1,4 @@
-<!-- version: 1.9.0 -->
+<!-- version: 1.9.1 -->
 # Fernzugriff – Handbuch
 
 ## Was das Plugin kann {#was-das-plugin-kann}
@@ -29,6 +29,7 @@ Passwörter und SSH-Schlüssel speichert nicht das Plugin, sondern der verschlü
 ## Voraussetzungen {#voraussetzungen}
 
 - GateControl **1.300.1** oder neuer. Ab dieser Version dunkelt GateControl auch die Kopfzeile ab, wenn ein langer Dialog die Seite verschiebt, und meldet dem Plugin den freien Platz richtig – die Dialoge passen damit genau ins Fenster.
+- Für die Tastaturbelegung je Gerät und Browser-Sitzungen zu einem Windows-PC ohne hinterlegte Zugangsdaten: GateControl mit der Fernzugriff-Schnittstelle **Version 10** (gatecontrol#580). Mit einem älteren GateControl wählt die Sitzung immer die US-Belegung, und ohne Zugangsdaten kann die Anmeldung im Browser scheitern (siehe [Fehlersuche](#fehlersuche)).
 - Für „Schlüssel automatisch einrichten“, das Beenden von tmux-Sitzungen und Codes für den Linux-Agent auf der Admin-Seite: GateControl mit der Fernzugriff-Schnittstelle **Version 9** (GateControl **1.297.0** oder neuer). Mit einem älteren GateControl fehlen diese Knöpfe; „SSH-Schlüssel erzeugen“ bleibt, und den Code für den Agent erzeugst du wie bisher unter Benutzer › Gerät hinzufügen.
 - Für den neuen Dialog „Gerät hinzufügen“: GateControl mit der Fernzugriff-Schnittstelle **Version 7** (GateControl **1.292.0** oder neuer). Mit einem älteren GateControl bleibt das bisherige Formular mit Reitern.
 - Für Linux-Geräte: GateControl **1.289.0** oder neuer und auf dem Rechner der Agent **gatecontrol-agent** (siehe [Linux-Geräte](#linux)).
@@ -315,7 +316,15 @@ Das Recht wird bei jedem Verbinden neu geprüft.
 
 **„Zu viele falsche Codes“:** Warte 15 Minuten oder lass dir am PC einen neuen Code zeigen.
 
-**Im Browser fragt Windows nach der Anmeldung nicht:** Verlangt der PC die Anmeldung auf Netzwerkebene (NLA), braucht die Sitzung im Browser Benutzername und Passwort, die die Sitzungsseite noch nicht abfragt. Verbinde dich dann aus der GateControl-App.
+**Im Browser fragt Windows nach der Anmeldung nicht:** Verlangt der PC die Anmeldung auf Netzwerkebene (NLA), braucht die Sitzung im Browser Benutzername und Passwort, die die Sitzungsseite noch nicht abfragt. Hinterlege sie unter „Bearbeiten“ › Anmeldung oder verbinde dich aus der GateControl-App. Ist NLA am PC aus, zeigt Windows ohne hinterlegte Zugangsdaten seine Anmeldemaske (GateControl mit Fernzugriff-Schnittstelle Version 10; ein älteres GateControl versucht NLA trotzdem und meldet „Anmeldung fehlgeschlagen“).
+
+**Im Browser stimmen y/z oder Sonderzeichen nicht:** Stelle unter „Bearbeiten“ › Ressourcen die **Tastaturbelegung** des PCs ein. „Wie im Browser“ nimmt Deutsch bei einem deutschen Browser, sonst Englisch (US).
+
+## Neu in 1.9.1 {#neu-1-9-1}
+
+- **Windows-PC im Browser ohne Zugangsdaten:** Die Sitzung versucht keine Anmeldung auf Netzwerkebene (NLA) mehr, Windows zeigt seine Anmeldemaske. Bisher brach sie mit „Anmeldung fehlgeschlagen“ ab, auch wenn NLA am PC aus war. Braucht GateControl mit Fernzugriff-Schnittstelle Version 10.
+- **Zugangsdaten am PC:** Hast du unter „Bearbeiten“ › Anmeldung Benutzername und Passwort eines angemeldeten Windows-PCs hinterlegt, nutzt die Browser-Sitzung sie wie bei jedem anderen Gerät (mit NLA). Die Apps bekommen sie so, wie „Anmeldedaten an die Apps“ es erlaubt – bei einem angemeldeten PC steht das zuerst auf „Keine“.
+- **Tastaturbelegung:** neue Einstellung je Gerät unter „Bearbeiten“ › Ressourcen. „Wie im Browser“ (Vorgabe) nimmt die Sprache deines Browsers: Deutsch → deutsche Belegung, sonst Englisch (US).
 
 ## Neu in 1.9.0 {#neu-1-9-0}
 

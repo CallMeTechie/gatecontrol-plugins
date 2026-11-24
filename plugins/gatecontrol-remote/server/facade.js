@@ -144,25 +144,33 @@ async function connectOp(gc, p, user) {
   const connection = connectionOf(d, p.server);
   connection.online = d.status.online === true;
   if (d.config.credential_mode !== 'none' && (d.credential || d.credentialUnreadable)) {
-    if (d.credentialUnreadable) return err(409, 'credentials_invalid');
     const fields = d.config.credential_mode === 'user_only' ? ['username', 'domain'] : ['username', 'password', 'domain'];
     return { status: 200, body: { ok: true, connection }, credential: { handle: d.credential, fields } };
   }
   return json(200, { ok: true, connection });
 }
 
-/** A PC "ohne Code": its firewall opens for the app's own VPN address, then the connection (no stored credentials). */
+/** A PC "ohne Code": its firewall opens for the app's own VPN address, then the connection (stored credentials as credential_mode allows, 1.9.1). */
 async function connectHost(gc, p, user, d) {
   if (devices.connectMode(d) !== 'open') return err(403, 'code_required');
   if (!devices.hostReady(d)) return err(503, 'Host is offline');
   if (!user || !p.user.selfIp) return err(400, 'no_vpn');
+  const withCredential = !devices.isLinux(d) && d.config.credential_mode !== 'none' && (d.credential || d.credentialUnreadable);
+  if (withCredential && d.credentialUnreadable) return err(409, 'credentials_invalid'); // before the firewall opens
   try {
     await support.open(gc, d, { allow: p.user.selfIp, via: 'app', helperUserId: user.id, helperTokenId: posInt(p.user.tokenId), waitMs: support.TIMING.facadeWaitMs });
   } catch (e) {
     if (isKnown(e) && (e.code === 'firewall_timeout' || e.code === 'firewall_failed')) return err(504, e.code);
     throw e;
   }
-  return json(200, { ok: true, connection: { ...support.connectionOf(d), online: true } });
+  const connection = { ...support.connectionOf(d), online: true };
+  // 1.9.1: credentials stored at the PC go to the app as at any other device — as far as credential_mode allows
+  // (only through GateControl with ECDH; this answer names the vault handle, never a value)
+  if (withCredential) {
+    const fields = d.config.credential_mode === 'user_only' ? ['username', 'domain'] : ['username', 'password', 'domain'];
+    return { status: 200, body: { ok: true, connection: { ...connection, credential_mode: d.config.credential_mode, domain: d.config.domain || null } }, credential: { handle: d.credential, fields } };
+  }
+  return json(200, { ok: true, connection });
 }
 
 /** The state of a device: a PC as its app reports it, any other device checked now. */
@@ -232,7 +240,7 @@ async function browserOp(gc, p, user, cfg) {
     if (m) return err(m[0], m[1]);
     throw e;
   }
-  return { guac: { target: devices.targetOf(d), protocol: d.protocol, mode: 'control', ...(d.credential ? { credential: d.credential } : {}), options: connect.optionsOf(d) } };
+  return { guac: { target: devices.targetOf(d), protocol: d.protocol, mode: 'control', ...(d.credential ? { credential: d.credential } : {}), options: connect.optionsOf(d, gc) } };
 }
 
 function who(p, user) {

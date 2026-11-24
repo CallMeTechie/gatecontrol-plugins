@@ -18,8 +18,18 @@ const { TMUX_RE } = require('./devices');
 const maintenance = require('./maintenance');
 const { fail, fromHost } = require('./util');
 
-/** The guacd options of a device (the fields of the old route with the same meaning). */
-function optionsOf(d) {
+/**
+ * 1.9.1: the keyboard layout of an RDP session (guacd server-layout) — only a layout set at the device and only with
+ * GateControl gc.remote version 10 (an older one refuses the unknown option); 'auto': GateControl takes the browser's language.
+ */
+function layoutOption(d, gc) {
+  const k = d.config && d.config.keyboard_layout;
+  if (!gc || !gc.remote || !(gc.remote.version >= 10) || !k || k === 'auto' || !devices.KEYBOARD_LAYOUTS.includes(k)) return {};
+  return { keyboard_layout: k };
+}
+
+/** The guacd options of a device (the fields of the old route with the same meaning); gc: for options of a newer GateControl. */
+function optionsOf(d, gc = null) {
   const c = d.config;
   const o = { browser_clipboard: !!c.browser_clipboard };
   if (d.protocol === 'rdp') {
@@ -36,6 +46,7 @@ function optionsOf(d) {
       resolution_width: c.resolution_mode === 'fixed' ? c.resolution_width : null,
       resolution_height: c.resolution_mode === 'fixed' ? c.resolution_height : null,
       domain: c.domain || null,
+      ...layoutOption(d, gc),
     });
   } else if (d.protocol === 'vnc') {
     o.color_depth = c.color_depth === 15 ? 16 : (c.color_depth || null);
@@ -118,7 +129,7 @@ async function open(gc, user, deviceId, cfg, { admin = false, mode = 'control', 
   const t2 = term ? tmuxFor(engine === devices.engineOf(d, gc) ? d : { ...d, config: { ...d.config, ssh_engine: 'term' } }, tmux) : null;
   if (!term && tmux != null) throw fail('invalid', { field: 'tmux' });
   const rec = gc.remote.version >= 3 ? await decideRecording(gc, user, d, term ? 'term' : 'guac', { record, via }) : false;
-  const options = optionsOf(d);
+  const options = optionsOf(d, gc);
   if (t2) options.tmux = t2;
   try {
     const t = await gc.remote.session({
@@ -285,4 +296,4 @@ async function probeAll(gc, now = Date.now()) {
   return changed;
 }
 
-module.exports = { optionsOf, admit, open, wake, probe, probeAll, tmuxSessions, tmuxKill, tmuxKillDetached, tmuxV9, decideRecording, recordingsAvailable, tmuxFor };
+module.exports = { optionsOf, layoutOption, admit, open, wake, probe, probeAll, tmuxSessions, tmuxKill, tmuxKillDetached, tmuxV9, decideRecording, recordingsAvailable, tmuxFor };
