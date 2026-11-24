@@ -1,4 +1,4 @@
-<!-- version: 1.8.1 -->
+<!-- version: 1.9.0 -->
 # Remote access – Handbook
 
 ## What the plugin does {#was-das-plugin-kann}
@@ -260,7 +260,7 @@ The SSH terminal records what the terminal shows, no keystrokes; RDP and VNC the
 
 **In the portal:** the tab **Remote access** shows your devices with their state. "Connect" opens the session in a new tab. If "Open session" appears instead, tap it. "Wake up" sends a wake-on-LAN packet. A Windows PC with "Code only" shows "Enter code" there. With the right "Redeem support codes" there is "Enter code" at the top as well, for PCs that are not in your list.
 
-**In the apps:** RDP devices are listed in the GateControl apps under Remote Desktop as before. SSH devices with the terminal open in a terminal of the app itself, once the app can do it.
+**In the apps:** RDP devices are listed in the GateControl apps under Remote Desktop as before. As an administrator you see every device and every registered PC there. A PC that is not shared with you only lets you in with the code and the confirmation at the PC – also when "without a code for permitted people" is on. You enter the code in the portal under "Enter code". SSH devices with the terminal open in a terminal of the app itself, once the app can do it.
 
 **As an administrator:** under **Remote access › Devices** you can connect to every device – to a Windows PC from the app only "without a code", otherwise with the code like everybody. **Sessions** shows the history, ends open browser sessions and downloads everything as CSV. The filter **"Sharing"** shows redeemed and wrong codes, requests, changes of "without a code" and the opening and closing of the firewall.
 
@@ -277,7 +277,7 @@ The SSH terminal records what the terminal shows, no keystrokes; RDP and VNC the
 
 - You set a right per **group** or per **person**. "yes" or "no" for a person wins over their groups.
 - Without an entry a person has a right as soon as one of their groups has it.
-- **Administrators** may always do everything and reach every device.
+- **Administrators** may always do everything and reach every device. In the apps they see every registered PC; to a PC that is not shared with them they connect there only with the code and the confirmation at the PC.
 - **Which devices:** per device "Everybody with the right" or "Only selected" people and groups. Old app tokens from Remote desktops keep working, for the old apps only.
 - "What may this person do?" (click the name) shows the rights and reachable devices of a person.
 
@@ -316,6 +316,11 @@ The right is checked again on every connect.
 **"Too many wrong codes":** wait 15 minutes or let the PC show a new code.
 
 **In the browser Windows does not ask for the sign-in:** when the PC requires network level authentication (NLA), the session in the browser needs a user name and password that the session page does not ask for yet. Connect from the GateControl app then.
+
+## New in 1.9.0 {#neu-1-9-0}
+
+- **Administrators see every PC in the apps:** under Remote Desktop administrators find every device and every registered PC, also "Code only" ones and ones that are offline right now.
+- **Seeing is not getting in:** a PC that is not shared with you lets you in only with the code and the confirmation at the PC, also when "without a code for permitted people" is on. For everybody else nothing changes.
 
 ## New in 1.8.1 {#neu-1-8-1}
 

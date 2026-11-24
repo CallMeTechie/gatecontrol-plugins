@@ -4,7 +4,7 @@
     "de": "Fernzugriff",
     "en": "Remote access"
   },
-  "version": "1.8.1",
+  "version": "1.9.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Die Remote Desktops von GateControl als eigenes Plugin: Geräte mit RDP, VNC, SSH und Telnet – im VPN, per Port-Forward oder Home-Gateway –, Wake-on-LAN, Wartungsfenster, Rechte, Verlauf. Windows-PCs melden sich aus der App an (Remote Desktop oder „Bildschirm teilen“), Android-Handys geben ihren Bildschirm frei, Linux-Rechner melden sich über den Agenten an – mit Code und Bestätigung am Gerät. SSH im Terminal von GateControl mit tmux, Aufzeichnung auf Wunsch. Übernimmt Ziele, Rechte und Verlauf aus „Remote Desktops“. Zugangsdaten bleiben im Tresor.",
