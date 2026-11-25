@@ -1,4 +1,4 @@
-<!-- version: 1.0.0 -->
+<!-- version: 1.0.1 -->
 # Medien – Handbuch
 
 ## Was das Plugin kann {#was-das-plugin-kann}
@@ -50,7 +50,7 @@ Nimm IP-Adressen statt Namen wie `\\nas`: Namen werden unterwegs nicht aufgelös
 
 ### Netz: zu Hause direkt, unterwegs über VPN {#netz}
 
-- **Zu Hause** spielen die Geräte direkt im Heimnetz, nie über den Server oder den Tunnel, auch wenn das VPN an ist. Ob ein Gerät zu Hause ist, erkennt es selbst: Es fragt über das WLAN den Jellyfin-Server (passende Server-ID) oder prüft das angeheftete Zertifikat der WebDAV-Freigabe. Eine beliebige 192.168.1.x-Adresse reicht nicht.
+- **Zu Hause** spielen die Geräte direkt im Heimnetz, nie über den Server oder den Tunnel, auch wenn das VPN an ist. Ob ein Gerät zu Hause ist, erkennt es selbst über das WLAN/LAN (nie durch den Tunnel): Es fragt den Jellyfin-Server (passende Server-ID) oder prüft das angeheftete Zertifikat der WebDAV-Freigabe. Gibt es beides nicht, prüft es, ob die Heimadresse der Quelle antwortet (z. B. SMB-Port 445 der NAS) – das reicht, damit das Gerät zu Hause nicht durch das VPN geht, ist aber nicht eindeutig: Ein fremdes Netz mit derselben Adresse antwortet auch. Solche Quellen zeigt der Reiter Quellen mit **„Heimnetz nicht eindeutig“**; eindeutig werden sie mit einer WebDAV-Adresse samt Zertifikat (SHA-256). Die Server-ID von Jellyfin merkt sich das Plugin beim Speichern; war Jellyfin da aus, holt „Prüfen“ oder der nächste Abgleich (alle 5 Minuten) sie nach. Eine beliebige 192.168.1.x-Adresse allein reicht nicht.
 - **Unterwegs** gehen Medien **nur durch das VPN**. Ist es aus, schaltet die App es beim Abspielen selbst ein. Ohne VPN spielt die App unterwegs nichts ab und sagt „Unterwegs nur über VPN“.
 - **Ausnahme „Unterwegs ohne VPN erlauben“**: im Quellen-Dialog je Quelle oder unter Einstellungen › Netz für alle Quellen. Dann braucht die Quelle eine **HTTPS-Adresse für unterwegs**, z. B. eine GateControl-Route (`https://jellyfin.example.test`). Eine Adresse mit `http://` nimmt der Dialog nicht an. Quellen ohne diese Adresse bleiben unterwegs beim VPN.
 
@@ -91,6 +91,11 @@ Der Jellyfin-Schlüssel verlässt den Server nie. Das Protokoll nennt Personen, 
 - **„durch den Tunnel nicht erreichbar“** im Reiter Geräte: Das Gateway gibt das Heimnetz nicht in den Tunnel weiter, oder die DSM-Firewall lässt das Tunnelnetz nicht zu (8096, 5006, ggf. 445).
 - **Ein Handy ist verloren**: in GateControl entfernen (Jellyfin ist sofort bzw. nach höchstens 5 Minuten zu). Das NAS-Passwort lässt sich von einem Gerät, das nicht mehr online kommt, nicht zurückholen: Passwort in DSM ändern und unter Quellen ersetzen.
 - **Lizenz**: Ohne eigene Lizenz für Medien blenden die Apps Medien aus. Eine GateControl-Lifetime-Lizenz zählt hier nicht.
+
+## Neu in 1.0.1 {#neu-1-0-1}
+
+- **Heimnetz für jede Quelle erkannt:** Bisher erkannten die Geräte das Heimnetz nur an einem Jellyfin mit bekannter Server-ID oder an einer WebDAV-Freigabe mit angeheftetem Zertifikat. Bei einer reinen SMB-Freigabe oder einem Jellyfin, der beim Speichern aus war, gingen die Geräte auch zu Hause durch das VPN. Jetzt bekommt jede Quelle eine Erkennung, notfalls „die Heimadresse antwortet“ (siehe [Netz](#netz)).
+- **Reiter Quellen und Übersicht:** Zeile „Heimnetz-Erkennung“ und das Zeichen **„Heimnetz nicht eindeutig“**.
 
 ## Neu in 1.0.0 {#neu-1-0-0}
 

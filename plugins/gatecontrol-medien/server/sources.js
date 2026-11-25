@@ -9,6 +9,12 @@
 // Exception per source or for all (setting away_direct_all): "Unterwegs ohne VPN erlauben" — then away uses an HTTPS
 // address of its own (e.g. a GateControl route), `away: { mode: 'direct', address }`. Without such an address a
 // source stays VPN-only.
+//
+// Home detection (network.home.probes, see probesOf): every source gives the devices at least one probe they run over
+// the local network only. Unique: `jellyfin` (the server ID, learned on save/check and kept in config.serverId) and `tls`
+// (the pinned WebDAV certificate). Without either: `tcp` to the home address (SMB 445, the WebDAV/Jellyfin port) — it
+// keeps a device at home off the tunnel, but a foreign network with the same address answers it too (unique: false;
+// the tab Quellen marks such a source).
 
 const store = require('./store');
 const jf = require('./jellyfin');
@@ -80,8 +86,11 @@ function cleanConfig(kind, b, prev = {}) {
   if (kind === 'jellyfin') {
     const address = httpUrl(b.address != null ? b.address : prev.address);
     if (!address) throw fail('invalid', { field: 'address' });
+    const ti = targetIndex(b.targetIndex, prev.targetIndex || 0);
+    // the server ID stays while address and target stay; a new address/target learns it again with the next check
+    const serverId = address === prev.address && ti === (prev.targetIndex || 0) && prev.serverId ? prev.serverId : null;
     return {
-      targetIndex: targetIndex(b.targetIndex, prev.targetIndex || 0), address,
+      targetIndex: ti, address, serverId,
       away: cleanAway(b.away, prev.away),
       downloads: typeof b.downloads === 'boolean' ? b.downloads : prev.downloads !== false,
       alwaysOriginal: typeof b.alwaysOriginal === 'boolean' ? b.alwaysOriginal : prev.alwaysOriginal === true,
@@ -226,12 +235,76 @@ async function checkShare(gc, src, pw) {
   return out;
 }
 
+/**
+ * Check a source and keep the result as its status. A Jellyfin server's ID is kept in config.serverId (the home probe),
+ * also when a later check does not reach the server. → the status (+ serverIdLearned when the ID is new or changed).
+ */
 async function check(gc, src, now = Date.now()) {
   let status;
-  if (src.kind === 'jellyfin') status = await checkJellyfin(gc, src.config.targetIndex || 0, await apiKey(gc, src));
-  else status = await checkShare(gc, src, await password(gc, src));
+  let serverIdLearned = false;
+  if (src.kind === 'jellyfin') {
+    status = await checkJellyfin(gc, src.config.targetIndex || 0, await apiKey(gc, src));
+    if (status.serverId && status.serverId !== src.config.serverId) {
+      const cur = await get(gc, src.id);
+      if (cur) {
+        await store.run(gc, 'UPDATE sources SET config = ? WHERE id = ?', [JSON.stringify({ ...cur.config, serverId: status.serverId }), src.id]);
+        src.config = { ...cur.config, serverId: status.serverId };
+        serverIdLearned = true;
+      }
+    }
+  } else status = await checkShare(gc, src, await password(gc, src));
   await setStatus(gc, src, status, now);
-  return { ...status, at: now };
+  return { ...status, at: now, serverIdLearned };
+}
+
+const DEFAULT_PORT = { 'http:': 80, 'https:': 443, 'smb:': 445 };
+/** Host and port of a home address (port from the address, else the protocol's default). */
+function hostPort(addr) {
+  try {
+    const u = new URL(addr);
+    const host = u.hostname.replace(/^\[|\]$/g, '');
+    const port = Number(u.port) || DEFAULT_PORT[u.protocol];
+    return host && port ? { host, port } : null;
+  } catch { return null; }
+}
+
+/** The Jellyfin server ID the plugin knows (config, else the last status). */
+const serverIdOf = (src) => (src.config && src.config.serverId) || (src.status && src.status.serverId) || null;
+
+/**
+ * The home probes of one source, unique ones first. Every source gives at least one (as long as its address parses):
+ *   { kind: 'jellyfin', url, serverId, sourceId, unique: true }   GET url → Id == serverId
+ *   { kind: 'tls', url, certSha256, sourceId, unique: true }      TLS handshake → certificate SHA-256 == certSha256
+ *   { kind: 'tcp', host, port, sourceId, unique: false }          TCP connect to host:port succeeds
+ */
+function probesOf(src) {
+  const c = src.config || {};
+  const out = [];
+  const tcp = (addr) => {
+    const hp = hostPort(addr);
+    if (hp && !out.some((p) => p.kind === 'tcp' && p.host === hp.host && p.port === hp.port)) out.push({ kind: 'tcp', host: hp.host, port: hp.port, sourceId: src.id, unique: false });
+  };
+  if (src.kind === 'jellyfin') {
+    const serverId = serverIdOf(src);
+    if (serverId && c.address) out.push({ kind: 'jellyfin', url: c.address + '/System/Info/Public', serverId, sourceId: src.id, unique: true });
+    else if (c.address) tcp(c.address);
+    return out;
+  }
+  if (c.webdav && c.webdav.certSha256) out.push({ kind: 'tls', url: c.webdav.address, certSha256: c.webdav.certSha256, sourceId: src.id, unique: true });
+  else {
+    if (c.smb) tcp(c.smb.address);
+    if (c.webdav) tcp(c.webdav.address);
+  }
+  return out;
+}
+
+/** For the admin pages: how devices recognise home for this source. level: unique | weak | none. */
+function homeOf(src) {
+  const probes = probesOf(src);
+  const level = probes.some((p) => p.unique) ? 'unique' : (probes.length ? 'weak' : 'none');
+  let why = null;
+  if (level !== 'unique') why = src.kind === 'jellyfin' ? 'no_server_id' : 'no_cert';
+  return { level, why, probes };
 }
 
 /** The share's folder for matching on the devices ("filme"). */
@@ -242,4 +315,5 @@ function folder(src) {
 
 module.exports = {
   KINDS, list, get, need, create, update, remove, setKey, setPassword, apiKey, password, awayOf, check, checkJellyfin, setStatus, folder, keyName, pwName, posInt,
+  probesOf, homeOf, serverIdOf, hostPort,
 };

@@ -104,8 +104,9 @@ deshalb kein ETag/304).
     "rule": "home_direct_away_vpn",    // die Netz-Regel (siehe unten)
     "vpnRequiredAway": true,           // mindestens eine Quelle geht unterwegs nur über VPN
     "home": { "probes": [              // Heimnetz-Erkennung, nur über das lokale Netz (WLAN/LAN), nie durch den Tunnel
-      { "kind": "jellyfin", "url": "http://192.168.1.20:8096/System/Info/Public", "serverId": "4f1c…a9" },
-      { "kind": "tls", "url": "https://192.168.1.20:5006/filme", "certSha256": "9c41…" } ] }
+      { "kind": "jellyfin", "url": "http://192.168.1.20:8096/System/Info/Public", "serverId": "4f1c…a9", "sourceId": "jf-1", "unique": true },
+      { "kind": "tls", "url": "https://192.168.1.20:5006/filme", "certSha256": "9c41…", "sourceId": "sh-1", "unique": true },
+      { "kind": "tcp", "host": "192.168.1.30", "port": 445, "sourceId": "sh-2", "unique": false } ] }   // ab 1.0.1
   },
   "cast": { "enabled": true },         // „Auf TV/PC abspielen“ erlaubt
   "sources": [
@@ -189,10 +190,26 @@ Der Weg zur Quelle (z. B. `problem: "tunnel_unreachable"`, „NAS durch den Tunn
 - **Unterwegs**, `away.mode == "direct"` (Admin-Ausnahme „Unterwegs ohne VPN erlauben“, je Quelle oder global): ohne VPN
   über `away.address` (immer `https://…`, z. B. eine GateControl-Route; bei Freigaben die WebDAV-Adresse für unterwegs mit
   demselben Pfad). Normale TLS-Prüfung (kein Anheften nötig). Läuft das VPN ohnehin, darf auch der VPN-Weg genommen werden.
-- **Heimnetz-Erkennung**: zu Hause, wenn über das **lokale** Netz (nicht den Tunnel) eine der `network.home.probes` passt:
-  `jellyfin` → `GET url` antwortet in ≤ 1,5 s mit `Id == serverId` (Groß/klein egal); `tls` → TLS-Handshake an `url` mit
-  Zertifikat-SHA-256 == `certSha256`. Nur eine private IP-Adresse im WLAN reicht **nicht** (fremde 192.168.1.x-Netze).
-  Neu prüfen bei Netzwechsel (WLAN/Mobilfunk/VPN). Ohne Probe-Treffer = unterwegs.
+- **Heimnetz-Erkennung**: zu Hause, wenn über das **lokale** Netz (nicht den Tunnel; Socket an WLAN/Ethernet bzw. die
+  LAN-Schnittstelle gebunden, auch bei laufendem VPN) eine der `network.home.probes` passt. Ab 1.0.1 hat **jede** sichtbare
+  Quelle mindestens eine Probe (höchstens 20, eindeutige zuerst). Jede Probe hat `kind`, `sourceId` (die Quelle, zu der sie
+  gehört) und `unique` (`true`: erkennt genau dieses Heimnetz; `false`: nur „Adresse antwortet“). Arten:
+  - `jellyfin` (`url`, `serverId`, `unique: true`) → `GET url` antwortet in ≤ 1,5 s mit `Id == serverId` (Groß/klein egal).
+    Das Plugin ermittelt die Server-ID beim Speichern und Prüfen und behält sie, auch wenn Jellyfin später nicht erreichbar
+    ist; war Jellyfin beim Speichern aus, holt der Abgleich (alle 5 min) sie nach und sendet `media.changed`.
+  - `tls` (`url`, `certSha256`, `unique: true`) → TLS-Handshake an `url` mit Zertifikat-SHA-256 == `certSha256` (WebDAV mit
+    angeheftetem Zertifikat).
+  - `tcp` (`host`, `port`, `unique: false`, **neu in 1.0.1**) → TCP-Verbindung zu `host:port` kommt in ≤ 1,5 s zustande
+    (Handshake fertig, sofort wieder schließen, keine Daten, keine Anmeldung). Kommt, wenn es nichts Eindeutiges gibt:
+    Jellyfin ohne bekannte Server-ID (Port der `home.address`, z. B. 8096), Freigabe ohne `certSha256` (SMB: Port 445 bzw.
+    der Port der SMB-Adresse, WebDAV: Port der WebDAV-Adresse, 443 ohne Angabe). `host` ist die Heimadresse wie in
+    `smb`/`webdav`/`home.address` (meist die LAN-IP).
+  - Unbekannte `kind` übergehen (weitere Arten kommen ohne neue Version).
+  Ein Treffer einer beliebigen Probe (auch `tcp`) = zu Hause: lieber direkt im LAN als durch den Tunnel. Nur eine private
+  IP-Adresse im WLAN ohne Probe-Treffer reicht **nicht** (fremde 192.168.1.x-Netze). Passt nur eine `tcp`-Probe, darf die
+  App das als „zu Hause (nicht eindeutig)“ zeigen. Neu prüfen bei Netzwechsel (WLAN/Mobilfunk/VPN) und wenn sich die Liste
+  ändert. Ohne Probe-Treffer = unterwegs. Der Reiter Quellen kennzeichnet Quellen ohne eindeutige Probe
+  („Heimnetz nicht eindeutig“).
 - Ohne Server-Kontakt zählt die zuletzt gespeicherte Liste (Zwischenspeicher); nach `maxOfflineDays` NAS-Passwörter löschen.
 
 ### Cast: „Auf TV/PC abspielen“ (Frage 38 a)
@@ -229,6 +246,9 @@ Freigaben wie im Vertrag. Keine Geheimnisse (Felder mit Namen wie token/password
 `POST sources/{id}/automap` · `GET people` · `PUT rights/{user|group}/{id} { media: true | false | null }` · `GET devices` ·
 `POST devices/{deviceId}/revoke { sourceId? }` · `POST probe { targetIndex, key? }` · `GET targets` · `GET log`.
 Schlüssel und Passwörter gehen nur hinein; Antworten sagen `hasKey` / `hasPassword`.
+Jede Quelle in `GET sources` hat `home: { level: unique | weak | none, why: null | no_server_id | no_cert, probes }`
+(die Heimnetz-Proben dieser Quelle, wie in `v1/sources`); `GET overview` nur `home.level`. Die Jellyfin-Server-ID steht in
+`config.serverId` (beim Speichern, `PUT` und Prüfen ermittelt).
 
 ## Speicher
 

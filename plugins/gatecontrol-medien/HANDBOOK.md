@@ -1,4 +1,4 @@
-<!-- version: 1.0.0 -->
+<!-- version: 1.0.1 -->
 # Media – Manual
 
 ## What the plugin does {#was-das-plugin-kann}
@@ -50,7 +50,7 @@ Use IP addresses rather than names like `\\nas`: names do not resolve away.
 
 ### Network: at home directly, away through the VPN {#netz}
 
-- **At home** the devices play directly in the home network, never through the server or the tunnel, also with the VPN on. A device finds out itself that it is at home: it asks the Jellyfin server over the Wi-Fi (matching server ID) or checks the pinned certificate of the WebDAV share. Any 192.168.1.x address is not enough.
+- **At home** the devices play directly in the home network, never through the server or the tunnel, also with the VPN on. A device finds out itself that it is at home, over the Wi-Fi/LAN (never through the tunnel): it asks the Jellyfin server (matching server ID) or checks the pinned certificate of the WebDAV share. Without either it checks whether the source's home address answers (e.g. the NAS's SMB port 445) – enough to keep the device off the VPN at home, but not unique: a foreign network with the same address answers too. The tab Sources marks such sources with **“Home not unique”**; a WebDAV address with its certificate (SHA-256) makes them unique. The plugin keeps Jellyfin's server ID from saving; if Jellyfin was off then, “Check” or the next reconcile (every 5 minutes) fetches it. Any 192.168.1.x address alone is not enough.
 - **Away** media go **only through the VPN**. If it is off, the app switches it on when playing. Without VPN the app plays nothing away and says “Away only through the VPN”.
 - **Exception “Allow away without VPN”**: per source in the source dialog or for all sources under Settings › Network. The source then needs an **HTTPS address for away**, e.g. a GateControl route (`https://jellyfin.example.test`). The dialog refuses an `http://` address. Sources without such an address stay with the VPN away.
 
@@ -91,6 +91,11 @@ The Jellyfin key never leaves the server. The log names people, devices and sour
 - **“unreachable through the tunnel”** on the tab Devices: the gateway does not route the home network into the tunnel, or the DSM firewall does not allow the tunnel network (8096, 5006, maybe 445).
 - **A phone is lost**: remove it in GateControl (Jellyfin closes at once or within 5 minutes). The NAS password cannot be taken back from a device that never comes online again: change it in DSM and replace it under Sources.
 - **Licence**: without a licence of its own for Media the apps hide Media. A GateControl Lifetime licence does not count here.
+
+## New in 1.0.1 {#neu-1-0-1}
+
+- **Home detected for every source:** so far the devices recognised home only by a Jellyfin with a known server ID or a WebDAV share with a pinned certificate. With an SMB-only share, or a Jellyfin that was off when saved, the devices went through the VPN even at home. Now every source gets a detection, if need be “the home address answers” (see [Network](#netz)).
+- **Tab Sources and overview:** row “Home detection” and the mark **“Home not unique”**.
 
 ## New in 1.0.0 {#neu-1-0-0}
 

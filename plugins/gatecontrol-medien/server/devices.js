@@ -166,7 +166,8 @@ async function reconcile(gc, cfg, now = Date.now(), o = {}) {
   if (o.check !== false) {
     for (const s of all) {
       if (!s.enabled || s.kind !== 'jellyfin') continue;
-      try { await sources.check(gc, s, now); } catch (e) { gc.log.debug('check failed', (e && e.code) || 'error'); }
+      // a server ID learned now (unknown at save, server was off) gives the devices the unique home probe: tell them
+      try { if ((await sources.check(gc, s, now)).serverIdLearned) out.changed = true; } catch (e) { gc.log.debug('check failed', (e && e.code) || 'error'); }
       if (cfg.autoMap) {
         try {
           const made = await mapping.auto(gc, s, mediaUsers, now);

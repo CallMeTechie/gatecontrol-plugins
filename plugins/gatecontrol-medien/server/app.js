@@ -53,7 +53,7 @@ async function jellyfinEntry(gc, user, src, deviceId, cfg, deviceName) {
   }
   return {
     id: src.id, kind: 'jellyfin', name: src.name,
-    serverId: st.serverId || null, version: st.version || null,
+    serverId: sources.serverIdOf(src), version: st.version || null,
     address: src.config.address,
     home: { address: src.config.address },
     away: sources.awayOf(src, cfg),
@@ -75,14 +75,14 @@ function shareEntry(src, cfg) {
   };
 }
 
-/** How a device tells "zu Hause" from "unterwegs": probes over the local network (never through the VPN). */
+/**
+ * How a device tells "zu Hause" from "unterwegs": probes over the local network (never through the VPN), at least one
+ * per visible source (sources.probesOf) — unique ones (jellyfin, tls) first, then tcp. At most 20.
+ */
 function homeProbes(list) {
-  const out = [];
-  for (const s of list) {
-    if (s.kind === 'jellyfin' && s.serverId) out.push({ kind: 'jellyfin', url: s.home.address + '/System/Info/Public', serverId: s.serverId });
-    if (s.kind === 'share' && s.webdav && s.webdav.certSha256) out.push({ kind: 'tls', url: s.webdav.address, certSha256: s.webdav.certSha256 });
-  }
-  return out.slice(0, 10);
+  const all = [];
+  for (const s of list) all.push(...sources.probesOf(s));
+  return [...all.filter((p) => p.unique), ...all.filter((p) => !p.unique)].slice(0, 20);
 }
 
 async function list(gc, req, cfg, now) {
@@ -99,7 +99,7 @@ async function list(gc, req, cfg, now) {
   for (const s of all) out.push(s.kind === 'jellyfin' ? await jellyfinEntry(gc, user, s, deviceId, cfg, deviceName) : shareEntry(s, cfg));
   const body = {
     media, maxOfflineDays: cfg.maxOfflineDays, offlineHintDays: cfg.offlineHintDays,
-    network: { rule: 'home_direct_away_vpn', vpnRequiredAway: out.some((s) => s.away.mode === 'vpn'), home: { probes: homeProbes(out) } },
+    network: { rule: 'home_direct_away_vpn', vpnRequiredAway: out.some((s) => s.away.mode === 'vpn'), home: { probes: homeProbes(all) } },
     cast: { enabled: cfg.cast && media },
     sources: out,
   };

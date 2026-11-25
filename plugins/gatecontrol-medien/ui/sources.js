@@ -16,6 +16,19 @@
     return s.kind === 'share' ? T('access.all_share') : T('access.all_jf');
   }
 
+  /** Home detection: unique (server ID / pinned certificate) or only a reachable port — the latter clearly marked. */
+  function homeText(s) {
+    var h = s.home || {};
+    if (h.level === 'unique') return T((h.probes || []).some(function (p) { return p.kind === 'tls'; }) ? 'home.unique_tls' : 'home.unique_jf');
+    if (h.level === 'weak') return T('home.weak', { ports: (h.probes || []).map(function (p) { return p.host + ':' + p.port; }).join(', ') });
+    return T('home.none');
+  }
+  function homeNote(s) {
+    var h = s.home || {};
+    if (!s.enabled || h.level === 'unique') return null;
+    return el('p', { class: 'md-note', 'data-home': h.level || 'none', text: T('home.note.' + (h.why === 'no_server_id' ? 'jf' : 'share')) });
+  }
+
   function kv(rows) {
     var dl = el('dl', { class: 'md-kv' });
     rows.forEach(function (r) { if (r) { dl.appendChild(el('dt', { text: r[0] })); dl.appendChild(el('dd', null, [typeof r[1] === 'string' ? el('span', { text: r[1] }) : r[1]])); } });
@@ -29,11 +42,13 @@
     var head = el('div', { class: 'md-card-head' }, [
       el('h2', { class: 'md-card-title', text: (s.kind === 'jellyfin' ? 'Jellyfin · ' : T('src.share') + ' · ') + s.name }),
       P.badge(!s.enabled ? T('src.off') : (st.ok ? T('src.ok') : (st.at ? T('src.problem') : T('src.unchecked'))), tone),
+      s.enabled && s.home && s.home.level !== 'unique' ? P.badge(T('home.badge'), 'warn') : null,
     ]);
     var rows = s.kind === 'jellyfin' ? [
       [T('src.server_via'), T('src.target_n', { n: (c.targetIndex || 0) + 1 }) + (labelOf('jellyfin', c.targetIndex) ? ' · ' + labelOf('jellyfin', c.targetIndex) : '')],
       [T('src.address'), el('span', { class: 'md-mono', text: c.address })],
       [T('src.away'), awayText(s)],
+      [T('home.label'), homeText(s)],
       [T('src.key'), s.hasKey ? T('src.key_set') : T('src.key_missing')],
       [T('src.libraries'), (st.libraries || []).map(function (l) { return l.name; }).join(', ') || '–'],
       [T('src.visible'), accessText(s)],
@@ -43,6 +58,7 @@
       c.smb ? [T('src.smb'), el('span', { class: 'md-mono', text: c.smb.address })] : null,
       c.webdav ? [T('src.webdav'), el('span', { class: 'md-mono', text: c.webdav.address + (c.webdav.certSha256 ? ' · SHA-256 ' + c.webdav.certSha256.slice(0, 8) + '…' : '') })] : null,
       [T('src.away'), awayText(s)],
+      [T('home.label'), homeText(s)],
       [T('src.nas_user'), c.user + ' · ' + (s.hasPassword ? T('src.pw_set', { rev: s.secretRev }) : T('src.pw_missing'))],
       [T('src.visible'), accessText(s)],
       [T('src.devices_pw'), String(s.devices || 0)],
@@ -57,7 +73,7 @@
       el('button', { type: 'button', class: 'btn btn-sm', text: T('src.who'), on: { click: function () { who(s); } } }),
       el('button', { type: 'button', class: 'btn btn-sm btn-danger', text: T('src.remove'), on: { click: function () { remove(s); } } }),
     ]);
-    return el('section', { class: 'md-card', 'data-source': s.id }, [head, kv(rows), P.checks(st), acts]);
+    return el('section', { class: 'md-card', 'data-source': s.id }, [head, homeNote(s), kv(rows), P.checks(st), acts]);
   }
 
   function labelOf(kind, index) {

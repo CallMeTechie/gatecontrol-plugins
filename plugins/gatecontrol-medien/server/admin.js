@@ -31,7 +31,7 @@ async function sourceView(gc, s, cfg) {
   return {
     id: s.id, kind: s.kind, name: s.name, enabled: s.enabled, config: s.config, status: s.status, secretRev: s.secretRev,
     hasKey: s.kind === 'jellyfin' ? hasSecret : undefined, hasPassword: s.kind === 'share' ? hasSecret : undefined,
-    away: sources.awayOf(s, cfg), access: { mode: s.config.accessMode || 'all', ...acc },
+    away: sources.awayOf(s, cfg), home: sources.homeOf(s), access: { mode: s.config.accessMode || 'all', ...acc },
     devices: s.kind === 'jellyfin' ? pairs.n : dels.n,
   };
 }
@@ -98,7 +98,7 @@ async function overview(gc, cfg) {
   const problems = await store.all(gc, 'SELECT device_id, source_id, problem, at FROM reports WHERE ok = 0 ORDER BY at DESC LIMIT 10');
   return {
     license: await license.state(gc),
-    sources: all.map((s) => ({ id: s.id, kind: s.kind, name: s.name, enabled: s.enabled, status: s.status, away: sources.awayOf(s, cfg) })),
+    sources: all.map((s) => ({ id: s.id, kind: s.kind, name: s.name, enabled: s.enabled, status: s.status, away: sources.awayOf(s, cfg), home: { level: sources.homeOf(s).level } })),
     people: { total: users.length, media, linked: linked.n }, devices: devs.n,
     problems, settings: { awayDirectAll: cfg.awayDirectAll, cast: cfg.cast },
     log: await log.list(gc, 30),
@@ -147,8 +147,14 @@ async function route(req, gc, seg, cfg, now = Date.now()) {
     const src = await sources.need(gc, x);
     if (!y && m === 'GET') return { source: await sourceView(gc, src, cfg) };
     if (!y && m === 'PUT') {
-      const { before, after } = await sources.update(gc, src.id, b, now);
+      const { before } = await sources.update(gc, src.id, b, now);
+      let after = await sources.need(gc, src.id);
       if (before.enabled && !after.enabled) await revokeSource(gc, after, 'source', now);
+      // a Jellyfin source learns (again) its server ID — the devices' home probe
+      if (after.kind === 'jellyfin' && after.enabled) {
+        try { await sources.check(gc, after, now); } catch (e) { gc.log.debug('check failed', (e && e.code) || 'error'); }
+        after = await sources.need(gc, src.id);
+      }
       await log.add(gc, 'source', `Quelle ${after.name} geändert`, { sourceId: src.id }, now);
       await changed(gc);
       return { source: await sourceView(gc, after, cfg) };
