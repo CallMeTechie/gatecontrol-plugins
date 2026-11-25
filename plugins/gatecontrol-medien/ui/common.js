@@ -86,14 +86,6 @@
     var box = el('input', { type: 'checkbox', checked: checked });
     return { box: box, node: el('label', { class: 'check' }, [box, el('span', { text: label })]) };
   }
-  function targetSelect(list, value, allowNone) {
-    var s = el('select', { class: 'form-select' }, (allowNone ? [el('option', { value: '', text: T('common.none') })] : []).concat((list || []).map(function (t) {
-      return el('option', { value: String(t.index), text: (t.label || T('src.target_n', { n: t.index + 1 })) });
-    })));
-    if (!(list || []).length && !allowNone) s.appendChild(el('option', { value: '0', text: T('src.no_target') }));
-    s.value = value == null ? '' : String(value);
-    return s;
-  }
   // ── Zugriffsziele from this page (GateControl ≥ 1.324.0, permissions.network.assignTargets: window.GC.targets) ──
   // The dialog offers the routes and VPN peers; saving assigns the home target itself (an assignment that is already
   // there is reused, a new one appended — the index of the others never changes). Without GC.targets (an older
@@ -176,6 +168,110 @@
       return list.length === n ? false : hostTargets.set(id, list.map(strip)).then(function () { return true; });
     }).catch(function () { return false; });
   }
+  // ── "Wo läuft Jellyfin?" / "Wo liegt die NAS?" (1.2.0): one choice, the access target follows from it ──
+  function routeById(td, id) { return ((td && td.routes) || []).filter(function (r) { return r.id === id; })[0] || null; }
+  function peerById(td, id) { return ((td && td.peers) || []).filter(function (p) { return p.id === id; })[0] || null; }
+  /** The assignment `index` of target `id` (null without one). */
+  function assignedAt(td, id, index) {
+    var decl = declaredOf(td, id);
+    if (!decl || index == null) return null;
+    return decl.assigned.filter(function (a) { return a.index === index; })[0] || null;
+  }
+  /** How a choice (r:/p:/a:) or an assignment reads: a route's domain, a peer's name, an address. */
+  function whereText(td, x, id) {
+    if (!x) return null;
+    var a = typeof x === 'string' ? (x.indexOf('a:') === 0 ? assignedAt(td, id, Number(x.slice(2))) : (x.indexOf('r:') === 0 ? { kind: 'route', routeId: Number(x.slice(2)) } : { kind: 'peer', peerId: Number(x.slice(2)) })) : x;
+    if (!a) return null;
+    if (a.kind === 'route') { var r = routeById(td, a.routeId); return r ? (r.domain || r.label) : (a.display || null); }
+    if (a.kind === 'peer') { var p = peerById(td, a.peerId); return a.display || (p ? p.label + ' (' + p.ip + ')' : null); }
+    return a.display || (a.host + (a.port ? ':' + a.port : ''));
+  }
+  function hostPort(h) { return (h.host.indexOf(':') >= 0 ? '[' + h.host + ']' : h.host) + (h.port ? ':' + h.port : ''); }
+  /** Where a choice leads in the home network: { scheme, host, port } — a route's target (not a peer's VPN address), an assigned address; else null. */
+  function homeOf(td, value, id) {
+    if (!value) return null;
+    if (value.indexOf('r:') === 0) {
+      var r = routeById(td, Number(value.slice(2)));
+      var b = r && r.backend;
+      return b && b.host && b.via !== 'peer' ? { scheme: b.scheme || 'http', host: b.host, port: b.port || null } : null;
+    }
+    if (value.indexOf('a:') === 0) {
+      var a = assignedAt(td, id, Number(value.slice(2)));
+      return a && a.kind === 'host' ? { scheme: a.scheme || 'http', host: a.host, port: a.port || null } : null;
+    }
+    return null;
+  }
+  /** Suggestions for a Jellyfin choice: home address (http://host:port, port 8096 by default), https://<domain> for away. */
+  function suggestJellyfin(td, value) {
+    var h = homeOf(td, value, 'jellyfin');
+    var r = value && value.indexOf('r:') === 0 ? routeById(td, Number(value.slice(2))) : null;
+    return { home: h ? h.scheme + '://' + hostPort({ host: h.host, port: h.port || 8096 }) : null, away: r && r.https && r.domain ? 'https://' + r.domain : null };
+  }
+  /** Suggestions for a NAS choice and a share name: SMB on the host, WebDAV when the target speaks HTTPS, a name. */
+  function suggestShare(td, value, share) {
+    var f = String(share || '').trim().replace(/^[\\/]+|[\\/]+$/g, '');
+    var h = homeOf(td, value, 'webdav');
+    var r = value && value.indexOf('r:') === 0 ? routeById(td, Number(value.slice(2))) : null;
+    var ok = f && /^[^\\/?#]+$/.test(f);
+    return {
+      smb: ok && h ? 'smb://' + hostPort({ host: h.host }) + '/' + f : null,
+      webdav: ok && h && h.scheme === 'https' ? 'https://' + hostPort(h) + '/' + f : null,
+      away: ok && r && r.https && r.domain ? 'https://' + r.domain + '/' + f : null,
+      name: ok ? 'NAS ' + f.charAt(0).toUpperCase() + f.slice(1) : null,
+    };
+  }
+  /** Routes that look like Jellyfin / a NAS (name or port) — offered first as choices. */
+  function likelyJellyfin(r) { return r.type === 'http' && (/jellyfin|media|medien|film|kino/i.test((r.domain || '') + ' ' + (r.label || '')) || !!(r.backend && r.backend.port === 8096)); }
+  function likelyNas(r) { return r.type === 'http' && (/nas|dav|dsm|synology|diskstation|ds\d|qnap|datei|files?\b/i.test((r.domain || '') + ' ' + (r.label || '')) || !!(r.backend && [5005, 5006, 5000, 5001].indexOf(r.backend.port) >= 0)); }
+  /** "Route · Ziel 192.168.2.151:8096 über Gateway · HTTPS" */
+  function routeHint(r) {
+    var b = r.backend;
+    var out = [T('where.route')];
+    if (b && b.host) out.push(T(r.gateway ? 'where.to_gw' : 'where.to', { target: hostPort(b) }));
+    out.push(r.https ? 'HTTPS' : 'HTTP');
+    if (r.internal) out.push(T('src.via_internal'));
+    if (!r.enabled) out.push(T('src.off'));
+    return out.join(' · ');
+  }
+  var whereSeq = 0;
+  /**
+   * The choice "Wo läuft …?": the likely routes (and the current one) as cards, then "Andere Route oder Adresse …"
+   * with every route, VPN peer and assigned address. → { node, value(), onChange(fn) }
+   */
+  function whereChoice(td, id, index, likely) {
+    var sel = viaSelect(td, id, index);
+    var cur = sel.value;
+    var name = 'md-where-' + (++whereSeq);
+    var fns = [];
+    var cards = ((td && td.routes) || []).filter(function (r) { return r.type === 'http' && ('r:' + r.id === cur || likely(r)); });
+    cards.sort(function (a, b) { return ('r:' + b.id === cur) - ('r:' + a.id === cur); });
+    cards = cards.slice(0, 4);
+    var radios = [];
+    function card(value, title, hint) {
+      var rb = el('input', { type: 'radio', name: name, value: value });
+      radios.push(rb);
+      var lab = el('label', { class: 'md-choice' }, [rb, el('span', { class: 'md-choice-t' }, [el('b', { text: title }), hint ? el('span', { class: 'md-hint', text: hint }) : null])]);
+      rb.addEventListener('change', changed);
+      return lab;
+    }
+    var nodes = cards.map(function (r) { return card('r:' + r.id, r.domain || r.label, routeHint(r)); });
+    var other = card('', T('where.other'), T('where.other_hint'));
+    var otherBox = el('div', { class: 'md-choice-other' }, [sel]);
+    nodes.push(other, otherBox);
+    sel.addEventListener('change', changed);
+    function picked() { return radios.filter(function (x) { return x.checked; })[0] || null; }
+    function value() { var p = picked(); return !p ? '' : (p.value || sel.value || ''); }
+    function changed() {
+      var p = picked();
+      radios.forEach(function (x) { x.parentNode.setAttribute('data-on', x.checked ? '1' : '0'); });
+      otherBox.hidden = !(p && !p.value);
+      fns.forEach(function (f) { f(value()); });
+    }
+    var first = radios.filter(function (x) { return x.value && x.value === cur; })[0] || (cur ? radios[radios.length - 1] : radios[0]);
+    first.checked = true;
+    changed();
+    return { node: el('div', { class: 'md-choices', role: 'radiogroup' }, nodes), value: value, onChange: function (f) { fns.push(f); } };
+  }
   /** One line per check result: tone + text. */
   function checks(st) {
     var items = [];
@@ -191,6 +287,8 @@
     return el('ul', { class: 'md-checks' }, items.map(function (x) { return el('li', null, [el('span', { class: 'md-dot', 'data-tone': x[0] || null }), el('span', { text: x[1] })]); }));
   }
   window.MD = { CTX: CTX, T: T, $: $, el: el, clear: clear, api: api, toast: toast, warn: warn, errText: errText, dialog: dialog, confirmDialog: confirmDialog,
-    when: when, badge: badge, avatar: avatar, field: field, input: input, check: check, targetSelect: targetSelect, checks: checks,
-    hasTargets: !!hostTargets, targetsData: targetsData, viaSelect: viaSelect, routeOf: routeOf, suggest: suggest, ensureTarget: ensureTarget, pruneTargets: pruneTargets };
+    when: when, badge: badge, avatar: avatar, field: field, input: input, check: check, checks: checks,
+    hasTargets: !!hostTargets, targetsData: targetsData, viaSelect: viaSelect, routeOf: routeOf, suggest: suggest, ensureTarget: ensureTarget, pruneTargets: pruneTargets,
+    assignedAt: assignedAt, whereText: whereText, homeOf: homeOf, suggestJellyfin: suggestJellyfin, suggestShare: suggestShare, likelyJellyfin: likelyJellyfin, likelyNas: likelyNas,
+    routeHint: routeHint, whereChoice: whereChoice };
 })();

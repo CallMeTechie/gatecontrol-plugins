@@ -67,3 +67,16 @@ body{padding:2px 2px 24px}
 .md-log div:last-child{border-bottom:0}
 .md-field-error{color:var(--crit);font-size:12px}
 .md-table select{min-height:30px;max-width:220px}
+/* Quellen (1.2.0): "Wo läuft …?" as choices, the line "Mit Speichern erlaubst du …", "Erweitert" */
+.md-line{margin:0;font-size:13px;color:var(--muted);overflow-wrap:anywhere}
+.md-line b{color:var(--text)}
+.md-line[data-share="missing"]{color:var(--warn)}
+.md-choices{display:flex;flex-direction:column;gap:8px}
+.md-choice{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--line);border-radius:12px;cursor:pointer;min-width:0}
+.md-choice input{margin-top:3px;flex:0 0 auto;width:16px;height:16px;min-height:0;accent-color:var(--accent)}
+.md-choice[data-on="1"]{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,var(--surface))}
+.md-choice-t{display:flex;flex-direction:column;gap:2px;min-width:0;overflow-wrap:anywhere}
+.md-auto{min-height:36px;display:flex;flex-wrap:wrap;align-items:center;gap:4px;padding:6px 12px;border:1px solid color-mix(in srgb,var(--good) 30%,var(--line));border-radius:10px;background:color-mix(in srgb,var(--good) 7%,var(--surface));font-size:13px}
+.md-allow{margin:0 0 12px;padding:10px 12px;border-left:3px solid var(--accent);border-radius:8px;background:color-mix(in srgb,var(--accent) 8%,var(--surface));font-size:13px}
+.md-adv{margin:0 0 12px}
+.md-adv>summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--muted);margin-bottom:10px}
