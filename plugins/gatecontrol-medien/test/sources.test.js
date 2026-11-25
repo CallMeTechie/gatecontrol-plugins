@@ -43,7 +43,7 @@ test('the network rule in v1/sources: VPN away by default, direct only with the 
     assert.deepEqual(jf1.away, { mode: 'vpn' });
     assert.equal(l.network.rule, 'home_direct_away_vpn');
     assert.equal(l.network.vpnRequiredAway, true);
-    assert.deepEqual(l.network.home.probes[0], { kind: 'jellyfin', url: 'http://192.168.1.20:8096/System/Info/Public', serverId: jf1.serverId });
+    assert.deepEqual(l.network.home.probes[0], { kind: 'jellyfin', url: 'http://192.168.1.20:8096/System/Info/Public', serverId: jf1.serverId, sourceId: 'jf-1', unique: true });
     // an away address alone changes nothing
     await t.adminReq('PUT', 'sources/jf-1', { away: { direct: false, address: 'https://jellyfin.example.test' } });
     l = await t.appReq(MILA, '11', 'GET', 'sources');
@@ -146,4 +146,62 @@ test('the licence: a plan or GateControl lifetime licence does not count', async
     await withJellyfin(t2);
     assert.equal(await t2.host.appVisible(MILA), true);
   } finally { await t2.host.close(); }
+});
+
+test('home probes: one for every source — jellyfin / tls unique, else tcp to the home address over the LAN', async () => {
+  const t = await setup();
+  try {
+    // Jellyfin not reachable on save: no server ID yet → tcp to its address, the tab marks it
+    t.jelly.state.down = true;
+    let jf = await withJellyfin(t);
+    assert.equal(jf.home.level, 'weak');
+    assert.equal(jf.home.why, 'no_server_id');
+    // an SMB-only share, a WebDAV-only share without certificate, a pair with certificate
+    await withShare(t, { name: 'Musik', smb: { address: 'smb://192.168.1.30/musik' }, webdav: null });
+    await withShare(t, { name: 'Fotos', smb: null, webdav: { address: 'https://192.168.1.31:5006/fotos', targetIndex: 0 } });
+    await withShare(t, { name: 'Filme' });
+    let l = await t.appReq(MILA, '11', 'GET', 'sources');
+    assert.equal(l.sources.find((s) => s.id === 'jf-1').serverId, null);
+    assert.deepEqual(l.network.home.probes, [
+      { kind: 'tls', url: 'https://192.168.1.20:5006/filme', certSha256: '9c'.repeat(32), sourceId: 'sh-3', unique: true },
+      { kind: 'tcp', host: '192.168.1.20', port: 8096, sourceId: 'jf-1', unique: false },
+      { kind: 'tcp', host: '192.168.1.30', port: 445, sourceId: 'sh-1', unique: false },
+      { kind: 'tcp', host: '192.168.1.31', port: 5006, sourceId: 'sh-2', unique: false },
+    ]);
+    let srcs = (await t.adminReq('GET', 'sources')).sources;
+    assert.deepEqual(srcs.map((s) => [s.id, s.home.level, s.home.why]), [['jf-1', 'weak', 'no_server_id'], ['sh-1', 'weak', 'no_cert'], ['sh-2', 'weak', 'no_cert'], ['sh-3', 'unique', null]]);
+    assert.deepEqual((await t.adminReq('GET', 'overview')).sources.map((s) => s.home.level), ['weak', 'weak', 'weak', 'unique']);
+    // the next reconcile reaches Jellyfin: the server ID is kept and the apps are told (media.changed)
+    t.jelly.state.down = false;
+    const before = t.host.events.length;
+    require('../server/index')._state.lastReconcile = 0;
+    await t.host.tick();
+    assert.ok(t.host.events.slice(before).some((e) => e.type === 'media.changed'));
+    l = await t.appReq(MILA, '11', 'GET', 'sources');
+    jf = l.sources.find((s) => s.id === 'jf-1');
+    assert.ok(jf.serverId);
+    assert.deepEqual(l.network.home.probes[0], { kind: 'jellyfin', url: 'http://192.168.1.20:8096/System/Info/Public', serverId: jf.serverId, sourceId: 'jf-1', unique: true });
+    assert.equal(l.network.home.probes.filter((p) => p.sourceId === 'jf-1').length, 1);
+    // the server off again: the ID stays (no fallback to tcp), also after an edit that keeps the address
+    t.jelly.state.down = true;
+    await t.adminReq('POST', 'sources/jf-1/check');
+    await t.adminReq('PUT', 'sources/jf-1', { name: 'NAS' });
+    l = await t.appReq(MILA, '11', 'GET', 'sources');
+    assert.equal(l.sources.find((s) => s.id === 'jf-1').serverId, jf.serverId);
+    assert.equal(l.network.home.probes[0].kind, 'jellyfin');
+    srcs = (await t.adminReq('GET', 'sources')).sources;
+    assert.equal(srcs[0].home.level, 'unique');
+    // a new address forgets it until the server answers there
+    await t.adminReq('PUT', 'sources/jf-1', { address: 'http://192.168.1.21:8096' });
+    l = await t.appReq(MILA, '11', 'GET', 'sources');
+    assert.deepEqual(l.network.home.probes.find((p) => p.sourceId === 'jf-1'), { kind: 'tcp', host: '192.168.1.21', port: 8096, sourceId: 'jf-1', unique: false });
+    t.jelly.state.down = false;
+    await t.adminReq('PUT', 'sources/jf-1', { name: 'NAS 2' });
+    l = await t.appReq(MILA, '11', 'GET', 'sources');
+    assert.equal(l.network.home.probes.find((p) => p.sourceId === 'jf-1').kind, 'jellyfin', 'learned on save');
+    // a pair SMB + WebDAV without certificate: both ports
+    await t.adminReq('PUT', 'sources/sh-3', { webdav: { address: 'https://192.168.1.20:5006/filme', certSha256: null, targetIndex: 0 } });
+    l = await t.appReq(MILA, '11', 'GET', 'sources');
+    assert.deepEqual(l.network.home.probes.filter((p) => p.sourceId === 'sh-3').map((p) => [p.kind, p.host, p.port]), [['tcp', '192.168.1.20', 445], ['tcp', '192.168.1.20', 5006]]);
+  } finally { await t.host.close(); }
 });

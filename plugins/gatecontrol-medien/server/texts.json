@@ -213,7 +213,15 @@
   "ov.license.not_own": "Medien braucht eine eigene Lizenz (nicht in GateControl Lifetime oder einem Paket enthalten) – die Apps zeigen Medien nicht.",
   "ov.license.unknown": "Lizenzstand unbekannt.",
   "src.targets_open": "Zugriffsziele öffnen",
-  "src.targets_where": "Einstellungen › Plugins › Medien › Einstellungen › Zugriffsziele"
+  "src.targets_where": "Einstellungen › Plugins › Medien › Einstellungen › Zugriffsziele",
+  "home.label": "Heimnetz-Erkennung",
+  "home.badge": "Heimnetz nicht eindeutig",
+  "home.unique_jf": "eindeutig · Jellyfin-Server-ID",
+  "home.unique_tls": "eindeutig · Zertifikat der WebDAV-Adresse",
+  "home.weak": "nicht eindeutig · nur erreichbarer Port ({{ports}})",
+  "home.none": "keine – die Adresse ist ungültig",
+  "home.note.jf": "Die Server-ID dieses Jellyfin ist noch nicht bekannt (Server bisher nicht erreicht). Bis dahin erkennen die Geräte das Heimnetz nur daran, dass die Adresse antwortet – das kann auch ein fremdes Netz mit derselben Adresse sein. „Prüfen“ holt die ID, sonst der nächste Abgleich (alle 5 Minuten).",
+  "home.note.share": "Ohne Zertifikat erkennen die Geräte das Heimnetz bei dieser Freigabe nur daran, dass die NAS-Adresse antwortet (SMB 445 bzw. der WebDAV-Port) – das kann auch ein fremdes Netz mit derselben Adresse sein. Eindeutig wird es mit einer WebDAV-Adresse und ihrem Zertifikat (SHA-256) oder einem Jellyfin-Server, den dieselben Personen sehen."
  },
  "en": {
   "error.invalid": "Invalid input.",
@@ -429,6 +437,14 @@
   "ov.license.not_own": "Media needs a licence of its own (not part of GateControl Lifetime or a bundle) – the apps do not show Media.",
   "ov.license.unknown": "Licence state unknown.",
   "src.targets_open": "Open home targets",
-  "src.targets_where": "Settings › Plugins › Media › Settings › Home targets"
+  "src.targets_where": "Settings › Plugins › Media › Settings › Home targets",
+  "home.label": "Home detection",
+  "home.badge": "Home not unique",
+  "home.unique_jf": "unique · Jellyfin server ID",
+  "home.unique_tls": "unique · certificate of the WebDAV address",
+  "home.weak": "not unique · only a reachable port ({{ports}})",
+  "home.none": "none – the address is invalid",
+  "home.note.jf": "The server ID of this Jellyfin is not known yet (the server was not reached so far). Until then the devices recognise home only by the address answering – that can also be a foreign network with the same address. “Check” fetches the ID, else the next reconcile (every 5 minutes).",
+  "home.note.share": "Without a certificate the devices recognise home for this share only by the NAS address answering (SMB 445 or the WebDAV port) – that can also be a foreign network with the same address. It becomes unique with a WebDAV address and its certificate (SHA-256), or a Jellyfin server the same people see."
  }
 }

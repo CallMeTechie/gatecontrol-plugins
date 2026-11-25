@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.0.1
+
+Mindestversion unverändert **GateControl 1.301.0**.
+
+- **Heimnetz-Erkennung für jede Quelle** (`network.home.probes` in `v1/sources`): bisher gab es Proben nur für Jellyfin mit
+  bekannter Server-ID und WebDAV mit `certSha256` – ohne Probe hielt sich ein Gerät auch zu Hause für unterwegs und ging
+  durch das VPN. Neu die Probe-Art `tcp` `{ host, port }` (TCP-Verbindung über die LAN-Schnittstelle) für Jellyfin ohne
+  bekannte Server-ID und Freigaben ohne Zertifikat (SMB 445, WebDAV-Port). Jede Probe hat zusätzlich `sourceId` und
+  `unique`; höchstens 20, eindeutige zuerst. `jellyfin`/`tls` unverändert, App-API bleibt v1.
+- **Jellyfin-Server-ID** wird beim Speichern, Bearbeiten und Prüfen ermittelt und in der Quelle gespeichert (bleibt, wenn
+  Jellyfin später nicht erreichbar ist; neue Adresse oder neues Zugriffsziel → neu ermitteln). Fehlt sie, holt der Abgleich
+  alle 5 Minuten sie nach und schickt `media.changed`.
+- **Admin**: Reiter Quellen mit Zeile „Heimnetz-Erkennung“, Zeichen und Hinweis **„Heimnetz nicht eindeutig“** für Quellen
+  ohne eindeutige Probe; ebenso in der Übersicht. Admin-API: `home { level, why, probes }` je Quelle.
+- README (App-API, Netz-Regel), Handbuch „Netz“ und „Neu in 1.0.1“.
+
 ## 1.0.0
 
 Neues Plugin **Medien** (eigene Lizenz, nicht im GateControl-Plan oder einer Lifetime-Lizenz enthalten). Mindestversion
