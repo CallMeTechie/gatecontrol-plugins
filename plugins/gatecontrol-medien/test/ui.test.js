@@ -35,7 +35,7 @@ test('text keys: the same in de and en, and every key the pages use exists', () 
 });
 
 test('manifest: own licence, app tab, the three settings tabs, a signal topic', () => {
-  assert.equal(manifest.version, '1.0.1');
+  assert.equal(manifest.version, '1.1.0');
   assert.deepEqual(manifest.license, { required: true });
   assert.deepEqual(manifest.ui.settingsPages, ['sources', 'people', 'devices']);
   assert.equal(manifest.ui.app.label.de, 'Medien');

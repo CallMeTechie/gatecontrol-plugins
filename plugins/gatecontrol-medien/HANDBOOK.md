@@ -1,4 +1,4 @@
-<!-- version: 1.0.1 -->
+<!-- version: 1.1.0 -->
 # Media – Manual
 
 ## What the plugin does {#was-das-plugin-kann}
@@ -12,7 +12,7 @@ Media brings your own collection from **Jellyfin** and the **shares of your NAS*
 
 ## Requirements {#voraussetzungen}
 
-- GateControl 1.301.0 or newer (instant revocation when a device is removed from 1.322.0, otherwise within 5 minutes).
+- GateControl 1.324.0 or newer.
 - A **licence of its own for Media**. It is not part of GateControl Lifetime or a bundle.
 - **Jellyfin 10.9 or newer** with Quick Connect (e.g. the Synology package) and/or SMB/WebDAV shares on the NAS.
 - A gateway in the home network through which the server reaches Jellyfin (home target), and a VPN that routes the home network (e.g. 192.168.1.0/24).
@@ -22,21 +22,21 @@ Media brings your own collection from **Jellyfin** and the **shares of your NAS*
 
 ### Home targets {#zugriffsziele}
 
-Under **Settings › Plugins › Media › Settings › Home targets** you decide how the server reaches the NAS, e.g. “192.168.1.20 through gateway Home”. The plugin cannot create home targets itself; the source dialog only picks one (“Open home targets” leads there).
+There is no separate step: in the source dialog you pick a GateControl route or a VPN peer under **“Reached through”**, and saving assigns the home target by itself. For this Media has the permission **“Assign access targets itself”**. It works only in your session as an administrator, and every change is in the activity log. **Settings › Plugins › Media › Settings › Home targets** still shows the assignments, and you can also assign an address by hand there. Existing assignments stay valid; the dialog offers them under “Already assigned”.
 
 - **Jellyfin server (HTTP)**: port 8096. For several Jellyfin servers one target each.
 - **WebDAV of the NAS**: only to check sign-in and folder of a share (optional).
 - **SMB of the NAS**: reachability only. The server does not speak SMB; the devices check the SMB sign-in.
 
-You enter the addresses for the devices in the source dialog; they do not come from the home target.
+The addresses for the devices are in the source dialog. With a chosen route it suggests them: the **home-network address** from the route's target (e.g. `http://192.168.2.151:8096`) and the **HTTPS address for away** from its domain (`https://<domain>`). You can overwrite both.
 
 ### Adding Jellyfin {#jellyfin}
 
 1. In Jellyfin: **Dashboard › API Keys › “+”**, app name “GateControl”. Copy the key.
 2. In GateControl: **Settings › Plugins › Media › Sources › Add source › Jellyfin server**.
-3. Pick the home target, enter the **address for the devices** (best the IP address, e.g. `http://192.168.1.20:8096`; “Check” suggests Jellyfin's own) and paste the key.
+3. Pick the route or peer under **“Reached through”**. The dialog takes the **address for the devices** from the route, and you can adjust it (best the IP address, e.g. `http://192.168.1.20:8096`; “Check” suggests Jellyfin's own). Then paste the key.
 4. **Check**: reachable, version, key valid, Quick Connect. If Quick Connect is off, **“Switch on in Jellyfin”** turns it on in Jellyfin's configuration after asking.
-5. Save. The key can only be replaced afterwards, never read.
+5. Save. Media now assigns the home target (unless “Check” already did). The key can only be replaced afterwards, never read.
 
 The DSM firewall must allow TCP 8096 from the gateway and the tunnel network. The home network search (UDP 7359) is not needed.
 
@@ -44,7 +44,7 @@ The DSM firewall must allow TCP 8096 from the gateway and the tunnel network. Th
 
 1. In DSM create an own user with **read access** to the media shares only (e.g. “media-read”, without DSM sign-in).
 2. **Add source › NAS share**: SMB address (`smb://192.168.1.20/movies`) and/or WebDAV address (`https://192.168.1.20:5006/movies`, HTTPS only), for a self-signed certificate its SHA-256 to pin, user and password.
-3. With a WebDAV home target “Check” checks sign-in and folder.
+3. Optional **“Check WebDAV through”**: with a route or peer, “Check” checks sign-in and folder. Media assigns the home target by itself when saving.
 
 Use IP addresses rather than names like `\\nas`: names do not resolve away.
 
@@ -87,10 +87,16 @@ The Jellyfin key never leaves the server. The log names people, devices and sour
 
 - **“The administrator has to switch Quick Connect on”**: Sources › Jellyfin › “Switch on in Jellyfin”, or in Jellyfin Dashboard › General › Quick Connect.
 - **“The administrator has to link you to a Jellyfin user”**: tab People, pick or create a Jellyfin user.
-- **Jellyfin unreachable**: home target assigned? Gateway online? DSM firewall port 8096?
+- **Jellyfin unreachable**: right route or peer under “Reached through”? Gateway online? DSM firewall port 8096?
 - **“unreachable through the tunnel”** on the tab Devices: the gateway does not route the home network into the tunnel, or the DSM firewall does not allow the tunnel network (8096, 5006, maybe 445).
 - **A phone is lost**: remove it in GateControl (Jellyfin closes at once or within 5 minutes). The NAS password cannot be taken back from a device that never comes online again: change it in DSM and replace it under Sources.
 - **Licence**: without a licence of its own for Media the apps hide Media. A GateControl Lifetime licence does not count here.
+
+## New in 1.1.0 {#neu-1-1-0}
+
+- **Setup in one place:** you add Jellyfin servers and NAS shares only under Media › Sources. In the dialog you pick the route or peer, and saving assigns the home target by itself. The button “Open home targets” is gone (see [Home targets](#zugriffsziele)).
+- **Addresses filled in:** the home-network address comes from the route's target, the HTTPS address for away from its domain. You can overwrite both.
+- Home targets you already assigned stay valid. Needs GateControl 1.324.0 or newer.
 
 ## New in 1.0.1 {#neu-1-0-1}
 

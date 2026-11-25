@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.1.0
+
+Mindestversion **GateControl 1.324.0** (neue Host-API `window.GC.targets`, Berechtigung
+`permissions.network.assignTargets`).
+
+- **Einrichtung an einer Stelle:** Der Dialog „Jellyfin-Server hinzufügen/bearbeiten“ hat statt der Auswahl eines
+  zugewiesenen Zugriffsziels jetzt **„Erreichbar über“** mit den Routen und VPN-Peers von GateControl. Beim Speichern
+  (und bei „Prüfen“) weist Medien das Zugriffsziel `jellyfin` selbst zu. Eine vorhandene gleiche Zuweisung wird
+  wiederverwendet, eine neue angehängt, der Index anderer Quellen ändert sich nie. Ebenso **„WebDAV prüfen über“** bei
+  NAS-Freigaben (Ziel `webdav`, optional). Zuweisungen am Ende der Liste, die keine Quelle mehr nutzt, entfernt Medien nach
+  dem Bearbeiten oder Entfernen einer Quelle wieder.
+- **Vorbelegung:** Heimnetz-Adresse aus dem Ziel der Route (z. B. `http://192.168.2.151:8096`, nicht bei Peer-Routen), HTTPS-Adresse
+  für unterwegs aus der Domain der Route (`https://<Domain>`). Beides überschreibbar.
+- „Zugriffsziele öffnen“ entfällt. Der Knopf öffnete die Einstellungen im Dialog und blockierte die Seite. Der Hinweistext
+  ist ersetzt.
+- **Rückwärts:** Bestehende Zuweisungen und `targetIndex` der Quellen bleiben gültig. Eine von Hand zugewiesene Adresse
+  erscheint unter „Bereits zugewiesen“. Ohne `GC.targets` bleibt die bisherige Auswahl.
+- Handbuch: „Zugriffsziele“, „Jellyfin hinzufügen“, „NAS-Freigabe“, „Neu in 1.1.0“.
+
 ## 1.0.1
 
 Mindestversion unverändert **GateControl 1.301.0**.

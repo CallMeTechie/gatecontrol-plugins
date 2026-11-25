@@ -25,7 +25,8 @@ test/               node:test gegen tools/testing/mock-host.js; test/fixtures = 
 test/spike/         das Skript des Spikes M0 (gegen ein echtes Jellyfin)
 ```
 
-Mindestversion **GateControl 1.301.0** (Signal-Topic, `ui.settingsPages`, `reason: plugin_unavailable`). Mit
+Mindestversion **GateControl 1.324.0** (ab Medien 1.1.0: `window.GC.targets` mit `permissions.network.assignTargets` – der
+Quellen-Dialog weist die Zugriffsziele `jellyfin`/`webdav` selbst zu; dazu Signal-Topic, `ui.settingsPages`, `reason: plugin_unavailable`). Mit
 **GateControl ≥ 1.322.0** nutzt das Plugin den Hook `devicesChanged` (entferntes/gesperrtes Gerät verliert Jellyfin
 sofort); ohne ihn reicht der Abgleich alle 5 Minuten (bleibt auch mit Hook das Sicherheitsnetz, der Host holt verpasste
 Meldungen nicht nach). `clientType: 'android-tv'` (GateControl ≥ 1.320.0) erkennt Fernseher als Cast-Ziel.

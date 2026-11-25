@@ -94,11 +94,87 @@
     s.value = value == null ? '' : String(value);
     return s;
   }
-  /** The home targets are assigned by the administrator only (Einstellungen › Plugins › Medien › Zugriffsziele). */
-  function targetsLink() {
-    return el('button', { type: 'button', class: 'btn btn-sm', text: T('src.targets_open'), on: { click: function () {
-      if (window.GC && typeof window.GC.openSettings === 'function') window.GC.openSettings(); else toast(T('src.targets_where'));
-    } } });
+  // ── Zugriffsziele from this page (GateControl ≥ 1.324.0, permissions.network.assignTargets: window.GC.targets) ──
+  // The dialog offers the routes and VPN peers; saving assigns the home target itself (an assignment that is already
+  // there is reused, a new one appended — the index of the others never changes). Without GC.targets (an older
+  // GateControl) the dialog falls back to picking one of the targets an administrator assigned.
+  var hostTargets = window.GC && window.GC.targets && typeof window.GC.targets.get === 'function' ? window.GC.targets : null;
+  function targetsData() { return hostTargets ? hostTargets.get().catch(function () { return null; }) : Promise.resolve(null); }
+  function strip(a) {
+    if (a.kind === 'route') return { kind: 'route', routeId: a.routeId };
+    if (a.kind === 'peer') return { kind: 'peer', peerId: a.peerId, port: a.port == null ? null : a.port, scheme: a.scheme || 'http' };
+    return { kind: 'host', host: a.host, port: a.port == null ? null : a.port, scheme: a.scheme || 'http' };
+  }
+  function declaredOf(td, id) { return ((td && td.targets) || []).filter(function (t) { return t.id === id; })[0] || null; }
+  /** The value of the "via" select for an assignment: r:<route> · p:<peer> · a:<index> (an address of the administrator). */
+  function viaValue(a) { return a.kind === 'route' ? 'r:' + a.routeId : (a.kind === 'peer' ? 'p:' + a.peerId : 'a:' + a.index); }
+  /**
+   * The select "Erreichbar über": routes (HTTP), VPN peers, the administrator's own addresses already assigned.
+   * td: GC.targets.get(); id: the declared target; index: the source's current assignment (or null); none: text of an empty choice.
+   */
+  function viaSelect(td, id, index, none) {
+    var decl = declaredOf(td, id);
+    var assigned = (decl && decl.assigned) || [];
+    var cur = index == null ? null : assigned.filter(function (a) { return a.index === index; })[0] || null;
+    var routes = ((td && td.routes) || []).filter(function (r) { return r.type === 'http'; });
+    var peers = (td && td.peers) || [];
+    var own = assigned.filter(function (a) { return a.kind === 'host'; });
+    var kids = [el('option', { value: '', text: none || T('src.via_pick'), disabled: none ? null : true })];
+    if (routes.length) kids.push(el('optgroup', { label: T('src.via_routes') }, routes.map(function (r) {
+      return el('option', { value: 'r:' + r.id, text: r.label + (r.internal ? ' · ' + T('src.via_internal') : '') + (r.enabled ? '' : ' · ' + T('src.off')) });
+    })));
+    if (peers.length) kids.push(el('optgroup', { label: T('src.via_peers') }, peers.map(function (p) { return el('option', { value: 'p:' + p.id, text: p.label + ' (' + p.ip + ')' }); })));
+    if (own.length) kids.push(el('optgroup', { label: T('src.via_assigned') }, own.map(function (a) { return el('option', { value: 'a:' + a.index, text: a.display }); })));
+    var s = el('select', { class: 'form-select' }, kids);
+    s.value = cur ? viaValue(cur) : '';
+    return s;
+  }
+  function routeOf(td, value) {
+    if (!value || value.indexOf('r:') !== 0) return null;
+    var id = Number(value.slice(2));
+    return ((td && td.routes) || []).filter(function (r) { return r.id === id; })[0] || null;
+  }
+  /** Suggestions from a route: the home address from its backend (not a peer's VPN address), https://<domain> for away. */
+  function suggest(route) {
+    if (!route) return { home: null, away: null };
+    var b = route.backend;
+    var home = b && b.host && b.via !== 'peer' ? b.scheme + '://' + (b.host.indexOf(':') >= 0 ? '[' + b.host + ']' : b.host) + (b.port ? ':' + b.port : '') : null;
+    return { home: home, away: route.https && route.domain ? 'https://' + route.domain : null };
+  }
+  /**
+   * The index of the home target `id` for the choice `value` — assigned now if needed (GC.targets.set).
+   * peer: { port, scheme } of a VPN peer. Resolves null for an empty choice.
+   */
+  function ensureTarget(id, value, peer) {
+    if (!value) return Promise.resolve(null);
+    if (value.indexOf('a:') === 0) return Promise.resolve(Number(value.slice(2)));
+    if (!hostTargets) return Promise.reject(new Error(T('src.via_unavailable')));
+    return hostTargets.get().then(function (td) {
+      var decl = declaredOf(td, id);
+      if (!decl) throw new Error(T('src.via_unavailable'));
+      var want = value.indexOf('r:') === 0 ? { kind: 'route', routeId: Number(value.slice(2)) }
+        : { kind: 'peer', peerId: Number(value.slice(2)), port: (peer && peer.port) || null, scheme: (peer && peer.scheme) || 'http' };
+      var found = decl.assigned.filter(function (a) {
+        if (a.kind !== want.kind) return false;
+        if (want.kind === 'route') return a.routeId === want.routeId;
+        return a.peerId === want.peerId && (a.port == null ? null : a.port) === want.port && (a.scheme || 'http') === want.scheme;
+      })[0];
+      if (found) return found.index;
+      var list = decl.multiple ? decl.assigned.map(strip).concat([want]) : [want];
+      return hostTargets.set(id, list).then(function () { return list.length - 1; });
+    });
+  }
+  /** Remove assignments at the end of target `id` that no source uses any more (routes and peers only — never shifts an index). */
+  function pruneTargets(id, used) {
+    if (!hostTargets) return Promise.resolve(false);
+    return hostTargets.get().then(function (td) {
+      var decl = declaredOf(td, id);
+      if (!decl) return false;
+      var list = decl.assigned.slice();
+      var n = list.length;
+      while (list.length && used.indexOf(list[list.length - 1].index) < 0 && list[list.length - 1].kind !== 'host') list.pop();
+      return list.length === n ? false : hostTargets.set(id, list.map(strip)).then(function () { return true; });
+    }).catch(function () { return false; });
   }
   /** One line per check result: tone + text. */
   function checks(st) {
@@ -115,5 +191,6 @@
     return el('ul', { class: 'md-checks' }, items.map(function (x) { return el('li', null, [el('span', { class: 'md-dot', 'data-tone': x[0] || null }), el('span', { text: x[1] })]); }));
   }
   window.MD = { CTX: CTX, T: T, $: $, el: el, clear: clear, api: api, toast: toast, warn: warn, errText: errText, dialog: dialog, confirmDialog: confirmDialog,
-    when: when, badge: badge, avatar: avatar, field: field, input: input, targetsLink: targetsLink, check: check, targetSelect: targetSelect, checks: checks };
+    when: when, badge: badge, avatar: avatar, field: field, input: input, check: check, targetSelect: targetSelect, checks: checks,
+    hasTargets: !!hostTargets, targetsData: targetsData, viaSelect: viaSelect, routeOf: routeOf, suggest: suggest, ensureTarget: ensureTarget, pruneTargets: pruneTargets };
 })();

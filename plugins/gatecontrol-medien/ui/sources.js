@@ -97,48 +97,91 @@
       value: function () { return { direct: direct.box.checked, address: addr.value.trim() || null }; } };
   }
 
-  /** The dialog "Quelle hinzufügen" / "Bearbeiten". */
-  function form(kind, s) {
+  /** The port of an address (http/https/smb), or the scheme's default. */
+  function portOf(address, fallback) {
+    try { var u = new URL(address); return u.port ? Number(u.port) : fallback; } catch (e) { return fallback; }
+  }
+
+  /** Fill `input` with `value` while it is empty or still holds what was suggested before. */
+  function suggestInto(input, value) {
+    var auto = input.getAttribute('data-suggested');
+    if (!value || (input.value.trim() && input.value.trim() !== auto)) return;
+    input.value = value;
+    input.setAttribute('data-suggested', value);
+  }
+
+  /** The dialog "Quelle hinzufügen" / "Bearbeiten". td: GC.targets.get() (null without GC.targets). */
+  function form(kind, s, td) {
     var c = (s && s.config) || {};
     var name = P.input({ value: s ? s.name : '', maxlength: 60 });
     var parts = [P.field(T('src.name'), name)];
     var get;
     if (kind === 'jellyfin') {
-      var target = P.targetSelect(S.targets.jellyfin, c.targetIndex == null ? 0 : c.targetIndex);
       var address = P.input({ type: 'url', value: c.address || '', placeholder: 'http://192.168.1.20:8096' });
+      var away = awayFields(c.away);
+      var target;
+      var targetIndex;
+      if (td) {
+        target = P.viaSelect(td, 'jellyfin', s ? (c.targetIndex || 0) : null);
+        target.addEventListener('change', function () {
+          var sg = P.suggest(P.routeOf(td, target.value));
+          suggestInto(address, sg.home);
+          suggestInto(away.addr, sg.away);
+        });
+        targetIndex = function () {
+          if (!target.value) return Promise.reject(new Error(T('src.via_required')));
+          return P.ensureTarget('jellyfin', target.value, { port: portOf(address.value.trim(), 8096), scheme: 'http' });
+        };
+      } else {
+        target = P.targetSelect(S.targets.jellyfin, c.targetIndex == null ? 0 : c.targetIndex);
+        targetIndex = function () { return Promise.resolve(Number(target.value) || 0); };
+      }
       var key = P.input({ type: 'password', autocomplete: 'off', placeholder: s ? T('src.key_keep') : '' });
       var downloads = P.check(T('src.downloads_allow'), c.downloads !== false);
-      var away = awayFields(c.away);
       var result = el('div');
       var probe = el('button', { type: 'button', class: 'btn btn-sm', text: T('src.probe'), on: { click: function () {
-        P.api('POST', 'admin/probe', { targetIndex: Number(target.value) || 0, key: key.value || null, sourceId: s ? s.id : null }).then(function (r) {
+        targetIndex().then(function (index) {
+          return P.api('POST', 'admin/probe', { targetIndex: index, key: key.value || null, sourceId: s ? s.id : null });
+        }).then(function (r) {
           P.clear(result).appendChild(P.checks(Object.assign({ at: Date.now() }, r.check)));
           if (!address.value && r.check && r.check.localAddress) address.value = r.check.localAddress;
         }).catch(P.warn);
       } } });
-      parts.push(P.field(T('src.target'), target, T('src.target_hint')), P.targetsLink(), P.field(T('src.address'), address, T('src.address_hint')),
+      parts.push(P.field(T(td ? 'src.via' : 'src.target'), target, T(td ? 'src.via_hint' : 'src.target_hint')), P.field(T('src.address'), address, T('src.address_hint')),
         P.field(T('src.key'), key, T('src.key_hint')), downloads.node, away.node, el('div', { class: 'md-actions' }, [probe]), result);
       get = function () {
-        var b = { kind: 'jellyfin', name: name.value, targetIndex: Number(target.value) || 0, address: address.value, downloads: downloads.box.checked, away: away.value() };
-        if (key.value) b.key = key.value;
-        return b;
+        return targetIndex().then(function (index) {
+          var b = { kind: 'jellyfin', name: name.value, targetIndex: index, address: address.value, downloads: downloads.box.checked, away: away.value() };
+          if (key.value) b.key = key.value;
+          return b;
+        });
       };
     } else {
       var smb = P.input({ value: c.smb ? c.smb.address : '', placeholder: 'smb://192.168.1.20/filme' });
       var dav = P.input({ type: 'url', value: c.webdav ? c.webdav.address : '', placeholder: 'https://192.168.1.20:5006/filme' });
       var cert = P.input({ value: c.webdav && c.webdav.certSha256 ? c.webdav.certSha256 : '', placeholder: '9c:41:…' });
-      var davTarget = P.targetSelect(S.targets.webdav, c.webdav ? c.webdav.targetIndex : null, true);
+      var curDav = c.webdav && c.webdav.targetIndex != null ? c.webdav.targetIndex : null;
+      var davTarget = td ? P.viaSelect(td, 'webdav', curDav, T('src.webdav_via_none')) : P.targetSelect(S.targets.webdav, curDav, true);
+      var davIndex = function () {
+        if (!td) return Promise.resolve(davTarget.value === '' ? null : Number(davTarget.value));
+        return P.ensureTarget('webdav', davTarget.value, { port: portOf(dav.value.trim(), 443), scheme: 'https' });
+      };
       var user = P.input({ value: c.user || '', placeholder: 'medien-lesen', autocomplete: 'off' });
       var pw = P.input({ type: 'password', autocomplete: 'off', placeholder: s ? T('src.pw_keep') : '' });
       var away2 = awayFields(c.away);
+      if (td) davTarget.addEventListener('change', function () { suggestInto(away2.addr, P.suggest(P.routeOf(td, davTarget.value)).away); });
       parts.push(P.field(T('src.smb'), smb, T('src.smb_hint')), P.field(T('src.webdav'), dav, T('src.webdav_hint')), P.field(T('src.cert'), cert, T('src.cert_hint')),
-        P.field(T('src.webdav_target'), davTarget), P.targetsLink(), P.field(T('src.nas_user'), user, T('src.nas_user_hint')), s ? null : P.field(T('src.pw'), pw), away2.node);
+        P.field(T(td ? 'src.webdav_via' : 'src.webdav_target'), davTarget, td ? T('src.webdav_via_hint') : null), P.field(T('src.nas_user'), user, T('src.nas_user_hint')),
+        s ? null : P.field(T('src.pw'), pw), away2.node);
       get = function () {
-        var b = { kind: 'share', name: name.value, user: user.value, away: away2.value(),
-          smb: smb.value.trim() ? { address: smb.value.trim() } : null,
-          webdav: dav.value.trim() ? { address: dav.value.trim(), certSha256: cert.value.trim() || null, targetIndex: davTarget.value === '' ? null : Number(davTarget.value) } : null };
-        if (!s) b.password = pw.value;
-        return b;
+        var hasDav = !!dav.value.trim();
+        return (hasDav ? davIndex() : Promise.resolve(null)).then(function (index) {
+          var b = { kind: 'share', name: name.value, user: user.value, away: away2.value(),
+            smb: smb.value.trim() ? { address: smb.value.trim() } : null,
+            webdav: hasDav ? { address: dav.value.trim(), certSha256: cert.value.trim() || null, targetIndex: index } : null };
+          if (!s) b.password = pw.value;
+          return b;
+        });
       };
     }
     return { node: el('div', null, [el('h2', { class: 'md-card-title', text: s ? T('src.edit_title', { name: s.name }) : T('src.add_' + kind) })].concat(parts)), get: get };
@@ -147,24 +190,43 @@
   function add() {
     P.dialog(el('div', null, [el('h2', { class: 'md-card-title', text: T('sources.add') }), el('p', { class: 'md-hint', text: T('src.kind_hint') })]),
       [{ label: T('common.cancel'), value: false }, { label: T('src.kind.share'), value: 'share' }, { label: T('src.kind.jellyfin'), value: 'jellyfin', primary: true }]).then(function (kind) {
-      if (!kind) return;
-      var f = form(kind, null);
-      P.dialog(f.node, [{ label: T('common.cancel'), value: false }, { label: T('common.save'), primary: true, run: function () {
-        return P.api('POST', 'admin/sources', f.get()).then(function () { P.toast(T('common.saved')); load(); return true; });
-      } }]);
-    });
+      if (!kind) return null;
+      return P.targetsData().then(function (td) {
+        var f = form(kind, null, td);
+        P.dialog(f.node, [{ label: T('common.cancel'), value: false }, { label: T('common.save'), primary: true, run: function () {
+          return f.get().then(function (b) { return P.api('POST', 'admin/sources', b); }).then(function () { P.toast(T('common.saved')); load(); return true; });
+        } }]);
+      });
+    }).catch(P.warn);
   }
 
   function edit(s) {
-    var f = form(s.kind, s);
-    P.dialog(f.node, [{ label: T('common.cancel'), value: false }, { label: T('common.save'), primary: true, run: function () {
-      var b = f.get();
-      var key = b.key;
-      delete b.key;
-      delete b.kind;
-      return P.api('PUT', 'admin/sources/' + s.id, b).then(function () { return key ? P.api('PUT', 'admin/sources/' + s.id + '/key', { key: key }) : null; })
-        .then(function () { P.toast(T('common.saved')); load(); return true; });
-    } }]);
+    P.targetsData().then(function (td) {
+      var f = form(s.kind, s, td);
+      P.dialog(f.node, [{ label: T('common.cancel'), value: false }, { label: T('common.save'), primary: true, run: function () {
+        var key;
+        return f.get().then(function (b) {
+          key = b.key;
+          delete b.key;
+          delete b.kind;
+          return P.api('PUT', 'admin/sources/' + s.id, b);
+        }).then(function () { return key ? P.api('PUT', 'admin/sources/' + s.id + '/key', { key: key }) : null; })
+          .then(function () { P.toast(T('common.saved')); load().then(prune); return true; });
+      } }]);
+    }).catch(P.warn);
+  }
+
+  /** Assignments at the end that no source uses any more (after an edit or a removal) go again. */
+  function prune() {
+    if (!P.hasTargets || !S) return null;
+    var jf = [];
+    var dav = [];
+    S.sources.forEach(function (x) {
+      var c = x.config || {};
+      if (x.kind === 'jellyfin') jf.push(c.targetIndex || 0);
+      else if (c.webdav && c.webdav.targetIndex != null) dav.push(c.webdav.targetIndex);
+    });
+    return P.pruneTargets('jellyfin', jf).then(function () { return P.pruneTargets('webdav', dav); });
   }
 
   function secretDialog(s, what) {
@@ -214,7 +276,7 @@
   function remove(s) {
     P.confirmDialog(T('src.remove_q', { name: s.name }), T('src.remove'), true).then(function (ok) {
       if (!ok) return null;
-      return P.api('DELETE', 'admin/sources/' + s.id).then(function () { P.toast(T('src.removed')); load(); });
+      return P.api('DELETE', 'admin/sources/' + s.id).then(function () { P.toast(T('src.removed')); return load().then(prune); });
     }).catch(P.warn);
   }
 
