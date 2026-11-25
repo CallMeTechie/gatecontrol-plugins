@@ -18,7 +18,7 @@ function load(state, opts = {}) {
   const targets = opts.noTargets ? undefined : {
     get: async () => ({
       targets: Object.keys(state).map((id) => ({ id, multiple: true, assigned: state[id].map((a, index) => ({ index, ...a, display: 'x' })) })),
-      routes: [], peers: [],
+      routes: opts.routes || [], peers: opts.peers || [],
     }),
     set: async (id, list) => { calls.push([id, list]); state[id] = list.map((a) => ({ ...a })); return { assigned: list }; },
   };
@@ -67,10 +67,75 @@ test('without GC.targets (older GateControl): no assignment from the page', asyn
   assert.equal(await MD.ensureTarget('jellyfin', 'a:0'), 0);
 });
 
-test('manifest asks for permissions.network.assignTargets and GateControl ≥ 1.324.0; no "Zugriffsziele öffnen" any more', () => {
+test('manifest asks for permissions.network.assignTargets and GateControl ≥ 1.325.0 (targets only on this page); no "Zugriffsziele öffnen" any more', () => {
   const m = require('../plugin.json');
   assert.equal(m.permissions.network.assignTargets, true);
-  assert.equal(m.gatecontrol, '>=1.324.0');
+  assert.equal(m.gatecontrol, '>=1.325.0');
   const ui = path.join(__dirname, '..', 'ui');
   for (const f of fs.readdirSync(ui)) assert.doesNotMatch(fs.readFileSync(path.join(ui, f), 'utf8'), /openSettings|targetsLink|targets_open/, f);
+});
+
+// 1.2.0: one choice "Wo läuft Jellyfin?" / "Wo liegt die NAS?" — the access target and the addresses follow from it
+
+const ROUTES = [
+  { id: 3, label: 'jellyfin.example.com', domain: 'jellyfin.example.com', type: 'http', https: true, internal: false, enabled: true, gateway: true,
+    backend: { scheme: 'http', host: '192.168.2.151', port: 8096, via: 'gateway' } },
+  { id: 4, label: 'nas.example.com', domain: 'nas.example.com', type: 'http', https: true, internal: false, enabled: true, gateway: true,
+    backend: { scheme: 'https', host: '192.168.2.10', port: 5006, via: 'gateway' } },
+  { id: 5, label: 'wiki.example.com', domain: 'wiki.example.com', type: 'http', https: false, internal: true, enabled: true, gateway: false,
+    backend: { scheme: 'http', host: '10.8.0.9', port: 8080, via: 'peer' } },
+  { id: 6, label: 'game.example.com:25565', domain: 'game.example.com', type: 'l4', https: false, internal: false, enabled: true, gateway: true, backend: null },
+];
+const PEERS = [{ id: 9, label: 'NAS', ip: '10.8.0.31', gateway: false }];
+
+test('whereText: a route by its domain, a peer by name, an assigned address as shown', () => {
+  const { MD } = load({ jellyfin: [{ kind: 'host', host: '192.168.1.20', port: 8096, scheme: 'http' }], webdav: [] }, { routes: ROUTES, peers: PEERS });
+  const td = { targets: [{ id: 'jellyfin', multiple: true, assigned: [{ index: 0, kind: 'host', host: '192.168.1.20', port: 8096, scheme: 'http', display: '192.168.1.20:8096' }] }], routes: ROUTES, peers: PEERS };
+  assert.equal(MD.whereText(td, 'r:3', 'jellyfin'), 'jellyfin.example.com');
+  assert.equal(MD.whereText(td, 'p:9', 'jellyfin'), 'NAS (10.8.0.31)');
+  assert.equal(MD.whereText(td, 'a:0', 'jellyfin'), '192.168.1.20:8096');
+  assert.equal(MD.whereText(td, { kind: 'route', routeId: 4 }, 'webdav'), 'nas.example.com');
+  assert.equal(MD.whereText(td, '', 'jellyfin'), null);
+  assert.equal(MD.whereText(td, 'a:7', 'jellyfin'), null);
+  assert.equal(MD.assignedAt(td, 'jellyfin', 0).host, '192.168.1.20');
+  assert.equal(MD.assignedAt(td, 'webdav', 0), null);
+});
+
+test('suggestJellyfin: home address from the route target (port 8096 by default), https://<domain> away; nothing from a peer route', () => {
+  const { MD } = load({});
+  const td = { targets: [{ id: 'jellyfin', multiple: true, assigned: [{ index: 0, kind: 'host', host: '192.168.1.20', port: null, scheme: 'http' }] }], routes: ROUTES, peers: PEERS };
+  assert.deepEqual({ ...MD.suggestJellyfin(td, 'r:3') }, { home: 'http://192.168.2.151:8096', away: 'https://jellyfin.example.com' });
+  assert.deepEqual({ ...MD.suggestJellyfin(td, 'r:5') }, { home: null, away: null }, 'peer route, no HTTPS');
+  assert.deepEqual({ ...MD.suggestJellyfin(td, 'a:0') }, { home: 'http://192.168.1.20:8096', away: null });
+  assert.deepEqual({ ...MD.suggestJellyfin(td, 'p:9') }, { home: null, away: null });
+});
+
+test('suggestShare: SMB on the NAS host, WebDAV only with an HTTPS target, away through the route, a name', () => {
+  const { MD } = load({});
+  const td = { targets: [], routes: ROUTES, peers: PEERS };
+  assert.deepEqual({ ...MD.suggestShare(td, 'r:4', 'video') }, { smb: 'smb://192.168.2.10/video', webdav: 'https://192.168.2.10:5006/video', away: 'https://nas.example.com/video', name: 'NAS Video' });
+  assert.deepEqual({ ...MD.suggestShare(td, 'r:3', '/filme/') }, { smb: 'smb://192.168.2.151/filme', webdav: null, away: 'https://jellyfin.example.com/filme', name: 'NAS Filme' }, 'HTTP target: no WebDAV');
+  assert.deepEqual({ ...MD.suggestShare(td, 'p:9', 'video') }, { smb: null, webdav: null, away: null, name: 'NAS Video' }, 'a peer: its VPN address is no home address');
+  assert.deepEqual({ ...MD.suggestShare(td, 'r:4', 'a/b') }, { smb: null, webdav: null, away: null, name: null }, 'one folder only');
+  assert.deepEqual({ ...MD.suggestShare(td, 'r:4', '') }, { smb: null, webdav: null, away: null, name: null });
+});
+
+test('likely routes for the choices, the hint of a route card', () => {
+  const { MD } = load({}, { routes: ROUTES });
+  assert.deepEqual(ROUTES.filter(MD.likelyJellyfin).map((r) => r.id), [3]);
+  assert.deepEqual(ROUTES.filter(MD.likelyNas).map((r) => r.id), [4]);
+  assert.equal(MD.routeHint(ROUTES[0]), 'where.route · where.to_gw · HTTPS');
+  assert.equal(MD.routeHint(ROUTES[2]), 'where.route · where.to · HTTP · src.via_internal');
+});
+
+test('the dialogs: one choice, no select of access targets, "Prüfen und speichern", prune after every dialog', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'ui', 'sources.js'), 'utf8');
+  assert.match(src, /P\.whereChoice\(td, 'jellyfin'/);
+  assert.match(src, /P\.whereChoice\(td, 'webdav'/);
+  assert.match(src, /P\.ensureTarget\('jellyfin', v,/);
+  assert.match(src, /P\.ensureTarget\('webdav', v,/);
+  assert.match(src, /P\.ensureTarget\('smb', v, \{ port: 445/);
+  assert.match(src, /ck\.serverName/, 'the name from Jellyfin');
+  assert.doesNotMatch(src, /targetSelect|src\.target_hint/);
+  assert.equal((src.match(/load\(\)\.then\(prune\)/g) || []).length, 3, 'add, edit, remove');
 });

@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.2.0
+
+Mindestversion **GateControl 1.325.0** (die Zugriffsziele eines Plugins mit `assignTargets` stehen nur noch auf seiner
+Seite, nicht mehr unter Einstellungen).
+
+- **Quellen an einer Stelle (Entwurf vom 25.11.):** Der Jellyfin-Dialog hat nur noch drei Angaben: **„Wo läuft
+  Jellyfin?“** (passende Routen als Auswahl, dazu „Andere Route oder Adresse …“ mit allen Routen, VPN-Peers und schon
+  zugewiesenen Adressen), **API-Schlüssel** und den **Namen aus Jellyfin** (Servername beim Prüfen). Adresse zu Hause,
+  Unterwegs, Herunterladen und der Name stehen vorbelegt unter **„Erweitert“**.
+- **NAS-Dialog analog:** „Wo liegt die NAS?“, Freigabename, Benutzer, Passwort. SMB-Adresse aus dem Ziel der Route,
+  WebDAV-Adresse bei HTTPS, HTTPS-Adresse für unterwegs aus der Domain; die Zugriffsziele `webdav` (und `smb` bei einem
+  VPN-Peer) weist Medien selbst zu.
+- Hinweis **„Mit „Prüfen und speichern“ erlaubst du dem Plugin, <Ziel> zu erreichen“**; der Knopf heißt „Prüfen und
+  speichern“ (prüft vorher, der Name kommt aus der Prüfung).
+- **Reiter Quellen:** je Quelle „über <Route> · zu Hause direkt … · unterwegs …“ und **„Server-Freigabe: aktiv (wird mit
+  der Quelle verwaltet)“**, sonst „Server-Freigabe fehlt“. Nach Hinzufügen (auch abgebrochen), Bearbeiten und Entfernen
+  entfernt Medien Freigaben am Ende der Liste, die keine Quelle mehr nutzt – auch `smb`; die Indizes anderer Quellen
+  verschieben sich nie.
+- Entfallen: die Auswahl zugewiesener Zugriffsziele ohne `GC.targets` (Mindestversion), Texte zu „Zugriffsziele“ unter
+  Einstellungen.
+- Handbuch: „Zugriffsziele“, „Jellyfin hinzufügen“, „NAS-Freigabe“, „Neu in 1.2.0“.
+
 ## 1.1.0
 
 Mindestversion **GateControl 1.324.0** (neue Host-API `window.GC.targets`, Berechtigung

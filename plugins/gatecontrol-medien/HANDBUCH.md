@@ -1,4 +1,4 @@
-<!-- version: 1.1.0 -->
+<!-- version: 1.2.0 -->
 # Medien – Handbuch
 
 ## Was das Plugin kann {#was-das-plugin-kann}
@@ -12,7 +12,7 @@ Medien bringt deine eigene Sammlung aus **Jellyfin** und den **Freigaben deiner 
 
 ## Voraussetzungen {#voraussetzungen}
 
-- GateControl ab 1.324.0.
+- GateControl ab 1.325.0.
 - Eine **eigene Lizenz für Medien**. Sie ist nicht in GateControl Lifetime oder einem Paket enthalten.
 - **Jellyfin ab 10.9** mit Quick Connect (z. B. das Synology-Paket) und/oder SMB/WebDAV-Freigaben auf der NAS.
 - Ein Gateway im Heimnetz, über das der Server Jellyfin erreicht (Zugriffsziel), und ein VPN, das das Heimnetz (z. B. 192.168.1.0/24) in den Tunnel gibt.
@@ -22,31 +22,33 @@ Medien bringt deine eigene Sammlung aus **Jellyfin** und den **Freigaben deiner 
 
 ### Zugriffsziele {#zugriffsziele}
 
-Ein eigener Schritt ist nicht nötig: Im Quellen-Dialog wählst du unter **„Erreichbar über“** eine GateControl-Route oder einen VPN-Peer, und beim Speichern weist Medien das Zugriffsziel selbst zu. Dafür hat Medien die Berechtigung **„Zugriffsziele selbst zuweisen“**. Sie gilt nur in deiner Sitzung als Administrator, und jede Änderung steht im Aktivitätsprotokoll. Unter **Einstellungen › Plugins › Medien › Einstellungen › Zugriffsziele** siehst du die Zuweisungen weiter und kannst dort auch eine Adresse von Hand zuweisen. Bestehende Zuweisungen bleiben gültig, der Dialog bietet sie unter „Bereits zugewiesen“ an.
+Ein eigener Schritt ist nicht nötig: Wo der Server eine Quelle erreicht, wählst du nur im Quellen-Dialog (**„Wo läuft Jellyfin?“**, **„Wo liegt die NAS?“**). Mit **„Prüfen und speichern“** erlaubt Medien dem Server selbst, dieses Ziel zu erreichen (die **Server-Freigabe**). Dafür hat Medien die Berechtigung **„Zugriffsziele selbst zuweisen“**. Sie gilt nur in deiner Sitzung als Administrator, und jede Änderung steht im Aktivitätsprotokoll. Ab GateControl 1.325.0 zeigt **Einstellungen › Plugins › Medien › Einstellungen** keine Zugriffsziele mehr – es gibt nur noch diese eine Stelle. Bestehende Zuweisungen bleiben gültig, der Dialog bietet sie unter „Andere Route oder Adresse …“ an.
 
 - **Jellyfin-Server (HTTP)**: Port 8096. Für mehrere Jellyfin-Server je Server ein Ziel.
-- **WebDAV der NAS**: nur zum Prüfen von Anmeldung und Ordner einer Freigabe (optional).
-- **SMB der NAS**: nur Erreichbarkeit. Der Server spricht kein SMB, die Anmeldung per SMB prüfen die Geräte.
+- **WebDAV der NAS**: zum Prüfen von Anmeldung und Ordner einer Freigabe.
+- **SMB der NAS**: nur Erreichbarkeit (mit einem VPN-Peer als NAS). Der Server spricht kein SMB, die Anmeldung per SMB prüfen die Geräte.
 
-Die Adressen für die Geräte stehen im Quellen-Dialog. Mit einer gewählten Route schlägt er sie vor: die **Heimnetz-Adresse** aus dem Ziel der Route (z. B. `http://192.168.2.151:8096`) und die **HTTPS-Adresse für unterwegs** aus ihrer Domain (`https://<Domain>`). Beides kannst du überschreiben.
+Im Reiter Quellen steht bei jeder Quelle, **über** welche Route sie läuft, und **„Server-Freigabe: aktiv“**. Entfernst du eine Quelle, entfernt Medien ihre Server-Freigabe mit, wenn keine andere Quelle sie nutzt. Die Freigaben anderer Quellen bleiben dabei immer, wie sie sind.
 
 ### Jellyfin hinzufügen {#jellyfin}
 
 1. In Jellyfin: **Dashboard › API-Schlüssel › „+“**, App-Name „GateControl“. Den Schlüssel kopieren.
 2. In GateControl: **Einstellungen › Plugins › Medien › Quellen › Quelle hinzufügen › Jellyfin-Server**.
-3. Unter **„Erreichbar über“** die Route oder den Peer wählen. Die **Adresse für die Geräte** übernimmt der Dialog aus der Route, du kannst sie anpassen (am besten die IP-Adresse, z. B. `http://192.168.1.20:8096`; „Prüfen“ schlägt die Adresse von Jellyfin vor). Dann den Schlüssel einfügen.
-4. **Prüfen**: Erreichbar, Version, Schlüssel gültig, Quick Connect. Ist Quick Connect aus, schaltet **„In Jellyfin einschalten“** es nach Rückfrage in der Jellyfin-Konfiguration ein.
-5. Speichern. Medien weist das Zugriffsziel jetzt zu (falls „Prüfen“ es nicht schon getan hat). Der Schlüssel ist danach nur noch ersetzbar, nicht mehr lesbar.
+3. **Wo läuft Jellyfin?** Routen, die nach Jellyfin aussehen (Name oder Port 8096), stehen oben zur Wahl. Alles andere – jede Route, ein VPN-Peer oder eine schon zugewiesene Adresse – unter **„Andere Route oder Adresse …“**.
+4. Den **API-Schlüssel** einfügen. Den **Namen** übernimmt Medien beim Prüfen aus Jellyfin (Servername).
+5. **Prüfen und speichern**: erreichbar, Version, Schlüssel gültig, Quick Connect – das Ergebnis steht im Dialog und auf der Quelle. Ist Quick Connect aus, schaltet **„In Jellyfin einschalten“** es nach Rückfrage in der Jellyfin-Konfiguration ein. Der Schlüssel ist danach nur noch ersetzbar, nicht mehr lesbar.
+
+Unter **„Erweitert“** stehen, vorbelegt: der Name, die **Adresse zu Hause** (aus dem Ziel der Route, z. B. `http://192.168.2.151:8096`, sonst die Adresse, die Jellyfin selbst meldet), **Unterwegs** (nur über VPN oder die Ausnahme ohne VPN mit `https://<Domain der Route>`) und **Herunterladen für offline**.
 
 Die DSM-Firewall muss TCP 8096 vom Gateway und aus dem Tunnelnetz zulassen. Die Suche im Heimnetz (UDP 7359) wird nicht gebraucht.
 
 ### NAS-Freigabe hinzufügen {#freigabe}
 
 1. In DSM einen eigenen Benutzer nur mit **Leserecht** auf die Medien-Freigaben anlegen (z. B. „medien-lesen“, ohne DSM-Anmeldung).
-2. **Quelle hinzufügen › NAS-Freigabe**: SMB-Adresse (`smb://192.168.1.20/filme`) und/oder WebDAV-Adresse (`https://192.168.1.20:5006/filme`, nur HTTPS), bei selbst signiertem Zertifikat dessen SHA-256 zum Anheften, Benutzer und Passwort.
-3. Optional **„WebDAV prüfen über“**: Mit einer Route oder einem Peer prüft „Prüfen“ Anmeldung und Ordner. Das Zugriffsziel weist Medien beim Speichern selbst zu.
+2. **Quelle hinzufügen › NAS-Freigabe**: **Wo liegt die NAS?** (Route, VPN-Peer oder schon zugewiesene Adresse), **Freigabename** (z. B. `video`), **Benutzer** und **Passwort**.
+3. **Prüfen und speichern.** Medien legt die SMB-Adresse (`smb://<NAS>/video`) und – wenn die NAS per HTTPS erreichbar ist – die WebDAV-Adresse (`https://<NAS>:5006/video`) selbst an und erlaubt dem Server, die NAS zu erreichen.
 
-Nimm IP-Adressen statt Namen wie `\\nas`: Namen werden unterwegs nicht aufgelöst.
+Unter **„Erweitert“**: Name, SMB- und WebDAV-Adresse, das Zertifikat (SHA-256, zum Anheften bei selbst signierten Zertifikaten) und Unterwegs. Bei einem VPN-Peer als NAS trägst du die Heimnetz-Adressen dort selbst ein – die VPN-Adresse des Peers ist zu Hause nicht erreichbar. Nimm IP-Adressen statt Namen wie `\\nas`: Namen werden unterwegs nicht aufgelöst.
 
 ### Netz: zu Hause direkt, unterwegs über VPN {#netz}
 
@@ -87,10 +89,17 @@ Der Jellyfin-Schlüssel verlässt den Server nie. Das Protokoll nennt Personen, 
 
 - **„Der Admin muss Quick Connect in Jellyfin einschalten“**: Quellen › Jellyfin › „In Jellyfin einschalten“, oder in Jellyfin Dashboard › Allgemein › Quick Connect.
 - **„Der Admin muss dich … mit Jellyfin verknüpfen“**: Reiter Personen, Jellyfin-Benutzer wählen oder anlegen.
-- **Jellyfin nicht erreichbar**: Richtige Route bzw. richtiger Peer unter „Erreichbar über“? Gateway online? DSM-Firewall Port 8096?
+- **Jellyfin nicht erreichbar**: Richtige Route bzw. richtiger Peer unter „Wo läuft Jellyfin?“? Gateway online? DSM-Firewall Port 8096?
 - **„durch den Tunnel nicht erreichbar“** im Reiter Geräte: Das Gateway gibt das Heimnetz nicht in den Tunnel weiter, oder die DSM-Firewall lässt das Tunnelnetz nicht zu (8096, 5006, ggf. 445).
 - **Ein Handy ist verloren**: in GateControl entfernen (Jellyfin ist sofort bzw. nach höchstens 5 Minuten zu). Das NAS-Passwort lässt sich von einem Gerät, das nicht mehr online kommt, nicht zurückholen: Passwort in DSM ändern und unter Quellen ersetzen.
 - **Lizenz**: Ohne eigene Lizenz für Medien blenden die Apps Medien aus. Eine GateControl-Lifetime-Lizenz zählt hier nicht.
+
+## Neu in 1.2.0 {#neu-1-2-0}
+
+- **Eine Stelle für Quellen:** Der Dialog fragt nur noch das Nötige – **„Wo läuft Jellyfin?“**, API-Schlüssel und den Namen aus Jellyfin; bei NAS-Freigaben **„Wo liegt die NAS?“**, Freigabename, Benutzer und Passwort. Alles andere steht vorbelegt unter **„Erweitert“**.
+- **Server-Freigabe automatisch:** Mit „Prüfen und speichern“ erlaubt Medien dem Server, das gewählte Ziel zu erreichen; der Dialog sagt vorher, welches. SMB- und WebDAV-Adresse entstehen aus der NAS und dem Freigabenamen.
+- **Reiter Quellen:** je Quelle „über“ mit der Route und „Server-Freigabe: aktiv“. Beim Entfernen geht eine Freigabe mit, die keine andere Quelle nutzt.
+- GateControl zeigt die Zugriffsziele von Medien unter Einstellungen nicht mehr (siehe [Zugriffsziele](#zugriffsziele)). Braucht GateControl ab 1.325.0.
 
 ## Neu in 1.1.0 {#neu-1-1-0}
 
