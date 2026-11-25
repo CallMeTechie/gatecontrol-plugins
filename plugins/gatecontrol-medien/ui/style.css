@@ -1,0 +1,69 @@
+/* gatecontrol-medien — on the frame's colour tokens (light and dark), like the other first-party plugin pages. */
+html,body{background:transparent}
+body{padding:2px 2px 24px}
+[hidden]{display:none!important}
+.md-page{display:flex;flex-direction:column;gap:18px}
+.md-intro{margin:0;font-size:14px;color:var(--muted);max-width:780px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:36px;padding:0 14px;border-radius:10px;border:1px solid var(--line-2);background:transparent;color:var(--text);font:600 13px var(--font);cursor:pointer}
+.btn:hover{border-color:var(--accent)}
+.btn:disabled{opacity:.55;cursor:default}
+.btn-primary{background:var(--btn-bg);color:var(--btn-text);border:0}
+.btn-danger{color:var(--crit);border-color:var(--crit)}
+.btn-sm{min-height:30px;padding:0 10px;font-size:12px}
+.form-group{display:flex;flex-direction:column;gap:6px;margin-bottom:12px;min-width:0}
+.form-label{font-size:12px;font-weight:700;color:var(--muted)}
+.form-input,.form-select{width:100%;min-height:36px}
+.form-row{display:flex;gap:10px;flex-wrap:wrap}
+.form-row>.form-group{flex:1 1 160px;min-width:0}
+.check{display:flex;align-items:center;gap:8px;font-size:13px}
+.check input{min-height:0;width:16px;height:16px}
+.md-hint{font-size:12px;color:var(--muted);margin:0}
+.md-card{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:18px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.md-card-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.md-card-title{margin:0;flex:1;font-size:17px;font-weight:800;min-width:0}
+.md-sub{font-size:12px;color:var(--muted)}
+.md-note{background:color-mix(in srgb,var(--warn) 9%,var(--surface));border:1px solid color-mix(in srgb,var(--warn) 35%,var(--line));border-radius:12px;padding:10px 14px;font-size:13px;color:var(--warn)}
+.md-list{display:flex;flex-direction:column;gap:10px}
+.md-item{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:var(--surface-2)}
+.md-item-main{flex:1 1 240px;min-width:0}
+.md-item-title{font-weight:700;font-size:15px;overflow-wrap:anywhere}
+.md-item-sub{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+.md-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.md-badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:700;border:1px solid var(--line-2);color:var(--muted);white-space:nowrap}
+.md-badge[data-tone="good"]{color:var(--good);border-color:var(--good)}
+.md-badge[data-tone="warn"]{color:var(--warn);border-color:var(--warn)}
+.md-badge[data-tone="crit"]{color:var(--crit);border-color:var(--crit)}
+.md-table-wrap{overflow-x:auto}
+.md-table{width:100%;border-collapse:collapse;font-size:13px;min-width:600px}
+.md-table th{text-align:left;font-size:12px;color:var(--muted);font-weight:700;padding:8px 10px;border-bottom:1px solid var(--line)}
+.md-table td{padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
+.md-table input[type="number"]{width:84px;min-height:30px}
+.md-av{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;font-size:11px;font-weight:800;color:#fff;background:var(--muted);margin-right:8px;vertical-align:middle}
+.md-toast{position:fixed;left:50%;top:10px;transform:translateX(-50%);z-index:50;padding:9px 14px;border-radius:10px;font-size:13px;font-weight:600;background:var(--surface);border:1px solid var(--line-2);box-shadow:0 8px 24px rgba(0,0,0,.25);max-width:90%}
+.md-toast[data-tone="error"]{color:var(--crit);border-color:var(--crit)}
+.md-toast[data-tone="good"]{color:var(--good);border-color:var(--good)}
+.modal-overlay{position:fixed;inset:0;z-index:40;background:rgba(5,8,12,.55);display:flex;align-items:flex-start;justify-content:center;padding:32px 12px;overflow:auto}
+.modal{width:100%;max-width:520px;background:var(--surface);border:1px solid var(--line-2);border-radius:16px;box-shadow:0 18px 50px rgba(0,0,0,.35)}
+.modal-body{padding:16px 18px}
+.modal-foot{display:flex;justify-content:flex-end;gap:8px;padding:12px 18px;border-top:1px solid var(--line);flex-wrap:wrap}
+/* portal (phone width): targets ≥ 44 px */
+.md-portal .btn,.md-portal .form-input,.md-portal .form-select{min-height:44px;font-size:15px}
+.md-portal .btn{padding:0 16px}
+.md-kv{display:grid;grid-template-columns:minmax(140px,220px) 1fr;gap:6px 14px;font-size:13px;margin:0}
+.md-kv dt{color:var(--muted);font-weight:700}
+.md-kv dd{margin:0;overflow-wrap:anywhere}
+.md-mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+.md-stats{display:flex;gap:10px;flex-wrap:wrap}
+.md-stat{flex:1 1 150px;border:1px solid var(--line);border-radius:14px;padding:12px 14px;background:var(--surface-2)}
+.md-stat b{display:block;font-size:22px}
+.md-checks{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;font-size:13px}
+.md-checks li{display:flex;gap:8px;align-items:flex-start}
+.md-dot{width:10px;height:10px;border-radius:50%;margin-top:4px;flex:0 0 10px;background:var(--muted)}
+.md-dot[data-tone="good"]{background:var(--good)}
+.md-dot[data-tone="warn"]{background:var(--warn)}
+.md-dot[data-tone="crit"]{background:var(--crit)}
+.md-log{display:flex;flex-direction:column;font-size:13px}
+.md-log div{padding:6px 0;border-bottom:1px solid var(--line)}
+.md-log div:last-child{border-bottom:0}
+.md-field-error{color:var(--crit);font-size:12px}
+.md-table select{min-height:30px;max-width:220px}

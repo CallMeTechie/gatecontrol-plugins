@@ -1,0 +1,97 @@
+<!-- version: 1.0.0 -->
+# Medien – Handbuch
+
+## Was das Plugin kann {#was-das-plugin-kann}
+
+Medien bringt deine eigene Sammlung aus **Jellyfin** und den **Freigaben deiner NAS** (SMB, WebDAV) in die GateControl-Apps – auf das Handy, GateControl TV und GateControl für Windows. Du richtest die Quellen **einmal im Server** ein. Jede Person mit dem Recht „Medien“ sieht Medien danach auf jedem ihrer Geräte von selbst, mit den Quellen, die du ihr freigibst. Am Gerät wird nichts eingegeben.
+
+- **Jellyfin**: Jede Person bekommt ihren eigenen Jellyfin-Benutzer, so bleiben Fortschritt und „Gesehen“ je Person. Die Geräte melden sich unsichtbar über Quick Connect an. In Jellyfins Geräteliste steht jedes Gerät als „GateControl · …“.
+- **NAS-Freigaben**: ein Paar aus SMB (zu Hause) und WebDAV (unterwegs) oder eine einzelne Freigabe. Das Passwort eines Lese-Benutzers liegt verschlüsselt im Server und geht nur an berechtigte Geräte.
+- **Videos laufen nie über den Server.** Zu Hause spielen die Geräte direkt im Heimnetz, unterwegs durch das VPN. Der Server liefert nur die Liste, Adressen und Zugänge.
+- **„Auf TV/PC abspielen“**: Das Handy schickt Titel und Stelle an den eigenen Fernseher oder PC und bleibt Fernbedienung.
+
+## Voraussetzungen {#voraussetzungen}
+
+- GateControl ab 1.301.0 (sofortiger Widerruf beim Entfernen eines Geräts ab 1.322.0, sonst nach höchstens 5 Minuten).
+- Eine **eigene Lizenz für Medien**. Sie ist nicht in GateControl Lifetime oder einem Paket enthalten.
+- **Jellyfin ab 10.9** mit Quick Connect (z. B. das Synology-Paket) und/oder SMB/WebDAV-Freigaben auf der NAS.
+- Ein Gateway im Heimnetz, über das der Server Jellyfin erreicht (Zugriffsziel), und ein VPN, das das Heimnetz (z. B. 192.168.1.0/24) in den Tunnel gibt.
+- Die GateControl-Apps in einer Version mit Medien vom Server.
+
+## Einrichten {#einrichten}
+
+### Zugriffsziele {#zugriffsziele}
+
+Unter **Einstellungen › Plugins › Medien › Einstellungen › Zugriffsziele** legst du fest, wie der Server die NAS erreicht, z. B. „192.168.1.20 über Gateway Zuhause“. Das Plugin kann Zugriffsziele nicht selbst anlegen, im Quellen-Dialog wählst du sie nur aus („Zugriffsziele öffnen“ führt dorthin).
+
+- **Jellyfin-Server (HTTP)**: Port 8096. Für mehrere Jellyfin-Server je Server ein Ziel.
+- **WebDAV der NAS**: nur zum Prüfen von Anmeldung und Ordner einer Freigabe (optional).
+- **SMB der NAS**: nur Erreichbarkeit. Der Server spricht kein SMB, die Anmeldung per SMB prüfen die Geräte.
+
+Die Adressen für die Geräte trägst du im Quellen-Dialog ein, sie kommen nicht aus dem Zugriffsziel.
+
+### Jellyfin hinzufügen {#jellyfin}
+
+1. In Jellyfin: **Dashboard › API-Schlüssel › „+“**, App-Name „GateControl“. Den Schlüssel kopieren.
+2. In GateControl: **Einstellungen › Plugins › Medien › Quellen › Quelle hinzufügen › Jellyfin-Server**.
+3. Zugriffsziel wählen, **Adresse für die Geräte** eintragen (am besten die IP-Adresse, z. B. `http://192.168.1.20:8096`; „Prüfen“ schlägt die Adresse von Jellyfin vor) und den Schlüssel einfügen.
+4. **Prüfen**: Erreichbar, Version, Schlüssel gültig, Quick Connect. Ist Quick Connect aus, schaltet **„In Jellyfin einschalten“** es nach Rückfrage in der Jellyfin-Konfiguration ein.
+5. Speichern. Der Schlüssel ist danach nur noch ersetzbar, nicht mehr lesbar.
+
+Die DSM-Firewall muss TCP 8096 vom Gateway und aus dem Tunnelnetz zulassen. Die Suche im Heimnetz (UDP 7359) wird nicht gebraucht.
+
+### NAS-Freigabe hinzufügen {#freigabe}
+
+1. In DSM einen eigenen Benutzer nur mit **Leserecht** auf die Medien-Freigaben anlegen (z. B. „medien-lesen“, ohne DSM-Anmeldung).
+2. **Quelle hinzufügen › NAS-Freigabe**: SMB-Adresse (`smb://192.168.1.20/filme`) und/oder WebDAV-Adresse (`https://192.168.1.20:5006/filme`, nur HTTPS), bei selbst signiertem Zertifikat dessen SHA-256 zum Anheften, Benutzer und Passwort.
+3. Mit einem WebDAV-Zugriffsziel prüft „Prüfen“ Anmeldung und Ordner.
+
+Nimm IP-Adressen statt Namen wie `\\nas`: Namen werden unterwegs nicht aufgelöst.
+
+### Netz: zu Hause direkt, unterwegs über VPN {#netz}
+
+- **Zu Hause** spielen die Geräte direkt im Heimnetz, nie über den Server oder den Tunnel, auch wenn das VPN an ist. Ob ein Gerät zu Hause ist, erkennt es selbst: Es fragt über das WLAN den Jellyfin-Server (passende Server-ID) oder prüft das angeheftete Zertifikat der WebDAV-Freigabe. Eine beliebige 192.168.1.x-Adresse reicht nicht.
+- **Unterwegs** gehen Medien **nur durch das VPN**. Ist es aus, schaltet die App es beim Abspielen selbst ein. Ohne VPN spielt die App unterwegs nichts ab und sagt „Unterwegs nur über VPN“.
+- **Ausnahme „Unterwegs ohne VPN erlauben“**: im Quellen-Dialog je Quelle oder unter Einstellungen › Netz für alle Quellen. Dann braucht die Quelle eine **HTTPS-Adresse für unterwegs**, z. B. eine GateControl-Route (`https://jellyfin.example.test`). Eine Adresse mit `http://` nimmt der Dialog nicht an. Quellen ohne diese Adresse bleiben unterwegs beim VPN.
+
+### Personen verknüpfen {#personen}
+
+Reiter **Personen**:
+
+- **Medien**: das Recht, den Bereich Medien in den Apps zu sehen. „wie Gruppen“ übernimmt es aus den Gruppen (Tabelle Gruppen darunter). Administratoren haben es ohne Einstellung.
+- **Jellyfin-Benutzer**: automatisch per Name (ganzer Name oder Vorname, Groß/klein egal), sonst von Hand wählen, „bewusst ohne“ oder **„In Jellyfin anlegen“** (normaler Benutzer mit zufälligem Passwort, das niemand sieht). Bibliotheken und Altersgrenze stellst du in Jellyfin je Benutzer ein. Jellyfin-Administratoren bietet die Liste nicht an. Wer selbst Jellyfin-Admin ist, bekommt einen zweiten, normalen Benutzer.
+- **Häkchen je Quelle**: wer die Quelle sieht. „Standard“ entfernt die eigene Einstellung einer Person.
+
+Für ein Familien-TV legst du in GateControl eine Person „Wohnzimmer“ an und verknüpfst sie mit einem Jellyfin-Benutzer „familie“.
+
+## Benutzen {#benutzen}
+
+- In den Apps erscheint **Medien** von selbst, sobald die Person das Recht und mindestens eine Quelle hat. **Medien › Quellen** ist dort nur eine Anzeige.
+- **Reiter Geräte**: alle Apps von Personen mit Medien-Recht, ob sie bei Jellyfin angemeldet sind, welche Freigabe-Passwörter sie bekommen haben und was sie über ihren Weg melden. **Abmelden** löscht das Gerät in Jellyfin und schickt ihm eine stille Mitteilung (Zugänge und Downloads löschen). Solange die Person das Recht hat, meldet es sich danach selbst neu an.
+- **Passwort ersetzen**: Alle berechtigten Geräte bekommen das neue Passwort beim nächsten Kontakt.
+- **Übersicht** (Seitenleiste Apps › Medien): Lizenz, Zahlen, Zustand der Quellen, Protokoll.
+- **„Auf TV/PC abspielen“** (Einstellung unter Geräte): Das Handy bietet die eigenen GateControl-TV- und Windows-Geräte an. Der Fernseher holt das Video selbst von der NAS.
+
+## Berechtigungen {#berechtigungen}
+
+| Wer | Was |
+|---|---|
+| Administratoren | richten alles ein. Sie haben das Recht „Medien“, solange es nicht für sie ausgeschaltet ist. |
+| Personen mit „Medien“ | sehen Medien in ihren Apps mit den Quellen, die für sie freigegeben sind. |
+| Kinder (Familie: Kind) | sehen NAS-Freigaben nur mit der Einstellung „Kinder sehen NAS-Freigaben“. Bei Jellyfin gilt der Jugendschutz ihres Jellyfin-Benutzers. |
+| Geräte | bekommen ein NAS-Passwort nur mit Gerätebindung, einer aktiven Person mit Recht auf die Freigabe. Der Jellyfin-Zugang entsteht auf dem Gerät selbst, der Server sieht ihn nie. |
+
+Der Jellyfin-Schlüssel verlässt den Server nie. Das Protokoll nennt Personen, Geräte und Quellen, nie Passwörter, Schlüssel, Codes oder Jellyfin-Zugänge.
+
+## Häufige Fragen / Fehlersuche {#fehlersuche}
+
+- **„Der Admin muss Quick Connect in Jellyfin einschalten“**: Quellen › Jellyfin › „In Jellyfin einschalten“, oder in Jellyfin Dashboard › Allgemein › Quick Connect.
+- **„Der Admin muss dich … mit Jellyfin verknüpfen“**: Reiter Personen, Jellyfin-Benutzer wählen oder anlegen.
+- **Jellyfin nicht erreichbar**: Zugriffsziel zugewiesen? Gateway online? DSM-Firewall Port 8096?
+- **„durch den Tunnel nicht erreichbar“** im Reiter Geräte: Das Gateway gibt das Heimnetz nicht in den Tunnel weiter, oder die DSM-Firewall lässt das Tunnelnetz nicht zu (8096, 5006, ggf. 445).
+- **Ein Handy ist verloren**: in GateControl entfernen (Jellyfin ist sofort bzw. nach höchstens 5 Minuten zu). Das NAS-Passwort lässt sich von einem Gerät, das nicht mehr online kommt, nicht zurückholen: Passwort in DSM ändern und unter Quellen ersetzen.
+- **Lizenz**: Ohne eigene Lizenz für Medien blenden die Apps Medien aus. Eine GateControl-Lifetime-Lizenz zählt hier nicht.
+
+## Neu in 1.0.0 {#neu-1-0-0}
+
+Erste Version: Jellyfin und NAS-Freigaben zentral im Server, Recht „Medien“ und Sicht je Quelle, automatische Zuordnung zu Jellyfin-Benutzern, Anmeldung der Geräte ohne Eingabe über Quick Connect, Widerruf, Netz-Regel (zu Hause direkt, unterwegs über VPN, Ausnahme mit HTTPS-Adresse), „Auf TV/PC abspielen“.

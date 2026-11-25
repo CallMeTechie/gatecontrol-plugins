@@ -1,0 +1,239 @@
+{
+  "id": "gatecontrol-medien",
+  "name": {
+    "de": "Medien",
+    "en": "Media"
+  },
+  "version": "1.0.0",
+  "publisher": "CallMeTechie",
+  "description": {
+    "de": "Die eigene Mediensammlung aus Jellyfin und den Freigaben der NAS (SMB, WebDAV) zentral im Server eingerichtet: Handy, Fernseher und PC bekommen Quellen und Zugang automatisch. Geräte melden sich unsichtbar per Quick Connect bei Jellyfin an, jede Person mit ihrem eigenen Jellyfin-Benutzer. Rechte je Person und Gruppe, Kinder ohne NAS-Freigaben, Widerruf beim Entfernen eines Geräts. Zu Hause direkt im Heimnetz, unterwegs durch das VPN – Videos laufen nie über den Server.",
+    "en": "Your own media collection from Jellyfin and the NAS shares (SMB, WebDAV) set up once on the server: phones, TVs and PCs get the sources and their access automatically. Devices sign in to Jellyfin invisibly with Quick Connect, every person with their own Jellyfin user. Rights per person and group, children without NAS shares, revocation when a device is removed. At home directly in the home network, away through the VPN – videos never pass through the server."
+  },
+  "gatecontrol": ">=1.301.0",
+  "entry": "server/index.js",
+  "permissions": {
+    "network": {
+      "homeTargets": [
+        {
+          "id": "jellyfin",
+          "label": {
+            "de": "Jellyfin-Server (HTTP, z. B. Port 8096)",
+            "en": "Jellyfin server (HTTP, e.g. port 8096)"
+          },
+          "protocols": [
+            "http"
+          ],
+          "multiple": true
+        },
+        {
+          "id": "webdav",
+          "label": {
+            "de": "WebDAV der NAS – nur zum Prüfen (HTTPS)",
+            "en": "WebDAV of the NAS – for checks only (HTTPS)"
+          },
+          "protocols": [
+            "http"
+          ],
+          "multiple": true
+        },
+        {
+          "id": "smb",
+          "label": {
+            "de": "SMB der NAS – nur Erreichbarkeit (TCP 445)",
+            "en": "SMB of the NAS – reachability only (TCP 445)"
+          },
+          "protocols": [
+            "tcp:445"
+          ],
+          "multiple": true
+        }
+      ]
+    },
+    "storage": true,
+    "users": true,
+    "groups": "read",
+    "app": true,
+    "devices": true,
+    "events": true,
+    "notify": true,
+    "background": {
+      "intervalSeconds": 60
+    }
+  },
+  "notifyTopics": [
+    {
+      "id": "media_signal",
+      "label": {
+        "de": "Medien: Signale an die eigenen Geräte",
+        "en": "Media: signals to the own devices"
+      },
+      "signal": true
+    }
+  ],
+  "ui": {
+    "nav": {
+      "label": {
+        "de": "Medien",
+        "en": "Media"
+      },
+      "icon": "M4 5h16v14H4zM4 9h16M4 15h16M8 5v4M12 5v4M16 5v4M8 15v4M12 15v4M16 15v4",
+      "section": "apps"
+    },
+    "pages": [
+      {
+        "id": "overview",
+        "title": {
+          "de": "Übersicht",
+          "en": "Overview"
+        }
+      },
+      {
+        "id": "sources",
+        "title": {
+          "de": "Quellen",
+          "en": "Sources"
+        }
+      },
+      {
+        "id": "people",
+        "title": {
+          "de": "Personen",
+          "en": "People"
+        }
+      },
+      {
+        "id": "devices",
+        "title": {
+          "de": "Geräte",
+          "en": "Devices"
+        }
+      }
+    ],
+    "settingsPages": [
+      "sources",
+      "people",
+      "devices"
+    ],
+    "settingsGroups": [
+      {
+        "id": "people",
+        "label": {
+          "de": "Personen",
+          "en": "People"
+        }
+      },
+      {
+        "id": "network",
+        "label": {
+          "de": "Netz",
+          "en": "Network"
+        },
+        "help": {
+          "de": "Zu Hause spielen die Geräte direkt im Heimnetz, unterwegs nur durch das VPN.",
+          "en": "At home the devices play directly in the home network, away only through the VPN."
+        }
+      },
+      {
+        "id": "devices",
+        "label": {
+          "de": "Geräte",
+          "en": "Devices"
+        }
+      }
+    ],
+    "settings": [
+      {
+        "key": "auto_map",
+        "type": "boolean",
+        "group": "people",
+        "label": {
+          "de": "Personen automatisch per Name mit Jellyfin-Benutzern verknüpfen",
+          "en": "Link people to Jellyfin users by name automatically"
+        },
+        "default": true
+      },
+      {
+        "key": "children_shares",
+        "type": "boolean",
+        "group": "people",
+        "label": {
+          "de": "Kinder sehen NAS-Freigaben (Freigaben haben keine Altersfreigabe)",
+          "en": "Children see NAS shares (shares have no age rating)"
+        },
+        "default": false
+      },
+      {
+        "key": "away_direct_all",
+        "type": "boolean",
+        "group": "network",
+        "label": {
+          "de": "Unterwegs ohne VPN erlauben (alle Quellen mit einer HTTPS-Adresse für unterwegs)",
+          "en": "Allow away without VPN (every source with an HTTPS address for away)"
+        },
+        "default": false
+      },
+      {
+        "key": "max_offline_days",
+        "type": "number",
+        "group": "devices",
+        "label": {
+          "de": "NAS-Passwörter auf Geräten löschen nach Tagen ohne Kontakt zum Server",
+          "en": "Delete NAS passwords on devices after days without contact to the server"
+        },
+        "min": 7,
+        "max": 3650,
+        "default": 90
+      },
+      {
+        "key": "offline_hint_days",
+        "type": "number",
+        "group": "devices",
+        "label": {
+          "de": "Hinweis auf dem Gerät nach Tagen ohne Kontakt zum Server",
+          "en": "Notice on the device after days without contact to the server"
+        },
+        "min": 1,
+        "max": 3650,
+        "default": 30
+      },
+      {
+        "key": "cast",
+        "type": "boolean",
+        "group": "devices",
+        "label": {
+          "de": "„Auf TV/PC abspielen“ zwischen den eigenen Geräten",
+          "en": "“Play on TV/PC” between the own devices"
+        },
+        "default": true
+      },
+      {
+        "key": "log_days",
+        "type": "number",
+        "group": "devices",
+        "label": {
+          "de": "Protokoll aufbewahren (Tage)",
+          "en": "Keep the log (days)"
+        },
+        "min": 7,
+        "max": 730,
+        "default": 90
+      }
+    ],
+    "app": {
+      "label": {
+        "de": "Medien",
+        "en": "Media"
+      },
+      "icon": "M4 5h16v14H4zM4 9h16M4 15h16M8 5v4M12 5v4M16 5v4M8 15v4M12 15v4M16 15v4"
+    }
+  },
+  "license": {
+    "required": true
+  },
+  "migrations": "migrations",
+  "handbook": {
+    "de": "HANDBUCH.md",
+    "en": "HANDBOOK.md"
+  }
+}

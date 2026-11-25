@@ -206,6 +206,13 @@
 //   push, `kind: 'data', silent: true` (what the apps get: kind "data", silent true and `data`). GateControl ≥ 1.284.0: a
 //   notifyTopics entry with signal: true takes only such silent pushes to devices (ERR_INVALID otherwise), recorded with
 //   `signal: true` (the host delivers them past the person's switches, mutes and quiet hours).
+//   Hook devicesChanged (GateControl ≥ 1.322.0, docs/plugins.md "Devices"; only for a plugin with permissions.devices):
+//   host.devicesChanged({ removed, added }) calls devicesChanged({ removed, added }, gc) as the host does (it bundles at
+//   most once a second, 10 s, no replay): entries { id, userId, name, platform, clientType, reason } — removed: reason
+//   revoked | user_disabled | user_deleted, added: created | user_enabled, both: owner_changed (ids as strings; a plain
+//   id becomes { id, userId: null, name: null, platform: null, clientType: null, reason: 'revoked' | 'created' });
+//   `removed` devices are taken out of opts.devices first (the list the plugin reads afterwards no longer has them).
+//   → the changes handed over ({ removed, added }), or null for a plugin without the permission or the hook.
 //   Hand-over — gc.media.handOver(mediaId, { toPlugin, user }) → { mediaId, mime, bytes, name } in the other plugin's store (unclaimed, owner
 //   `user`, counts against its quota). The other plugin is an entry of opts.services: either { plugin, host } — another
 //   mock host (createHost of that plugin, its services and media are the real ones: callService, its media store) — or
@@ -4243,6 +4250,27 @@ async function createHost(pluginDir, opts = {}) {
     },
     /** The hook groupDeleting({ groupId, successorUserId }) (failures are only logged, like the host). */
     groupDeleting(groupId, successorUserId = null) { return this.editGroups._deleting(groupId, successorUserId); },
+    /** Hook devicesChanged (see the header): removed / blocked app tokens and new ones of the people. */
+    async devicesChanged(change = {}) {
+      const norm = (list, removed) => (Array.isArray(list) ? list : []).map((x) => {
+        const o = x && typeof x === 'object' ? x : { id: x };
+        const id = typeof o.id === 'number' ? String(o.id) : o.id;
+        if (typeof id !== 'string' || !DEVICE_ID_RE.test(id)) throw hostError('ERR_INVALID', 'mock host: invalid device id');
+        const ok = removed ? ['revoked', 'user_disabled', 'user_deleted', 'owner_changed'] : ['created', 'user_enabled', 'owner_changed'];
+        const reason = o.reason == null ? (removed ? 'revoked' : 'created') : o.reason;
+        if (!ok.includes(reason)) throw hostError('ERR_INVALID', 'mock host: invalid reason ' + reason);
+        return { id, userId: Number.isSafeInteger(o.userId) ? o.userId : null, name: typeof o.name === 'string' ? o.name : null,
+          platform: typeof o.platform === 'string' ? o.platform : null, clientType: typeof o.clientType === 'string' ? o.clientType : null, reason };
+      });
+      const payload = { removed: norm(change.removed, true), added: norm(change.added, false) };
+      if (Array.isArray(opts.devices) && payload.removed.length) {
+        const gone = new Set(payload.removed.map((r) => r.id));
+        for (let i = opts.devices.length - 1; i >= 0; i--) if (gone.has(String(opts.devices[i].id))) opts.devices.splice(i, 1);
+      }
+      if (perms.devices !== true || typeof plugin.devicesChanged !== 'function') return null;
+      await hook('devicesChanged', payload);
+      return payload;
+    },
     start: () => hook('start'),
     stop: () => hook('stop'),
     tick: () => hook('tick'),

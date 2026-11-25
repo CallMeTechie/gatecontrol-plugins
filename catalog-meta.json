@@ -934,6 +934,140 @@
         "en"
       ]
     },
+    "gatecontrol-medien": {
+      "category": "home",
+      "icon": "nas",
+      "summary": {
+        "de": "Filme, Serien und Musik von deiner eigenen NAS auf Handy, Fernseher und PC – einmal im Server eingerichtet, auf allen Geräten da.",
+        "en": "Movies, series and music from your own NAS on phone, TV and PC – set up once on the server, there on every device."
+      },
+      "audience": "all",
+      "keywords": [
+        "medien",
+        "media",
+        "jellyfin",
+        "nas",
+        "smb",
+        "webdav",
+        "filme",
+        "movies",
+        "serien",
+        "fernseher",
+        "tv",
+        "quick connect"
+      ],
+      "related": [
+        "gatecontrol-synology",
+        "gatecontrol-familie",
+        "gatecontrol-gatedrop"
+      ],
+      "adds": [
+        {
+          "icon": "page",
+          "title": {
+            "de": "Reiter „Quellen“, „Personen“, „Geräte“",
+            "en": "Tabs “Sources”, “People”, “Devices”"
+          },
+          "text": {
+            "de": "Jellyfin und NAS-Freigaben, Recht „Medien“, Zuordnung zu Jellyfin-Benutzern, Abmelden",
+            "en": "Jellyfin and NAS shares, the right Media, linking to Jellyfin users, sign-out"
+          }
+        },
+        {
+          "icon": "app",
+          "title": {
+            "de": "Bereich „Medien“ in den Apps",
+            "en": "Area “Media” in the apps"
+          },
+          "text": {
+            "de": "Quellen und Zugang kommen vom Server, am Gerät wird nichts eingegeben",
+            "en": "Sources and access come from the server, nothing is entered on the device"
+          }
+        },
+        {
+          "icon": "key",
+          "title": {
+            "de": "Anmeldung ohne Eingabe",
+            "en": "Sign-in without input"
+          },
+          "text": {
+            "de": "Geräte melden sich per Quick Connect bei Jellyfin an, jede Person mit ihrem Benutzer",
+            "en": "Devices sign in to Jellyfin with Quick Connect, every person with their own user"
+          }
+        },
+        {
+          "icon": "clock",
+          "title": {
+            "de": "Abgleich alle 5 Minuten",
+            "en": "Reconcile every 5 minutes"
+          },
+          "text": {
+            "de": "Entfernte Geräte und entzogene Rechte verlieren den Zugang",
+            "en": "Removed devices and revoked rights lose their access"
+          }
+        }
+      ],
+      "permissions": [
+        {
+          "icon": "network",
+          "title": {
+            "de": "Jellyfin und NAS im Heimnetz",
+            "en": "Jellyfin and NAS in the home network"
+          },
+          "text": {
+            "de": "Über die Zugriffsziele, die du zuweist – nur kleine JSON-Antworten, nie Videos.",
+            "en": "Through the home targets you assign – small JSON answers only, never videos."
+          },
+          "tag": {
+            "de": "Netzwerk",
+            "en": "Network"
+          }
+        },
+        {
+          "icon": "key",
+          "title": {
+            "de": "API-Schlüssel und NAS-Passwort",
+            "en": "API key and NAS password"
+          },
+          "text": {
+            "de": "Verschlüsselt im Server; das Passwort geht nur an berechtigte Geräte.",
+            "en": "Encrypted on the server; the password only goes to allowed devices."
+          }
+        },
+        {
+          "icon": "users",
+          "title": {
+            "de": "Benutzer, Gruppen und Geräte lesen",
+            "en": "Read users, groups and devices"
+          },
+          "text": {
+            "de": "Für die Rechte je Person und Gruppe, Kinder der Familie und den Widerruf.",
+            "en": "For the rights per person and group, the family's children and revocation."
+          },
+          "tag": {
+            "de": "Benutzer",
+            "en": "Users"
+          }
+        }
+      ],
+      "shows": [
+        {
+          "kind": "list",
+          "caption": {
+            "de": "Quellen mit Zustand und Rechten",
+            "en": "Sources with state and rights"
+          }
+        }
+      ],
+      "needs": {
+        "de": "Eine eigene Lizenz, Jellyfin ab 10.9 und/oder eine NAS",
+        "en": "A licence of its own, Jellyfin 10.9+ and/or a NAS"
+      },
+      "languages": [
+        "de",
+        "en"
+      ]
+    },
     "gatecontrol-messenger": {
       "category": "family",
       "icon": "chat",
