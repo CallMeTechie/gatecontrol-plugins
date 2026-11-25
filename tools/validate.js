@@ -62,6 +62,12 @@ const NEWER_KEYS = {
     // notifyTopics[].email: the topic's pushes also by e-mail (a boolean; never on a chat topic) — an older one ignores it
     { path: ['notifyTopics'], present: (v) => Array.isArray(v) && v.some((t) => t && typeof t === 'object' && t.email !== undefined), check: (v) => notifyEmailError(v), replace: (v) => (Array.isArray(v) ? v.map((t) => { if (!t || typeof t !== 'object') return t; const { email, ...rest } = t; return rest; }) : v) },
   ],
+  '1.324.0': [
+    // permissions.network.assignTargets: true (window.GC.targets — the plugin's admin pages assign its declared home
+    // targets themselves), only next to homeTargets
+    { path: ['permissions', 'network', 'assignTargets'], check: (v, raw) => (typeof v !== 'boolean' ? 'permissions.network.assignTargets: invalid'
+      : (v && !(raw.permissions.network.homeTargets || []).length ? 'permissions.network.assignTargets: needs homeTargets' : null)) },
+  ],
   '1.284.0': [
     // notifyTopics[].signal: silent data pushes to single devices only (gc.remote version 2, the Windows switch) — an older one ignores it
     { path: ['notifyTopics'], present: (v) => Array.isArray(v) && v.some((t) => t && typeof t === 'object' && t.signal !== undefined), check: (v) => notifySignalError(v), replace: (v) => (Array.isArray(v) ? v.map((t) => { if (!t || typeof t !== 'object') return t; const { signal, ...rest } = t; return rest; }) : v) },
