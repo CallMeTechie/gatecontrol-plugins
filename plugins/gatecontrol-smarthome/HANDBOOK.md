@@ -1,4 +1,4 @@
-<!-- version: 1.19.0 -->
+<!-- version: 1.20.0 -->
 # Smart Home
 
 ## What the plugin does
@@ -140,7 +140,7 @@ You find the heating under **Smart Home › Heating** (button at the top of the 
 
 ### Rooms
 
-- A **room** is the **area** of its thermostats (dialog “Manage owners”). A thermostat without an area is a room of its own.
+- A **room** is the **area** of its thermostats (dialog “Manage owners”). A thermostat without an area is a room of its own. If you rename the area, the room keeps its plan (since 1.20.0, [more](#heizung-1-20)).
 - All thermostats of a room get **one common target**. “Now” is the mean of the thermostats.
 - Window contacts with the same area belong to the room.
 - The overview shows per room the temperature, what applies now (the preset's colour; violet: by hand; red: boost; yellow border: window open or device unreachable) and today's plan. **“Open”** leads to the room page.
@@ -149,13 +149,13 @@ You find the heating under **Smart Home › Heating** (button at the top of the 
 
 - There are four fixed presets: **Comfort, Eco, Night, Frost protection** (default 21 / 18 / 17 / 7 °C).
 - You set the temperatures of the house under **“Presets”**. A plan or a room may have its own; the room's come before the plan's.
-- **Boost** is no preset but an action for 15, 30 or 60 minutes. If the thermostat can boost itself (deCONZ with a preset, Shelly TRV, since 1.19.0 zigbee2mqtt too – [Boost, window and preset](#heizung-z2m-ext)), GateControl uses that, otherwise it sets 30 °C (a BLU TRV too). Afterwards what applied before applies again. The status then reads “Boost (device)”.
+- **Boost** is no preset but an action for 15, 30 or 60 minutes. If the thermostat can boost itself (deCONZ with a preset, Shelly TRV, since 1.19.0 zigbee2mqtt too – [Boost, window and preset](#heizung-z2m-ext)), GateControl uses that, otherwise it sets 30 °C (a BLU TRV too; since 1.20.0 a setting, [boost temperature](#heizung-1-20)). Afterwards what applied before applies again. The status then reads “Boost (device)”.
 
 ### Weekly plan
 
 1. **“New plan”** opens the editor. Enter a name, pick a template and the rooms the plan applies to. A room has exactly one plan.
 2. Every weekday is a bar of sections. Tap a section and change **From**, **To** and **Preset**. Switching points snap to 15 minutes. **“Split section”** makes two sections of one, **“Copy day to …”** takes the day over for other days.
-3. Under **Exceptions** you set “Window open” (after 1, 2 or 5 minutes) and “Nobody at home”.
+3. Under **Exceptions** you set “Window open” (after 1, 2 or 5 minutes), “Nobody at home” and since 1.20.0 “Holidays like Sunday”.
 4. **“Save plan”** – the plan sends what applies now at once.
 
 The plan **runs on the server**: about every 30 seconds it checks every room and sends the target at each switching point. While the server is away the thermostats keep the last target; a missed switching point is caught up as soon as the server is back. If a thermostat does not answer, the plan tries again after 5 minutes; a sleeping battery device gets the value as soon as it is back.
@@ -198,6 +198,14 @@ If the GateControl gateway (from 1.47.0) reports boost, window and preset of its
 - The **preset in the device** (e.g. “manual”, “schedule”) is shown at the thermostat on the room page. The plan does not change it.
 
 If the gateway does not report them (an older gateway or a GateControl that does not pass them on yet), everything stays as in 1.18.0.
+
+### Holidays, offset and window contacts on the gateway (since 1.20.0) {#heizung-1-20}
+
+- **Holidays like Sunday:** in the weekly plan under **Exceptions** (on by default). On statutory holidays the plan's Sunday applies – on the server and in the plan on the gateway (the gateway gets the list of holidays, also for the time without the server). The federal state is set in the Smart Home settings under **“Heating: holidays of”**. **Automatic** takes the state of the logic chains' location (sunrise and sunset); without one or outside Germany the holidays of all states apply. GateControl computes the holidays itself (Easter and the fixed days), no internet service. Not included: holidays of single towns (e.g. the Augsburg peace festival) and one-off holidays. In Bavaria the Assumption counts.
+- **Offset per thermostat:** in the room under **“Edit”** (own temperatures), −5 to +5 °C in half degrees per thermostat. If a thermostat measures 1 °C too much (e.g. right at the radiator), enter −1: the corrected temperature is shown, and the thermostat gets a target shifted by the offset so the room reaches the temperature wanted. A zigbee2mqtt thermostat in the plan on the gateway with a calibration of its own (`local_temperature_calibration`) gets the value as its calibration instead; once it reports it, the thermostat shows “(in the device)” and the target goes unchanged. Shelly TRV, BLU TRV, deCONZ and zigbee2mqtt rooms on the server: GateControl takes the offset into account.
+- **Boost temperature:** thermostats without a boost of their own (e.g. Shelly BLU TRV) get the target of the setting **“Heating: boost temperature”** during a boost (20–30 °C, default 30).
+- **Window contacts on the gateway:** if a room's plan runs on the gateway and the gateway hears the room's window contact itself (Bluetooth, e.g. Shelly BLU Door/Window, or zigbee2mqtt of the same gateway), the gateway lowers the room **without the server** too – with the same rules: frost protection after the plan's wait, back once closed; an “open” counts at most 2 hours after the contact's last report. This needs a GateControl gateway with the feature `radio-contacts` (the version after 1.47.0) and the additional capability **`gatecontrol/contacts/#`**, confirmed by an administrator under **Gateways › gateway › Edge plugins** (Smart Home asks for it once). Without both the server lowers the room as before.
+- **Renaming an area:** a room belongs to its thermostats, not to the area's name. If you rename the area – also device by device – the room keeps its plan, mode, own temperatures and upper limit. If you set something up for the new area meanwhile, that applies.
 
 ### Holiday and Heating away
 
@@ -264,6 +272,14 @@ Set the device up “By hand …”. The instructions are in the window.
 
 **A zigbee2mqtt device cannot be switched (“zigbee2mqtt on the gateway is not answering right now”).**
 Look at the gateway's tab “Radio”: does zigbee2mqtt run, are edge and MQTT on? New devices show up within half a minute.
+
+## New in 1.20.0
+
+- **Renaming an area** keeps the room's heating plan (before, the renamed area got a new, empty room).
+- **Holidays like Sunday** per weekly plan, the federal state in the settings (default: from the location), also in the plan on the gateway.
+- **Offset per thermostat** (−5 to +5 °C) in the room under “Edit”; zigbee2mqtt thermostats on the gateway with a calibration of their own get it as their calibration.
+- **Boost temperature** for thermostats without a boost of their own (e.g. BLU TRV) can be set, 20–30 °C.
+- **Window contacts on the gateway:** with a gateway with `radio-contacts` and the confirmed capability `gatecontrol/contacts/#` the gateway lowers the room when a window is open, also without the server ([more](#heizung-1-20)).
 
 ## New in 1.19.0
 

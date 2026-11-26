@@ -14,8 +14,20 @@
 // Since 1.19.0 a zigbee2mqtt thermostat whose exposes name a boost of its own (io.z2mBoost(base) → { prop, on, off }:
 // a writable binary boost_heating, else boost, with value_on / value_off — edge/index.js boostOf) boosts with it:
 // { <prop>: value_on } instead of 30 °C, afterwards { <prop>: value_off } with the target. Without it: 30 °C.
+// Since 1.20.0 (the server part decides what goes in):
+//   hol / room.hol   statutory holidays (dates YYYY-MM-DD of the region, server/holidays.js): a room with hol runs its
+//                    plan's Sunday on them ("Feiertage wie Sonntag").
+//   bt               the boost target of thermostats without a boost of their own (20–30 °C, default 30).
+//   th.off           the correction (Versatz) of the thermostat's measured temperature: it gets target − off. th.cal: a
+//                    zigbee2mqtt thermostat whose exposes name local_temperature_calibration (io.z2mCal) gets off as its
+//                    own calibration instead — once it reports it, the target goes unchanged.
+//   room.ct, room.wm the window contacts of the room this gateway hears itself (GateControl gateway with radio-contacts:
+//                    gatecontrol/contacts/<id>, io.contact(id) → { open, since, seen, online }) and the plan's wait
+//                    (1 / 2 / 5 minutes): one open longer than that lowers the room here — with the server and without
+//                    it; an "open" counts 2 h after the contact's last report (as the server part's ttl), closed again
+//                    → back to what applies then.
 //
-//   heat  { v: 1, tz, plans: { <plan id>: week }, rooms: [room] }   week: 7 × [[start minute, preset], …], Monday first
+//   heat  { v: 1, tz, plans: { <plan id>: week }, rooms: [room], hol?, bt? }   week: 7 × [[start minute, preset], …], Monday first
 //   room  { id, th: [{ base, ch, fam, min, max, boost, (z2m:) name, step, modes }], temps: { comfort, eco, night, frost },
 //           plan: <plan id> | null, away (Komfort → Eco), mode: plan | manual | off,
 //           manual, hold, vac: { from, end, preset } | null (end: the return minus the preheating),
@@ -38,6 +50,10 @@ const RETRY_MS = 5 * 60000;
 const TRIES = 3;
 const STALE_MS = 2 * 3600 * 1000;
 const BOOST_SETPOINT = 30;
+const CONTACT_RE = /^(ble-[0-9a-f]{12}|z2m-[0-9a-f]{16})$/;
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const WINDOW_MIN = [1, 2, 5];
+const CONTACT_TTL = 2 * 3600 * 1000;
 const MAX_ROOMS = 32;
 const MAX_TH = 8;
 const DAY_MIN = 1440;
@@ -45,6 +61,7 @@ const TZ_RE = /^[A-Za-z0-9_+\-/]{1,64}$/;
 const CH_RE = /^thermostat:\d{1,2}$/;
 const Z2M_MODES = ['off', 'heat', 'auto'];
 
+const same = (a, b) => a != null && b != null && Math.abs(a - b) < 0.05;
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 const ms = (v) => (Number.isSafeInteger(v) && v > 0 ? v : null);
@@ -74,7 +91,9 @@ function cleanRoom(r, weeks) {
     if ((t.fam === 'z2m') !== commands.Z2M_RE.test(t.base) || (t.fam === 'z2m' && t.ch !== 'thermostat:0')) continue;
     const min = temp(t.min) == null ? 5 : temp(t.min);
     const max = temp(t.max) == null ? 30 : temp(t.max);
-    const x = { base: t.base, ch: t.ch, fam: t.fam, min, max: Math.max(min, max), boost: t.boost === true && t.fam === 'shelly1' };
+    const off = num(t.off) != null && t.off >= -5 && t.off <= 5 ? Math.round(t.off * 2) / 2 : 0;
+    const x = { base: t.base, ch: t.ch, fam: t.fam, min, max: Math.max(min, max), boost: t.boost === true && t.fam === 'shelly1', off };
+    if (t.fam === 'z2m' && t.cal === true) x.cal = true;
     if (t.fam === 'z2m') {
       x.name = typeof t.name === 'string' && t.name && t.name.length <= 128 ? t.name : null;
       x.step = num(t.step) != null && t.step >= 0.1 && t.step <= 5 ? t.step : 0.5;
@@ -94,6 +113,9 @@ function cleanRoom(r, weeks) {
   return {
     id: r.id, th, temps, week: r.plan != null && weeks.has(String(r.plan)) ? weeks.get(String(r.plan)) : null, away: r.away === true,
     mode: ['plan', 'manual', 'off'].includes(r.mode) ? r.mode : 'plan', manual: temp(r.manual), hold: temp(r.hold), vac, ov, boost, win,
+    hol: r.hol === true,
+    ct: Array.isArray(r.ct) ? [...new Set(r.ct.filter((c) => typeof c === 'string' && CONTACT_RE.test(c)))].slice(0, MAX_TH) : [],
+    wm: WINDOW_MIN.includes(r.wm) ? r.wm : 2,
   };
 }
 
@@ -104,7 +126,9 @@ function clean(cfg) {
   for (const [k, w] of Object.entries(isObj(c.plans) ? c.plans : {}).slice(0, 64)) { const x = cleanWeek(w); if (x && /^\d{1,10}$/.test(k)) weeks.set(k, x); }
   const rooms = [];
   for (const r of (Array.isArray(c.rooms) ? c.rooms : []).slice(0, MAX_ROOMS)) { const x = cleanRoom(r, weeks); if (x) rooms.push(x); }
-  return { tz: typeof c.tz === 'string' && TZ_RE.test(c.tz) ? c.tz : null, rooms };
+  const hol = new Set((Array.isArray(c.hol) ? c.hol : []).filter((d) => typeof d === 'string' && DATE_RE.test(d)).slice(0, 64));
+  const bt = num(c.bt) != null && c.bt >= 20 && c.bt <= 30 ? Math.round(c.bt * 2) / 2 : BOOST_SETPOINT;
+  return { tz: typeof c.tz === 'string' && TZ_RE.test(c.tz) ? c.tz : null, rooms, hol, bt };
 }
 
 // ─── What a room should have (as server/heating.js decide) ───
@@ -119,16 +143,20 @@ function presetOf(day, min) {
  * The preset of the plan now and where its section began (a key that changes only at a real switching point — midnight
  * with the same preset is none): { preset, slot }.
  */
-function planAt(week, now, tz) {
+function planAt(week, now, tz, hol) {
   const c = clockOf(now, tz);
-  const today = c.day - 1;
-  const p = presetOf(week[today], c.min);
   const noon = now - (c.min - 720) * 60000; // within today, whatever the clocks do
+  // the day of the plan k days back: Monday 0 … Sunday 6, a holiday (hol: Set of dates) is a Sunday
+  const dayAt = (k) => {
+    const x = k === 0 ? c : clockOf(noon - k * 86400000, tz);
+    return hol && hol.has(x.date) ? 6 : x.day - 1;
+  };
+  const p = presetOf(week[dayAt(0)], c.min);
   // back in time, section by section, while the preset stays: the last one seen is where it began
   let last = null;
   let changed = false;
   for (let k = 0; k < 8 && !changed; k++) {
-    const day = week[(today - k + 70) % 7];
+    const day = week[dayAt(k)];
     const secs = (k === 0 ? day.filter((s) => s[0] <= c.min) : day).slice().reverse();
     for (const s of secs) {
       if (s[1] !== p) { changed = true; break; }
@@ -139,10 +167,12 @@ function planAt(week, now, tz) {
   return { preset: p, slot: slot || 'all' };
 }
 
-function decide(r, now, tz) {
+function decide(r, now, tz, hol, lw) {
   const T = r.temps;
   if (r.mode === 'off') return { kind: 'off', setpoint: T.frost, sig: 'off' };
   if (r.win && r.win.ttl > now) return { kind: 'window', setpoint: T.frost, sig: `window:${r.win.since}:${T.frost}` };
+  // since 1.20.0: a contact this gateway hears itself (lw = { since } of the open window, edge/heat.js localWindow)
+  if (lw) return { kind: 'window', setpoint: T.frost, sig: `window:${lw.since}:${T.frost}` };
   if (r.boost && r.boost.until > now) return { kind: 'boost', until: r.boost.until, sig: `boost:${r.boost.at}` };
   if (r.ov && r.ov.until > now) {
     const sp = r.ov.preset ? T[r.ov.preset] : r.ov.setpoint;
@@ -151,7 +181,7 @@ function decide(r, now, tz) {
   if (r.vac && now >= r.vac.from && now < r.vac.end) return { kind: 'vacation', setpoint: T[r.vac.preset], sig: `vacation:${r.vac.from}:${r.vac.preset}:${T[r.vac.preset]}` };
   if (r.mode === 'manual' && r.manual != null) return { kind: 'manual', setpoint: r.manual, sig: `manual:${r.manual}` };
   if (r.week) {
-    const at = planAt(r.week, now, tz);
+    const at = planAt(r.week, now, tz, r.hol ? hol : null);
     const p = r.away && at.preset === 'comfort' ? 'eco' : at.preset;
     return { kind: 'plan', preset: p, setpoint: T[p], sig: `plan:${at.slot}:${p}:${T[p]}` };
   }
@@ -164,13 +194,15 @@ function decide(r, now, tz) {
  * { setpoint?, mode? (off | heat), prop (the setpoint it reports), boost? (true | false: its own boost, `zb`) }.
  * `zb`: the boost a zigbee2mqtt thermostat exposes ({ prop, on, off }) or null.
  */
-function commandFor(t, want, prevKind, planned, rep, now, zb) {
-  if (t.fam === 'z2m') return z2mCommand(t, want, prevKind, planned, rep || {}, zb || null);
-  const clamp = (v) => Math.max(t.min, Math.min(t.max, v));
+function commandFor(t, want, prevKind, planned, rep, now, zb, zc) {
+  if (t.fam === 'z2m') return z2mCommand(t, want, prevKind, planned, rep || {}, zb || null, zc || null);
+  // the Versatz (since 1.20.0): the thermostat measures off too much → it gets target − off
+  const off = t.off || 0;
+  const clamp = (v) => Math.max(t.min, Math.min(t.max, Math.round((v - off) * 2) / 2));
   const cmd = {};
   if (want.kind === 'boost') {
     if (t.boost) cmd.boost = Math.max(1, Math.min(120, Math.ceil((want.until - now) / 60000)));
-    else cmd.setpoint = clamp(BOOST_SETPOINT);
+    else cmd.setpoint = clamp(want.bt || BOOST_SETPOINT);
   } else {
     cmd.setpoint = clamp(want.setpoint);
     if (prevKind === 'boost' && t.boost) cmd.boost = 0;
@@ -180,16 +212,25 @@ function commandFor(t, want, prevKind, planned, rep, now, zb) {
 }
 
 /** A zigbee2mqtt thermostat (as server/heating.js commandFor does it for one on the server). */
-function z2mCommand(t, want, prevKind, planned, rep, zb) {
+function z2mCommand(t, want, prevKind, planned, rep, zb, zc) {
   const step = t.step || 0.5;
-  const clamp = (v) => Math.round(Math.max(t.min, Math.min(t.max, Math.round(v / step) * step)) * 10) / 10;
+  // the Versatz (since 1.20.0): its own calibration where its exposes name one (zc { min, max, step }), else target − off
+  let off = t.off || 0;
+  let cal = null;
+  if (t.cal && zc) {
+    const cs = zc.step > 0 ? zc.step : 0.1;
+    cal = Math.round(Math.max(zc.min, Math.min(zc.max, Math.round(off / cs) * cs)) * 10) / 10;
+    if (same(rep.cal, cal)) off = 0; // it measures right itself now
+  }
+  const clamp = (v) => Math.round(Math.max(t.min, Math.min(t.max, Math.round((v - off) / step) * step)) * 10) / 10;
   const cmd = { prop: rep.sp || null };
+  if (cal != null && !same(rep.cal, cal)) cmd.cal = cal;
   if (zb) cmd.zb = zb;
   // its own boost ends with what comes after (since 1.19.0)
   if (zb && prevKind === 'boost' && want.kind !== 'boost') cmd.boost = false;
   if (want.kind === 'off' && t.modes.includes('off')) { cmd.mode = 'off'; return cmd; }
   if (want.kind === 'boost' && zb) cmd.boost = true;
-  else cmd.setpoint = clamp(want.kind === 'boost' ? BOOST_SETPOINT : want.setpoint);
+  else cmd.setpoint = clamp(want.kind === 'boost' ? (want.bt || BOOST_SETPOINT) : want.setpoint);
   // back from Aus (system_mode off): heating again; its own plan (auto) gives way to the plan
   if (prevKind === 'off' && rep.mode === 'off' && t.modes.includes('off')) cmd.mode = t.modes.includes('heat') ? 'heat' : (t.modes.find((m) => m !== 'off') || null);
   else if (planned && rep.mode === 'auto' && t.modes.includes('heat')) cmd.mode = 'heat';
@@ -204,6 +245,7 @@ function messagesOf(t, cmd, name) {
     const opts = { z2mTopic: () => name || t.name };
     const boost = (value) => out.push(...commands.messages({ base: t.base, family: 'z2m', ch: t.ch, op: 'boost', value, prop: cmd.zb.prop, on: cmd.zb.on, off: cmd.zb.off }, opts));
     if (cmd.boost === false && cmd.zb) boost(false);
+    if (cmd.cal != null) out.push(...commands.messages({ base: t.base, family: 'z2m', ch: t.ch, op: 'calibration', value: cmd.cal }, opts));
     if (cmd.mode) out.push(...commands.messages({ base: t.base, family: 'z2m', ch: t.ch, op: 'mode', value: cmd.mode }, opts));
     if (cmd.setpoint != null) out.push(...commands.messages({ base: t.base, family: 'z2m', ch: t.ch, op: 'setpoint', value: cmd.setpoint, prop: cmd.prop }, opts));
     if (cmd.boost === true && cmd.zb) boost(true);
@@ -218,7 +260,6 @@ function messagesOf(t, cmd, name) {
 }
 
 const keyOf = (t) => `${t.base}|${t.ch}`;
-const same = (a, b) => a != null && b != null && Math.abs(a - b) < 0.05;
 
 /**
  * The engine: create({ device(base) → the edge part's record, publish(list) → Promise, save(applied), log, now?,
@@ -231,7 +272,28 @@ const same = (a, b) => a != null && b != null && Math.abs(a - b) < 0.05;
 function create(io) {
   const now = io.now || (() => Date.now());
   const debug = (...a) => { if (io.log && typeof io.log.debug === 'function') io.log.debug(...a); };
-  const st = { tz: null, rooms: [], applied: new Map(), busy: false, savedKey: null };
+  const st = { tz: null, rooms: [], hol: new Set(), bt: BOOST_SETPOINT, applied: new Map(), busy: false, savedKey: null };
+
+  /**
+   * The window of a room from the contacts this gateway hears (since 1.20.0): { since } once one has been open longer
+   * than the plan's wait, else null. An open contact counts 2 h after its last report; one offline (zigbee2mqtt) not.
+   */
+  function localWindow(r, t0) {
+    if (!r.ct.length || typeof io.contact !== 'function') return null;
+    let since = null;
+    for (const id of r.ct) {
+      const c = io.contact(id);
+      if (!c || c.open !== true || c.online === false || !(t0 - c.seen < CONTACT_TTL)) continue;
+      const s = Math.min(c.since, t0);
+      if (since == null || s < since) since = s;
+    }
+    return since != null && t0 - since >= r.wm * 60000 ? { since } : null;
+  }
+  const wantOf = (r, t0) => {
+    const w = decide(r, t0, st.tz, st.hol, localWindow(r, t0));
+    if (w.kind === 'boost') w.bt = st.bt;
+    return w;
+  };
 
   function reachable(t) {
     const dev = io.device(t.base);
@@ -252,7 +314,7 @@ function create(io) {
   }
 
   async function room(r, t0) {
-    const want = decide(r, t0, st.tz);
+    const want = wantOf(r, t0);
     if (!want.sig) { st.applied.delete(r.id); return 0; }
     let ap = st.applied.get(r.id);
     if (!ap || ap.sig !== want.sig) {
@@ -267,13 +329,14 @@ function create(io) {
       const rep = reachable(t);
       if (!rep) { waiting++; continue; }
       const zb = t.fam === 'z2m' && io.z2mBoost ? io.z2mBoost(t.base) : null;
-      const cmd = commandFor(t, want, ap.prev, planned, rep, t0, zb);
+      const zc = t.fam === 'z2m' && t.cal && io.z2mCal ? io.z2mCal(t.base) : null;
+      const cmd = commandFor(t, want, ap.prev, planned, rep, t0, zb, zc);
       const tr = ap.tries.get(k) || { n: 0, at: 0 };
       // the device has it (reported): done — also before anything was sent (nothing twice after a restart, nothing
       // twice when the server part hands a room over that it already sent to); a zigbee2mqtt boost of its own counts
       // once the device reports it (its end also when the device does not report its boost at all: the target decides)
       const zBoost = t.fam === 'z2m' && typeof cmd.boost === 'boolean';
-      const has = (cmd.setpoint != null || cmd.mode != null || zBoost) && (cmd.setpoint == null || same(rep.target, cmd.setpoint)) && (cmd.mode == null || rep.mode === cmd.mode)
+      const has = (cmd.setpoint != null || cmd.mode != null || zBoost) && (cmd.setpoint == null || same(rep.target, cmd.setpoint)) && (cmd.mode == null || rep.mode === cmd.mode) && cmd.cal == null
         && (cmd.boost == null || (zBoost && (rep.boost === cmd.boost || (cmd.boost === false && typeof rep.boost !== 'boolean'))));
       if (has && !cmd.schedule_off) { ap.done.add(k); continue; }
       // a zigbee2mqtt thermostat that did not report which setpoint it has yet: waits for its first report
@@ -299,6 +362,8 @@ function create(io) {
       const c = clean(cfg);
       st.tz = c.tz;
       st.rooms = c.rooms;
+      st.hol = c.hol;
+      st.bt = c.bt;
       const ids = new Set(c.rooms.map((r) => r.id));
       for (const id of [...st.applied.keys()]) if (!ids.has(id)) st.applied.delete(id);
     },
@@ -331,7 +396,13 @@ function create(io) {
       return [...out.values()];
     },
     count() { return st.rooms.length; },
-    view() { const t0 = now(); return st.rooms.map((r) => { const w = decide(r, t0, st.tz); const a = st.applied.get(r.id); return { id: r.id, kind: w.kind, setpoint: w.setpoint == null ? null : w.setpoint, sent: !!a && a.sig === w.sig && a.done.size === r.th.length }; }); },
+    /** The contacts of the rooms (gatecontrol/contacts/<id>, edge/index.js subscribes for them). */
+    contacts() { return [...new Set(st.rooms.flatMap((r) => r.ct))]; },
+    /** A contact reported: its room is looked at with the next tick. */
+    onContact(id) { return st.rooms.some((r) => r.ct.includes(id)); },
+    /** The zigbee2mqtt thermostats GateControl calibrates (th.cal): their bases. */
+    calibrated() { return [...new Set(st.rooms.flatMap((r) => r.th.filter((t) => t.cal).map((t) => t.base)))]; },
+    view() { const t0 = now(); return st.rooms.map((r) => { const w = wantOf(r, t0); const a = st.applied.get(r.id); return { id: r.id, kind: w.kind, setpoint: w.setpoint == null ? null : w.setpoint, sent: !!a && a.sig === w.sig && a.done.size === r.th.length }; }); },
   };
 }
 

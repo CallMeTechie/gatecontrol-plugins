@@ -44,6 +44,12 @@
 //             zigbee2mqtt/bridge/devices (its exposes) or its report, zigbee2mqtt/<name>/availability marks it offline.
 //             Since 1.19.0 boost with the device's own boost when its exposes name a writable binary boost_heating
 //             (else boost) with value_on and value_off (boostOf) — else 30 °C as before.
+//             Since 1.20.0 holidays like Sunday, the boost target, the Versatz per thermostat (a zigbee2mqtt one with a
+//             writable numeric local_temperature_calibration — calOf — gets it as its own calibration; event `cal`
+//             { list: [{ base, v }] } tells the server part what such a thermostat reports) and the window contacts this
+//             gateway hears itself: MQTT gatecontrol/contacts/# (a GateControl gateway with radio-contacts, optional
+//             capability) only while a room lists contacts; event `contacts` { state: 'ok' (the gateway's feed is
+//             there) | 'none' (subscribed, no feed — an older gateway) | 'denied' | 'error' | 'off' }.
 //
 // Capabilities (plugin.json edge.capabilities): mdns _shelly._tcp and _http._tcp, http.lan, mqtt shellies/# and
 // tasmota/#; optional (edge.optionalCapabilities, since 1.15.0): mqtt zigbee2mqtt/# (the chains, since 1.18.0 the heating too). On disk (gc.store) only the last list of logic chains, so they run after a restart of the gateway
@@ -68,6 +74,10 @@ const MAX_FOUND = 64;
 const PER_EVENT = 20;
 const TOPICS = ['shellies/#', 'tasmota/#'];
 const Z2M_TOPIC = 'zigbee2mqtt/#';
+const CONTACTS_TOPIC = 'gatecontrol/contacts/#';
+const CONTACTS_ROOT = 'gatecontrol/contacts';
+const CONTACT_ID_RE = /^(ble-[0-9a-f]{12}|z2m-[0-9a-f]{16})$/;
+const CONTACTS_MAX = 128;
 const Z2M_MAX = 128;
 const Z2M_LIST_BYTES = 2 * 1024 * 1024;
 const Z2M_IEEE_RE = /^0x[0-9a-f]{16}$/;
@@ -114,6 +124,12 @@ const st = {
   z2mChains: new Map(),      // … of the chains (the server part's list)
   z2mSp: new Map(),          // ieee → the setpoint a thermostat exposes (zigbee2mqtt/bridge/devices)
   z2mBoost: new Map(),       // ieee → { prop, on, off }: its own boost (zigbee2mqtt/bridge/devices, since 1.19.0)
+  z2mCal: new Map(),         // ieee → { min, max, step }: local_temperature_calibration (since 1.20.0)
+  calSent: null,             // what event `cal` told last (JSON)
+  contacts: new Map(),       // contact id → { open, since, seen, online } (gatecontrol/contacts/<id>, since 1.20.0)
+  contactsSub: null,         // the subscription of gatecontrol/contacts/#
+  contactsState: null,       // ok | none | denied | error | off — event `contacts`
+  contactsFeed: false,       // the gateway's gatecontrol/contacts (radio-contacts) was seen
   z2mNames: new Map(),       // friendly name → ieee (zigbee2mqtt/bridge/devices; else the server part's names)
   z2mSub: null,              // the subscription of zigbee2mqtt/#
   z2mState: null,            // what the last try gave: ok | denied | error | off (MQTT not there) — event `z2m`
@@ -161,6 +177,7 @@ function onBridgeDevices(payload) {
   const names = new Map();
   const sps = new Map();
   const boosts = new Map();
+  const cals = new Map();
   for (const d of list.slice(0, 512)) {
     if (!d || typeof d.ieee_address !== 'string' || !Z2M_IEEE_RE.test(d.ieee_address) || typeof d.friendly_name !== 'string') continue;
     if (d.friendly_name && d.friendly_name.length <= 128) names.set(d.friendly_name, d.ieee_address);
@@ -168,10 +185,33 @@ function onBridgeDevices(payload) {
     if (sp) sps.set(d.ieee_address, sp);
     const b = sp ? boostOf(d.definition.exposes) : null;
     if (b) boosts.set(d.ieee_address, b);
+    const cal = sp ? calOf(d.definition.exposes) : null;
+    if (cal) cals.set(d.ieee_address, cal);
   }
   st.z2mNames = names;
   st.z2mSp = sps;
   st.z2mBoost = boosts;
+  st.z2mCal = cals;
+}
+
+/** A writable numeric local_temperature_calibration in a thermostat's exposes (since 1.20.0) → { min, max, step } or null. */
+function calOf(exposes) {
+  let found = null;
+  const walk = (list, depth) => {
+    if (!Array.isArray(list) || depth > 3 || found) return;
+    for (const e of list.slice(0, 64)) {
+      if (!e || typeof e !== 'object') continue;
+      if (e.type === 'numeric' && e.property === commands.Z2M_CAL) { found = e; return; }
+      if (Array.isArray(e.features)) walk(e.features, depth + 1);
+    }
+  };
+  walk(exposes, 0);
+  if (!found || (typeof found.access === 'number' && (found.access & 2) !== 2)) return null;
+  const n = (v, d) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+  const min = Math.max(-10, n(found.value_min, -5));
+  const max = Math.min(10, n(found.value_max, 5));
+  const step = n(found.value_step, 0.1);
+  return max > min && step > 0 && step <= 5 ? { min, max, step } : null;
 }
 
 /**
@@ -299,6 +339,83 @@ async function subscribeZ2m(force = false) {
   }
 }
 
+// ─── Window contacts of the gateway itself (gatecontrol/contacts/#, since 1.20.0) ───
+
+function setContactsState(state, force) {
+  const changed = st.contactsState !== state;
+  st.contactsState = state;
+  if ((changed || force) && st.gc) st.gc.emit('contacts', { state });
+}
+
+/** gatecontrol/contacts (the gateway's feed) and gatecontrol/contacts/<id> { open, since, seen, online? } (retained). */
+function onContact(topic, payload) {
+  const raw = Buffer.isBuffer(payload) ? payload.toString('utf8') : String(payload == null ? '' : payload);
+  if (topic === CONTACTS_ROOT) {
+    let o = null;
+    try { o = JSON.parse(raw); } catch { o = null; }
+    st.contactsFeed = !!(o && typeof o === 'object' && o.v === 1);
+    if (st.contactsSub && typeof st.contactsSub === 'object') setContactsState(st.contactsFeed ? 'ok' : 'none');
+    return;
+  }
+  const id = topic.slice(CONTACTS_ROOT.length + 1);
+  if (!CONTACT_ID_RE.test(id)) return;
+  if (!raw.length) { st.contacts.delete(id); }
+  else {
+    let o;
+    try { o = JSON.parse(raw); } catch { return; }
+    const ms = (v) => (Number.isSafeInteger(v) && v > 0 ? v : null);
+    if (!o || typeof o !== 'object' || typeof o.open !== 'boolean' || !ms(o.since) || !ms(o.seen)) return;
+    if (!st.contacts.has(id) && st.contacts.size >= CONTACTS_MAX) return;
+    st.contacts.set(id, { open: o.open, since: o.since, seen: o.seen, ...(typeof o.online === 'boolean' ? { online: o.online } : {}) });
+  }
+  if (st.heat && st.heat.onContact(id)) heatSoon();
+}
+
+/** gatecontrol/contacts/# only while a room lists contacts; refused (no optional capability yet): tried every minute. */
+async function subscribeContacts(force = false) {
+  const want = !!(st.heat && st.heat.contacts().length);
+  if (!want) {
+    if (st.contactsSub && typeof st.contactsSub === 'object') st.contactsSub.unsubscribe().catch(() => null);
+    st.contactsSub = null;
+    st.contactsState = null;
+    return;
+  }
+  if (st.mqtt !== 'ok') { setContactsState('off', force); return; }
+  if (st.contactsSub) { if (st.contactsSub !== 'pending') setContactsState(st.contactsFeed ? 'ok' : 'none', force); return; }
+  st.contactsSub = 'pending';
+  const gc = st.gc;
+  try {
+    const sub = await gc.mqtt.subscribe(CONTACTS_TOPIC, onMessage);
+    if (st.gc !== gc || st.contactsSub !== 'pending') { sub.unsubscribe().catch(() => null); return; }
+    st.contactsSub = sub;
+    gc.log.info('subscribed to', CONTACTS_TOPIC);
+    setContactsState(st.contactsFeed ? 'ok' : 'none', force);
+  } catch (e) {
+    if (st.gc !== gc) return;
+    st.contactsSub = null;
+    const code = (e && e.code) === 'denied' ? 'denied' : 'error';
+    warnOnce('contacts:' + code, code === 'denied'
+      ? 'the window contacts of this gateway are not granted yet (gatecontrol/contacts/# — confirm the optional capability in GateControl); the server lowers the rooms meanwhile, tried again every minute'
+      : 'the window contacts of this gateway are not available — tried again every minute');
+    setContactsState(code, force);
+  }
+}
+
+/** What the zigbee2mqtt thermostats GateControl calibrates report (event `cal`, only when it changed). */
+function calReport() {
+  if (!st.heat) return;
+  const list = [];
+  for (const base of st.heat.calibrated()) {
+    const dev = st.devices.get(base);
+    const c = dev && dev.ch && dev.ch['thermostat:0'];
+    if (c && typeof c.cal === 'number') list.push({ base, v: c.cal });
+  }
+  const key = JSON.stringify(list);
+  if (key === st.calSent || !list.length) return;
+  st.calSent = key;
+  st.gc.emit('cal', { list });
+}
+
 /** The devices zigbee2mqtt/# is subscribed for: the chains' and the heating's thermostats (`force`: tell the server part). */
 function mergeZ2m(force) {
   const next = new Map(st.z2mChains);
@@ -324,6 +441,7 @@ function onZ2mConfig(list) {
 
 function onMessage(topic, payload, meta) {
   if (typeof topic === 'string' && topic.startsWith('zigbee2mqtt/')) { onZ2m(topic, payload, meta); return; }
+  if (typeof topic === 'string' && (topic === CONTACTS_ROOT || topic.startsWith(CONTACTS_ROOT + '/'))) { onContact(topic, payload); return; }
   const r = normalize.parse(topic, payload);
   if (!r) return;
   let dev = st.devices.get(r.base);
@@ -369,6 +487,9 @@ async function doSubscribe() {
     if (st.z2mSub && typeof st.z2mSub === 'object') st.z2mSub.unsubscribe().catch(() => null);
     st.z2mSub = null;
     subscribeZ2m();
+    if (st.contactsSub && typeof st.contactsSub === 'object') st.contactsSub.unsubscribe().catch(() => null);
+    st.contactsSub = null;
+    subscribeContacts();
     refreshAll();
   } catch (e) {
     for (const s of st.subs.splice(0)) s.unsubscribe().catch(() => null);
@@ -397,6 +518,7 @@ function refreshAll() {
 }
 
 function flush() {
+  calReport();
   if (st.fired.length) st.gc.emit('fired', { rules: st.fired.splice(0, PER_EVENT) });
   if (st.notes.length) st.gc.emit('notify', { notes: st.notes.splice(0, PER_EVENT) });
   if (st.runsOut.length) st.gc.emit('runs', { runs: st.runsOut.splice(0, RUNS_PER_EVENT) });
@@ -471,6 +593,7 @@ function setHeat(cfg, fromServer) {
     st.heat.set(cfg);
     if (fromServer) storeHeat(cfg, undefined);
     mergeZ2m(false);
+    subscribeContacts(true);
     heatSoon();
   }
 }
@@ -655,6 +778,12 @@ module.exports = {
     st.z2mChains = new Map();
     st.z2mSp = new Map();
     st.z2mBoost = new Map();
+    st.z2mCal = new Map();
+    st.calSent = null;
+    st.contacts = new Map();
+    st.contactsSub = null;
+    st.contactsState = null;
+    st.contactsFeed = false;
     st.z2mNames = new Map();
     st.z2mSub = null;
     st.z2mState = null;
@@ -671,6 +800,8 @@ module.exports = {
       save: (applied) => storeHeat(undefined, applied),
       z2mTopic,
       z2mBoost: (base) => st.z2mBoost.get(String(base || '').slice('zigbee2mqtt/'.length)) || null,
+      z2mCal: (base) => st.z2mCal.get(String(base || '').slice('zigbee2mqtt/'.length)) || null,
+      contact: (id) => st.contacts.get(id) || null,
       log: gc.log,
     });
     st.engine = rules.create({
@@ -756,7 +887,11 @@ module.exports = {
     const every = (fn, ms) => { const t = setInterval(fn, ms); if (t.unref) t.unref(); st.timers.push(t); };
     every(flush, FLUSH_MS);
     every(refreshAll, REFRESH_MS);
-    every(() => { if (st.mqtt !== 'ok') subscribe(); else if (st.z2m.size && !st.z2mSub) subscribeZ2m(); }, RETRY_MQTT_MS);
+    every(() => {
+      if (st.mqtt !== 'ok') { subscribe(); return; }
+      if (st.z2m.size && !st.z2mSub) subscribeZ2m();
+      if (!st.contactsSub) subscribeContacts();
+    }, RETRY_MQTT_MS);
     every(() => { saveRuns(); }, RUNS_SAVE_MS);
     every(heatTick, HEAT_MS);
 
@@ -771,10 +906,17 @@ module.exports = {
     if (st.z2mSub && typeof st.z2mSub === 'object') st.z2mSub.unsubscribe().catch(() => null);
     st.z2mSub = null;
     st.z2mState = null;
+    if (st.contactsSub && typeof st.contactsSub === 'object') st.contactsSub.unsubscribe().catch(() => null);
+    st.contactsSub = null;
+    st.contactsState = null;
+    st.contactsFeed = false;
+    st.contacts = new Map();
+    st.calSent = null;
     st.z2m = new Map();
     st.z2mChains = new Map();
     st.z2mSp = new Map();
     st.z2mBoost = new Map();
+    st.z2mCal = new Map();
     st.z2mNames = new Map();
     st.notes = [];
     if (st.heatSoon) clearTimeout(st.heatSoon);

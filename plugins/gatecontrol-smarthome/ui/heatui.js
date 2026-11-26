@@ -218,7 +218,7 @@
     bbtn.addEventListener('click', function () { send(boosting ? { action: 'boost_stop' } : { action: 'boost', minutes: Number(dur.value) }); });
     var own = v.thermostats.some(function (x) { return x.device_boost; });
     left.appendChild(el('div', { class: 'ht-boost' }, [el('span', { class: 't' }, [icon('flame', 18), T('heat.choice.boost')]),
-      el('span', { class: 'form-hint', text: !v.boost_allowed ? T('heat.ui.boost_capped') : (own ? T('heat.ui.boost_own') : T('heat.ui.boost_hint')) }), el('span', { class: 'sh-spacer' }), boosting ? null : dur, bbtn]));
+      el('span', { class: 'form-hint', text: !v.boost_allowed ? T('heat.ui.boost_capped') : (own ? T('heat.ui.boost_own', { temp: deg(v.boost_setpoint == null ? 30 : v.boost_setpoint) }) : T('heat.ui.boost_hint', { temp: deg(v.boost_setpoint == null ? 30 : v.boost_setpoint) })) }), el('span', { class: 'sh-spacer' }), boosting ? null : dur, bbtn]));
     left.appendChild(el('div', { class: 'form-hint', text: T('heat.ui.preset_hint') }));
     // right: today, devices, where it runs
     var right = el('div', { class: 'ht-stack' });
@@ -259,6 +259,7 @@
       var sub = [x.source === 'deconz' ? 'deCONZ' : (x.source === 'shelly' ? 'Shelly' : 'zigbee2mqtt')];
       if (x.gateway) sub.push(x.gateway);
       if (x.own_schedule) sub.push(T('heat.ui.own_schedule'));
+      if (x.offset) sub.push(T(x.calibrated ? 'heat.ui.offset_device' : 'heat.ui.offset_of', { v: (x.offset > 0 ? '+' : '') + deg(x.offset) }));
       if (x.device_preset) sub.push(T('heat.ui.device_preset', { p: x.device_preset }));
       if (x.window_open != null) sub.push(v.window.on ? T('heat.ui.contact_rule', { min: v.window.minutes }) : T('heat.ui.contact_off'));
       list.appendChild(el('div', { class: 'ht-devrow' }, [el('div', { class: 'grow' }, [el('b', { text: x.name }), el('small', { text: sub.join(' · ') })]), vals]));

@@ -3,6 +3,16 @@
 Phoscon/deCONZ-Integration als GateControl-Plugin – bisher fest in GateControl eingebaut; seit 1.7.0 auch Shelly und
 Tasmota über ein GateControl-Gateway.
 
+## 1.20.0
+
+- **Bug: Bereich umbenennen verlor den Heizplan.** Ein Raum war an den Namen seines Bereichs gebunden (`heat_rooms.room_key 'a:<Bereich>'`); nach dem Umbenennen bekam der neue Name eine neue, leere Zeile, Plan, Betrieb und eigene Temperaturen blieben an der alten hängen. Jetzt merkt sich jede Zeile ihre Thermostate (`members_json`, Migration `007_heating_ext.sql`; vorher aus `applied_json.done` bzw. `t:<id>`); ein Bereich, der weg ist, gibt seine Zeile an den Bereich, in dem seine Thermostate jetzt sind (auch wenn sie einzeln umziehen: eine inzwischen angelegte, nicht eingerichtete Zeile weicht). Die Raum-ID bleibt (Portal, Apps, Urlaub).
+- **Feiertage wie Sonntag** (freigegebener Entwurf „Thermostate“): neu `server/holidays.js` (Ostern nach Meeus/Jones/Butcher, Feiertage je Bundesland, Bundesland aus dem Standort der Logikketten). Schalter je Plan (`heat_plans.holidays`, Standard an; Plan-Dialog „Ausnahmen“), Einstellung `heat_region` (auto | DE | Bundesland). `presetAt`/`changesOf`/`slotStart`/`todayOf` laufen an Feiertagen den Sonntag. Am Gateway: `heat.hol` (Daten dieses und des nächsten Jahres) und `room.hol`, `edge/heat.js planAt` nimmt sie.
+- **Versatz je Thermostat** (`heat_thermostats`, −5…+5 °C, halbe Grad): `PUT /heating/rooms/:id { offsets: { <id>: n | null } }`, Feld im Raum-Dialog. Anzeige (`thermostats[].value/setpoint`) korrigiert, Befehle `Soll − Versatz` (Server, Gateway `th.off`). zigbee2mqtt-Thermostate am Gateway mit setzbarem `local_temperature_calibration` (Exposes) bekommen den Versatz als Kalibrierung (`commands` Op `calibration`, `normalize` liest `cal`); Event `cal` meldet dem Server, was sie melden – dann rechnet er nichts mehr ein (`thermostats[].calibrated`).
+- **Boost-Temperatur einstellbar** (Einstellung `heat_boost`, 20–30 °C, Standard 30) für Thermostate ohne eigenen Boost, am Server und am Gateway (`heat.bt`); Hinweistexte nennen den Wert.
+- **Fensterkontakte am Gateway** (GateControl-Gateway mit Kennung `radio-contacts`, gatecontrol-gateway#77): neue optionale Fähigkeit `gatecontrol/contacts/#` (der Server fragt einmal je Gateway danach). Ist sie bestätigt, bekommt ein Raum am Gateway die Kontakte, die das Gateway selbst hört (Bluetooth `ble:<MAC>`, zigbee2mqtt `z2m:<IEEE>` desselben Gateways) als `ct` mit der Wartezeit `wm`; `edge/index.js` abonniert `gatecontrol/contacts/#` nur dann, `edge/heat.js` senkt nach der Wartezeit selbst (offen zählt 2 h nach der letzten Meldung, offline nicht). Event `contacts` (`ok` sobald das Gateway liefert, `none`, `denied`, `error`, `off`); mit `ok` und ohne andere Fensterquelle schickt der Server kein `win` mehr für den Raum. Ohne neues Gateway oder Bestätigung: wie 1.19.0.
+- `edge.capabilities` und `gatecontrol` unverändert; `edge.optionalCapabilities` um `gatecontrol/contacts/#` ergänzt (optional, kein `update_pending`).
+- Offen: zigbee2mqtt-Räume am Server bekommen den Versatz als Soll-Korrektur, nicht als Gerätekalibrierung (GateControl reicht `local_temperature_calibration` noch nicht durch). Shelly TRV / BLU TRV: Korrektur über das Soll.
+
 ## 1.19.0
 
 - **zigbee2mqtt-Thermostate mit Preset, Boost und Fenster** (GateControl-Gateway 1.47.0, gatecontrol-gateway#75,

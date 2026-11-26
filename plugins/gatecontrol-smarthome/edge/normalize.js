@@ -374,6 +374,9 @@ function z2mThermostat(o, sp, boost) {
   if (typeof o.system_mode === 'string' && Z2M_MODES.includes(o.system_mode)) c.mode = o.system_mode;
   const v = pct(o.pi_heating_demand);
   if (v != null) c.valve = v;
+  // since 1.20.0: the correction it applies to what it measures (local_temperature_calibration)
+  const cal = round(o.local_temperature_calibration, 1);
+  if (cal != null) c.cal = cal;
   // since 1.19.0: its own boost (what edge/index.js read from its exposes: { prop, on, off })
   if (boost && typeof boost === 'object' && boost.prop in o) {
     if (o[boost.prop] === boost.on) c.boost = true;

@@ -4,7 +4,7 @@
     "de": "Smart Home",
     "en": "Smart Home"
   },
-  "version": "1.19.0",
+  "version": "1.20.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Phoscon/deCONZ-Gateways, Shelly- und Tasmota-Geräte, Zigbee-Geräte von zigbee2mqtt und Bluetooth-Sensoren über ein GateControl-Gateway einbinden: Lichter, Steckdosen, Schalter, Rollläden, Gruppen, Szenen und Sensoren steuern, Haushaltsmitgliedern zuweisen (Portal „Zuhause“), Heizkörper-Thermostate (Plan am Gateway für Shelly TRV, BLU TRV und bestätigtes zigbee2mqtt) mit Presets und Wochenplänen je Raum steuern und Logikketten anlegen – für deCONZ auf dem deCONZ-Gateway, für Shelly, Tasmota und – nach Bestätigung – zigbee2mqtt auf dem GateControl-Gateway, über mehrere Gateways auf dem Server.",
@@ -36,7 +36,8 @@
     "optionalCapabilities": {
       "mqtt": {
         "topics": [
-          "zigbee2mqtt/#"
+          "zigbee2mqtt/#",
+          "gatecontrol/contacts/#"
         ]
       }
     }
@@ -142,6 +143,108 @@
         "min": 5,
         "max": 50,
         "default": 15
+      },
+      {
+        "key": "heat_region",
+        "type": "select",
+        "label": {
+          "de": "Heizung: Feiertage von",
+          "en": "Heating: holidays of"
+        },
+        "help": {
+          "de": "„Feiertage wie Sonntag“ (Schalter je Wochenplan): an den gesetzlichen Feiertagen dieses Bundeslands gilt der Sonntag des Plans – auch am Gateway. Automatisch: das Bundesland des Standorts der Logikketten, ohne Standort die bundeseinheitlichen Feiertage.",
+          "en": "“Holidays like Sunday” (a switch per weekly plan): on the statutory holidays of this federal state the plan’s Sunday applies – on the gateway too. Automatic: the state of the logic chains’ location, without one the holidays of all states."
+        },
+        "options": [
+          {
+            "value": "auto",
+            "label": "Automatisch (aus dem Standort) / Automatic (from the location)"
+          },
+          {
+            "value": "DE",
+            "label": "Bundeseinheitlich / All states"
+          },
+          {
+            "value": "BW",
+            "label": "Baden-Württemberg"
+          },
+          {
+            "value": "BY",
+            "label": "Bayern / Bavaria"
+          },
+          {
+            "value": "BE",
+            "label": "Berlin"
+          },
+          {
+            "value": "BB",
+            "label": "Brandenburg"
+          },
+          {
+            "value": "HB",
+            "label": "Bremen"
+          },
+          {
+            "value": "HH",
+            "label": "Hamburg"
+          },
+          {
+            "value": "HE",
+            "label": "Hessen / Hesse"
+          },
+          {
+            "value": "MV",
+            "label": "Mecklenburg-Vorpommern"
+          },
+          {
+            "value": "NI",
+            "label": "Niedersachsen / Lower Saxony"
+          },
+          {
+            "value": "NW",
+            "label": "Nordrhein-Westfalen / North Rhine-Westphalia"
+          },
+          {
+            "value": "RP",
+            "label": "Rheinland-Pfalz / Rhineland-Palatinate"
+          },
+          {
+            "value": "SL",
+            "label": "Saarland"
+          },
+          {
+            "value": "SN",
+            "label": "Sachsen / Saxony"
+          },
+          {
+            "value": "ST",
+            "label": "Sachsen-Anhalt / Saxony-Anhalt"
+          },
+          {
+            "value": "SH",
+            "label": "Schleswig-Holstein"
+          },
+          {
+            "value": "TH",
+            "label": "Thüringen / Thuringia"
+          }
+        ],
+        "default": "auto"
+      },
+      {
+        "key": "heat_boost",
+        "type": "number",
+        "label": {
+          "de": "Heizung: Boost-Temperatur (°C)",
+          "en": "Heating: boost temperature (°C)"
+        },
+        "help": {
+          "de": "Soll während eines Boosts für Thermostate ohne eigenen Boost (z. B. Shelly BLU TRV, viele zigbee2mqtt-Thermostate), 20–30.",
+          "en": "Target during a boost for thermostats without a boost of their own (e.g. Shelly BLU TRV, many zigbee2mqtt thermostats), 20–30."
+        },
+        "min": 20,
+        "max": 30,
+        "default": 30
       },
       {
         "key": "notify_lang",

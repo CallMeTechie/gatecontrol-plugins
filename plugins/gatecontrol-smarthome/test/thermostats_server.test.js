@@ -83,7 +83,8 @@ describe('Thermostate Stufe 2: Shelly TRV and BLU TRV, the plan on the gateway',
     assert.equal(typeof h.tz, 'string');
     assert.deepEqual(h.plans, { [p.json.plan.id]: WEEK });
     assert.deepEqual(h.rooms, [{ id: bad.id, th: [{ base, ch: 'thermostat:0', fam: 'shelly1', min: 5, max: 30, boost: true }], temps: { comfort: 23, eco: 18, night: 17, frost: 7 },
-      plan: p.json.plan.id, away: false, mode: 'plan', manual: null, hold: null, vac: null, ov: null, boost: null, win: null }]);
+      plan: p.json.plan.id, away: false, mode: 'plan', manual: null, hold: null, vac: null, ov: null, boost: null, win: null, hol: true }]);
+    assert.ok(Array.isArray(h.hol) && h.hol.length > 9, 'the holidays go along (1.20.0: Feiertage wie Sonntag, on by default)');
     // the plan's background run: still nothing from the server
     await heating.tick(host.gc);
     now = T(0, 8);
@@ -174,10 +175,10 @@ describe('Thermostate Stufe 2: Shelly TRV and BLU TRV, the plan on the gateway',
     assert.deepEqual((await roomOf('Gast')).runs_at, { kind: 'server' });
   }));
 
-  it('the manifest: version 1.19.0, edge.capabilities unchanged (no update_pending), zigbee2mqtt/# still optional only', () => {
+  it('the manifest: version 1.20.0, edge.capabilities unchanged (no update_pending), zigbee2mqtt/# and gatecontrol/contacts/# optional only', () => {
     const manifest = require('../plugin.json');
-    assert.equal(manifest.version, '1.19.0');
+    assert.equal(manifest.version, '1.20.0');
     assert.deepEqual(manifest.edge.capabilities, { mdns: { services: ['_shelly._tcp', '_http._tcp'] }, http: { lan: true }, mqtt: { topics: ['shellies/#', 'tasmota/#'] } });
-    assert.deepEqual(manifest.edge.optionalCapabilities, { mqtt: { topics: ['zigbee2mqtt/#'] } });
+    assert.deepEqual(manifest.edge.optionalCapabilities, { mqtt: { topics: ['zigbee2mqtt/#', 'gatecontrol/contacts/#'] } });
   });
 });
