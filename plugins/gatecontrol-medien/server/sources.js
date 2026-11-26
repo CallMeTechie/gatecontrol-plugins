@@ -284,6 +284,8 @@ async function checkShare(gc, src, pw) {
     } catch (e) { out.webdav = e && e.code === 'ERR_NET_DENIED' ? 'no_target' : 'unreachable'; }
     if (out.webdav !== 'ok') out.problem = 'webdav_' + out.webdav;
   }
+  // SMB: the server does not reach it — the devices check it themselves (POST v1/shares/{id}/checked)
+  out.smb = src.config.smb ? 'devices' : null;
   out.ok = !out.problem;
   return out;
 }
@@ -367,6 +369,6 @@ function folder(src) {
 }
 
 module.exports = {
-  KINDS, list, get, need, create, update, remove, setKey, setPassword, apiKey, password, awayOf, awayAddressOf, targetsOf, check, checkJellyfin, setStatus, folder, keyName, pwName, posInt,
+  KINDS, list, get, need, create, update, remove, setKey, setPassword, apiKey, password, awayOf, awayAddressOf, targetsOf, check, checkJellyfin, checkShare, cleanConfig, setStatus, folder, keyName, pwName, posInt,
   probesOf, homeOf, serverIdOf, hostPort,
 };

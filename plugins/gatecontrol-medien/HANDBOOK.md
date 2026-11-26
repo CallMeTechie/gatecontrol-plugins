@@ -1,4 +1,4 @@
-<!-- version: 1.3.0 -->
+<!-- version: 1.4.0 -->
 # Media – Manual
 
 ## What the plugin does {#was-das-plugin-kann}
@@ -22,7 +22,7 @@ Media brings your own collection from **Jellyfin** and the **shares of your NAS*
 
 ### Home targets {#zugriffsziele}
 
-There is no separate step: you choose where the server reaches a source only in the source dialog (**“Where does Jellyfin run?”**, **“Where is the NAS?”**). With **“Check and save”** Media allows the server itself to reach that target (the **server access**). For this Media has the permission **“Assign access targets itself”**. It works only in your session as an administrator, and every change is in the activity log. From GateControl 1.325.0 on, **Settings › Plugins › Media › Settings** no longer shows home targets – this is the one place for them. Existing assignments stay valid; the dialog offers them under “Other route or address …”.
+There is no separate step: you choose where the server reaches a source only in the source dialog (**“Where does Jellyfin run?”**, **“Where is the NAS?”**). With **“Check and save”** Media allows the server itself to reach that target (the **server access**). For this Media has the permission **“Assign access targets itself”**. It works only in your session as an administrator, and every change is in the activity log. From GateControl 1.325.0 on, **Settings › Plugins › Media › Settings** no longer shows home targets – this is the one place for them. Existing assignments stay valid; the dialog offers them under “Other route or address …”. Assignments no source uses any more (after removing or changing a source) Media removes again by itself – the ones it made itself, also in the middle of the list. Your own addresses stay.
 
 - **Jellyfin server (HTTP)**: port 8096. For several Jellyfin servers one target each.
 - **WebDAV of the NAS**: to check sign-in and folder of a share.
@@ -46,7 +46,7 @@ The DSM firewall must allow TCP 8096 from the gateway – away the traffic comes
 
 1. In DSM create an own user with **read access** to the media shares only (e.g. “media-read”, without DSM sign-in).
 2. **Add source › NAS share**: **Where is the NAS?** (route, VPN peer or an address already assigned), **share name** (e.g. `video`), **user** and **password**.
-3. **Check and save.** Media creates the SMB address (`smb://<NAS>/video`) and – when the NAS speaks HTTPS – the WebDAV address (`https://<NAS>:5006/video`) itself and allows the server to reach the NAS.
+3. **Check and save.** Before saving the server signs in over WebDAV with user and password and looks for the folder – the result is shown in the dialog. If the check fails, the dialog stays open: correct the entries or keep them with **“Save anyway”**. SMB is checked by the devices themselves in the home network. Media creates the SMB address (`smb://<NAS>/video`) and – when the NAS speaks HTTPS – the WebDAV address (`https://<NAS>:5006/video`) itself and allows the server to reach the NAS.
 
 Under **“Advanced”**: name, SMB and WebDAV address, the certificate (SHA-256, to pin a self-signed one) and Away (`https://<route domain>/<share>`, over the NAS's WebDAV). With a VPN peer as the NAS you enter the home-network addresses there yourself – the peer's VPN address cannot be reached at home. Use IP addresses rather than names like `\\nas`. A share with SMB only has no way away – away only WebDAV over a route.
 
@@ -94,6 +94,12 @@ The Jellyfin key never leaves the server. The log names people, devices and sour
 - **“unreachable through the tunnel”** on the tab Devices: is the source's HTTPS address for away (the route's domain) right? Is the route on, the gateway online, and does the DSM firewall allow the gateway (8096, 5006)?
 - **A phone is lost**: remove it in GateControl (Jellyfin closes at once or within 5 minutes). The NAS password cannot be taken back from a device that never comes online again: change it in DSM and replace it under Sources.
 - **Licence**: without a licence of its own for Media the apps hide Media. A GateControl Lifetime licence does not count here.
+
+## New in 1.4.0 {#neu-1-4-0}
+
+- **Check a NAS share before saving:** like the Jellyfin dialog, “Check and save” checks first – WebDAV sign-in and folder – and shows the result in the dialog. On an error the dialog stays open; “Save anyway” keeps the entries as they are.
+- **Unused access targets go:** assignments Media made itself and that no source uses any more are now removed also in the middle of the list; the other sources are moved along. Your own addresses stay (see [Home targets](#zugriffsziele)).
+- **“Play on TV/PC”:** every device learns its own device ID with the list of sources, not only with the first cast message.
 
 ## New in 1.3.0 {#neu-1-3-0}
 

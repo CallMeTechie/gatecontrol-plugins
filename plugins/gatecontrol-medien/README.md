@@ -17,6 +17,7 @@ server/app.js       App-API v1/* (Apps mit Geräte-Token)
 server/cast.js      „Auf TV/PC abspielen“: Cast-Nachrichten zwischen den eigenen Geräten
 server/jellyfin.js  kleiner Jellyfin-Admin-Client (10.9–10.11), Tests gegen aufgezeichnete Antworten
 server/sources.js   Quellen, Geheimnisse (gc.settings.setSecret), Netz-Regel (away)
+server/assignments.js  selbst angelegte Zugriffsziel-Zuweisungen, Umnummerieren beim Aufräumen (ab 1.4.0)
 server/rights.js    Recht „Medien“ je Person/Gruppe, Sicht je Quelle, Kinder ohne NAS-Freigaben
 server/mapping.js   Person ↔ Jellyfin-Benutzer (per Name, von Hand, „In Jellyfin anlegen“)
 server/devices.js   Anmeldungen, ausgelieferte Passwörter, Widerruf, Abgleich alle 5 Minuten
@@ -100,6 +101,7 @@ deshalb kein ETag/304).
 
 ```jsonc
 { "ok": true, "v": 1, "rev": "rVdEa3gRkVX1W", "at": "2026-11-25T19:02:11.000Z",
+  "deviceId": "11",                    // ab 1.4.0: die eigene Geräte-ID (wie cast/targets devices[].id, to/from); null ohne Gerät
   "media": true,                       // die Person hat das Recht „Medien“ (false → sources: [])
   "maxOfflineDays": 90,                // nach so vielen Tagen ohne Kontakt zum Server NAS-Passwörter auf dem Gerät löschen
   "offlineHintDays": 30,               // ab dann Hinweis „lange keinen Kontakt zum Server“
@@ -132,6 +134,12 @@ deshalb kein ETag/304).
 ```
 
 Quellen-IDs (`jf-<n>`, `sh-<n>`) sind auf allen Geräten aller Personen gleich und ändern sich nie.
+
+`deviceId` (ab 1.4.0): die GateControl-Geräte-ID des fragenden Geräts als String (Ziffern, wie GateControl sie dem
+Plugin mit `user.device.id` gibt), `null` bei einer Anfrage ohne Gerätebindung. Dieselbe ID steht in `v1/cast/targets`
+(`devices[].id`) und in Cast-Nachrichten (`to`, `from`): ein Fernseher/PC erkennt damit an `to`, ob eine Nachricht ihm
+gilt, und nennt sich selbst als `to` für Antworten an das Handy – ohne die erste stille Mitteilung abzuwarten. Sie steht
+nicht in der Kurzantwort `unchanged` (gleiches `rev` → gleiche `deviceId`).
 
 ### GET v1/sources/{id}/secret
 
@@ -229,8 +237,8 @@ Nachrichten nach dem Cast-Vertrag Version 1, **Abschnitte 2 und 3** (`cast.play`
 ID in seiner eigenen `v1/sources`-Liste (nicht mehr per ServerId/Adresse). `item.id` = Jellyfin-Item-ID bzw. `item.path` bei
 Freigaben wie im Vertrag. Keine Geheimnisse (Felder mit Namen wie token/password/secret werden abgelehnt).
 
-- `GET v1/cast/targets` → `{ ok, v: 1, devices: [{ id, name, kind: "tv" | "pc", clientType, online, lastSeen }] }` – eigene
-  GateControl-TV- und Windows-Geräte (ohne das fragende), online zuerst.
+- `GET v1/cast/targets` → `{ ok, v: 1, deviceId, devices: [{ id, name, kind: "tv" | "pc", clientType, online, lastSeen }] }` – eigene
+  GateControl-TV- und Windows-Geräte (ohne das fragende), online zuerst; `deviceId` (ab 1.4.0) = die ID des fragenden Geräts.
 - `POST v1/cast/{session}/message` `{ to: "<Geräte-ID>", body: <Cast-Nachricht> }` → `{ ok, v: 1, via: ["event", "push"], online }`.
   `body.session` muss `{session}` sein, ≤ 3000 Bytes JSON, 60/min und 600/h je sendendem Gerät. Beide Geräte gehören der fragenden
   Person, sie hat „Medien“ (und bei `cast.play` die Quelle). Antworten des TV (`cast.state`) gehen genauso an das Handy (`to` = Handy).
@@ -252,7 +260,16 @@ Freigaben wie im Vertrag. Keine Geheimnisse (Felder mit Namen wie token/password
 { mode: all | list, users, groups }` · `PUT sources/{id}/people/{userId} { allow: true | false | null }` ·
 `PUT sources/{id}/mapping/{userId} { jfUserId | null } | { auto: true }` · `POST sources/{id}/mapping/{userId}/create { name }` ·
 `POST sources/{id}/automap` · `GET people` · `PUT rights/{user|group}/{id} { media: true | false | null }` · `GET devices` ·
-`POST devices/{deviceId}/revoke { sourceId? }` · `POST probe { targetIndex, key? }` · `GET targets` · `GET log`.
+`POST devices/{deviceId}/revoke { sourceId? }` · `POST probe { targetIndex, key? }` · `POST probe { kind: "share", sourceId?, user,
+password?, smb, webdav }` (ab 1.4.0, ohne Speichern; `password` fehlt beim Bearbeiten → das gespeicherte) · `GET targets` (+ `made`) ·
+`POST targets/made { target, assignment }` · `POST targets/compact { target, map: { "<alter Index>": <neuer> }, forget? }` · `GET log`.
+
+Zugriffsziele aufräumen (ab 1.4.0): `GC.targets.set(id, list)` ersetzt die ganze Liste, eine Quelle nennt ihre
+Zuweisung über die Position (`targetIndex`). Der Dialog merkt sich jede Zuweisung, die er anhängt (`targets/made`,
+Schlüssel `<ziel>:route:<id>` bzw. `<ziel>:peer:<id>:<port|->:<schema>`). Nutzt keine Quelle eine Zuweisung mehr, geht sie:
+am Ende der Liste jede Route/jeder Peer, mitten in der Liste nur selbst angelegte, nie eine Adresse (`host`). Erst stellt
+`targets/compact` die Quellen in einer Transaktion um (lehnt mit `conflict` ab, wenn die Karte eine benutzte Zuweisung
+weglässt), dann setzt die Seite die kürzere Liste; schlägt das fehl, stellt sie die Quellen mit der Umkehrkarte zurück.
 Schlüssel und Passwörter gehen nur hinein; Antworten sagen `hasKey` / `hasPassword`.
 Jede Quelle in `GET sources` hat `home: { level: unique | weak | none, why: null | no_server_id | no_cert, probes }`
 (die Heimnetz-Proben dieser Quelle, wie in `v1/sources`); `GET overview` nur `home.level`. Die Jellyfin-Server-ID steht in

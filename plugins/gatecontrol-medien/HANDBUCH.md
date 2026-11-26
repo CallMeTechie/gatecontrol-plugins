@@ -1,4 +1,4 @@
-<!-- version: 1.3.0 -->
+<!-- version: 1.4.0 -->
 # Medien – Handbuch
 
 ## Was das Plugin kann {#was-das-plugin-kann}
@@ -22,7 +22,7 @@ Medien bringt deine eigene Sammlung aus **Jellyfin** und den **Freigaben deiner 
 
 ### Zugriffsziele {#zugriffsziele}
 
-Ein eigener Schritt ist nicht nötig: Wo der Server eine Quelle erreicht, wählst du nur im Quellen-Dialog (**„Wo läuft Jellyfin?“**, **„Wo liegt die NAS?“**). Mit **„Prüfen und speichern“** erlaubt Medien dem Server selbst, dieses Ziel zu erreichen (die **Server-Freigabe**). Dafür hat Medien die Berechtigung **„Zugriffsziele selbst zuweisen“**. Sie gilt nur in deiner Sitzung als Administrator, und jede Änderung steht im Aktivitätsprotokoll. Ab GateControl 1.325.0 zeigt **Einstellungen › Plugins › Medien › Einstellungen** keine Zugriffsziele mehr – es gibt nur noch diese eine Stelle. Bestehende Zuweisungen bleiben gültig, der Dialog bietet sie unter „Andere Route oder Adresse …“ an.
+Ein eigener Schritt ist nicht nötig: Wo der Server eine Quelle erreicht, wählst du nur im Quellen-Dialog (**„Wo läuft Jellyfin?“**, **„Wo liegt die NAS?“**). Mit **„Prüfen und speichern“** erlaubt Medien dem Server selbst, dieses Ziel zu erreichen (die **Server-Freigabe**). Dafür hat Medien die Berechtigung **„Zugriffsziele selbst zuweisen“**. Sie gilt nur in deiner Sitzung als Administrator, und jede Änderung steht im Aktivitätsprotokoll. Ab GateControl 1.325.0 zeigt **Einstellungen › Plugins › Medien › Einstellungen** keine Zugriffsziele mehr – es gibt nur noch diese eine Stelle. Bestehende Zuweisungen bleiben gültig, der Dialog bietet sie unter „Andere Route oder Adresse …“ an. Zuweisungen, die keine Quelle mehr nutzt (nach dem Löschen oder Ändern einer Quelle), räumt Medien selbst wieder ab – die es selbst angelegt hat, auch mitten in der Liste. Deine eigenen Adressen bleiben stehen.
 
 - **Jellyfin-Server (HTTP)**: Port 8096. Für mehrere Jellyfin-Server je Server ein Ziel.
 - **WebDAV der NAS**: zum Prüfen von Anmeldung und Ordner einer Freigabe.
@@ -46,7 +46,7 @@ Die DSM-Firewall muss TCP 8096 vom Gateway zulassen – auch unterwegs kommt der
 
 1. In DSM einen eigenen Benutzer nur mit **Leserecht** auf die Medien-Freigaben anlegen (z. B. „medien-lesen“, ohne DSM-Anmeldung).
 2. **Quelle hinzufügen › NAS-Freigabe**: **Wo liegt die NAS?** (Route, VPN-Peer oder schon zugewiesene Adresse), **Freigabename** (z. B. `video`), **Benutzer** und **Passwort**.
-3. **Prüfen und speichern.** Medien legt die SMB-Adresse (`smb://<NAS>/video`) und – wenn die NAS per HTTPS erreichbar ist – die WebDAV-Adresse (`https://<NAS>:5006/video`) selbst an und erlaubt dem Server, die NAS zu erreichen.
+3. **Prüfen und speichern.** Der Server meldet sich vor dem Speichern per WebDAV mit Benutzer und Passwort an und sucht den Ordner – das Ergebnis steht im Dialog. Schlägt die Prüfung fehl, bleibt der Dialog offen: Angaben korrigieren oder mit **„Trotzdem speichern“** übernehmen. SMB prüfen die Geräte selbst im Heimnetz. Medien legt die SMB-Adresse (`smb://<NAS>/video`) und – wenn die NAS per HTTPS erreichbar ist – die WebDAV-Adresse (`https://<NAS>:5006/video`) selbst an und erlaubt dem Server, die NAS zu erreichen.
 
 Unter **„Erweitert“**: Name, SMB- und WebDAV-Adresse, das Zertifikat (SHA-256, zum Anheften bei selbst signierten Zertifikaten) und Unterwegs (`https://<Domain der Route>/<Freigabe>`, über das WebDAV der NAS). Bei einem VPN-Peer als NAS trägst du die Heimnetz-Adressen dort selbst ein – die VPN-Adresse des Peers ist zu Hause nicht erreichbar. Nimm IP-Adressen statt Namen wie `\\nas`. Eine reine SMB-Freigabe gibt es unterwegs nicht – unterwegs nur WebDAV über eine Route.
 
@@ -94,6 +94,12 @@ Der Jellyfin-Schlüssel verlässt den Server nie. Das Protokoll nennt Personen, 
 - **„durch den Tunnel nicht erreichbar“** im Reiter Geräte: Stimmt die HTTPS-Adresse für unterwegs der Quelle (die Domain der Route)? Ist die Route an, das Gateway online, und lässt die DSM-Firewall das Gateway zu (8096, 5006)?
 - **Ein Handy ist verloren**: in GateControl entfernen (Jellyfin ist sofort bzw. nach höchstens 5 Minuten zu). Das NAS-Passwort lässt sich von einem Gerät, das nicht mehr online kommt, nicht zurückholen: Passwort in DSM ändern und unter Quellen ersetzen.
 - **Lizenz**: Ohne eigene Lizenz für Medien blenden die Apps Medien aus. Eine GateControl-Lifetime-Lizenz zählt hier nicht.
+
+## Neu in 1.4.0 {#neu-1-4-0}
+
+- **NAS-Freigabe vor dem Speichern prüfen:** Wie beim Jellyfin-Dialog prüft „Prüfen und speichern“ zuerst – WebDAV-Anmeldung und Ordner – und zeigt das Ergebnis im Dialog. Bei einem Fehler bleibt der Dialog offen, mit „Trotzdem speichern“ übernimmst du die Angaben so.
+- **Ungenutzte Zugriffsziele weg:** Zuweisungen, die Medien selbst angelegt hat und die keine Quelle mehr nutzt, räumt Medien jetzt auch mitten in der Liste ab; die anderen Quellen werden dabei passend umgestellt. Deine eigenen Adressen bleiben (siehe [Zugriffsziele](#zugriffsziele)).
+- **„Auf TV/PC abspielen“:** Jedes Gerät erfährt seine eigene Geräte-ID gleich mit der Quellenliste, nicht erst mit der ersten Cast-Nachricht.
 
 ## Neu in 1.3.0 {#neu-1-3-0}
 

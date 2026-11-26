@@ -20,11 +20,16 @@ function load(state, opts = {}) {
       targets: Object.keys(state).map((id) => ({ id, multiple: true, assigned: state[id].map((a, index) => ({ index, ...a, display: 'x' })) })),
       routes: opts.routes || [], peers: opts.peers || [],
     }),
-    set: async (id, list) => { calls.push([id, list]); state[id] = list.map((a) => ({ ...a })); return { assigned: list }; },
+    set: async (id, list) => {
+      if (opts.setFails) throw new Error('refused');
+      calls.push([id, list]); state[id] = list.map((a) => ({ ...a })); return { assigned: list };
+    },
   };
-  const window = { GC: { call: async () => ({}), targets }, MD_CTX: { texts: {}, lang: 'de' } };
+  const api = [];
+  const call = async (method, p, body) => { api.push([method, p, JSON.parse(JSON.stringify(body || null))]); return {}; };
+  const window = { GC: { call, targets }, MD_CTX: { texts: {}, lang: 'de' } };
   vm.runInNewContext(SRC, { window, document: {}, setTimeout, clearTimeout, Promise, Object, Number, String });
-  return { MD: window.MD, calls };
+  return { MD: window.MD, calls, api };
 }
 
 test('suggestions: home address from the route target (not a peer route), https://<domain> for away', () => {
@@ -57,6 +62,50 @@ test('pruneTargets drops only unused routes/peers at the end, never an address o
   assert.equal(await MD.pruneTargets('jellyfin', [0]), true);
   assert.deepEqual(JSON.parse(JSON.stringify(calls[0][1])).map((a) => a.kind + (a.routeId || '')), ['route1', 'route2', 'host']);
   assert.equal(await MD.pruneTargets('jellyfin', [0]), false);
+});
+
+test('1.4.0: ensureTarget remembers a new assignment as made by the dialog (admin/targets/made), not a reused one', async () => {
+  const state = { jellyfin: [{ kind: 'route', routeId: 7 }] };
+  const { MD, api } = load(state);
+  await MD.ensureTarget('jellyfin', 'r:7');
+  assert.equal(api.length, 0);
+  state.smb = [];
+  const r = load(state);
+  assert.equal(await r.MD.ensureTarget('smb', 'p:9', { port: 445, scheme: 'http' }), 0);
+  assert.deepEqual(r.api, [['POST', 'admin/targets/made', { target: 'smb', assignment: { kind: 'peer', peerId: 9, port: 445, scheme: 'http' } }]]);
+});
+
+test('1.4.0: pruneTargets removes an unused assignment the dialog made also in the middle — sources renumbered first', async () => {
+  const list = () => [{ kind: 'route', routeId: 1 }, { kind: 'route', routeId: 2 }, { kind: 'host', host: '192.168.1.9', port: null, scheme: 'http' }, { kind: 'route', routeId: 3 }, { kind: 'route', routeId: 4 }];
+  // route 2 (index 1) made by the dialog and unused; route 3 (index 3) unused but not made → stays; route 4 used
+  let state = { jellyfin: list() };
+  let x = load(state);
+  assert.equal(await x.MD.pruneTargets('jellyfin', [0, 4], ['jellyfin:route:2']), true);
+  assert.deepEqual(x.api, [['POST', 'admin/targets/compact', { target: 'jellyfin', map: { 0: 0, 2: 1, 3: 2, 4: 3 }, forget: ['jellyfin:route:2'] }]]);
+  assert.deepEqual(state.jellyfin.map((a) => a.kind + (a.routeId || '')), ['route1', 'host', 'route3', 'route4']);
+  // nothing more to do
+  x = load(state);
+  assert.equal(await x.MD.pruneTargets('jellyfin', [0, 3], ['jellyfin:route:2']), false);
+  assert.equal(x.api.length, 0);
+  // an address is never removed, even when "made" (the page cannot make one)
+  state = { jellyfin: [{ kind: 'host', host: '192.168.1.9', port: null, scheme: 'http' }, { kind: 'route', routeId: 5 }] };
+  x = load(state);
+  assert.equal(await x.MD.pruneTargets('jellyfin', [1], []), false);
+  // setting the list fails: the sources are renumbered back
+  state = { jellyfin: list() };
+  x = load(state, { setFails: true });
+  assert.equal(await x.MD.pruneTargets('jellyfin', [0, 4], ['jellyfin:route:2']), false);
+  assert.deepEqual(x.api.map((a) => a[2].map), [{ 0: 0, 2: 1, 3: 2, 4: 3 }, { 0: 0, 1: 2, 2: 3, 3: 4 }]);
+  assert.equal(state.jellyfin.length, 5);
+});
+
+test('1.4.0: the NAS dialog checks before saving (admin/probe kind share), keeps a failed result in the dialog', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'ui', 'sources.js'), 'utf8');
+  assert.match(src, /P\.api\('POST', 'admin\/probe', \{ kind: 'share'/);
+  assert.match(src, /return probe\(b\)/);
+  assert.equal((src.match(/if \(!b\) return false;/g) || []).length, 2, 'add and edit keep the dialog open');
+  assert.match(src, /T\('nas\.save_anyway'\)/);
+  assert.match(src, /P\.pruneTargets\(id, used\[id\], made\)/);
 });
 
 test('without GC.targets (older GateControl): no assignment from the page', async () => {

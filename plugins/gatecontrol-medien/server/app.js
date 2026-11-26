@@ -100,6 +100,8 @@ async function list(gc, req, cfg, now) {
   const out = [];
   for (const s of all) out.push(s.kind === 'jellyfin' ? await jellyfinEntry(gc, user, s, deviceId, cfg, deviceName, targets) : shareEntry(s, cfg, targets));
   const body = {
+    // this device's own ID (1.4.0): the ID of cast/targets `devices[].id` and of `to`/`from` in cast messages — null without a device
+    deviceId,
     media, maxOfflineDays: cfg.maxOfflineDays, offlineHintDays: cfg.offlineHintDays,
     network: { rule: 'home_direct_away_vpn', vpnRequiredAway: out.some((s) => s.away.mode === 'vpn'), home: { probes: homeProbes(all) } },
     cast: { enabled: cfg.cast && media },

@@ -153,19 +153,56 @@
       })[0];
       if (found) return found.index;
       var list = decl.multiple ? decl.assigned.map(strip).concat([want]) : [want];
-      return hostTargets.set(id, list).then(function () { return list.length - 1; });
+      return hostTargets.set(id, list).then(function () {
+        // 1.4.0: remember that the dialog made this one — only such assignments are tidied up in the middle of a list
+        return api('POST', 'admin/targets/made', { target: id, assignment: want }).catch(function () { return null; });
+      }).then(function () { return list.length - 1; });
     });
   }
-  /** Remove assignments at the end of target `id` that no source uses any more (routes and peers only — never shifts an index). */
-  function pruneTargets(id, used) {
+  /** The key of an assignment as admin/targets/made keeps it (server/assignments.js keyOf). */
+  function madeKey(id, a) {
+    if (a.kind === 'route') return id + ':route:' + a.routeId;
+    if (a.kind === 'peer') return id + ':peer:' + a.peerId + ':' + (a.port == null ? '-' : a.port) + ':' + (a.scheme === 'https' ? 'https' : 'http');
+    return null;
+  }
+  /**
+   * Remove the assignments of target `id` that no source uses any more (`used`: the indices the sources use) — never an
+   * address ('host', the administrator's own entry). At the end of the list every unused route or peer goes (as before
+   * 1.4.0); in the middle only those the dialog made itself (`made`: admin/targets made keys). Removing one in the middle
+   * moves the ones behind it: the sources are renumbered first (admin/targets/compact), then the list is set; if setting
+   * fails, the sources are renumbered back. → true when something was removed.
+   */
+  function pruneTargets(id, used, made) {
     if (!hostTargets) return Promise.resolve(false);
+    var mine = made || [];
+    var map = null;
+    var back = null;
     return hostTargets.get().then(function (td) {
       var decl = declaredOf(td, id);
       if (!decl) return false;
       var list = decl.assigned.slice();
-      var n = list.length;
-      while (list.length && used.indexOf(list[list.length - 1].index) < 0 && list[list.length - 1].kind !== 'host') list.pop();
-      return list.length === n ? false : hostTargets.set(id, list.map(strip)).then(function () { return true; });
+      var drop = {};
+      var tail = true;
+      for (var i = list.length - 1; i >= 0; i--) {
+        var a = list[i];
+        var unused = used.indexOf(a.index) < 0 && a.kind !== 'host';
+        if (!unused) { tail = false; continue; }
+        if (tail || mine.indexOf(madeKey(id, a)) >= 0) drop[a.index] = true;
+        else tail = false;
+      }
+      var keep = list.filter(function (a) { return !drop[a.index]; });
+      if (keep.length === list.length) return false;
+      map = {};
+      back = {};
+      var moved = false;
+      keep.forEach(function (a, n) { map[a.index] = n; back[n] = a.index; if (a.index !== n) moved = true; });
+      var forget = list.filter(function (a) { return drop[a.index]; }).map(function (a) { return madeKey(id, a); }).filter(Boolean);
+      var first = moved || forget.length ? api('POST', 'admin/targets/compact', { target: id, map: map, forget: forget }) : Promise.resolve(null);
+      return first.then(function () {
+        return hostTargets.set(id, keep.map(strip)).catch(function (e) {
+          return (moved ? api('POST', 'admin/targets/compact', { target: id, map: back }) : Promise.resolve(null)).then(function () { throw e; });
+        });
+      }).then(function () { return true; });
     }).catch(function () { return false; });
   }
   // ── "Wo läuft Jellyfin?" / "Wo liegt die NAS?" (1.2.0): one choice, the access target follows from it ──
@@ -289,6 +326,7 @@
       if (st.quickConnect != null) items.push([st.quickConnect ? 'good' : 'warn', st.quickConnect ? T('check.qc_on') : T('check.qc_off')]);
     }
     if (st.webdav != null) items.push([st.webdav === 'ok' ? 'good' : 'crit', T('check.webdav.' + st.webdav)]);
+    if (st.smb === 'devices') items.push(['', T('check.smb_devices')]);
     items.push(['', T('check.at', { when: when(st.at) })]);
     return el('ul', { class: 'md-checks' }, items.map(function (x) { return el('li', null, [el('span', { class: 'md-dot', 'data-tone': x[0] || null }), el('span', { text: x[1] })]); }));
   }
