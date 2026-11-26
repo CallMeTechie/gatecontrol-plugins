@@ -1,4 +1,4 @@
-<!-- version: 1.1.2 -->
+<!-- version: 1.1.3 -->
 # Proxmox VE
 
 ## What the plugin does
@@ -86,6 +86,10 @@ Only monitored guests do, and not when the guest was controlled through the plug
 
 **The values are old.**
 After errors the plugin polls less often (up to every 5 minutes) and shows the last good data with “last updated” and the error.
+
+## New in 1.1.3
+
+- **Clear message for a switched-off route or peer:** if the route or the peer behind the access target is switched off or deleted in GateControl, the connection now says exactly that – instead of “Plugins may not reach this access target”. Switch it on again (Routes or Peers) or assign another access target.
 
 ## New in 1.1.2
 

@@ -60,6 +60,8 @@ const ERRORS = {
   HOST_DISABLED: [409, 'error.host_disabled'],
   PVE_NO_TARGET: [400, 'error.PVE_NO_TARGET'],
   PVE_TARGET_DENIED: [400, 'error.PVE_TARGET_DENIED'],
+  PVE_ROUTE_OFF: [409, 'error.PVE_ROUTE_OFF'],
+  PVE_PEER_OFF: [409, 'error.PVE_PEER_OFF'],
   PVE_NO_SECRET: [400, 'error.PVE_NO_SECRET'],
   PVE_UNREACHABLE: [502, 'error.PVE_UNREACHABLE'],
   PVE_TIMEOUT: [504, 'error.PVE_TIMEOUT'],

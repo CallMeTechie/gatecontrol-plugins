@@ -1,4 +1,4 @@
-<!-- version: 1.1.2 -->
+<!-- version: 1.1.3 -->
 # Proxmox VE
 
 ## Was das Plugin kann
@@ -86,6 +86,10 @@ Nur überwachte Gäste melden das, und nicht, wenn der Gast in den letzten 30 Mi
 
 **Die Werte sind alt.**
 Bei Fehlern fragt das Plugin seltener (bis alle 5 Minuten) und zeigt die letzten guten Daten mit „zuletzt aktualisiert“ und dem Fehler.
+
+## Neu in 1.1.3
+
+- **Klare Meldung bei ausgeschalteter Route oder ausgeschaltetem Peer:** Ist die Route oder der Peer hinter dem Zugriffsziel in GateControl ausgeschaltet oder gelöscht, sagt die Verbindung das jetzt genau so – statt „Das Zugriffsziel darf von Plugins nicht erreicht werden“. Wieder einschalten (Routen bzw. Peers) oder ein anderes Zugriffsziel zuweisen.
 
 ## Neu in 1.1.2
 
