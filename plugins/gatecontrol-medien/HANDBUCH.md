@@ -1,4 +1,4 @@
-<!-- version: 1.4.0 -->
+<!-- version: 1.4.1 -->
 # Medien – Handbuch
 
 ## Was das Plugin kann {#was-das-plugin-kann}
@@ -73,7 +73,7 @@ Für ein Familien-TV legst du in GateControl eine Person „Wohnzimmer“ an und
 - **Reiter Geräte**: alle Apps von Personen mit Medien-Recht, ob sie bei Jellyfin angemeldet sind, welche Freigabe-Passwörter sie bekommen haben und was sie über ihren Weg melden. **Abmelden** löscht das Gerät in Jellyfin und schickt ihm eine stille Mitteilung (Zugänge und Downloads löschen). Solange die Person das Recht hat, meldet es sich danach selbst neu an.
 - **Passwort ersetzen**: Alle berechtigten Geräte bekommen das neue Passwort beim nächsten Kontakt.
 - **Übersicht** (Seitenleiste Apps › Medien): Lizenz, Zahlen, Zustand der Quellen, Protokoll.
-- **„Auf TV/PC abspielen“** (Einstellung unter Geräte): Das Handy bietet die eigenen GateControl-TV- und Windows-Geräte an. Der Fernseher holt das Video selbst von der NAS.
+- **„Auf TV/PC abspielen“** (Einstellung unter Geräte): Das Handy bietet die eigenen GateControl-TV-Geräte und PCs mit GateControl Pro an. Der Fernseher holt das Video selbst von der NAS.
 
 ## Berechtigungen {#berechtigungen}
 
@@ -94,6 +94,11 @@ Der Jellyfin-Schlüssel verlässt den Server nie. Das Protokoll nennt Personen, 
 - **„durch den Tunnel nicht erreichbar“** im Reiter Geräte: Stimmt die HTTPS-Adresse für unterwegs der Quelle (die Domain der Route)? Ist die Route an, das Gateway online, und lässt die DSM-Firewall das Gateway zu (8096, 5006)?
 - **Ein Handy ist verloren**: in GateControl entfernen (Jellyfin ist sofort bzw. nach höchstens 5 Minuten zu). Das NAS-Passwort lässt sich von einem Gerät, das nicht mehr online kommt, nicht zurückholen: Passwort in DSM ändern und unter Quellen ersetzen.
 - **Lizenz**: Ohne eigene Lizenz für Medien blenden die Apps Medien aus. Eine GateControl-Lifetime-Lizenz zählt hier nicht.
+
+## Neu in 1.4.1 {#neu-1-4-1}
+
+- **„Auf TV/PC abspielen“ – Lautstärke:** Am PC lassen sich Lautstärke und Stummschaltung vom Handy aus steuern.
+- **Nur PCs mit GateControl Pro als Ziel:** Der Community-Client spielt keine Medien ab und erscheint nicht mehr in der Auswahl. Bisher kam dort nach einer Weile nur „keine Antwort“.
 
 ## Neu in 1.4.0 {#neu-1-4-0}
 

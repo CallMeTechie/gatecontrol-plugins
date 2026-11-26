@@ -23,13 +23,25 @@ const { fail, str, deviceIdOf, sourceIdOf } = require('./util');
 
 const SESSION_RE = /^[A-Za-z0-9_-]{8,40}$/;
 const TYPES = ['cast.play', 'cast.cmd', 'cast.state'];
-const CMDS = ['play', 'pause', 'seek', 'seekBy', 'audio', 'subtitle', 'stop', 'status'];
+const CMDS = ['play', 'pause', 'seek', 'seekBy', 'audio', 'subtitle', 'volume', 'stop', 'status'];
 const MAX_BYTES = 3000;
 const PER_MINUTE = 60;
 const PER_HOUR = 600;
 const SECRET_KEY = /token|password|passwort|secret|apikey|api_key|accesstoken|authorization/i;
 
-const isReceiver = (d) => d.clientType === 'android-tv' || d.platform === 'windows';
+// Receivers: GateControl TV and GateControl Pro for Windows (1.4.1: only Pro plays media; the Community client has no
+// media player, a cast to it would only end in "no answer"). gc.devices.list reports clientType 'pro' | 'community' |
+// 'android-tv' | null — a Windows device whose edition the host does not know (yet) is no target.
+const isReceiver = (d) => d.clientType === 'android-tv' || (d.platform === 'windows' && d.clientType === 'pro');
+
+/** cast.cmd "volume" (1.4.1): volume an integer 0–100 and/or muted a boolean, at least one of them. */
+function checkVolume(body) {
+  const hasVol = body.volume !== undefined;
+  const hasMute = body.muted !== undefined;
+  if (!hasVol && !hasMute) throw fail('invalid', { field: 'volume' });
+  if (hasVol && !(Number.isInteger(body.volume) && body.volume >= 0 && body.volume <= 100)) throw fail('invalid', { field: 'volume' });
+  if (hasMute && typeof body.muted !== 'boolean') throw fail('invalid', { field: 'muted' });
+}
 
 function hasSecretKey(v, depth = 0) {
   if (depth > 6 || v == null || typeof v !== 'object') return false;
@@ -48,7 +60,7 @@ async function needCast(gc, user, cfg) {
   if (!(await rights.mediaOf(gc, user)).media) throw fail('no_access');
 }
 
-/** GET v1/cast/targets — the person's TVs (GateControl TV) and PCs (GateControl for Windows), online first. */
+/** GET v1/cast/targets — the person's TVs (GateControl TV) and PCs (GateControl Pro for Windows), online first. */
 async function targets(gc, req, cfg) {
   await needCast(gc, req.user, cfg);
   const me = req.user.device && deviceIdOf(req.user.device.id);
@@ -65,6 +77,7 @@ async function checkBody(gc, user, session, body, cfg) {
   if (Buffer.byteLength(JSON.stringify(body), 'utf8') > MAX_BYTES) throw fail('too_large');
   if (hasSecretKey(body)) throw fail('invalid', { field: 'body', reason: 'secret' });
   if (body.type === 'cast.cmd' && !CMDS.includes(body.cmd)) throw fail('invalid', { field: 'cmd' });
+  if (body.type === 'cast.cmd' && body.cmd === 'volume') checkVolume(body);
   if (body.type === 'cast.play') {
     const sid = sourceIdOf(body.source && body.source.id);
     const src = sid ? await sources.get(gc, sid) : null;

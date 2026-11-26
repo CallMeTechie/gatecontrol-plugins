@@ -1,4 +1,4 @@
-<!-- version: 1.4.0 -->
+<!-- version: 1.4.1 -->
 # Media – Manual
 
 ## What the plugin does {#was-das-plugin-kann}
@@ -73,7 +73,7 @@ For a family TV create a person “Living room” in GateControl and link it to 
 - **Tab Devices**: every app of people with the right Media, whether it is signed in to Jellyfin, which share passwords it got and what it reports about its way. **Sign out** deletes the device in Jellyfin and sends it a silent message (delete access and downloads). As long as the person has the right it signs in again by itself.
 - **Replace password**: every allowed device gets the new password with its next contact.
 - **Overview** (sidebar Apps › Media): licence, numbers, state of the sources, log.
-- **“Play on TV/PC”** (setting under Devices): the phone offers the own GateControl TV and Windows devices. The TV fetches the video from the NAS itself.
+- **“Play on TV/PC”** (setting under Devices): the phone offers the own GateControl TV devices and PCs with GateControl Pro. The TV fetches the video from the NAS itself.
 
 ## Permissions {#berechtigungen}
 
@@ -94,6 +94,11 @@ The Jellyfin key never leaves the server. The log names people, devices and sour
 - **“unreachable through the tunnel”** on the tab Devices: is the source's HTTPS address for away (the route's domain) right? Is the route on, the gateway online, and does the DSM firewall allow the gateway (8096, 5006)?
 - **A phone is lost**: remove it in GateControl (Jellyfin closes at once or within 5 minutes). The NAS password cannot be taken back from a device that never comes online again: change it in DSM and replace it under Sources.
 - **Licence**: without a licence of its own for Media the apps hide Media. A GateControl Lifetime licence does not count here.
+
+## New in 1.4.1 {#neu-1-4-1}
+
+- **“Play on TV/PC” – volume:** on a PC, volume and mute can be controlled from the phone.
+- **Only PCs with GateControl Pro as target:** the Community client plays no media and is no longer offered. Until now it only ended in “no answer” after a while.
 
 ## New in 1.4.0 {#neu-1-4-0}
 

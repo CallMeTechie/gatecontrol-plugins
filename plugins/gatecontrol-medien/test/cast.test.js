@@ -105,3 +105,44 @@ test('the rate limit per sending device (60 a minute)', async () => {
     assert.equal(last.status, 429);
   } finally { await t.host.close(); }
 });
+
+test('1.4.1: only GateControl Pro PCs are targets — not the Community client, not a Windows device of unknown edition', async () => {
+  const t = await setup();
+  try {
+    await withJellyfin(t);
+    t.devices.push({ id: '13', userId: 1, name: 'Arbeits-PC', platform: 'windows', clientType: 'pro', online: true });
+    t.devices.push({ id: '14', userId: 1, name: 'Laptop', platform: 'windows', clientType: 'community', online: true });
+    t.devices.push({ id: '15', userId: 1, name: 'Alter PC', platform: 'windows', online: false });
+    const r = await t.appReq(MILA, '11', 'GET', 'cast/targets');
+    assert.deepEqual(r.devices.map((d) => [d.id, d.kind, d.clientType]), [['13', 'pc', 'pro'], ['12', 'tv', 'android-tv']]);
+    // Jonas' Pro PC is his target
+    const j = await t.appReq(JONAS, '22', 'GET', 'cast/targets');
+    assert.deepEqual(j.devices.map((d) => [d.id, d.kind]), [['21', 'pc']]);
+  } finally { await t.host.close(); }
+});
+
+test('1.4.1: cast.cmd volume — volume 0–100 and/or muted, at least one; the state may report them', async () => {
+  const t = await setup();
+  try {
+    await withJellyfin(t);
+    const cmd = (seq, x) => t.appReq(MILA, '11', 'POST', `cast/${SESSION}/message`, { to: '12', body: { v: 1, session: SESSION, seq, at: 1764000005000, type: 'cast.cmd', cmd: 'volume', ...x } });
+    let r = await cmd(1, { volume: 40 });
+    assert.deepEqual(r.via, ['event']);
+    assert.equal(t.host.events.at(-1).data.body.volume, 40);
+    r = await cmd(2, { muted: true });
+    assert.equal(r.ok, true);
+    r = await cmd(3, { volume: 0, muted: false });
+    assert.equal(r.ok, true);
+    r = await cmd(4, { volume: 100 });
+    assert.equal(r.ok, true);
+    for (const [x, field] of [[{}, 'volume'], [{ volume: 101 }, 'volume'], [{ volume: -1 }, 'volume'], [{ volume: 50.5 }, 'volume'],
+      [{ volume: '50' }, 'volume'], [{ volume: null }, 'volume'], [{ muted: 'true' }, 'muted'], [{ volume: 30, muted: 1 }, 'muted']]) {
+      r = await cmd(5, x);
+      assert.equal(r.code, 'invalid', JSON.stringify(x));
+      assert.equal(r.field, field, JSON.stringify(x));
+    }
+    r = await t.appReq(MILA, '12', 'POST', `cast/${SESSION}/message`, { to: '11', body: { v: 1, session: SESSION, seq: 2, at: 1764000006000, type: 'cast.state', state: 'playing', positionMs: 1, volume: 40, muted: false } });
+    assert.equal(r.ok, true);
+    assert.deepEqual([t.host.events.at(-1).data.body.volume, t.host.events.at(-1).data.body.muted], [40, false]);
+  } finally { await t.host.close(); }
+});
