@@ -127,9 +127,9 @@ test('a version 1 chain never takes a zigbee2mqtt device of the gateway', () => 
   assert.deepEqual([r.status, r.json.detail], [400, 'foreign_resource']);
 }));
 
-test('the manifest: zigbee2mqtt/# is optional, edge.capabilities stay those of 1.14.0 (no update_pending), GateControl ≥ 1.317.1 (1.16.0: the heating card)', () => {
+test('the manifest: zigbee2mqtt/# is optional, edge.capabilities stay those of 1.14.0 (no update_pending), GateControl ≥ 1.326.0 (1.21.0: the optional rights for Tuya)', () => {
   const manifest = require('../plugin.json');
   assert.deepEqual(manifest.edge.capabilities, { mdns: { services: ['_shelly._tcp', '_http._tcp'] }, http: { lan: true }, mqtt: { topics: ['shellies/#', 'tasmota/#'] } });
-  assert.deepEqual(manifest.edge.optionalCapabilities, { mqtt: { topics: ['zigbee2mqtt/#', 'gatecontrol/contacts/#'] } });
-  assert.equal(manifest.gatecontrol, '>=1.317.1');
+  assert.deepEqual(manifest.edge.optionalCapabilities.mqtt, { topics: ['zigbee2mqtt/#', 'gatecontrol/contacts/#'] });
+  assert.equal(manifest.gatecontrol, '>=1.326.0');
 });

@@ -15,7 +15,8 @@ const read = (f) => fs.readFileSync(path.join(UI, f), 'utf8');
 const FILES = {
   css: read('style.css'),
   common: read('common.js'),
-  main: { html: read('admin.html'), js: read('admin.js') },
+  // since 1.21.0 the assistant for Tuya devices (ui/tuya.js) belongs to the main page
+  main: { html: read('admin.html'), js: read('tuya.js') + '\n' + read('admin.js') },
   rules: { html: read('rules.html'), js: read('rules.js') },
   // since 1.14.0: the page "Heizung" and the heating in the portal share ui/heatui.js
   heating: { html: read('heating.html'), js: read('heatui.js') + '\n' + read('heating.js') },

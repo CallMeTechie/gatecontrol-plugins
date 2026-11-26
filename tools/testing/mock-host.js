@@ -390,8 +390,10 @@
 // → true | false. The gateway must be switched on for the plugin (not_enabled), being online is not needed.
 // host.mqttAccounts: gatewayId → Map username → { username, label, acl, password } (the password only for tests).
 // GateControl 1.317.0 (opt-in: opts.gatecontrol: '1.317.0' or opts.edge.optional) — optional capabilities
-// (plugin.json edge.optionalCapabilities, only mqtt.topics; src/services/edge/index.js hostCapabilities /
-// hostRequestCapability): gc.edge.capabilities(gatewayId) → { gatewayId, optional, approved, requested } and
+// (plugin.json edge.optionalCapabilities: mqtt.topics, since 1.326.0 also tcp.lan, udp.port:<n>, udp.broadcast;
+// src/services/edge/index.js hostCapabilities / hostRequestCapability): gc.edge.capabilities(gatewayId) → { gatewayId,
+// optional, approved, requested, gatewaySupported, unsupported } (opts.edge.tooOld { <gatewayId>: true }: a gateway
+// before 1.49.0 — its LAN keys unsupported) and
 // gc.edge.requestCapability(gatewayId, key) → { status: 'approved' | 'requested', notified } (one note per gateway and key
 // per 24 h, else notified false; a key the plugin does not declare as optional → ERR_INVALID). The gateway must be set up
 // for the plugin (listed, any state; else not_enabled). opts.edge.optional { <gatewayId>: [approved keys] } is read on
@@ -3020,10 +3022,18 @@ async function createHost(pluginDir, opts = {}) {
   };
   // optional capabilities (GateControl ≥ 1.317.0, src/services/edge/index.js hostCapabilities / hostRequestCapability)
   const edgeOptionalOn = edgeOn && (atLeast(317) || !!(edgeOpt && edgeOpt.optional));
+  // since GateControl 1.326.0 also tcp { lan } (tcp.lan) and udp { ports, broadcast } (udp.port:<n>, udp.broadcast)
   const edgeOptionalList = () => {
-    const o = edgeOn && manifest.edge.optionalCapabilities && manifest.edge.optionalCapabilities.mqtt;
-    return o && Array.isArray(o.topics) ? o.topics.map((t) => 'mqtt.topic:' + t) : [];
+    const oc = edgeOn && manifest.edge.optionalCapabilities ? manifest.edge.optionalCapabilities : {};
+    const out = oc.mqtt && Array.isArray(oc.mqtt.topics) ? oc.mqtt.topics.map((t) => 'mqtt.topic:' + t) : [];
+    if (oc.tcp && oc.tcp.lan === true) out.push('tcp.lan');
+    if (oc.udp && Array.isArray(oc.udp.ports)) out.push(...oc.udp.ports.map((p) => 'udp.port:' + p));
+    if (oc.udp && oc.udp.broadcast === true) out.push('udp.broadcast');
+    return out;
   };
+  // opts.edge.tooOld { <gatewayId>: true } — a gateway older than 1.49.0: the LAN keys are `unsupported`, gatewaySupported false
+  const lanKey = (k) => k === 'tcp.lan' || k === 'udp.broadcast' || k.startsWith('udp.port:');
+  const edgeTooOld = (id) => !!(edgeOpt && edgeOpt.tooOld && edgeOpt.tooOld[id]);
   const edgeApproved = (id) => {
     const v = edgeOpt && edgeOpt.optional && typeof edgeOpt.optional === 'object' ? edgeOpt.optional[id] : null;
     return Array.isArray(v) ? edgeOptionalList().filter((k) => v.includes(k)) : [];
@@ -3040,17 +3050,19 @@ async function createHost(pluginDir, opts = {}) {
     const id = edgeAssigned(gatewayId);
     const optional = edgeOptionalList();
     const approved = edgeApproved(id);
-    return { gatewayId: id, optional, approved, requested: optional.filter((k) => !approved.includes(k) && edgeRequestedAt.has(`${id} ${k}`)) };
+    const unsupported = edgeTooOld(id) ? optional.filter(lanKey) : [];
+    return { gatewayId: id, optional, approved, requested: optional.filter((k) => !approved.includes(k) && edgeRequestedAt.has(`${id} ${k}`)), gatewaySupported: !unsupported.length, unsupported };
   };
   api['edge.requestCapability'] = async ({ gatewayId, key }) => {
     if (typeof key !== 'string' || !edgeOptionalList().includes(key)) throw hostError('ERR_INVALID', 'not an optional capability of this plugin (plugin.json edge.optionalCapabilities)');
     const id = edgeAssigned(gatewayId);
-    if (edgeApproved(id).includes(key)) return { status: 'approved', notified: false };
+    const gatewaySupported = !(edgeTooOld(id) && lanKey(key));
+    if (edgeApproved(id).includes(key)) return { status: 'approved', notified: false, gatewaySupported };
     const last = edgeRequestedAt.get(`${id} ${key}`);
     const notified = !(last != null && Date.now() - last < 24 * 3600 * 1000);
     if (notified) edgeRequestedAt.set(`${id} ${key}`, Date.now());
     edgeRequests.push({ gatewayId: id, key, notified });
-    return { status: 'requested', notified };
+    return { status: 'requested', notified, gatewaySupported };
   };
   // gc.mqtt.accounts (GateControl ≥ 1.228.0): device accounts of a gateway's broker, below the plugin's mqtt topics
   const mqttTopics = edgeOn && manifest.edge.capabilities && manifest.edge.capabilities.mqtt && Array.isArray(manifest.edge.capabilities.mqtt.topics)

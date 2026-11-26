@@ -129,6 +129,14 @@ const ERRORS = {
   SMARTHOME_HEAT_PLAN_NOT_FOUND: [404, 'error.heat_plan_not_found'],
   SMARTHOME_HEAT_LIMIT: [403, 'error.heat_limit'],
   SMARTHOME_HEAT_OFF: [409, 'error.heat_off'],
+  SMARTHOME_TUYA_CLOUD: [502, 'error.tuya_cloud'],
+  SMARTHOME_TUYA_CLOUD_AUTH: [400, 'error.tuya_cloud_auth'],
+  SMARTHOME_TUYA_CLOUD_DENIED: [409, 'error.tuya_cloud_denied'],
+  SMARTHOME_TUYA_NO_CLOUD: [409, 'error.tuya_no_cloud'],
+  SMARTHOME_TUYA_SESSION: [404, 'error.tuya_session'],
+  SMARTHOME_TUYA_FILE: [400, 'error.tuya_file'],
+  SMARTHOME_TUYA_KEY: [409, 'error.tuya_key'],
+  SMARTHOME_TUYA_OFFLINE: [502, 'error.tuya_offline'],
   FORBIDDEN: [403, 'error.forbidden'],
   NOT_FOUND: [404, 'error.not_found'],
   INVALID: [400, 'error.invalid'],
@@ -142,6 +150,8 @@ function errorResponse(e, lang) {
   const json = { ok: false, code: (e && e.code) || null, error: t(lang, key) };
   if (e && (e.code === 'SMARTHOME_RULE_INVALID' || e.code === 'SMARTHOME_HEAT_INVALID') && typeof e.detail === 'string') json.detail = e.detail;
   if (e && e.code === 'SMARTHOME_RULE_LOOP' && Array.isArray(e.chains)) json.chains = e.chains.slice(0, 20);
+  // the Tuya cloud's own code (e.g. "tuya 1106") — helps with the set-up of the cloud project
+  if (e && /^SMARTHOME_TUYA_CLOUD/.test(e.code) && typeof e.message === 'string' && /^tuya [0-9a-z]{1,12}$/.test(e.message)) json.detail = e.message;
   return { status, json };
 }
 
@@ -164,8 +174,8 @@ async function usersById(gc) {
 }
 
 const STATE_KEYS = new Set(['on', 'bri', 'reachable', 'type', 'value', 'pos', 'moving', 'power', 'energy_today', 'humidity', 'battery',
-  'lowbattery', 'sleeping', 'lastupdated', 'setpoint', 'mode', 'heating']);
-const EDGE_CAPS = ['bri', 'power', 'position', 'cover', 'reading'];
+  'lowbattery', 'sleeping', 'lastupdated', 'setpoint', 'mode', 'heating', 'ct', 'hue', 'sat', 'colormode']);
+const EDGE_CAPS = ['bri', 'power', 'position', 'cover', 'reading', 'ct', 'color', 'scenes'];
 const Z2M_CAPS = ['bri', 'ct', 'color', 'power', 'position', 'cover', 'reading', 'setpoint', 'modes'];
 /** Portal: only the controllable surface — never gateway, target or deCONZ internals. */
 function portalResource(r) {
@@ -213,6 +223,11 @@ function portalPatch(raw, caps, kind) {
     if (!(k in raw) || !ok) continue;
     if (typeof raw[k] !== 'number' || !Number.isFinite(raw[k]) || raw[k] < lo || raw[k] > hi) return null;
     patch[k] = raw[k];
+  }
+  // a scene of the light itself (Tuya, since 1.21.0)
+  if ('scene' in raw && caps && Array.isArray(caps.scenes)) {
+    if (!caps.scenes.includes(raw.scene)) return null;
+    patch.scene = raw.scene;
   }
   return patch;
 }
@@ -400,6 +415,23 @@ function clip(v, max) {
 }
 
 const BRI = { min: 1, max: 100, step: 1, fallback: 100 };
+// the colour temperature of the widgets in kelvin (the lights take mired: 1 000 000 / K), since 1.21.0
+const CT_K = { min: 2200, max: 6500, step: 100, fallback: 4000 };
+// the fixed colours of the widgets (hue 0–65535, sat 0–254 as deCONZ, zigbee2mqtt and Tuya take them)
+const QA_COLOURS = [
+  { id: 'white', hue: 0, sat: 0 }, { id: 'red', hue: 0, sat: 254 }, { id: 'orange', hue: 5461, sat: 254 }, { id: 'yellow', hue: 10923, sat: 254 },
+  { id: 'green', hue: 21845, sat: 254 }, { id: 'cyan', hue: 32768, sat: 254 }, { id: 'blue', hue: 43690, sat: 254 }, { id: 'purple', hue: 50972, sat: 254 },
+];
+
+/** The fixed colour a light shows now (null: another colour, white light, or not known). */
+function colourOf(st) {
+  if (st.colormode !== 'hs' || !Number.isFinite(Number(st.hue)) || !Number.isFinite(Number(st.sat))) return null;
+  const hue = Number(st.hue);
+  const sat = Number(st.sat);
+  if (sat < 40) return 'white';
+  const near = QA_COLOURS.filter((c) => c.sat > 0).map((c) => ({ id: c.id, d: Math.min(Math.abs(c.hue - hue), 65536 - Math.abs(c.hue - hue)) })).sort((a, b) => a.d - b.d)[0];
+  return near && near.d <= 1500 && sat >= 180 ? near.id : null;
+}
 
 /**
  * The battery of a resource as the badge of its widget (since 1.13.0; GateControl ≥ 1.175.0 shows it right of the
@@ -440,14 +472,33 @@ const metered = (r) => (r.kind === 'plug' || r.kind === 'relay') && Boolean(r.ca
  */
 function widgetOf(r, lang, ctx) {
   const st = r.state || {};
+  const caps = r.capabilities || {};
   const bri = st.bri == null || !Number.isFinite(Number(st.bri)) ? null : Math.min(BRI.max, Math.max(BRI.min, Math.round(Number(st.bri))));
   let status = t(lang, 'kind.' + r.kind);
-  if (st.reachable === false) status += ' · ' + t(lang, 'qa.unreachable');
+  if (st.tuya_key) status += ' · ' + t(lang, 'qa.tuya_key');
+  else if (st.reachable === false) status += ' · ' + t(lang, 'qa.unreachable');
   const w = { label: clip(t(lang, 'portal.brightness'), 24), value: t(lang, 'portal.off'), unit: null, status: clip(status, 60), state: st.on ? 'on' : 'off', controls: [] };
   if (st.on) {
     if (bri != null) { w.value = bri; w.unit = '%'; } else w.value = t(lang, 'portal.on');
   }
   w.controls.push({ id: 'bri', kind: 'slider', label: clip(t(lang, 'portal.brightness'), 20), value: bri == null ? BRI.fallback : bri, min: BRI.min, max: BRI.max, step: BRI.step, unit: '%' });
+  // since 1.21.0, for every colour light (Tuya, deCONZ, zigbee2mqtt): the colour temperature as a slider in kelvin, up to
+  // eight fixed colours and — Tuya — the light's own scenes as choices (at most four controls in all)
+  if (r.kind === 'light') {
+    if (caps.color === 'ct' || caps.ct === true) {
+      const k = Number.isFinite(Number(st.ct)) && Number(st.ct) > 0 ? Math.round(1e6 / Number(st.ct) / 100) * 100 : CT_K.fallback;
+      w.controls.push({ id: 'ct', kind: 'slider', label: clip(t(lang, 'warmth'), 20), value: Math.min(CT_K.max, Math.max(CT_K.min, k)), min: CT_K.min, max: CT_K.max, step: CT_K.step, unit: 'K' });
+    }
+    if (caps.color === 'hs' || caps.color === 'xy') {
+      w.controls.push({ id: 'color', kind: 'choice', label: clip(t(lang, 'color'), 20), value: colourOf(st), options: QA_COLOURS.map((c) => ({ id: c.id, label: clip(t(lang, 'qa.colour.' + c.id), 20) })) });
+    }
+    if (Array.isArray(caps.scenes) && caps.scenes.length >= 2) {
+      w.controls.push({ id: 'scene', kind: 'choice', label: clip(t(lang, 'qa.scene'), 20), value: st.colormode === 'scene' && caps.scenes.includes(st.scene) ? st.scene : null,
+        options: caps.scenes.slice(0, 8).map((id) => ({ id, label: clip(t(lang, 'qa.scene.' + id), 20) })) });
+    }
+  }
+  // a Shelly / Tasmota / Tuya light that does not answer (or whose key no longer fits): greyed out, the reason in the status
+  if (r.deconz_type === 'edge' && (st.reachable === false || st.tuya_key)) for (const c of w.controls) c.disabled = true;
   if (r.capabilities && r.capabilities.power) {
     const readings = powerReadings(r, lang, true);
     if (readings.length) w.readings = readings;
@@ -650,6 +701,24 @@ async function runQuickActionFor(gc, user, lang, id, control, value, target) {
         if (control !== 'pos' || !(r.capabilities && r.capabilities.position) || !(v >= 0 && v <= 100)) return { ok: false, message: t(lang, 'qa.unknown') };
         await service.setResourceState(gc, rid, { pos: v });
         return { ok: true, message: null, widget: await widgetAfter(gc, r, lang, ctx) };
+      }
+      // since 1.21.0: the colour temperature (kelvin), a fixed colour, a scene of the light
+      const caps = r.capabilities || {};
+      if (control === 'ct' && r.kind === 'light' && (caps.color === 'ct' || caps.ct === true)) {
+        if (!(v >= CT_K.min && v <= CT_K.max)) return { ok: false, message: t(lang, 'qa.unknown') };
+        await service.setResourceState(gc, rid, { ct: Math.max(153, Math.min(500, Math.round(1e6 / v))), on: true });
+        return { ok: true, message: null, state: 'on', widget: await widgetAfter(gc, r, lang, ctx) };
+      }
+      if (control === 'color' && r.kind === 'light' && (caps.color === 'hs' || caps.color === 'xy')) {
+        const c = QA_COLOURS.find((x) => x.id === value);
+        if (!c) return { ok: false, message: t(lang, 'qa.unknown') };
+        await service.setResourceState(gc, rid, { hue: c.hue, sat: c.sat, on: true });
+        return { ok: true, message: null, state: 'on', widget: await widgetAfter(gc, r, lang, ctx) };
+      }
+      if (control === 'scene' && r.kind === 'light' && Array.isArray(caps.scenes)) {
+        if (!caps.scenes.includes(value)) return { ok: false, message: t(lang, 'qa.unknown') };
+        await service.setResourceState(gc, rid, { scene: value });
+        return { ok: true, message: null, state: 'on', widget: await widgetAfter(gc, r, lang, ctx) };
       }
       if (control !== 'bri' || !dimmable(r) || !(v >= BRI.min && v <= BRI.max)) return { ok: false, message: t(lang, 'qa.unknown') };
       await service.setResourceState(gc, rid, { bri: v, on: true });

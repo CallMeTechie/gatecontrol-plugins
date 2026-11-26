@@ -305,6 +305,7 @@
 
   function prettyModel(d) {
     var m = d.model || '';
+    if (d.family === 'tuya') return m || 'Tuya';
     if (d.family === 'z2m') return [d.vendor, m].filter(Boolean).join(' ') || 'Zigbee';
     if (d.family === 'tasmota') return T('family.short.tasmota');
     if (d.family === 'shelly1') return GEN1[m] || (m ? 'Shelly ' + m : T('family.short.shelly1'));
@@ -343,12 +344,18 @@
     var icon = r ? (ICONS[r.kind === 'sensor' ? 'sensor.temperature' : r.kind] || ICONS.light) : ICONS['sensor.unknown'];
     var subParts = [prettyModel(d)];
     if (r) subParts.push(kindText(r));
+    // a Tuya device (since 1.21.0): its protocol and that it is spoken to locally
+    var tl = d.family === 'tuya' && d.tuya ? d.tuya : null;
+    if (tl) subParts.push(T('tuya.card.local', { ver: tl.ver || '3.x' }));
     // the battery (Shelly H&T …; since 1.13.0 a small symbol with its percentage, the tone from the server)
     var batt = r && st.battery != null ? S.batteryChip(st, d.battery_level || r.battery_level) : null;
     var head = el('div', null, [el('div', { class: 'sh-name' }, [svg(icon), el('span', { text: name || '' }), batt]), el('div', { class: 'sh-sub', text: subParts.join(' · ') })]);
     var right = null;
     var switchable = r && (r.kind === 'light' || r.kind === 'plug' || r.kind === 'relay');
-    if (d.waiting) right = pill(T('card.waiting'), 'info');
+    if (tl && tl.kind === 'other') right = pill(T('tuya.card.hidden'), 'info');
+    else if (tl && tl.link === 'key') right = pill(T('tuya.card.key'), 'warn');
+    else if (tl && tl.link === 'denied') right = pill(T('tuya.card.denied'), 'warn');
+    else if (d.waiting) right = pill(T('card.waiting'), 'info');
     else if (off) right = pill(T('card.unreachable'), 'warn');
     else if (sleeper) right = pill(T('card.sleeping'), d.overdue ? 'warn' : 'info');
     else if (switchable) {
@@ -363,7 +370,8 @@
     }
     var card = el('div', { class: 'sh-card sh-ecard' + (off ? ' is-off' : ''), 'data-id': r ? String(r.id) : 'd' + d.id }, [el('div', { class: 'sh-row' }, [head, right])]);
     var body = el('div', { class: 'sh-ebody' });
-    if (d.waiting) body.appendChild(el('span', { class: 'sh-sub', text: T('card.waiting_text') }));
+    if (tl && (tl.kind === 'other' || tl.link === 'key' || tl.link === 'denied' || (tl.link === 'searching' && !reachable))) tuyaBody(d, tl, body);
+    else if (d.waiting) body.appendChild(el('span', { class: 'sh-sub', text: T('card.waiting_text') }));
     else if (off) {
       body.appendChild(el('span', { class: 'sh-sub', text: d.online === false && d.channels.length ? T('card.offline') : T('card.silent', { dur: d.last_seen_at ? S.since(d.last_seen_at, true) : '–' }) }));
     } else if (r.kind === 'cover') {
@@ -415,6 +423,28 @@
     return card;
   }
 
+  /** What a Tuya card says when it cannot be used (since 1.21.0): not supported, the key, the rights, not found. */
+  function tuyaBody(d, tl, body) {
+    var reload = function () { return loadView(); };
+    if (tl.kind === 'other') {
+      body.appendChild(el('span', { class: 'sh-sub', text: T('tuya.card.hidden_text') }));
+      if (tl.dps && tl.dps.length) body.appendChild(el('span', { class: 'sh-sub sh-t-ip', text: tl.dps.slice(0, 8).map(function (x) { return x.dp + (x.code ? ' ' + x.code : '') + ' = ' + JSON.stringify(x.value); }).join(' · ') }));
+      if (tl.bools && tl.bools.length) body.appendChild(el('div', { class: 'page-actions' }, [el('button', { type: 'button', class: 'btn btn-sm', text: T('tuya.device.as_switch'), on: { click: function () { openDevice(d.id); } } })]));
+      return;
+    }
+    if (tl.link === 'key') {
+      body.appendChild(el('span', { class: 'sh-sub', text: T('tuya.card.key_text', { ip: d.ip || '–' }) }));
+      body.appendChild(el('div', { class: 'page-actions' }, [el('button', { type: 'button', class: 'btn btn-sm', text: T('tuya.rekey.open'), on: { click: function () { window.SH_TUYA.rekey(d, reload); } } })]));
+      return;
+    }
+    if (tl.link === 'denied') {
+      body.appendChild(el('span', { class: 'sh-sub', text: T('tuya.card.denied_text') }));
+      body.appendChild(el('div', { class: 'page-actions' }, [el('a', { class: 'btn btn-sm', href: '/gateways#gw/' + d.gateway_id + '/edge', target: '_top', text: T('tuya.caps.open') })]));
+      return;
+    }
+    body.appendChild(el('span', { class: 'sh-sub', text: T('tuya.card.searching') }));
+  }
+
   function renderEdge() {
     var items = [];
     edgeDevices.forEach(function (d) {
@@ -429,7 +459,7 @@
     items.forEach(function (it) { var p = it.resource && it.resource.state && it.resource.state.power; if (it.device.reachable && p != null && isFinite(p)) { power += Number(p); metered = true; } });
     var unreachable = edgeDevices.filter(function (d) { return !d.reachable && !d.waiting && !d.sleeper; }).length;
     kpis([[T('kpi.devices'), edgeDevices.length], [T('kpi.on'), on], [T('kpi.power'), metered ? fmt(power, 0) + ' W' : '–'], [T('kpi.unreachable'), unreachable, unreachable > 0]]);
-    var kindOf = function (it) { return it.resource ? it.resource.kind : 'waiting'; };
+    var kindOf = function (it) { return it.resource ? it.resource.kind : (it.device.tuya && it.device.tuya.kind === 'other' ? 'unsupported' : 'waiting'); };
     var blocks = grouped(items, function (it) { return it.device.area || null; }, edgeCard, function (rest) {
       var of = function (k) { return rest.filter(function (it) { return kindOf(it) === k; }); };
       return [
@@ -440,6 +470,7 @@
         section(T('section.thermostats'), of('thermostat'), edgeCard),
         section(T('section.sensors'), of('sensor'), edgeCard),
         section(T('section.waiting'), of('waiting'), edgeCard),
+        section(T('section.unsupported'), of('unsupported'), edgeCard),
       ];
     });
     var host = S.clear($('#smarthome-devices'));
@@ -804,7 +835,12 @@
     else if (!edge.gateways.length) list.appendChild(el('li', { class: 'sh-gw-row' }, [el('span', { class: 'sh-sub', text: T('source.none') })]));
     edge.gateways.forEach(function (g) {
       var right;
-      if (g.state === 'running') right = pill(T('source.connected'), 'good');
+      if (g.state === 'running') {
+        right = el('span', { class: 'sh-gw-acts' }, [pill(T('source.connected'), 'good'), el('button', { type: 'button', class: 'btn btn-sm', text: T('tuya.add'), on: { click: function () {
+          S.closeModal('sh-source-modal');
+          window.SH_TUYA.open(g, function () { return loadGateways('e:' + g.id); });
+        } } })]);
+      }
       else if (g.tooOld || g.state === 'gateway_too_old') right = gatewayLink(g, T('source.update'));
       else if (g.state === 'disabled' || g.state === 'edge_off' || g.state === 'no_edge') right = gatewayLink(g, T('source.enable'));
       else right = gatewayLink(g, T('source.open_gateway'));
@@ -1128,6 +1164,7 @@
   function renderDevice(d) {
     $('#sh-d-title').textContent = T('device.title', { name: d.model ? prettyModel(d) : d.name });
     $('#sh-d-sub').textContent = [d.ip, d.firmware ? T('add.firmware', { v: d.firmware }) : null, T('device.via', { name: edgeName(d.gateway_id) }), d.username ? T('device.account', { user: d.username }) : null].filter(Boolean).join(' · ');
+    renderTuyaDevice(d);
     var host = S.clear($('#sh-d-channels'));
     var cfg = (d.config && d.config.channels) || {};
     var rows = d.channels.map(function (ch) { return { key: ch.key, type: ch.type, n: Number(ch.key.split(':')[1]) }; });
@@ -1170,6 +1207,28 @@
     page.hidden = !d.page;
     if (d.page) page.setAttribute('href', d.page); else page.removeAttribute('href');
   }
+  /** The Tuya part of the device dialog (since 1.21.0): address, protocol, key, a switch for an unsupported device. */
+  function renderTuyaDevice(d) {
+    var tl = d.family === 'tuya' ? (d.tuya || {}) : null;
+    $('#sh-d-tuya').hidden = !tl;
+    $('#sh-d-conn').hidden = !!tl;
+    if (!tl) return;
+    var link = tl.link && T('tuya.link.' + tl.link) !== 'tuya.link.' + tl.link ? T('tuya.link.' + tl.link) : null;
+    $('#sh-d-tuya-info').textContent = [T('tuya.device.id', { id: tl.short || '' }), tl.ver ? T('tuya.device.ver', { ver: tl.ver }) : null, link].filter(Boolean).join(' · ');
+    $('#sh-d-tuya-ip').value = tl.ip_fixed || '';
+    var row = $('#sh-d-tuya-dp-row');
+    var sel = S.clear($('#sh-d-tuya-dp'));
+    row.hidden = !(tl.kind === 'other' && tl.bools && tl.bools.length);
+    if (!row.hidden) {
+      sel.appendChild(el('option', { value: '', text: T('tuya.row.not_take') }));
+      tl.bools.forEach(function (b) { sel.appendChild(el('option', { value: String(b.dp), text: T('tuya.row.dp', { dp: b.dp, code: b.code || '' }) })); });
+    }
+    var dps = S.clear($('#sh-d-tuya-dps'));
+    dps.hidden = !(tl.dps && tl.dps.length);
+    (tl.dps || []).forEach(function (x) {
+      dps.appendChild(el('div', { class: 'sh-kv' }, [el('span', { class: 'sh-kv-k', text: T('tuya.device.dp', { dp: x.dp }) }), el('span', { class: 'sh-kv-v', text: (x.code ? x.code + ' = ' : '') + JSON.stringify(x.value) })]));
+    });
+  }
   function openDevice(id, keepFields) {
     return S.api('GET', 'edge/devices/' + Number(id)).then(function (r) {
       editing = r.device;
@@ -1195,7 +1254,10 @@
     });
     var d = editing;
     var put = { name: name, area: $('#sh-d-area').value.trim() || null, channels: channels };
-    if (d.family !== 'shelly2') put.http_user = $('#sh-d-http-user').value.trim() || 'admin';
+    if (d.family === 'tuya') {
+      put.tuya = { ip: $('#sh-d-tuya-ip').value.trim() };
+      if (!$('#sh-d-tuya-dp-row').hidden && $('#sh-d-tuya-dp').value) put.tuya.dp = Number($('#sh-d-tuya-dp').value);
+    } else if (d.family !== 'shelly2') put.http_user = $('#sh-d-http-user').value.trim() || 'admin';
     S.api('PUT', 'edge/devices/' + d.id, put).then(function () {
       S.closeModal('sh-device-modal');
       S.toast(T('gateway.saved'));
@@ -1224,6 +1286,19 @@
       S.closeModal('sh-device-modal');
       openManual(d.id, d.name, r.credentials);
     }, warn).then(function () { btn.disabled = false; });
+  });
+
+  $('#sh-d-tuya-key').addEventListener('click', function () {
+    if (!editing) return;
+    var d = editing;
+    S.closeModal('sh-device-modal');
+    window.SH_TUYA.rekey(d, function () { return loadView(); });
+  });
+  // Tuya-Geräte hinzufügen (since 1.21.0): the assistant of ui/tuya.js for the gateway shown
+  $('#sh-tuya-open').addEventListener('click', function () {
+    var e = currentEdge();
+    if (!e || e.state !== 'running') return;
+    window.SH_TUYA.open(e, function () { return loadView(); });
   });
 
   $('#sh-refresh').addEventListener('click', function () {
