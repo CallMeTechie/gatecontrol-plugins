@@ -251,7 +251,10 @@
   "nas.share": "Freigabename",
   "nas.share_hint": "Der Ordner auf der NAS, z. B. „video“. SMB- und WebDAV-Adresse ergeben sich daraus (unter „Erweitert“ änderbar).",
   "nas.address_required": "Bitte unter „Erweitert“ eine SMB- oder WebDAV-Adresse angeben.",
-  "sources.remove_hint": "Entfernst du eine Quelle, entfernt Medien auch ihre Server-Freigabe, wenn keine andere Quelle sie nutzt."
+  "sources.remove_hint": "Entfernst du eine Quelle, entfernt Medien auch ihre Server-Freigabe, wenn keine andere Quelle sie nutzt.",
+  "nas.check_failed": "Die Prüfung ist fehlgeschlagen. Angaben korrigieren – oder mit „Trotzdem speichern“ so übernehmen.",
+  "nas.save_anyway": "Trotzdem speichern",
+  "check.smb_devices": "SMB: prüfen die Geräte im Heimnetz selbst"
  },
  "en": {
   "error.invalid": "Invalid input.",
@@ -505,6 +508,9 @@
   "nas.share": "Share name",
   "nas.share_hint": "The folder on the NAS, e.g. “video”. The SMB and WebDAV addresses follow from it (can be changed under “Advanced”).",
   "nas.address_required": "Please enter an SMB or WebDAV address under “Advanced”.",
-  "sources.remove_hint": "When you remove a source, Media also removes its server access if no other source uses it."
+  "sources.remove_hint": "When you remove a source, Media also removes its server access if no other source uses it.",
+  "nas.check_failed": "The check failed. Correct the entries – or keep them with “Save anyway”.",
+  "nas.save_anyway": "Save anyway",
+  "check.smb_devices": "SMB: the devices check it themselves in the home network"
  }
 }

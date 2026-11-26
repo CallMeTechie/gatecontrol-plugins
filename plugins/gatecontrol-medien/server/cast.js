@@ -54,7 +54,7 @@ async function targets(gc, req, cfg) {
   const me = req.user.device && deviceIdOf(req.user.device.id);
   const list = (await own(gc, req.user)).filter((d) => deviceIdOf(d.id) && deviceIdOf(d.id) !== me && isReceiver(d));
   list.sort((a, b) => (b.online ? 1 : 0) - (a.online ? 1 : 0) || String(a.name).localeCompare(String(b.name)));
-  return { v: 1, devices: list.map((d) => ({ id: String(d.id), name: d.name || null, kind: d.clientType === 'android-tv' ? 'tv' : 'pc', clientType: d.clientType || null, online: !!d.online, lastSeen: d.lastSeen || null })) };
+  return { v: 1, deviceId: me || null, devices: list.map((d) => ({ id: String(d.id), name: d.name || null, kind: d.clientType === 'android-tv' ? 'tv' : 'pc', clientType: d.clientType || null, online: !!d.online, lastSeen: d.lastSeen || null })) };
 }
 
 /** Check a message of the cast contract (section 2); cast.play carries source: { id } of the plugin. */

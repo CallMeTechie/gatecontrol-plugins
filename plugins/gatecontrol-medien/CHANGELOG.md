@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.4.0
+
+- **Geräte-ID gleich mitliefern:** `GET v1/sources` hat das Feld `deviceId` (String, z. B. `"11"`; `null` ohne
+  Gerätebindung) – die eigene GateControl-Geräte-ID des fragenden Geräts, dieselbe wie `devices[].id` in
+  `v1/cast/targets` und `to`/`from` in Cast-Nachrichten. Auch `GET v1/cast/targets` nennt sie (`deviceId`). Bisher
+  kannte ein Fernseher/PC seine ID erst aus der ersten stillen Mitteilung. Nur ein zusätzliches Feld.
+- **NAS-Dialog prüft vor dem Speichern:** „Prüfen und speichern“ ruft `POST admin/probe { kind: 'share', … }` auf
+  (WebDAV-Anmeldung und Ordner mit dem eingegebenen bzw. beim Bearbeiten dem gespeicherten Passwort) und zeigt das
+  Ergebnis im Dialog. Schlägt sie fehl, bleibt der Dialog offen, „Trotzdem speichern“ übernimmt die Angaben. SMB prüfen
+  die Geräte (Prüfergebnis `smb: 'devices'`).
+- **Ungenutzte Zuweisungen entfernen, auch mitten in der Liste:** Der Dialog merkt sich die Zugriffsziel-Zuweisungen,
+  die er selbst anhängt (`POST admin/targets/made`). Nutzt keine Quelle eine davon mehr, wird sie entfernt; die Quellen
+  dahinter stellt das Plugin vorher in einer Transaktion um (`POST admin/targets/compact`), schlägt das Setzen der Liste
+  fehl, stellt es sie zurück. Am Ende der Liste wie bisher jede ungenutzte Route/jeder ungenutzte Peer, nie eine Adresse
+  des Administrators, nie eine benutzte Zuweisung.
+
 ## 1.3.0
 
 - **Unterwegs über die Route:** `v1/sources` liefert unterwegs auch im Modus VPN eine durch den Tunnel erreichbare Adresse:

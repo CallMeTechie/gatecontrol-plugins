@@ -11,6 +11,7 @@ const mapping = require('./mapping');
 const devices = require('./devices');
 const log = require('./log');
 const license = require('./license');
+const assignments = require('./assignments');
 const { fail, str, posInt } = require('./util');
 
 const targetsOf = sources.targetsOf;
@@ -98,8 +99,19 @@ async function overview(gc, cfg) {
   };
 }
 
-/** A probe before saving (the dialog "Prüfung"): reachable, version, key, Quick Connect, users, libraries. */
+/**
+ * A probe before saving (the dialog "Prüfung"). Jellyfin: reachable, version, key, Quick Connect, users, libraries.
+ * A NAS share (kind 'share', 1.4.0): the WebDAV sign-in and folder with the entered user and password (or the saved
+ * password when editing) through the dialog's WebDAV assignment — SMB only the devices can check.
+ */
 async function probe(gc, b) {
+  if (b.kind === 'share') {
+    const prev = b.sourceId ? await sources.get(gc, b.sourceId) : null;
+    if (prev && prev.kind !== 'share') throw fail('invalid', { field: 'sourceId' });
+    const config = sources.cleanConfig('share', b, prev ? prev.config : {});
+    const pw = typeof b.password === 'string' && b.password ? b.password : (prev ? await sources.password(gc, prev) : null);
+    return sources.checkShare(gc, { config }, pw);
+  }
   const index = Number.isInteger(Number(b.targetIndex)) ? Number(b.targetIndex) : 0;
   let key = typeof b.key === 'string' && b.key ? b.key : null;
   if (!key && b.sourceId) { const s = await sources.get(gc, b.sourceId); if (s) key = await sources.apiKey(gc, s); }
@@ -111,7 +123,13 @@ async function route(req, gc, seg, cfg, now = Date.now()) {
   const b = req.body && typeof req.body === 'object' ? req.body : {};
   const [, a, x, y, z] = seg;
   if (a === 'overview' && m === 'GET') return overview(gc, cfg);
-  if (a === 'targets' && m === 'GET') return { targets: await targetsOf(gc) };
+  if (a === 'targets' && !x && m === 'GET') return { targets: await targetsOf(gc), made: await assignments.made(gc) };
+  if (a === 'targets' && x === 'made' && m === 'POST') return assignments.rememberMade(gc, b);
+  if (a === 'targets' && x === 'compact' && m === 'POST') {
+    const r = await assignments.compact(gc, b, now);
+    if (r.changed) await log.add(gc, 'source', `Zugriffsziele (${b.target}) aufgeräumt: ${r.changed} Quelle(n) neu zugeordnet`, {}, now);
+    return r;
+  }
   if (a === 'probe' && m === 'POST') return { check: await probe(gc, b) };
   if (a === 'log' && m === 'GET') return { log: await log.list(gc, req.query && req.query.limit) };
 
@@ -120,7 +138,7 @@ async function route(req, gc, seg, cfg, now = Date.now()) {
     const targets = await targetsOf(gc);
     const list = [];
     for (const s of all) list.push(await sourceView(gc, s, cfg, targets));
-    return { sources: list, targets, settings: { awayDirectAll: cfg.awayDirectAll, childrenShares: cfg.childrenShares } };
+    return { sources: list, targets, made: await assignments.made(gc), settings: { awayDirectAll: cfg.awayDirectAll, childrenShares: cfg.childrenShares } };
   }
   if (a === 'sources' && !x && m === 'POST') {
     const s = await sources.create(gc, b, now);

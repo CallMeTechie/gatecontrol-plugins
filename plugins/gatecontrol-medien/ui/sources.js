@@ -222,6 +222,8 @@
     }
     var adv = advanced([P.field(T('src.name'), name), P.field(T('src.smb'), smb, T('src.smb_hint')), P.field(T('src.webdav'), dav, T('src.webdav_hint')),
       P.field(T('src.cert'), cert, T('src.cert_hint')), away.node]);
+    var result = el('div', { role: 'status' });
+    var failedFor = null; // the entries whose check failed — a second click on the same saves anyway
     var update = function () {
       var sg = P.suggestShare(td, where.value(), share.value);
       suggestInto(smb, sg.smb);
@@ -236,7 +238,29 @@
     var node = el('div', null, [el('h2', { class: 'md-card-title', text: s ? T('src.edit_title', { name: s.name }) : T('src.add_share') }),
       P.field(T('nas.where'), where.node), P.field(T('nas.share'), share, T('nas.share_hint')),
       el('div', { class: 'form-row' }, [P.field(T('src.nas_user'), user, T('src.nas_user_hint')), s ? null : P.field(T('src.pw'), pw)]),
-      allow.node, adv]);
+      allow.node, adv, result]);
+    var saveBtn = function (text) {
+      var m = node.closest && node.closest('.modal');
+      var b = m && m.querySelector('.modal-foot .btn-primary');
+      if (b) b.textContent = text;
+    };
+    // a changed entry is checked again before saving
+    var reset = function () { if (failedFor) { failedFor = null; saveBtn(T('src.save_checked')); } };
+    node.addEventListener('input', reset);
+    node.addEventListener('change', reset);
+    /** Check before saving (1.4.0, like the Jellyfin dialog): WebDAV sign-in and folder from the server, shown here. */
+    var probe = function (b) {
+      var sig = JSON.stringify([b, pw.value]);
+      return P.api('POST', 'admin/probe', { kind: 'share', sourceId: s ? s.id : null, user: b.user, password: s ? null : b.password, smb: b.smb, webdav: b.webdav, away: b.away }).then(function (r) {
+        var ck = (r && r.check) || {};
+        P.clear(result).appendChild(P.checks(Object.assign({ at: Date.now() }, ck)));
+        if (ck.ok || failedFor === sig) return b;
+        failedFor = sig;
+        result.appendChild(el('p', { class: 'md-note', text: T('nas.check_failed') }));
+        saveBtn(T('nas.save_anyway'));
+        return null;
+      });
+    };
     var get = function () {
       var v = where.value();
       var smbA = smb.value.trim();
@@ -249,7 +273,7 @@
             smb: smbA ? { address: smbA, targetIndex: smbIndex } : null,
             webdav: davA ? { address: davA, certSha256: cert.value.trim() || null, targetIndex: davIndex } : null };
           if (!s) b.password = pw.value;
-          return b;
+          return probe(b);
         });
       });
     };
@@ -274,7 +298,10 @@
       return withTargets(function (td) {
         var f = form(kind, null, td);
         return P.dialog(f.node, [{ label: T('common.cancel'), value: false }, { label: T('src.save_checked'), primary: true, run: function () {
-          return f.get().then(function (b) { return P.api('POST', 'admin/sources', b); }).then(function () { P.toast(T('common.saved')); return true; });
+          return f.get().then(function (b) {
+            if (!b) return false; // the check failed: the result stays in the dialog
+            return P.api('POST', 'admin/sources', b).then(function () { P.toast(T('common.saved')); return true; });
+          });
         } }]).then(function () { return load().then(prune); });
       });
     }).catch(P.warn);
@@ -286,20 +313,22 @@
       return P.dialog(f.node, [{ label: T('common.cancel'), value: false }, { label: T('src.save_checked'), primary: true, run: function () {
         var key;
         return f.get().then(function (b) {
+          if (!b) return false; // the check failed: the result stays in the dialog
           key = b.key;
           delete b.key;
           delete b.kind;
-          return P.api('PUT', 'admin/sources/' + s.id, b);
-        }).then(function () { return key ? P.api('PUT', 'admin/sources/' + s.id + '/key', { key: key }) : null; })
-          .then(function () { P.toast(T('common.saved')); return true; });
+          return P.api('PUT', 'admin/sources/' + s.id, b).then(function () { return key ? P.api('PUT', 'admin/sources/' + s.id + '/key', { key: key }) : null; })
+            .then(function () { P.toast(T('common.saved')); return true; });
+        });
       } }]).then(function () { return load().then(prune); });
     }).catch(P.warn);
   }
 
   /**
-   * After adding, editing (also cancelled — a check may have assigned a target) or removing a source: assignments at the
-   * end of a target's list that no source uses any more go again. Never one in the middle — the index of every other
-   * source stays as it is.
+   * After adding, editing (also cancelled — a check may have assigned a target) or removing a source: assignments that
+   * no source uses any more go again — at the end of a target's list every unused route or peer, in the middle (1.4.0)
+   * only those the dialog made itself; never an address of the administrator. The plugin renumbers the sources behind a
+   * removed one itself (P.pruneTargets), then the list is loaded again.
    */
   function prune() {
     if (!P.hasTargets || !S) return null;
@@ -312,8 +341,10 @@
         if (c.smb && c.smb.targetIndex != null) used.smb.push(c.smb.targetIndex);
       }
     });
-    return P.pruneTargets('jellyfin', used.jellyfin).then(function () { return P.pruneTargets('webdav', used.webdav); })
-      .then(function () { return P.pruneTargets('smb', used.smb); }).then(function (x) { return refreshTargets().then(function () { return x; }); });
+    var made = S.made || [];
+    var any = false;
+    var one = function (id) { return function () { return P.pruneTargets(id, used[id], made).then(function (x) { any = any || x; }); }; };
+    return one('jellyfin')().then(one('webdav')).then(one('smb')).then(function () { return any ? load() : refreshTargets(); }).then(function () { return any; });
   }
 
   /** The assignments for the lines "über …" / "Server-Freigabe" (GC.targets; without it the server's labels). */
