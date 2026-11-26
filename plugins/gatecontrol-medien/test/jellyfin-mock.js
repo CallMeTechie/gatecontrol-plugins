@@ -30,6 +30,9 @@ function createJellyfin(version = '10.10.7', o = {}) {
     fx, key: o.key || KEY, quickConnect: fx.configuration.QuickConnectAvailable, config: clone(fx.configuration),
     users: [adminUser, ...(o.users || ['mila', 'jonas', 'lena', 'gast']).map((n) => (typeof n === 'string' ? mk(n) : mk(n.name, n)))],
     requests: new Map(), devices: new Map(), calls: [], down: false,
+    // "Videos umwandeln": films/episodes (test/fixtures/media-items.json), sessions, the largest page that still fits
+    // in the host's 5 MB answer (a larger one fails like the host: ERR_NET "answer too large")
+    items: clone(o.items || []), sessions: [], maxItemsPage: o.maxItemsPage || 500,
   };
   const reply = (status, body) => ({ status, headers: { 'content-type': 'application/json' }, body: body === undefined ? '' : (typeof body === 'string' ? body : JSON.stringify(body)) });
   const tokenOf = (h) => { const m = /Token="([^"]*)"/.exec((h && (h.Authorization || h.authorization)) || ''); return m ? m[1] : null; };
@@ -75,6 +78,16 @@ function createJellyfin(version = '10.10.7', o = {}) {
         return reply(200, { Items: items, TotalRecordCount: items.length, StartIndex: 0 });
       }
       case 'DELETE /Devices': return st.devices.delete(q.get('id')) ? reply(204) : reply(404, { status: 404, title: 'Not Found' });
+      case 'GET /Items': {
+        const types = String(q.get('IncludeItemTypes') || '').split(',');
+        const since = q.get('MinDateLastSaved');
+        const list = st.items.filter((x) => types.includes(x.Type) && (!since || Date.parse(x.DateLastSaved) >= Date.parse(since)));
+        const start = Number(q.get('StartIndex') || 0);
+        const limit = Number(q.get('Limit') || 100);
+        if (limit > st.maxItemsPage) { const e = new Error('answer too large'); e.code = 'ERR_NET'; throw e; }
+        return reply(200, { Items: list.slice(start, start + limit), TotalRecordCount: list.length, StartIndex: start });
+      }
+      case 'GET /Sessions': return reply(200, st.sessions);
       default:
         if (method === 'GET' && u.pathname.startsWith('/Users/')) {
           const x = st.users.find((y) => y.Id === u.pathname.slice(7));

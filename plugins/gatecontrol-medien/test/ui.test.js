@@ -14,7 +14,7 @@ test('every page renders in German and English without a missing text', async ()
   const t = await setup();
   try {
     for (const lang of ['de', 'en']) {
-      for (const page of ['overview', 'sources', 'people', 'devices']) {
+      for (const page of ['overview', 'convert', 'sources', 'people', 'devices']) {
         const r = await t.host.render({ page, lang });
         assert.match(r.html, /window\.MD_CTX=/);
         assert.doesNotMatch(r.html, /\{\{t:/);
@@ -35,7 +35,8 @@ test('text keys: the same in de and en, and every key the pages use exists', () 
 });
 
 test('manifest: own licence, app tab, the three settings tabs, a signal topic', () => {
-  assert.equal(manifest.version, '1.4.1');
+  assert.equal(manifest.version, '1.5.0');
+  assert.deepEqual(manifest.ui.pages.map((p) => p.id), ['overview', 'convert', 'sources', 'people', 'devices']);
   assert.deepEqual(manifest.license, { required: true });
   assert.deepEqual(manifest.ui.settingsPages, ['sources', 'people', 'devices']);
   assert.equal(manifest.ui.app.label.de, 'Medien');

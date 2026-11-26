@@ -183,6 +183,17 @@ Nach der ersten SMB-Anmeldung (nur wenn das Passwort vorher über `secret` gehol
 
 Der Weg zur Quelle (z. B. `problem: "tunnel_unreachable"`, „NAS durch den Tunnel nicht erreichbar“). Nur bei Änderung senden.
 
+### GET v1/convert/status?items=<id>,<id> → `{ ok, v: 1, available, items }` (ab 1.5.0)
+
+Für den späteren Hinweis vor dem Abspielen („Videos umwandeln“, Frage 100). `items`: höchstens 100 Jellyfin-Item-IDs
+(32 Hex-Zeichen, Bindestriche und Großbuchstaben erlaubt), sonst `invalid` (`field: 'items'`). Ohne Recht „Medien“
+`no_access`. Antwort je ID in der angefragten Reihenfolge: `{ id, sourceId, level: 'convert' | 'hint' | 'info' | null,
+reasons: ['h264_10bit', …], devices: { phone, tv, windows: 'yes' | 'maybe' | 'no' } | null, stalled, state: 'none' }` –
+nur aus Jellyfin-Quellen, die die Person sieht (sonst `level: null`). `available: false` und `state: 'none'`, solange
+es das Umwandeln (Gateway-Dienst) nicht gibt; später kommen `queued | running | done` dazu.
+Gründe: `h264_10bit`, `chroma` (4:2:2/4:4:4/12 Bit), `dovi`, `hevc_10bit`, `av1`, `legacy_video`, `container`,
+`audio_hd`, `audio_ac3`, `image_subs`, `interlaced`.
+
 ### Ereignisse und stille Mitteilungen
 
 | Was | Weg | Inhalt | App tut |
@@ -268,7 +279,9 @@ Freigaben wie im Vertrag. Keine Geheimnisse (Felder mit Namen wie token/password
 `POST sources/{id}/automap` · `GET people` · `PUT rights/{user|group}/{id} { media: true | false | null }` · `GET devices` ·
 `POST devices/{deviceId}/revoke { sourceId? }` · `POST probe { targetIndex, key? }` · `POST probe { kind: "share", sourceId?, user,
 password?, smb, webdav }` (ab 1.4.0, ohne Speichern; `password` fehlt beim Bearbeiten → das gespeicherte) · `GET targets` (+ `made`) ·
-`POST targets/made { target, assignment }` · `POST targets/compact { target, map: { "<alter Index>": <neuer> }, forget? }` · `GET log`.
+`POST targets/made { target, assignment }` · `POST targets/compact { target, map: { "<alter Index>": <neuer> }, forget? }` · `GET log` ·
+`GET convert` (ab 1.5.0: Liste „nicht überall abspielbar“, Zahlen, Schätzung, Stand je Quelle; startet den ersten Durchlauf) ·
+`POST convert/scan` (voller Durchlauf im Hintergrund).
 
 Zugriffsziele aufräumen (ab 1.4.0): `GC.targets.set(id, list)` ersetzt die ganze Liste, eine Quelle nennt ihre
 Zuweisung über die Position (`targetIndex`). Der Dialog merkt sich jede Zuweisung, die er anhängt (`targets/made`,
@@ -286,5 +299,6 @@ Jede Quelle in `GET sources` hat `home: { level: unique | weak | none, why: null
 `migrations/001_init.sql`: `sources` (Konfiguration ohne Geheimnisse, letzte Prüfung), `source_access`, `rights`,
 `mappings`, `pairings` (Gerät ↔ Jellyfin-DeviceId ↔ Benutzer, nie ein Token), `deliveries` (welches Gerät welchen
 Passwort-Stand bekam), `reports`, `known_devices`, `hits` (Ratenbegrenzung), `log` (nie Passwörter, Schlüssel, Codes,
-Tokens). Geheimnisse: `jf.<id>.key`, `share.<id>.pw` über `gc.settings.setSecret`. Die Jellyfin-DeviceId ist
+Tokens); `migrations/002_convert.sql`: `conv_items` (ab 1.5.0, nur Dateien mit Befund, Stand des letzten Durchlaufs in
+`gc.storage` `conv.scan`). Geheimnisse: `jf.<id>.key`, `share.<id>.pw` über `gc.settings.setSecret`. Die Jellyfin-DeviceId ist
 `gc-` + 20 Zeichen HMAC eines zufälligen Plugin-Schlüssels (`gc.storage` `pepper`) über Quelle und Geräte-ID.

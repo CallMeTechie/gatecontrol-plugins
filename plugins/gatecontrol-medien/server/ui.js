@@ -1,6 +1,6 @@
 'use strict';
 
-// The admin pages (overview, sources, people, devices). The host shows plugin HTML only in a sandboxed frame
+// The admin pages (overview, convert, sources, people, devices). The host shows plugin HTML only in a sandboxed frame
 // (opaque origin, inline scripts and styles, no network of its own): the pages talk to this plugin's API through
 // window.GC.call; "Personen oder Gruppen wählen …" is GateControl's own picker (GC.pickPrincipals).
 
@@ -10,7 +10,7 @@ const texts = require('./texts.json');
 
 const UI = path.join(__dirname, '..', 'ui');
 const read = (f) => fs.readFileSync(path.join(UI, f), 'utf8');
-const PAGES = ['overview', 'sources', 'people', 'devices'];
+const PAGES = ['overview', 'convert', 'sources', 'people', 'devices'];
 const FILES = { css: read('style.css'), common: read('common.js') };
 for (const p of PAGES) FILES[p] = { html: read(p + '.html'), js: read(p + '.js') };
 

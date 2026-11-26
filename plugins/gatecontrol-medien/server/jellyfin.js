@@ -151,7 +151,31 @@ async function libraries(gc, index, key) {
   return (Array.isArray(b) ? b : []).slice(0, 50).map((l) => ({ name: str(l && l.Name, 80), type: str(l && l.CollectionType, 30) || null }));
 }
 
+/**
+ * One page of films and episodes with their media sources and streams ("Videos umwandeln", 1.5.0). The host takes an
+ * answer of at most 5 MB from a home target, so the list comes in pages (StartIndex/Limit, oldest first so that
+ * a file added during the scan lands at the end). `since` (ISO time) asks only for items changed since then (MinDateLastSaved).
+ * → { items, total }
+ */
+async function itemsPage(gc, index, key, { start = 0, limit = 200, since = null } = {}) {
+  const q = new URLSearchParams({
+    Recursive: 'true', IncludeItemTypes: 'Movie,Episode', Fields: 'MediaSources,Path', SortBy: 'DateCreated,SortName', SortOrder: 'Ascending',
+    StartIndex: String(Math.max(0, start | 0)), Limit: String(Math.max(1, Math.min(500, limit | 0))),
+    EnableImages: 'false', EnableUserData: 'false', EnableTotalRecordCount: 'true', IsMissing: 'false',
+  });
+  if (since) q.set('MinDateLastSaved', since);
+  const b = expect2xx(await call(gc, index, 'GET', '/Items?' + q.toString(), { key, timeoutMs: 30000 }), 'items');
+  const items = b && Array.isArray(b.Items) ? b.Items.filter((x) => x && typeof x === 'object' && typeof x.Id === 'string') : [];
+  return { items, total: b && Number.isSafeInteger(b.TotalRecordCount) ? b.TotalRecordCount : null };
+}
+
+/** The sessions active in the last few minutes (what is playing, whether Jellyfin converts it and how fast). */
+async function sessions(gc, index, key) {
+  const b = expect2xx(await call(gc, index, 'GET', '/Sessions?ActiveWithinSeconds=180', { key }), 'sessions');
+  return Array.isArray(b) ? b.filter((x) => x && typeof x === 'object').slice(0, 200) : [];
+}
+
 module.exports = {
   TARGET, MIN_VERSION, authHeader, versionOk, parseVersion, publicInfo, checkKey, users, user, createUser, quickConnectEnabled, setQuickConnect,
-  authorize, device, devices, deleteDevice, libraries,
+  authorize, device, devices, deleteDevice, libraries, itemsPage, sessions,
 };
