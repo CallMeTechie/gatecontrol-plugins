@@ -63,6 +63,11 @@ function netError(e) {
   const msg = String((e && e.message) || '');
   if (e && e.code === 'ERR_NET_DENIED') {
     if (/no target assigned|not assigned|declares no target|not declared|unassigned/i.test(msg)) return codeError('PVE_NO_TARGET');
+    // GateControl gc.net: the route or the peer of the assigned target is missing or switched off
+    // (`reason` of the error; the message as a fallback)
+    const reason = typeof e.reason === 'string' ? e.reason : '';
+    if (reason === 'route_unavailable' || /assigned route is missing or switched off|target has no address/i.test(msg)) return codeError('PVE_ROUTE_OFF');
+    if (reason === 'peer_unavailable' || /assigned peer is missing or switched off/i.test(msg)) return codeError('PVE_PEER_OFF');
     return codeError('PVE_TARGET_DENIED');
   }
   if (TLS_RE.test(msg)) return codeError('PVE_TLS');

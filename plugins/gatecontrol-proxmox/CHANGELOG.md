@@ -4,6 +4,11 @@ Proxmox-VE-Hosts und -Cluster als GateControl-Plugin: Status, Steuerung von VMs/
 Benachrichtigungen sowie Widgets, Schnellaktionen und eine Startkachel in den Apps – nur für
 Administratoren (keine Portal-Teile).
 
+## 1.1.3
+
+- **Verständliche Meldung bei ausgeschalteter Route oder ausgeschaltetem Peer:** ist die Route oder der Peer des zugewiesenen Zugriffsziels in GateControl ausgeschaltet oder gelöscht, meldete die Verbindung pauschal „Das Zugriffsziel darf von Plugins nicht erreicht werden“ (`PVE_TARGET_DENIED`). Jetzt eigene Codes nach dem Grund von `gc.net` (`reason` `route_unavailable` / `peer_unavailable`, ältere Hosts an der Meldung erkannt): `PVE_ROUTE_OFF` („Die Route des Zugriffsziels ist ausgeschaltet oder gelöscht …“) und `PVE_PEER_OFF` („Der Peer des Zugriffsziels ist ausgeschaltet oder gelöscht …“), auch in den Benachrichtigungen („Route ausgeschaltet“, „Peer ausgeschaltet“). Andere Sperren bleiben `PVE_TARGET_DENIED`.
+- Test: `pve.test.js` (Grund und Meldung, Route und Peer).
+
 ## 1.1.2
 
 - **Weniger Schreibvorgänge:** der Stand einer Verbindung (Snapshot) und ihre Abfragezeiten (`last_attempt_at`, `last_success_at`, `next_poll_at`) werden höchstens alle 5 Minuten gespeichert; der neueste Stand liegt im Speicher und wird zuerst gelesen. Ein Fehler, ein neuer Status oder eine neue Version wird sofort gespeichert. Vorher zwei Schreibvorgänge je Abfrage (im Protokoll von GateControl 1.253.5 je ~350 ms auf einem langsamen Datenträger).

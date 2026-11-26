@@ -115,12 +115,14 @@ const ERROR_TEXTS = {
     PVE_UNREACHABLE: 'keine Verbindung', PVE_TIMEOUT: 'Zeitüberschreitung', PVE_TLS: 'Zertifikat nicht vertrauenswürdig',
     PVE_AUTH: 'API-Token abgelehnt', PVE_FORBIDDEN: 'fehlende Rechte', PVE_GATEWAY: 'Gateway erreicht Proxmox nicht',
     PVE_NO_TARGET: 'kein Zugriffsziel', PVE_TARGET_DENIED: 'Zugriffsziel gesperrt', PVE_NO_SECRET: 'kein Token-Secret',
+    PVE_ROUTE_OFF: 'Route ausgeschaltet', PVE_PEER_OFF: 'Peer ausgeschaltet',
     PVE_HTTPS_REQUIRED: 'nur HTTPS', PVE_NODE_DOWN: 'Node nicht erreichbar', other: 'Fehler',
   },
   en: {
     PVE_UNREACHABLE: 'no connection', PVE_TIMEOUT: 'timeout', PVE_TLS: 'certificate not trusted',
     PVE_AUTH: 'API token refused', PVE_FORBIDDEN: 'missing privileges', PVE_GATEWAY: 'gateway cannot reach Proxmox',
     PVE_NO_TARGET: 'no access target', PVE_TARGET_DENIED: 'access target blocked', PVE_NO_SECRET: 'no token secret',
+    PVE_ROUTE_OFF: 'route switched off', PVE_PEER_OFF: 'peer switched off',
     PVE_HTTPS_REQUIRED: 'HTTPS only', PVE_NODE_DOWN: 'node not reachable', other: 'error',
   },
 };

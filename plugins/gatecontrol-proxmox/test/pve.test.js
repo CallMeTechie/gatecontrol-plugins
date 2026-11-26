@@ -83,6 +83,13 @@ test('network, certificate, timeout and target errors of the host → codes', as
     [Object.assign(new Error('timeout'), { code: 'ERR_NET' }), 'PVE_TIMEOUT'],
     [Object.assign(new Error('no target assigned for pve — an administrator assigns it in Settings → Plugins'), { code: 'ERR_NET_DENIED' }), 'PVE_NO_TARGET'],
     [Object.assign(new Error('blocked_address'), { code: 'ERR_NET_DENIED' }), 'PVE_TARGET_DENIED'],
+    [Object.assign(new Error('blocked_address'), { code: 'ERR_NET_DENIED', reason: 'blocked_address' }), 'PVE_TARGET_DENIED'],
+    // route / peer of the assigned target switched off (gc.net reason, or only the message on older hosts)
+    [Object.assign(new Error('assigned route is missing or switched off'), { code: 'ERR_NET_DENIED', reason: 'route_unavailable' }), 'PVE_ROUTE_OFF'],
+    [Object.assign(new Error('assigned route is missing or switched off'), { code: 'ERR_NET_DENIED' }), 'PVE_ROUTE_OFF'],
+    [Object.assign(new Error('target has no address'), { code: 'ERR_NET_DENIED', reason: 'route_unavailable' }), 'PVE_ROUTE_OFF'],
+    [Object.assign(new Error('assigned peer is missing or switched off'), { code: 'ERR_NET_DENIED', reason: 'peer_unavailable' }), 'PVE_PEER_OFF'],
+    [Object.assign(new Error('assigned peer is missing or switched off'), { code: 'ERR_NET_DENIED' }), 'PVE_PEER_OFF'],
   ];
   await withHost({}, async (host, fake) => {
     for (const [err, code] of cases) {
