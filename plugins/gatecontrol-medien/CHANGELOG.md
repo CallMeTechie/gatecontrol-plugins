@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.3.0
+
+- **Unterwegs über die Route:** `v1/sources` liefert unterwegs auch im Modus VPN eine durch den Tunnel erreichbare Adresse:
+  `away: { mode: 'vpn', address }` (HTTPS, ohne abschließenden Schrägstrich). Bisher kam nur `{ mode: 'vpn' }`, die Geräte
+  nahmen die Heimadresse durch den Tunnel – die erreicht das Heimnetz nie, der Server routet kein Heimnetz an das Gateway.
+  Erreichbar sind die Routen (Domain → Server → Gateway → Ziel), auch nur intern freigegebene. `direct` bleibt die
+  Ausnahme ohne VPN.
+- **Quelle der Adresse:** die im Dialog gespeicherte HTTPS-Adresse für unterwegs; fehlt sie (Quellen vor 1.3.0), leitet
+  Medien sie beim Ausliefern aus der Route ab, über die die Quelle läuft (Jellyfin `https://<Domain>`, WebDAV
+  `https://<Domain>/<Pfad der WebDAV-Adresse>`) – ohne Neu-Speichern. Ohne Route (VPN-Peer, Adresse, reine SMB-Freigabe)
+  bleibt es bei `{ mode: 'vpn' }`.
+- **Dialog:** „HTTPS-Adresse für unterwegs“ gilt für beide Modi (immer sichtbar unter „Erweitert“), beim Bearbeiten
+  einer Quelle ohne Adresse aus der Route vorbelegt. Reiter Quellen und Übersicht: „unterwegs über VPN: <Adresse>“ bzw.
+  „unterwegs nicht erreichbar“.
+- Texte berichtigt: Hinweis „durch den Tunnel nicht erreichbar“ im Reiter Geräte (fragt nach der Adresse für unterwegs
+  statt nach einem Gateway, das das Heimnetz weiterleitet), Netz-Text, SMB-/WebDAV-Hinweise.
+- Handbuch: Voraussetzungen (eine Route statt eines VPN, das das Heimnetz in den Tunnel gibt), [Netz](HANDBUCH.md#netz),
+  Fehlersuche, „Neu in 1.3.0“; README: App-API `away` und die Netz-Regel.
+
 ## 1.2.0
 
 Mindestversion **GateControl 1.325.0** (die Zugriffsziele eines Plugins mit `assignTargets` stehen nur noch auf seiner

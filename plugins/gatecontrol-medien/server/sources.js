@@ -5,10 +5,13 @@
 //
 // Network rule (what the apps do with it, see the handbook "Netz"): at home a device plays directly in the home
 // network (`address`, the SMB/WebDAV addresses) — never through the server or a tunnel. Away it plays only through the
-// VPN (the same home addresses through the own WireGuard tunnel; the app starts the VPN itself when it is off).
-// Exception per source or for all (setting away_direct_all): "Unterwegs ohne VPN erlauben" — then away uses an HTTPS
-// address of its own (e.g. a GateControl route), `away: { mode: 'direct', address }`. Without such an address a
-// source stays VPN-only.
+// VPN, but not at the home addresses: the server routes no home network to the gateway (the gateway is only a proxy per
+// route). What the tunnel reaches are the GateControl routes (domain → Caddy on the server → gateway → target; the VPN's
+// DNS resolves route domains, also of routes released for internal use only). So away a device gets an HTTPS address of
+// its own — `away: { mode: 'vpn', address }`, used only with the tunnel up: the address saved in the dialog (prefilled
+// with https://<domain of the route>), else derived from the route the source runs over (awayAddressOf). Exception per
+// source or for all (setting away_direct_all): "Unterwegs ohne VPN erlauben" — then `away: { mode: 'direct', address }`
+// (only with a saved address). SMB has no way away (only WebDAV); a source without any address stays `{ mode: 'vpn' }`.
 //
 // Home detection (network.home.probes, see probesOf): every source gives the devices at least one probe they run over
 // the local network only. Unique: `jellyfin` (the server ID, learned on save/check and kept in config.serverId) and `tls`
@@ -53,12 +56,62 @@ async function secret(gc, name) {
 const apiKey = (gc, src) => secret(gc, keyName(src.id));
 const password = (gc, src) => secret(gc, pwName(src.id));
 
-/** Away: the source's own switch or the setting for all, and an HTTPS address → direct; else VPN only. */
-function awayOf(src, cfg) {
+const HOSTNAME_RE = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,62}$/i;
+
+/**
+ * The plugin's assigned home targets: { jellyfin: [{ index, label }], webdav: [...], smb: [...] } (gc.net.targets()).
+ * GateControl labels a route assignment with the route's domain, a peer with "Name (IP)", an address with host[:port].
+ */
+async function targetsOf(gc) {
+  const out = { jellyfin: [], webdav: [], smb: [] };
+  try {
+    for (const t of (await gc.net.targets()) || []) {
+      if (out[t.id]) out[t.id] = (t.assigned || []).map((a) => ({ index: a.index, label: a.label || null }));
+    }
+  } catch (e) { gc.log.debug('targets unavailable', (e && e.code) || 'error'); }
+  return out;
+}
+
+/** The domain of the route behind assignment `index` of target `id`, or null (a peer, an address, an L4 route). */
+function routeDomain(targets, id, index, home) {
+  if (!targets || index == null) return null;
+  const a = (targets[id] || []).find((x) => x.index === index);
+  const label = a && typeof a.label === 'string' ? a.label.trim().toLowerCase() : '';
+  if (!HOSTNAME_RE.test(label)) return null;
+  const h = hostPort(home);
+  return h && h.host.toLowerCase() === label ? null : label; // an assigned home address with a name is no route
+}
+
+/**
+ * The HTTPS address a device uses away (through the tunnel): the saved one, else (sources saved before 1.3.0) one
+ * derived from the route the source runs over — https://<domain> for Jellyfin, https://<domain>/<path of the WebDAV
+ * address> for a share. SMB alone has none. → the address or null.
+ */
+function awayAddressOf(src, targets) {
+  const c = src.config || {};
+  if (c.away && c.away.address) return c.away.address;
+  if (src.kind === 'jellyfin') {
+    const d = routeDomain(targets, 'jellyfin', c.targetIndex || 0, c.address);
+    return d ? 'https://' + d : null;
+  }
+  const dav = c.webdav;
+  if (!dav || dav.targetIndex == null) return null;
+  const d = routeDomain(targets, 'webdav', dav.targetIndex, dav.address);
+  if (!d) return null;
+  let p = '';
+  try { p = new URL(dav.address).pathname.replace(/\/+$/, ''); } catch { p = ''; }
+  return 'https://' + d + p;
+}
+
+/**
+ * Away: `{ mode: 'vpn', address? }` — the address only with the tunnel up; `{ mode: 'direct', address }` with the source's
+ * own switch or the setting for all and a saved HTTPS address. targets: targetsOf (for sources without a saved address).
+ */
+function awayOf(src, cfg, targets) {
   const a = (src.config && src.config.away) || {};
-  const address = a.address || null;
-  if ((a.direct === true || (cfg && cfg.awayDirectAll)) && address) return { mode: 'direct', address };
-  return { mode: 'vpn' };
+  if ((a.direct === true || (cfg && cfg.awayDirectAll)) && a.address) return { mode: 'direct', address: a.address };
+  const address = awayAddressOf(src, targets);
+  return address ? { mode: 'vpn', address } : { mode: 'vpn' };
 }
 
 function cleanAway(b, prev) {
@@ -314,6 +367,6 @@ function folder(src) {
 }
 
 module.exports = {
-  KINDS, list, get, need, create, update, remove, setKey, setPassword, apiKey, password, awayOf, check, checkJellyfin, setStatus, folder, keyName, pwName, posInt,
+  KINDS, list, get, need, create, update, remove, setKey, setPassword, apiKey, password, awayOf, awayAddressOf, targetsOf, check, checkJellyfin, setStatus, folder, keyName, pwName, posInt,
   probesOf, homeOf, serverIdOf, hostPort,
 };

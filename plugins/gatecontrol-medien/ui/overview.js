@@ -20,7 +20,7 @@
       var stt = s.status || {};
       list.appendChild(el('div', { class: 'md-item' }, [el('div', { class: 'md-item-main' }, [
         el('div', { class: 'md-item-title', text: (s.kind === 'jellyfin' ? 'Jellyfin · ' : T('src.share') + ' · ') + s.name }),
-        el('div', { class: 'md-item-sub', text: (stt.version ? 'Jellyfin ' + stt.version + ' · ' : '') + (s.away.mode === 'direct' ? T('away.direct', { address: s.away.address }) : T('away.vpn')) })]),
+        el('div', { class: 'md-item-sub', text: (stt.version ? 'Jellyfin ' + stt.version + ' · ' : '') + P.awayText(s) })]),
       P.badge(!s.enabled ? T('src.off') : (stt.ok ? T('src.ok') : (stt.at ? T('src.problem') : T('src.unchecked'))), !s.enabled ? null : (stt.ok ? 'good' : 'warn')),
       s.enabled && s.home && s.home.level !== 'unique' ? P.badge(T('home.badge'), 'warn') : null]));
     });

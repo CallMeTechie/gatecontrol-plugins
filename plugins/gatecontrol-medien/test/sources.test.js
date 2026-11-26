@@ -44,10 +44,11 @@ test('the network rule in v1/sources: VPN away by default, direct only with the 
     assert.equal(l.network.rule, 'home_direct_away_vpn');
     assert.equal(l.network.vpnRequiredAway, true);
     assert.deepEqual(l.network.home.probes[0], { kind: 'jellyfin', url: 'http://192.168.1.20:8096/System/Info/Public', serverId: jf1.serverId, sourceId: 'jf-1', unique: true });
-    // an away address alone changes nothing
+    // an away address keeps the VPN: the device uses it only with the tunnel up (1.3.0)
     await t.adminReq('PUT', 'sources/jf-1', { away: { direct: false, address: 'https://jellyfin.example.test' } });
     l = await t.appReq(MILA, '11', 'GET', 'sources');
-    assert.deepEqual(l.sources[0].away, { mode: 'vpn' });
+    assert.deepEqual(l.sources[0].away, { mode: 'vpn', address: 'https://jellyfin.example.test' });
+    assert.equal(l.network.vpnRequiredAway, true);
   } finally { await t.host.close(); }
   const t2 = await setup({ host: { settings: { away_direct_all: true } } });
   try {
@@ -62,6 +63,52 @@ test('the network rule in v1/sources: VPN away by default, direct only with the 
     const l = await t3.appReq(MILA, '11', 'GET', 'sources');
     assert.deepEqual(l.sources[0].away, { mode: 'direct', address: 'https://jellyfin.example.test:8920' });
   } finally { await t3.host.close(); }
+});
+
+test('away through the VPN: sources saved without an away address get one from their route (before 1.3.0)', async () => {
+  const t = await setup({ jfLabel: 'jellyfin.example.test', davLabel: 'nas.example.test' });
+  try {
+    await withJellyfin(t);
+    await withShare(t);
+    // an SMB-only share has no way away
+    await t.adminReq('POST', 'sources', { kind: 'share', name: 'Musik', user: 'medien-lesen', password: 'geheim-Lese-PW-2', smb: { address: 'smb://192.168.1.20/musik' } });
+    let l = await t.appReq(MILA, '11', 'GET', 'sources');
+    const by = (id) => l.sources.find((x) => x.id === id);
+    assert.deepEqual(by('jf-1').away, { mode: 'vpn', address: 'https://jellyfin.example.test' });
+    assert.deepEqual(by('sh-1').away, { mode: 'vpn', address: 'https://nas.example.test/filme' });
+    assert.deepEqual(by('sh-2').away, { mode: 'vpn' });
+    // the admin pages show the same
+    const a = await t.adminReq('GET', 'sources');
+    assert.deepEqual(a.sources.map((x) => x.away.address || null), ['https://jellyfin.example.test', 'https://nas.example.test/filme', null]);
+    const o = await t.adminReq('GET', 'overview');
+    assert.equal(o.sources[0].away.address, 'https://jellyfin.example.test');
+    // a saved address wins; the exception without VPN needs a saved one (a derived address keeps the VPN)
+    await t.adminReq('PUT', 'sources/jf-1', { away: { direct: false, address: 'https://media.example.test' } });
+    l = await t.appReq(MILA, '11', 'GET', 'sources');
+    assert.deepEqual(by('jf-1').away, { mode: 'vpn', address: 'https://media.example.test' });
+  } finally { await t.host.close(); }
+  const t2 = await setup({ jfLabel: 'jellyfin.example.test', host: { settings: { away_direct_all: true } } });
+  try {
+    await withJellyfin(t2);
+    const l = await t2.appReq(MILA, '11', 'GET', 'sources');
+    assert.deepEqual(l.sources[0].away, { mode: 'vpn', address: 'https://jellyfin.example.test' });
+  } finally { await t2.host.close(); }
+});
+
+test('awayAddressOf: only a route domain counts, never a peer, an address with a name or an L4 route', () => {
+  const sources = require('../server/sources');
+  const jf = (label, address = 'http://192.168.1.20:8096') => sources.awayAddressOf({ kind: 'jellyfin', config: { targetIndex: 0, address } }, { jellyfin: [{ index: 0, label }] });
+  assert.equal(jf('Jellyfin.Example.Test'), 'https://jellyfin.example.test');
+  assert.equal(jf('NAS (10.8.0.20:8096)'), null, 'a VPN peer');
+  assert.equal(jf('192.168.1.20:8096'), null, 'an address');
+  assert.equal(jf('10.0.0.5'), null, 'an IP address');
+  assert.equal(jf('nas.home.example.test', 'http://nas.home.example.test:8096'), null, 'the home address itself');
+  assert.equal(jf('l4.example.test:9000'), null, 'an L4 route');
+  assert.equal(jf(null), null);
+  assert.equal(sources.awayAddressOf({ kind: 'jellyfin', config: { targetIndex: 1, address: 'http://192.168.1.20:8096' } }, { jellyfin: [{ index: 0, label: 'jellyfin.example.test' }] }), null, 'another index');
+  assert.equal(sources.awayAddressOf({ kind: 'jellyfin', config: { away: { address: 'https://media.example.test' } } }, null), 'https://media.example.test');
+  assert.equal(sources.awayAddressOf({ kind: 'share', config: { webdav: { address: 'https://192.168.1.20:5006/Filme%20HD/', targetIndex: 0 } } }, { webdav: [{ index: 0, label: 'nas.example.test' }] }), 'https://nas.example.test/Filme%20HD');
+  assert.equal(sources.awayAddressOf({ kind: 'share', config: { smb: { address: 'smb://192.168.1.20/filme', targetIndex: 0 } } }, { webdav: [{ index: 0, label: 'nas.example.test' }] }), null, 'SMB only');
 });
 
 test('a share: the password only for allowed devices, children without shares, a new password raises secretRev', async () => {

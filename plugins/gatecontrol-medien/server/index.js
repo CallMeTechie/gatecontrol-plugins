@@ -1,8 +1,9 @@
 'use strict';
 
 // gatecontrol-medien — "Medien": Jellyfin and the NAS shares set up once on the server; the GateControl apps on
-// phones, TVs and PCs get the sources and their access automatically (App-API v1). Videos never pass through the
-// server: it only lists sources, hands out the NAS password to allowed devices and confirms Quick Connect codes.
+// phones, TVs and PCs get the sources and their access automatically (App-API v1). The plugin never handles
+// videos: it only lists sources, hands out the NAS password to allowed devices and confirms Quick Connect codes (away
+// the devices play through the VPN over the source's route, see server/sources.js).
 //
 //   admin API  admin/*  (tabs Quellen, Personen, Geräte, the overview)   — server/admin.js
 //   App API    v1/*     (apps with a device token)                     — server/app.js, server/cast.js

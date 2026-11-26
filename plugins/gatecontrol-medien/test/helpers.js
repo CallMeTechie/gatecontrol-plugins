@@ -40,8 +40,8 @@ async function setup(o = {}) {
     ],
     devices,
     targets: {
-      jellyfin: [{ label: '192.168.1.20:8096 über Gateway Zuhause', fetch: (p, x) => jelly.fetch(p, x) }],
-      webdav: [{ label: '192.168.1.20:5006', fetch: o.webdav || (async (p, x) => ({ status: /Basic /.test(String((x.headers || {}).Authorization)) ? 207 : 401, body: '' })) }],
+      jellyfin: [{ label: o.jfLabel || '192.168.1.20:8096 über Gateway Zuhause', fetch: (p, x) => jelly.fetch(p, x) }],
+      webdav: [{ label: o.davLabel || '192.168.1.20:5006', fetch: o.webdav || (async (p, x) => ({ status: /Basic /.test(String((x.headers || {}).Authorization)) ? 207 : 401, body: '' })) }],
     },
     ...(o.host || {}),
   });

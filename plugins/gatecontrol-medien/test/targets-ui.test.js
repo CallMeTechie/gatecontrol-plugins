@@ -139,3 +139,14 @@ test('the dialogs: one choice, no select of access targets, "Prüfen und speiche
   assert.doesNotMatch(src, /targetSelect|src\.target_hint/);
   assert.equal((src.match(/load\(\)\.then\(prune\)/g) || []).length, 3, 'add, edit, remove');
 });
+
+test('away (1.3.0): the address for away is shown for both modes, the line names it also through the VPN', () => {
+  const { MD } = load({});
+  assert.equal(MD.awayText({ kind: 'jellyfin', away: { mode: 'vpn', address: 'https://jellyfin.example.test' } }), 'away.vpn_via');
+  assert.equal(MD.awayText({ kind: 'jellyfin', away: { mode: 'direct', address: 'https://jellyfin.example.test' } }), 'away.direct');
+  assert.equal(MD.awayText({ kind: 'jellyfin', away: { mode: 'vpn' } }), 'away.none');
+  assert.equal(MD.awayText({ kind: 'share', away: { mode: 'vpn' } }), 'away.none_share');
+  const src = fs.readFileSync(path.join(__dirname, '..', 'ui', 'sources.js'), 'utf8');
+  assert.doesNotMatch(src, /addrField\.hidden/, 'the address field is not hidden in the VPN mode');
+  assert.equal((src.match(/suggestInto\(away\.addr, sg[01]\.away\)/g) || []).length, 2, 'editing a source without an away address prefills it from the route');
+});

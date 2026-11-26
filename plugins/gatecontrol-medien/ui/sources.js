@@ -6,10 +6,7 @@
   var S = null;
   var TD = null; // GC.targets.get(): routes, peers and the plugin's assignments
 
-  function awayText(s) {
-    var a = s.away || {};
-    return a.mode === 'direct' ? T('away.direct', { address: a.address }) : T('away.vpn');
-  }
+  var awayText = P.awayText;
 
   function accessText(s) {
     var a = s.access || {};
@@ -113,17 +110,13 @@
     $('#md-net-all').textContent = S.settings.awayDirectAll ? T('net.all_on') : T('net.all_off');
   }
 
-  /** "Unterwegs": only through the VPN (recommended) or without it through an HTTPS address. */
+  /** "Unterwegs": through the VPN (recommended) or without it — both over the HTTPS address for away (the route's domain). */
   function awayFields(cur) {
     var a = cur || {};
     var mode = el('select', { class: 'form-select' }, [el('option', { value: 'vpn', text: T('away.mode_vpn') }), el('option', { value: 'direct', text: T('away.mode_direct') })]);
     mode.value = a.direct === true ? 'direct' : 'vpn';
     var addr = P.input({ type: 'url', value: a.address || '', placeholder: 'https://media.example.com' });
-    var addrField = P.field(T('away.address'), addr, T('away.address_hint'));
-    var sync = function () { addrField.hidden = mode.value !== 'direct'; };
-    mode.addEventListener('change', sync);
-    sync();
-    return { addr: addr, node: el('div', null, [P.field(T('src.away'), mode, T('away.mode_hint')), addrField]),
+    return { addr: addr, node: el('div', null, [P.field(T('src.away'), mode, T('away.mode_hint')), P.field(T('away.address'), addr, T('away.address_hint'))]),
       value: function () { return { direct: mode.value === 'direct', address: addr.value.trim() || null }; } };
   }
 
@@ -177,7 +170,9 @@
       suggestInto(away.addr, sg.away);
       allow.set(v);
     });
-    if (!s) { var sg0 = P.suggestJellyfin(td, where.value()); suggestInto(address, sg0.home); suggestInto(away.addr, sg0.away); }
+    var sg0 = P.suggestJellyfin(td, where.value());
+    if (!s) suggestInto(address, sg0.home);
+    suggestInto(away.addr, sg0.away); // also when editing a source saved without an away address (before 1.3.0)
     allow.set(where.value());
     name.addEventListener('input', function () { nameShow.firstChild.textContent = name.value.trim() || (s ? s.name : T('jf.name_pending')); });
     var node = el('div', null, [el('h2', { class: 'md-card-title', text: s ? T('src.edit_title', { name: s.name }) : T('src.add_jellyfin') }),
@@ -223,6 +218,7 @@
       // what the dialog would suggest now counts as suggested: a new choice or share name updates it
       var sg1 = P.suggestShare(td, where.value(), share.value);
       [[smb, sg1.smb], [dav, sg1.webdav], [away.addr, sg1.away], [name, sg1.name]].forEach(function (x) { if (x[1] && x[0].value === x[1]) x[0].setAttribute('data-suggested', x[1]); });
+      suggestInto(away.addr, sg1.away); // a source saved without an away address (before 1.3.0) gets the route's
     }
     var adv = advanced([P.field(T('src.name'), name), P.field(T('src.smb'), smb, T('src.smb_hint')), P.field(T('src.webdav'), dav, T('src.webdav_hint')),
       P.field(T('src.cert'), cert, T('src.cert_hint')), away.node]);

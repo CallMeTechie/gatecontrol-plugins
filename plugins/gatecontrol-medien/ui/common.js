@@ -272,6 +272,12 @@
     changed();
     return { node: el('div', { class: 'md-choices', role: 'radiogroup' }, nodes), value: value, onChange: function (f) { fns.push(f); } };
   }
+  /** "unterwegs …": without VPN over the address, through the VPN over the address, or no way away (no address). */
+  function awayText(s) {
+    var a = (s && s.away) || {};
+    if (a.mode === 'direct') return T('away.direct', { address: a.address });
+    return a.address ? T('away.vpn_via', { address: a.address }) : T(s && s.kind === 'share' ? 'away.none_share' : 'away.none');
+  }
   /** One line per check result: tone + text. */
   function checks(st) {
     var items = [];
@@ -290,5 +296,5 @@
     when: when, badge: badge, avatar: avatar, field: field, input: input, check: check, checks: checks,
     hasTargets: !!hostTargets, targetsData: targetsData, viaSelect: viaSelect, routeOf: routeOf, suggest: suggest, ensureTarget: ensureTarget, pruneTargets: pruneTargets,
     assignedAt: assignedAt, whereText: whereText, homeOf: homeOf, suggestJellyfin: suggestJellyfin, suggestShare: suggestShare, likelyJellyfin: likelyJellyfin, likelyNas: likelyNas,
-    routeHint: routeHint, whereChoice: whereChoice };
+    routeHint: routeHint, whereChoice: whereChoice, awayText: awayText };
 })();

@@ -1,4 +1,4 @@
-<!-- version: 1.2.0 -->
+<!-- version: 1.3.0 -->
 # Media – Manual
 
 ## What the plugin does {#was-das-plugin-kann}
@@ -6,8 +6,8 @@
 Media brings your own collection from **Jellyfin** and the **shares of your NAS** (SMB, WebDAV) into the GateControl apps – on the phone, GateControl TV and GateControl for Windows. You set the sources up **once on the server**. Everybody with the right “Media” then sees Media on every one of their devices by itself, with the sources you share with them. Nothing is entered on the device.
 
 - **Jellyfin**: every person gets their own Jellyfin user, so progress and “watched” stay per person. The devices sign in invisibly through Quick Connect. Jellyfin's device list shows each one as “GateControl · …”.
-- **NAS shares**: a pair of SMB (at home) and WebDAV (away) or a single share. The password of a read-only user is stored encrypted on the server and only goes to allowed devices.
-- **Videos never pass through the server.** At home the devices play directly in the home network, away through the VPN. The server only hands out the list, addresses and access.
+- **NAS shares**: a pair of SMB (at home) and WebDAV (at home and away) or a single share. Away only WebDAV works. The password of a read-only user is stored encrypted on the server and only goes to allowed devices.
+- **At home directly, away through the VPN.** At home the devices play directly in the home network. Away videos run through the VPN via the GateControl server and the gateway (the source's route), not straight into the home network. The plugin itself only hands out the list, addresses and access.
 - **“Play on TV/PC”**: the phone sends title and position to the own TV or PC and stays the remote.
 
 ## Requirements {#voraussetzungen}
@@ -15,7 +15,7 @@ Media brings your own collection from **Jellyfin** and the **shares of your NAS*
 - GateControl 1.325.0 or newer.
 - A **licence of its own for Media**. It is not part of GateControl Lifetime or a bundle.
 - **Jellyfin 10.9 or newer** with Quick Connect (e.g. the Synology package) and/or SMB/WebDAV shares on the NAS.
-- A gateway in the home network through which the server reaches Jellyfin (home target), and a VPN that routes the home network (e.g. 192.168.1.0/24).
+- A gateway in the home network and a **route** for Jellyfin or the NAS's WebDAV (domain → gateway → target). The server reaches the source over it (home target), and away the devices play over it through the VPN. A route released for internal use only is enough. The server does not route the home network itself into the tunnel.
 - GateControl apps in a version with media from the server.
 
 ## Setting up {#einrichten}
@@ -38,9 +38,9 @@ The Sources tab shows for every source **via** which route it runs and **“Serv
 4. Paste the **API key**. Media takes the **name** from Jellyfin when checking (server name).
 5. **Check and save**: reachable, version, key valid, Quick Connect – the result is shown in the dialog and on the source. If Quick Connect is off, **“Switch on in Jellyfin”** turns it on in Jellyfin's configuration after asking. The key can only be replaced afterwards, never read.
 
-Under **“Advanced”**, filled in: the name, the **home address** (from the route's target, e.g. `http://192.168.2.151:8096`, else the address Jellyfin reports), **Away** (only through the VPN, or the exception without VPN with `https://<route domain>`) and **Download for offline**.
+Under **“Advanced”**, filled in: the name, the **home address** (from the route's target, e.g. `http://192.168.2.151:8096`, else the address Jellyfin reports), **Away** (through the VPN or the exception without VPN, both over the **HTTPS address for away** `https://<route domain>`) and **Download for offline**.
 
-The DSM firewall must allow TCP 8096 from the gateway and the tunnel network. The home network search (UDP 7359) is not needed.
+The DSM firewall must allow TCP 8096 from the gateway – away the traffic comes through the gateway too. The home network search (UDP 7359) is not needed.
 
 ### Adding a NAS share {#freigabe}
 
@@ -48,13 +48,14 @@ The DSM firewall must allow TCP 8096 from the gateway and the tunnel network. Th
 2. **Add source › NAS share**: **Where is the NAS?** (route, VPN peer or an address already assigned), **share name** (e.g. `video`), **user** and **password**.
 3. **Check and save.** Media creates the SMB address (`smb://<NAS>/video`) and – when the NAS speaks HTTPS – the WebDAV address (`https://<NAS>:5006/video`) itself and allows the server to reach the NAS.
 
-Under **“Advanced”**: name, SMB and WebDAV address, the certificate (SHA-256, to pin a self-signed one) and Away. With a VPN peer as the NAS you enter the home-network addresses there yourself – the peer's VPN address cannot be reached at home. Use IP addresses rather than names like `\\nas`: names do not resolve away.
+Under **“Advanced”**: name, SMB and WebDAV address, the certificate (SHA-256, to pin a self-signed one) and Away (`https://<route domain>/<share>`, over the NAS's WebDAV). With a VPN peer as the NAS you enter the home-network addresses there yourself – the peer's VPN address cannot be reached at home. Use IP addresses rather than names like `\\nas`. A share with SMB only has no way away – away only WebDAV over a route.
 
 ### Network: at home directly, away through the VPN {#netz}
 
 - **At home** the devices play directly in the home network, never through the server or the tunnel, also with the VPN on. A device finds out itself that it is at home, over the Wi-Fi/LAN (never through the tunnel): it asks the Jellyfin server (matching server ID) or checks the pinned certificate of the WebDAV share. Without either it checks whether the source's home address answers (e.g. the NAS's SMB port 445) – enough to keep the device off the VPN at home, but not unique: a foreign network with the same address answers too. The tab Sources marks such sources with **“Home not unique”**; a WebDAV address with its certificate (SHA-256) makes them unique. The plugin keeps Jellyfin's server ID from saving; if Jellyfin was off then, “Check” or the next reconcile (every 5 minutes) fetches it. Any 192.168.1.x address alone is not enough.
 - **Away** media go **only through the VPN**. If it is off, the app switches it on when playing. Without VPN the app plays nothing away and says “Away only through the VPN”.
-- **Exception “Allow away without VPN”**: per source in the source dialog or for all sources under Settings › Network. The source then needs an **HTTPS address for away**, e.g. a GateControl route (`https://jellyfin.example.test`). The dialog refuses an `http://` address. Sources without such an address stay with the VPN away.
+- **The way away:** through the tunnel the devices do not reach the home address (e.g. `http://192.168.1.20:8096`), because the server does not route the home network into the tunnel. They play over the **HTTPS address for away**: the source's route (`https://jellyfin.example.test`, for a NAS `https://nas.example.test/video` over WebDAV). The video then runs through the VPN via the GateControl server and the gateway to the target. The VPN resolves the route's domain; a route released for internal use only is enough. The dialog fills the address in from the chosen route (“Advanced › HTTPS address for away”). For sources without a saved address (created before 1.3.0) Medien takes the domain of the route the source runs over – no need to save again. Without a route (e.g. Jellyfin on a VPN peer, a share with SMB only) the tab Sources shows “not reachable away”.
+- **Exception “Allow away without VPN”**: per source in the source dialog or for all sources under Settings › Network. The devices then play away without VPN over the same HTTPS address – the route must be publicly reachable for that. The exception needs an address saved in the dialog. The dialog refuses an `http://` address.
 
 ### Linking people {#personen}
 
@@ -90,9 +91,16 @@ The Jellyfin key never leaves the server. The log names people, devices and sour
 - **“The administrator has to switch Quick Connect on”**: Sources › Jellyfin › “Switch on in Jellyfin”, or in Jellyfin Dashboard › General › Quick Connect.
 - **“The administrator has to link you to a Jellyfin user”**: tab People, pick or create a Jellyfin user.
 - **Jellyfin unreachable**: right route or peer under “Where does Jellyfin run?”? Gateway online? DSM firewall port 8096?
-- **“unreachable through the tunnel”** on the tab Devices: the gateway does not route the home network into the tunnel, or the DSM firewall does not allow the tunnel network (8096, 5006, maybe 445).
+- **“unreachable through the tunnel”** on the tab Devices: is the source's HTTPS address for away (the route's domain) right? Is the route on, the gateway online, and does the DSM firewall allow the gateway (8096, 5006)?
 - **A phone is lost**: remove it in GateControl (Jellyfin closes at once or within 5 minutes). The NAS password cannot be taken back from a device that never comes online again: change it in DSM and replace it under Sources.
 - **Licence**: without a licence of its own for Media the apps hide Media. A GateControl Lifetime licence does not count here.
+
+## New in 1.3.0 {#neu-1-3-0}
+
+- **Away over the route:** away the devices get the HTTPS address for away also in the mode “only through the VPN” and play through the tunnel over the route (GateControl server → gateway → Jellyfin or WebDAV). Until now they tried the home address through the tunnel, which never arrived there.
+- **Existing sources** without a saved address get the domain of their route by themselves – no need to save again.
+- **Dialog:** the field “HTTPS address for away” applies to both modes and is always shown under “Advanced”. The tab Sources shows “away through the VPN: https://…” or “not reachable away”.
+- Handbook [Network](#netz) corrected: no VPN that routes the home network is needed, but a route; one released for internal use only is enough. Away only WebDAV, no SMB.
 
 ## New in 1.2.0 {#neu-1-2-0}
 

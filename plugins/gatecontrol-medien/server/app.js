@@ -40,7 +40,7 @@ async function visibleSource(gc, user, id, cfg) {
   return src;
 }
 
-async function jellyfinEntry(gc, user, src, deviceId, cfg, deviceName) {
+async function jellyfinEntry(gc, user, src, deviceId, cfg, deviceName, targets) {
   const st = src.status || {};
   const m = await mapping.of(gc, src.id, user.id);
   const linked = m && m.jf_user_id ? { id: m.jf_user_id, name: m.jf_user_name } : null;
@@ -56,7 +56,7 @@ async function jellyfinEntry(gc, user, src, deviceId, cfg, deviceName) {
     serverId: sources.serverIdOf(src), version: st.version || null,
     address: src.config.address,
     home: { address: src.config.address },
-    away: sources.awayOf(src, cfg),
+    away: sources.awayOf(src, cfg, targets),
     user: linked, problem: linked ? (st.quickConnect === false ? 'quick_connect_off' : null) : 'no_mapping',
     device, paired,
     quickConnect: st.quickConnect == null ? null : st.quickConnect,
@@ -64,14 +64,14 @@ async function jellyfinEntry(gc, user, src, deviceId, cfg, deviceName) {
   };
 }
 
-function shareEntry(src, cfg) {
+function shareEntry(src, cfg, targets) {
   const c = src.config;
   return {
     id: src.id, kind: 'share', name: src.name, folder: sources.folder(src),
     smb: c.smb ? { address: c.smb.address } : null,
     webdav: c.webdav ? { address: c.webdav.address, certSha256: c.webdav.certSha256 || null } : null,
     user: c.user, secretRev: src.secretRev,
-    away: sources.awayOf(src, cfg),
+    away: sources.awayOf(src, cfg, targets),
   };
 }
 
@@ -95,8 +95,10 @@ async function list(gc, req, cfg, now) {
     deviceName = await devices.deviceName(gc, deviceId);
     if (!deviceName) { const d = ((await devices.listOf(gc, user.id)) || []).find((x) => String(x.id) === deviceId); deviceName = d ? str(d.name, 60) : null; }
   }
+  // away addresses of sources saved before 1.3.0 come from their route (only when one lacks a saved address)
+  const targets = all.some((s) => !(s.config && s.config.away && s.config.away.address)) ? await sources.targetsOf(gc) : null;
   const out = [];
-  for (const s of all) out.push(s.kind === 'jellyfin' ? await jellyfinEntry(gc, user, s, deviceId, cfg, deviceName) : shareEntry(s, cfg));
+  for (const s of all) out.push(s.kind === 'jellyfin' ? await jellyfinEntry(gc, user, s, deviceId, cfg, deviceName, targets) : shareEntry(s, cfg, targets));
   const body = {
     media, maxOfflineDays: cfg.maxOfflineDays, offlineHintDays: cfg.offlineHintDays,
     network: { rule: 'home_direct_away_vpn', vpnRequiredAway: out.some((s) => s.away.mode === 'vpn'), home: { probes: homeProbes(all) } },
