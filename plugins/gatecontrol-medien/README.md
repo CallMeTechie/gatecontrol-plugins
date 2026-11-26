@@ -32,7 +32,8 @@ zeigt sie unter Einstellungen nicht mehr; ab 1.1.0 `window.GC.targets` mit `perm
 Quellen-Dialog weist die Zugriffsziele `jellyfin`/`webdav`/`smb` selbst zu; dazu Signal-Topic, `ui.settingsPages`, `reason: plugin_unavailable`). Mit
 **GateControl ≥ 1.322.0** nutzt das Plugin den Hook `devicesChanged` (entferntes/gesperrtes Gerät verliert Jellyfin
 sofort); ohne ihn reicht der Abgleich alle 5 Minuten (bleibt auch mit Hook das Sicherheitsnetz, der Host holt verpasste
-Meldungen nicht nach). `clientType: 'android-tv'` (GateControl ≥ 1.320.0) erkennt Fernseher als Cast-Ziel.
+Meldungen nicht nach). `clientType: 'android-tv'` (GateControl ≥ 1.320.0) erkennt Fernseher als Cast-Ziel, `clientType: 'pro'` die PCs mit
+GateControl Pro (ab Medien 1.4.1 nur diese; der Community-Client spielt keine Medien ab).
 
 ## Spike M0: Jellyfin-Anmeldung ohne Eingabe (Ablauf A)
 
@@ -238,7 +239,12 @@ ID in seiner eigenen `v1/sources`-Liste (nicht mehr per ServerId/Adresse). `item
 Freigaben wie im Vertrag. Keine Geheimnisse (Felder mit Namen wie token/password/secret werden abgelehnt).
 
 - `GET v1/cast/targets` → `{ ok, v: 1, deviceId, devices: [{ id, name, kind: "tv" | "pc", clientType, online, lastSeen }] }` – eigene
-  GateControl-TV- und Windows-Geräte (ohne das fragende), online zuerst; `deviceId` (ab 1.4.0) = die ID des fragenden Geräts.
+  GateControl-TV- und GateControl-Pro-Geräte (ohne das fragende), online zuerst; `deviceId` (ab 1.4.0) = die ID des fragenden Geräts.
+  PCs nur mit `clientType: "pro"` (ab 1.4.1); Community-Client und Windows-Geräte unbekannter Ausgabe sind kein Ziel.
+- `cast.cmd`-Befehle: `play`, `pause`, `seek`, `seekBy`, `audio`, `subtitle`, `volume` (ab 1.4.1), `stop`, `status` – andere
+  → `invalid` mit `field: "cmd"`. `volume`: `{ …, "type": "cast.cmd", "cmd": "volume", "volume": 40, "muted": false }` –
+  `volume` Ganzzahl 0–100 und/oder `muted` true/false, mindestens eins (sonst `invalid`, `field: "volume"` bzw. `"muted"`).
+  Der Empfänger meldet `volume`/`muted` in `cast.state` zurück (unverändert durchgereicht).
 - `POST v1/cast/{session}/message` `{ to: "<Geräte-ID>", body: <Cast-Nachricht> }` → `{ ok, v: 1, via: ["event", "push"], online }`.
   `body.session` muss `{session}` sein, ≤ 3000 Bytes JSON, 60/min und 600/h je sendendem Gerät. Beide Geräte gehören der fragenden
   Person, sie hat „Medien“ (und bei `cast.play` die Quelle). Antworten des TV (`cast.state`) gehen genauso an das Handy (`to` = Handy).

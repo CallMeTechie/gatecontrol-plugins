@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.4.1
+
+- **Lautstärke am PC:** `cast.cmd` kennt `cmd: "volume"` mit `volume` (Ganzzahl 0–100) und/oder `muted` (true/false),
+  mindestens eins von beiden; sonst `invalid` mit `field: 'volume'` bzw. `'muted'`. Der Windows-Empfänger (GateControl
+  Pro) setzt sie und meldet `volume`/`muted` in `cast.state` zurück (das Plugin reicht den Stand wie bisher durch).
+  Bisher lehnte das Plugin den Befehl als unbekannt ab (`field: 'cmd'`).
+- **Nur Pro-PCs als Ziel:** `GET v1/cast/targets` nennt nur noch Windows-Geräte, die GateControl als Pro-Client meldet
+  (`clientType: 'pro'`). Der Community-Client spielt keine Medien ab – ein Cast dorthin endete nach 25 s mit „keine
+  Antwort“. Ein Windows-Gerät, dessen Ausgabe GateControl (noch) nicht kennt, ist ebenfalls kein Ziel. GateControl-TV
+  unverändert.
+
 ## 1.4.0
 
 - **Geräte-ID gleich mitliefern:** `GET v1/sources` hat das Feld `deviceId` (String, z. B. `"11"`; `null` ohne
