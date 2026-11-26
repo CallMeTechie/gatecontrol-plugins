@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.5.0
+
+- **Neuer Reiter „Umwandeln“ (Schritt 1 von „Videos umwandeln“, Entwurf vom 26.11., Fragen 92–102):** die Liste der
+  Filme und Folgen aus Jellyfin, die nicht auf allen drei Zielgeräten laufen (Android-Handy, Fire TV Cube 3. Gen.,
+  Windows-App; feste Regeln, Frage 97 a). Drei Stufen: **Umwandeln** (kein Gerät bzw. eines kann es nicht und die NAS
+  schafft das Umwandeln beim Abspielen nicht flüssig: H.264 10 Bit/High 10, 4:2:2/4:4:4/12 Bit, Dolby Vision 5),
+  **Hinweis** (Jellyfin wandelt live um, die NAS schafft es: HEVC 10 Bit, AV1, MPEG-2/VC-1/MPEG-4 ASP/WMV, AVI/WMV/FLV,
+  Bild-Untertitel PGS/VobSub) und **Info** (DTS/DTS-HD/TrueHD, AC3/E-AC3 als Standard-Tonspur, interlaced). DTS,
+  TrueHD und PGS werden nur angezeigt (Frage 98 a). Je Zeile Grund, Geräte (✓ / ~ / ✕), Größe vorher und geschätzt
+  nachher, geschätzte Dauer auf einer NAS mit Intel J3455 (Ziel H.264 8 Bit per Hardware); Filter, Suche, Sortierung,
+  Details je Datei. Bei mehreren Versionen zählt die beste.
+- **Noch kein Umwandeln:** Das braucht den Gateway-Dienst „umwandeln“ (Frage 92 a), der in einem späteren Schritt kommt.
+  Die Seite sagt das und hat keinen Knopf, der es vortäuscht; `available: false` in Admin- und App-API.
+- **Erkennung:** `GET /Items` seitenweise (200 je Seite, eine zu große Antwort – über 5 MB – wird kleiner neu geholt),
+  Felder `MediaSources,Path`, nur vorhandene Dateien. Der erste Lauf startet beim ersten Öffnen der Seite oder mit
+  „Neu prüfen“, danach alle 30 Minuten nur Änderungen (`MinDateLastSaved`), einmal am Tag alles (entfernt Gelöschtes).
+  Solange die Liste Einträge hat, liest das Plugin jede Minute `GET /Sessions`: wandelt Jellyfin eine gelistete Datei
+  langsamer als in Echtzeit um, bekommt sie „beim Abspielen gestockt“ (mit Jellyfins `TranscodeReasons`) und rückt nach
+  oben.
+- **API:** `GET admin/convert` (Liste, Zahlen, Schätzung, Stand je Quelle), `POST admin/convert/scan`; App-API
+  `GET v1/convert/status?items=<id>,…` (höchstens 100 Jellyfin-IDs, nur aus Quellen, die die Person sieht) für den
+  späteren Hinweis in den Apps (Frage 100). Neue Tabelle `conv_items` (Migration 002).
+
 ## 1.4.1
 
 - **Lautstärke am PC:** `cast.cmd` kennt `cmd: "volume"` mit `volume` (Ganzzahl 0–100) und/oder `muted` (true/false),

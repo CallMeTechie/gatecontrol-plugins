@@ -1,4 +1,4 @@
-<!-- version: 1.4.1 -->
+<!-- version: 1.5.0 -->
 # Medien – Handbuch
 
 ## Was das Plugin kann {#was-das-plugin-kann}
@@ -73,7 +73,26 @@ Für ein Familien-TV legst du in GateControl eine Person „Wohnzimmer“ an und
 - **Reiter Geräte**: alle Apps von Personen mit Medien-Recht, ob sie bei Jellyfin angemeldet sind, welche Freigabe-Passwörter sie bekommen haben und was sie über ihren Weg melden. **Abmelden** löscht das Gerät in Jellyfin und schickt ihm eine stille Mitteilung (Zugänge und Downloads löschen). Solange die Person das Recht hat, meldet es sich danach selbst neu an.
 - **Passwort ersetzen**: Alle berechtigten Geräte bekommen das neue Passwort beim nächsten Kontakt.
 - **Übersicht** (Seitenleiste Apps › Medien): Lizenz, Zahlen, Zustand der Quellen, Protokoll.
+- **Umwandeln**: welche Videos nicht überall abspielbar sind (siehe [Videos umwandeln](#umwandeln)).
 - **„Auf TV/PC abspielen“** (Einstellung unter Geräte): Das Handy bietet die eigenen GateControl-TV-Geräte und PCs mit GateControl Pro an. Der Fernseher holt das Video selbst von der NAS.
+
+## Videos umwandeln: die Liste {#umwandeln}
+
+Reiter **Umwandeln** (Seitenleiste Apps › Medien, nur für Administratoren): die Filme und Folgen aus Jellyfin, die nicht auf allen Geräten laufen – bewertet für ein **Android-Handy**, den **Fire TV Cube (3. Gen.)** und die **Windows-App**. Die Liste kommt aus Jellyfin (Bild, Ton, Untertitel jeder Datei). Beim ersten Öffnen sieht Medien alle Filme und Folgen durch, danach alle 30 Minuten nur Änderungen und einmal am Tag alles. **Neu prüfen** startet sofort einen vollen Durchlauf.
+
+| Stufe | Bedeutung | Beispiele |
+|---|---|---|
+| **Umwandeln** | Mindestens ein Gerät spielt die Datei nicht direkt, und die NAS schafft das Umwandeln beim Abspielen nicht flüssig – es ruckelt. | H.264 mit 10 Bit (High 10), 4:2:2/4:4:4 oder 12 Bit, Dolby Vision Profil 5 |
+| **Hinweis** | Jellyfin wandelt beim Abspielen um, die NAS schafft das. | HEVC 10 Bit, AV1, MPEG-2, VC-1, DivX/Xvid, WMV, AVI, Bild-Untertitel (PGS, VobSub) auf Windows |
+| **Info** | Fällt nur auf. | DTS, DTS-HD, TrueHD, AC3/E-AC3 als Standard-Tonspur, interlaced |
+
+Je Zeile stehen der **Grund**, die drei **Geräte** (✓ spielt direkt, ~ je nach Gerät, ✕ spielt nicht direkt), die **Größe** vorher und geschätzt nachher und die geschätzte **Dauer** auf der NAS. Ein Klick auf den Titel zeigt die Details mit einer Erklärung je Grund. Filter, Suche (Titel oder Ordner) und Sortierung helfen bei großen Sammlungen. Hat eine Datei mehrere Versionen und spielt eine davon überall, steht sie nicht in der Liste.
+
+**Beim Abspielen gestockt:** Wandelt Jellyfin eine Datei der Liste gerade langsamer als in Echtzeit um, merkt sich Medien das (mit Jellyfins Grund, z. B. `VideoBitDepthNotSupported`), und die Datei rückt nach oben.
+
+**Geschätzt, nicht gemessen:** Größe und Dauer gelten für eine NAS mit Intel J3455 (Apollo Lake) und das Ziel H.264 8 Bit per Hardware; Ton, Untertitel und Kapitel blieben unverändert. Eine 20-Minuten-Folge in 1080p50 mit 10 Bit braucht danach etwa 15–30 Minuten.
+
+**Umwandeln selbst kommt später.** Es braucht einen eigenen Dienst „umwandeln“ auf dem Gateway (nachts 1–6 Uhr, Pause beim Schauen, Original 14 Tage im Ordner `.gc-papierkorb`). Bis dahin zeigt die Seite nur die Liste. Die Videos spielen trotzdem: Jellyfin wandelt live um, bei „Umwandeln“ mit Ruckeln.
 
 ## Berechtigungen {#berechtigungen}
 
@@ -94,6 +113,11 @@ Der Jellyfin-Schlüssel verlässt den Server nie. Das Protokoll nennt Personen, 
 - **„durch den Tunnel nicht erreichbar“** im Reiter Geräte: Stimmt die HTTPS-Adresse für unterwegs der Quelle (die Domain der Route)? Ist die Route an, das Gateway online, und lässt die DSM-Firewall das Gateway zu (8096, 5006)?
 - **Ein Handy ist verloren**: in GateControl entfernen (Jellyfin ist sofort bzw. nach höchstens 5 Minuten zu). Das NAS-Passwort lässt sich von einem Gerät, das nicht mehr online kommt, nicht zurückholen: Passwort in DSM ändern und unter Quellen ersetzen.
 - **Lizenz**: Ohne eigene Lizenz für Medien blenden die Apps Medien aus. Eine GateControl-Lifetime-Lizenz zählt hier nicht.
+
+## Neu in 1.5.0 {#neu-1-5-0}
+
+- **Reiter „Umwandeln“:** Die Liste der Videos, die nicht auf Handy, Fire TV oder Windows laufen, mit Grund, Geräten, Größe und geschätzter Dauer (siehe [Videos umwandeln](#umwandeln)). Umwandeln selbst kommt mit dem Dienst auf dem Gateway.
+- **„Beim Abspielen gestockt“:** Dateien, die Jellyfin beim Abspielen zu langsam umwandelt, stehen oben.
 
 ## Neu in 1.4.1 {#neu-1-4-1}
 

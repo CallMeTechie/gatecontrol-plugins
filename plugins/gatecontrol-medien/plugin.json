@@ -4,7 +4,7 @@
     "de": "Medien",
     "en": "Media"
   },
-  "version": "1.4.1",
+  "version": "1.5.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Die eigene Mediensammlung aus Jellyfin und den Freigaben der NAS (SMB, WebDAV) zentral im Server eingerichtet: Handy, Fernseher und PC bekommen Quellen und Zugang automatisch. Geräte melden sich unsichtbar per Quick Connect bei Jellyfin an, jede Person mit ihrem eigenen Jellyfin-Benutzer. Rechte je Person und Gruppe, Kinder ohne NAS-Freigaben, Widerruf beim Entfernen eines Geräts. Zu Hause direkt im Heimnetz, unterwegs durch das VPN über die Route der Quelle.",
@@ -87,6 +87,13 @@
         "title": {
           "de": "Übersicht",
           "en": "Overview"
+        }
+      },
+      {
+        "id": "convert",
+        "title": {
+          "de": "Umwandeln",
+          "en": "Convert"
         }
       },
       {

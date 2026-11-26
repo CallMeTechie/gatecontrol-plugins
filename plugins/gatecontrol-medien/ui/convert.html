@@ -1,0 +1,23 @@
+<main class="md-page md-cv">
+  <div class="md-cv-head">
+    <p class="md-intro">{{t:cv.intro}}</p>
+    <div class="md-actions"><button type="button" class="btn" id="md-c-scan">{{t:cv.rescan}}</button></div>
+  </div>
+  <p class="md-info" id="md-c-service">{{t:cv.service_note}}</p>
+  <div id="md-c-problems"></div>
+  <div class="md-stats md-cv-stats" id="md-c-stats"></div>
+  <section class="md-card" aria-label="{{t:cv.col_title}}">
+    <div class="md-cv-tools">
+      <div class="md-chips" id="md-c-filters" role="group"></div>
+      <div class="md-cv-find">
+        <select class="form-select" id="md-c-sort" aria-label="{{t:cv.sort}}"></select>
+        <input type="search" class="form-input" id="md-c-q" placeholder="{{t:cv.search}}" aria-label="{{t:cv.search}}">
+      </div>
+    </div>
+    <p class="md-hint" id="md-c-running" hidden>{{t:cv.scanning}}</p>
+    <div class="md-table-wrap"><table class="md-table md-cv-table" id="md-c-table"></table></div>
+    <p class="md-hint" id="md-c-empty" hidden></p>
+    <div class="md-actions" id="md-c-more"></div>
+    <p class="md-hint" id="md-c-foot"></p>
+  </section>
+</main>

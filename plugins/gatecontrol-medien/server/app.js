@@ -13,6 +13,7 @@ const mapping = require('./mapping');
 const devices = require('./devices');
 const log = require('./log');
 const cast = require('./cast');
+const convert = require('./convert');
 const { fail, str, deviceIdOf, sourceIdOf, iso } = require('./util');
 
 const PAIR_PER_HOUR = 10;
@@ -229,6 +230,7 @@ async function route(req, gc, seg, cfg, now = Date.now()) {
   if (a === 'cast' && b === 'targets' && !c && m === 'GET') return cast.targets(gc, req, cfg);
   if (a === 'cast' && b && c === 'message' && !d && m === 'POST') return cast.message(gc, req, b, cfg, now);
   if (a === 'handoff' && !b && m === 'POST') return cast.handoff(gc, req, cfg, now);
+  if (a === 'convert' && b === 'status' && !c && m === 'GET') return convert.status(gc, req, cfg);
   throw fail('not_found');
 }
 

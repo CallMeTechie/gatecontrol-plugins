@@ -12,6 +12,7 @@ const devices = require('./devices');
 const log = require('./log');
 const license = require('./license');
 const assignments = require('./assignments');
+const convert = require('./convert');
 const { fail, str, posInt } = require('./util');
 
 const targetsOf = sources.targetsOf;
@@ -123,6 +124,7 @@ async function route(req, gc, seg, cfg, now = Date.now()) {
   const b = req.body && typeof req.body === 'object' ? req.body : {};
   const [, a, x, y, z] = seg;
   if (a === 'overview' && m === 'GET') return overview(gc, cfg);
+  if (a === 'convert') return convert.route(req, gc, seg);
   if (a === 'targets' && !x && m === 'GET') return { targets: await targetsOf(gc), made: await assignments.made(gc) };
   if (a === 'targets' && x === 'made' && m === 'POST') return assignments.rememberMade(gc, b);
   if (a === 'targets' && x === 'compact' && m === 'POST') {

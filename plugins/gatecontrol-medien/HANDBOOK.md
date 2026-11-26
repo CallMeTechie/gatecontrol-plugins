@@ -1,4 +1,4 @@
-<!-- version: 1.4.1 -->
+<!-- version: 1.5.0 -->
 # Media – Manual
 
 ## What the plugin does {#was-das-plugin-kann}
@@ -73,7 +73,26 @@ For a family TV create a person “Living room” in GateControl and link it to 
 - **Tab Devices**: every app of people with the right Media, whether it is signed in to Jellyfin, which share passwords it got and what it reports about its way. **Sign out** deletes the device in Jellyfin and sends it a silent message (delete access and downloads). As long as the person has the right it signs in again by itself.
 - **Replace password**: every allowed device gets the new password with its next contact.
 - **Overview** (sidebar Apps › Media): licence, numbers, state of the sources, log.
+- **Convert**: which videos do not play everywhere (see [Converting videos](#umwandeln)).
 - **“Play on TV/PC”** (setting under Devices): the phone offers the own GateControl TV devices and PCs with GateControl Pro. The TV fetches the video from the NAS itself.
+
+## Converting videos: the list {#umwandeln}
+
+Tab **Convert** (sidebar Apps › Media, administrators only): the films and episodes from Jellyfin that do not play everywhere – judged for an **Android phone**, the **Fire TV Cube (3rd gen.)** and the **Windows app**. The list comes from Jellyfin (picture, audio, subtitles of every file). When the page is opened for the first time, Media goes through all films and episodes, after that only the changes every 30 minutes and everything once a day. **Check again** starts a full run at once.
+
+| Level | Meaning | Examples |
+|---|---|---|
+| **Convert** | At least one device does not play the file directly, and the NAS cannot convert it smoothly while playing – it stutters. | H.264 with 10 bit (High 10), 4:2:2/4:4:4 or 12 bit, Dolby Vision profile 5 |
+| **Notice** | Jellyfin converts it while playing, the NAS manages. | HEVC 10 bit, AV1, MPEG-2, VC-1, DivX/Xvid, WMV, AVI, image subtitles (PGS, VobSub) on Windows |
+| **Info** | Only stands out. | DTS, DTS-HD, TrueHD, AC3/E-AC3 as the default audio track, interlaced |
+
+Every row shows the **reason**, the three **devices** (✓ plays directly, ~ depends on the device, ✕ does not play directly), the **size** before and estimated after, and the estimated **duration** on the NAS. A click on the title shows the details with an explanation per reason. Filters, search (title or folder) and sorting help with large collections. A file with several versions of which one plays everywhere is not on the list.
+
+**Stuttered while playing:** When Jellyfin converts a listed file slower than real time, Media remembers it (with Jellyfin's reason, e.g. `VideoBitDepthNotSupported`) and the file moves up.
+
+**Estimated, not measured:** size and duration are for a NAS with an Intel J3455 (Apollo Lake) and the target H.264 8 bit in hardware; audio, subtitles and chapters would stay unchanged. A 20-minute episode in 1080p50 with 10 bit then takes about 15–30 minutes.
+
+**Converting itself comes later.** It needs its own service "umwandeln" on the gateway (at night 1–6 am, paused while someone watches, the original kept 14 days in the folder `.gc-papierkorb`). Until then the page only shows the list. The videos still play: Jellyfin converts them live, with "Convert" it stutters.
 
 ## Permissions {#berechtigungen}
 
@@ -94,6 +113,11 @@ The Jellyfin key never leaves the server. The log names people, devices and sour
 - **“unreachable through the tunnel”** on the tab Devices: is the source's HTTPS address for away (the route's domain) right? Is the route on, the gateway online, and does the DSM firewall allow the gateway (8096, 5006)?
 - **A phone is lost**: remove it in GateControl (Jellyfin closes at once or within 5 minutes). The NAS password cannot be taken back from a device that never comes online again: change it in DSM and replace it under Sources.
 - **Licence**: without a licence of its own for Media the apps hide Media. A GateControl Lifetime licence does not count here.
+
+## New in 1.5.0 {#neu-1-5-0}
+
+- **Tab "Convert":** the list of videos that do not play on the phone, Fire TV or Windows, with reason, devices, size and estimated duration (see [Converting videos](#umwandeln)). Converting itself comes with the service on the gateway.
+- **"Stuttered while playing":** files Jellyfin converts too slowly while playing are at the top.
 
 ## New in 1.4.1 {#neu-1-4-1}
 

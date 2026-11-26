@@ -12,10 +12,12 @@
 //   rights "Medien" and per source, children                           — server/rights.js
 //   person ↔ Jellyfin user                                             — server/mapping.js
 //   pairings, deliveries, revocation, reconcile                        — server/devices.js
+//   "Videos umwandeln" step 1: the list, admin/convert, v1/convert     — server/convert.js, server/convert-rules.js
 //
 // Background (every 60 s): the reconcile every 5 minutes (devices removed in GateControl, rights, mappings, the
 // Jellyfin servers), the log's retention once an hour. With a GateControl that has the hook devicesChanged a removed
-// device loses its Jellyfin access at once; the reconcile stays the safety net.
+// device loses its Jellyfin access at once; the reconcile stays the safety net. The list "Umwandeln" scans Jellyfin
+// once an administrator opened it (then changes every 30 minutes, all once a day) and watches /Sessions every 60 s.
 
 const ui = require('./ui');
 const app = require('./app');
@@ -25,6 +27,7 @@ const devices = require('./devices');
 const rights = require('./rights');
 const license = require('./license');
 const log = require('./log');
+const convert = require('./convert');
 const texts = require('./texts.json');
 const { STATUS, isKnown, deviceIdOf } = require('./util');
 
@@ -60,6 +63,7 @@ async function background(gc, now) {
     state.lastPurge = now;
     try { await log.purge(gc, cfg.logDays, now); } catch (e) { gc.log.debug('purge failed', (e && e.code) || 'error'); }
   }
+  try { await convert.background(gc, now); } catch (e) { gc.log.debug('convert failed', (e && e.code) || 'error'); }
 }
 
 module.exports = {
