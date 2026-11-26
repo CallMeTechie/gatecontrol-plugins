@@ -1,4 +1,4 @@
-<!-- version: 1.2.0 -->
+<!-- version: 1.3.0 -->
 # Medien – Handbuch
 
 ## Was das Plugin kann {#was-das-plugin-kann}
@@ -6,8 +6,8 @@
 Medien bringt deine eigene Sammlung aus **Jellyfin** und den **Freigaben deiner NAS** (SMB, WebDAV) in die GateControl-Apps – auf das Handy, GateControl TV und GateControl für Windows. Du richtest die Quellen **einmal im Server** ein. Jede Person mit dem Recht „Medien“ sieht Medien danach auf jedem ihrer Geräte von selbst, mit den Quellen, die du ihr freigibst. Am Gerät wird nichts eingegeben.
 
 - **Jellyfin**: Jede Person bekommt ihren eigenen Jellyfin-Benutzer, so bleiben Fortschritt und „Gesehen“ je Person. Die Geräte melden sich unsichtbar über Quick Connect an. In Jellyfins Geräteliste steht jedes Gerät als „GateControl · …“.
-- **NAS-Freigaben**: ein Paar aus SMB (zu Hause) und WebDAV (unterwegs) oder eine einzelne Freigabe. Das Passwort eines Lese-Benutzers liegt verschlüsselt im Server und geht nur an berechtigte Geräte.
-- **Videos laufen nie über den Server.** Zu Hause spielen die Geräte direkt im Heimnetz, unterwegs durch das VPN. Der Server liefert nur die Liste, Adressen und Zugänge.
+- **NAS-Freigaben**: ein Paar aus SMB (zu Hause) und WebDAV (zu Hause und unterwegs) oder eine einzelne Freigabe. Unterwegs geht nur WebDAV. Das Passwort eines Lese-Benutzers liegt verschlüsselt im Server und geht nur an berechtigte Geräte.
+- **Zu Hause direkt, unterwegs durch das VPN.** Zu Hause spielen die Geräte direkt im Heimnetz. Unterwegs laufen Videos durch das VPN über den GateControl-Server und das Gateway (die Route der Quelle), nicht direkt ins Heimnetz. Das Plugin selbst liefert nur die Liste, Adressen und Zugänge.
 - **„Auf TV/PC abspielen“**: Das Handy schickt Titel und Stelle an den eigenen Fernseher oder PC und bleibt Fernbedienung.
 
 ## Voraussetzungen {#voraussetzungen}
@@ -15,7 +15,7 @@ Medien bringt deine eigene Sammlung aus **Jellyfin** und den **Freigaben deiner 
 - GateControl ab 1.325.0.
 - Eine **eigene Lizenz für Medien**. Sie ist nicht in GateControl Lifetime oder einem Paket enthalten.
 - **Jellyfin ab 10.9** mit Quick Connect (z. B. das Synology-Paket) und/oder SMB/WebDAV-Freigaben auf der NAS.
-- Ein Gateway im Heimnetz, über das der Server Jellyfin erreicht (Zugriffsziel), und ein VPN, das das Heimnetz (z. B. 192.168.1.0/24) in den Tunnel gibt.
+- Ein Gateway im Heimnetz und eine **Route** für Jellyfin bzw. das WebDAV der NAS (Domain → Gateway → Ziel). Über sie erreicht der Server die Quelle (Zugriffsziel), und über sie spielen die Geräte unterwegs durch das VPN. Eine nur intern freigegebene Route genügt. Das Heimnetz selbst gibt der Server nicht in den Tunnel.
 - Die GateControl-Apps in einer Version mit Medien vom Server.
 
 ## Einrichten {#einrichten}
@@ -38,9 +38,9 @@ Im Reiter Quellen steht bei jeder Quelle, **über** welche Route sie läuft, und
 4. Den **API-Schlüssel** einfügen. Den **Namen** übernimmt Medien beim Prüfen aus Jellyfin (Servername).
 5. **Prüfen und speichern**: erreichbar, Version, Schlüssel gültig, Quick Connect – das Ergebnis steht im Dialog und auf der Quelle. Ist Quick Connect aus, schaltet **„In Jellyfin einschalten“** es nach Rückfrage in der Jellyfin-Konfiguration ein. Der Schlüssel ist danach nur noch ersetzbar, nicht mehr lesbar.
 
-Unter **„Erweitert“** stehen, vorbelegt: der Name, die **Adresse zu Hause** (aus dem Ziel der Route, z. B. `http://192.168.2.151:8096`, sonst die Adresse, die Jellyfin selbst meldet), **Unterwegs** (nur über VPN oder die Ausnahme ohne VPN mit `https://<Domain der Route>`) und **Herunterladen für offline**.
+Unter **„Erweitert“** stehen, vorbelegt: der Name, die **Adresse zu Hause** (aus dem Ziel der Route, z. B. `http://192.168.2.151:8096`, sonst die Adresse, die Jellyfin selbst meldet), **Unterwegs** (durch das VPN oder die Ausnahme ohne VPN, beide über die **HTTPS-Adresse für unterwegs** `https://<Domain der Route>`) und **Herunterladen für offline**.
 
-Die DSM-Firewall muss TCP 8096 vom Gateway und aus dem Tunnelnetz zulassen. Die Suche im Heimnetz (UDP 7359) wird nicht gebraucht.
+Die DSM-Firewall muss TCP 8096 vom Gateway zulassen – auch unterwegs kommt der Verkehr über das Gateway. Die Suche im Heimnetz (UDP 7359) wird nicht gebraucht.
 
 ### NAS-Freigabe hinzufügen {#freigabe}
 
@@ -48,13 +48,14 @@ Die DSM-Firewall muss TCP 8096 vom Gateway und aus dem Tunnelnetz zulassen. Die 
 2. **Quelle hinzufügen › NAS-Freigabe**: **Wo liegt die NAS?** (Route, VPN-Peer oder schon zugewiesene Adresse), **Freigabename** (z. B. `video`), **Benutzer** und **Passwort**.
 3. **Prüfen und speichern.** Medien legt die SMB-Adresse (`smb://<NAS>/video`) und – wenn die NAS per HTTPS erreichbar ist – die WebDAV-Adresse (`https://<NAS>:5006/video`) selbst an und erlaubt dem Server, die NAS zu erreichen.
 
-Unter **„Erweitert“**: Name, SMB- und WebDAV-Adresse, das Zertifikat (SHA-256, zum Anheften bei selbst signierten Zertifikaten) und Unterwegs. Bei einem VPN-Peer als NAS trägst du die Heimnetz-Adressen dort selbst ein – die VPN-Adresse des Peers ist zu Hause nicht erreichbar. Nimm IP-Adressen statt Namen wie `\\nas`: Namen werden unterwegs nicht aufgelöst.
+Unter **„Erweitert“**: Name, SMB- und WebDAV-Adresse, das Zertifikat (SHA-256, zum Anheften bei selbst signierten Zertifikaten) und Unterwegs (`https://<Domain der Route>/<Freigabe>`, über das WebDAV der NAS). Bei einem VPN-Peer als NAS trägst du die Heimnetz-Adressen dort selbst ein – die VPN-Adresse des Peers ist zu Hause nicht erreichbar. Nimm IP-Adressen statt Namen wie `\\nas`. Eine reine SMB-Freigabe gibt es unterwegs nicht – unterwegs nur WebDAV über eine Route.
 
 ### Netz: zu Hause direkt, unterwegs über VPN {#netz}
 
 - **Zu Hause** spielen die Geräte direkt im Heimnetz, nie über den Server oder den Tunnel, auch wenn das VPN an ist. Ob ein Gerät zu Hause ist, erkennt es selbst über das WLAN/LAN (nie durch den Tunnel): Es fragt den Jellyfin-Server (passende Server-ID) oder prüft das angeheftete Zertifikat der WebDAV-Freigabe. Gibt es beides nicht, prüft es, ob die Heimadresse der Quelle antwortet (z. B. SMB-Port 445 der NAS) – das reicht, damit das Gerät zu Hause nicht durch das VPN geht, ist aber nicht eindeutig: Ein fremdes Netz mit derselben Adresse antwortet auch. Solche Quellen zeigt der Reiter Quellen mit **„Heimnetz nicht eindeutig“**; eindeutig werden sie mit einer WebDAV-Adresse samt Zertifikat (SHA-256). Die Server-ID von Jellyfin merkt sich das Plugin beim Speichern; war Jellyfin da aus, holt „Prüfen“ oder der nächste Abgleich (alle 5 Minuten) sie nach. Eine beliebige 192.168.1.x-Adresse allein reicht nicht.
 - **Unterwegs** gehen Medien **nur durch das VPN**. Ist es aus, schaltet die App es beim Abspielen selbst ein. Ohne VPN spielt die App unterwegs nichts ab und sagt „Unterwegs nur über VPN“.
-- **Ausnahme „Unterwegs ohne VPN erlauben“**: im Quellen-Dialog je Quelle oder unter Einstellungen › Netz für alle Quellen. Dann braucht die Quelle eine **HTTPS-Adresse für unterwegs**, z. B. eine GateControl-Route (`https://jellyfin.example.test`). Eine Adresse mit `http://` nimmt der Dialog nicht an. Quellen ohne diese Adresse bleiben unterwegs beim VPN.
+- **Der Weg unterwegs:** Durch den Tunnel erreichen die Geräte nicht die Heimadresse (z. B. `http://192.168.1.20:8096`), denn der Server gibt das Heimnetz nicht in den Tunnel. Sie spielen über die **HTTPS-Adresse für unterwegs**: die Route der Quelle (`https://jellyfin.example.test`, bei einer NAS `https://nas.example.test/video` über WebDAV). Das Video läuft dann durch das VPN über den GateControl-Server und das Gateway zum Ziel. Das VPN löst die Domain der Route auf; eine nur intern freigegebene Route genügt. Der Dialog belegt die Adresse aus der gewählten Route vor („Erweitert › HTTPS-Adresse für unterwegs“). Bei Quellen ohne gespeicherte Adresse (vor 1.3.0 angelegt) nimmt Medien die Domain der Route, über die die Quelle läuft – neu speichern ist nicht nötig. Ohne Route (z. B. Jellyfin auf einem VPN-Peer, reine SMB-Freigabe) zeigt der Reiter Quellen „unterwegs nicht erreichbar“.
+- **Ausnahme „Unterwegs ohne VPN erlauben“**: im Quellen-Dialog je Quelle oder unter Einstellungen › Netz für alle Quellen. Dann spielen die Geräte unterwegs ohne VPN über dieselbe HTTPS-Adresse – die Route muss dafür öffentlich erreichbar sein. Die Ausnahme braucht eine im Dialog gespeicherte Adresse. Eine Adresse mit `http://` nimmt der Dialog nicht an.
 
 ### Personen verknüpfen {#personen}
 
@@ -90,9 +91,16 @@ Der Jellyfin-Schlüssel verlässt den Server nie. Das Protokoll nennt Personen, 
 - **„Der Admin muss Quick Connect in Jellyfin einschalten“**: Quellen › Jellyfin › „In Jellyfin einschalten“, oder in Jellyfin Dashboard › Allgemein › Quick Connect.
 - **„Der Admin muss dich … mit Jellyfin verknüpfen“**: Reiter Personen, Jellyfin-Benutzer wählen oder anlegen.
 - **Jellyfin nicht erreichbar**: Richtige Route bzw. richtiger Peer unter „Wo läuft Jellyfin?“? Gateway online? DSM-Firewall Port 8096?
-- **„durch den Tunnel nicht erreichbar“** im Reiter Geräte: Das Gateway gibt das Heimnetz nicht in den Tunnel weiter, oder die DSM-Firewall lässt das Tunnelnetz nicht zu (8096, 5006, ggf. 445).
+- **„durch den Tunnel nicht erreichbar“** im Reiter Geräte: Stimmt die HTTPS-Adresse für unterwegs der Quelle (die Domain der Route)? Ist die Route an, das Gateway online, und lässt die DSM-Firewall das Gateway zu (8096, 5006)?
 - **Ein Handy ist verloren**: in GateControl entfernen (Jellyfin ist sofort bzw. nach höchstens 5 Minuten zu). Das NAS-Passwort lässt sich von einem Gerät, das nicht mehr online kommt, nicht zurückholen: Passwort in DSM ändern und unter Quellen ersetzen.
 - **Lizenz**: Ohne eigene Lizenz für Medien blenden die Apps Medien aus. Eine GateControl-Lifetime-Lizenz zählt hier nicht.
+
+## Neu in 1.3.0 {#neu-1-3-0}
+
+- **Unterwegs über die Route:** Die Geräte bekommen unterwegs auch im Modus „nur über VPN“ die HTTPS-Adresse für unterwegs und spielen damit durch den Tunnel über die Route (GateControl-Server → Gateway → Jellyfin bzw. WebDAV). Bisher versuchten sie die Heimadresse durch den Tunnel, die dort nie ankam.
+- **Bestehende Quellen** ohne gespeicherte Adresse bekommen die Domain ihrer Route von selbst – neu speichern ist nicht nötig.
+- **Dialog:** Das Feld „HTTPS-Adresse für unterwegs“ gilt für beide Modi und steht immer unter „Erweitert“. Der Reiter Quellen zeigt „unterwegs über VPN: https://…“ oder „unterwegs nicht erreichbar“.
+- Handbuch [Netz](#netz) berichtigt: kein VPN nötig, das das Heimnetz in den Tunnel gibt, sondern eine Route; eine nur intern freigegebene genügt. Unterwegs nur WebDAV, kein SMB.
 
 ## Neu in 1.2.0 {#neu-1-2-0}
 

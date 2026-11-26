@@ -13,17 +13,9 @@ const log = require('./log');
 const license = require('./license');
 const { fail, str, posInt } = require('./util');
 
-async function targetsOf(gc) {
-  const out = { jellyfin: [], webdav: [], smb: [] };
-  try {
-    for (const t of (await gc.net.targets()) || []) {
-      if (out[t.id]) out[t.id] = (t.assigned || []).map((a) => ({ index: a.index, label: a.label || null }));
-    }
-  } catch (e) { gc.log.debug('targets unavailable', (e && e.code) || 'error'); }
-  return out;
-}
+const targetsOf = sources.targetsOf;
 
-async function sourceView(gc, s, cfg) {
+async function sourceView(gc, s, cfg, targets) {
   const hasSecret = !!(s.kind === 'jellyfin' ? await sources.apiKey(gc, s) : await sources.password(gc, s));
   const acc = await rights.accessList(gc, s.id);
   const pairs = await store.one(gc, 'SELECT COUNT(*) AS n FROM pairings WHERE source_id = ?', [s.id]);
@@ -31,7 +23,7 @@ async function sourceView(gc, s, cfg) {
   return {
     id: s.id, kind: s.kind, name: s.name, enabled: s.enabled, config: s.config, status: s.status, secretRev: s.secretRev,
     hasKey: s.kind === 'jellyfin' ? hasSecret : undefined, hasPassword: s.kind === 'share' ? hasSecret : undefined,
-    away: sources.awayOf(s, cfg), home: sources.homeOf(s), access: { mode: s.config.accessMode || 'all', ...acc },
+    away: sources.awayOf(s, cfg, targets), home: sources.homeOf(s), access: { mode: s.config.accessMode || 'all', ...acc },
     devices: s.kind === 'jellyfin' ? pairs.n : dels.n,
   };
 }
@@ -90,6 +82,7 @@ async function people(gc, cfg) {
 
 async function overview(gc, cfg) {
   const all = await sources.list(gc);
+  const targets = await targetsOf(gc);
   const users = (await gc.users.list()) || [];
   let media = 0;
   for (const u of users) if ((await rights.mediaOf(gc, u)).media) media++;
@@ -98,7 +91,7 @@ async function overview(gc, cfg) {
   const problems = await store.all(gc, 'SELECT device_id, source_id, problem, at FROM reports WHERE ok = 0 ORDER BY at DESC LIMIT 10');
   return {
     license: await license.state(gc),
-    sources: all.map((s) => ({ id: s.id, kind: s.kind, name: s.name, enabled: s.enabled, status: s.status, away: sources.awayOf(s, cfg), home: { level: sources.homeOf(s).level } })),
+    sources: all.map((s) => ({ id: s.id, kind: s.kind, name: s.name, enabled: s.enabled, status: s.status, away: sources.awayOf(s, cfg, targets), home: { level: sources.homeOf(s).level } })),
     people: { total: users.length, media, linked: linked.n }, devices: devs.n,
     problems, settings: { awayDirectAll: cfg.awayDirectAll, cast: cfg.cast },
     log: await log.list(gc, 30),
@@ -124,9 +117,10 @@ async function route(req, gc, seg, cfg, now = Date.now()) {
 
   if (a === 'sources' && !x && m === 'GET') {
     const all = await sources.list(gc);
+    const targets = await targetsOf(gc);
     const list = [];
-    for (const s of all) list.push(await sourceView(gc, s, cfg));
-    return { sources: list, targets: await targetsOf(gc), settings: { awayDirectAll: cfg.awayDirectAll, childrenShares: cfg.childrenShares } };
+    for (const s of all) list.push(await sourceView(gc, s, cfg, targets));
+    return { sources: list, targets, settings: { awayDirectAll: cfg.awayDirectAll, childrenShares: cfg.childrenShares } };
   }
   if (a === 'sources' && !x && m === 'POST') {
     const s = await sources.create(gc, b, now);

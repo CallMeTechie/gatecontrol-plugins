@@ -1,9 +1,10 @@
 # gatecontrol-medien — Medien
 
 Jellyfin und die NAS-Freigaben (SMB, WebDAV) zentral im GateControl-Server: Handy, Fernseher und PC bekommen die
-Quellen und ihren Zugang automatisch über die App-API des Plugins (`permissions.app`), ohne Eingabe am Gerät. Videos laufen
-nie über den Server – er liefert nur Liste, Adressen und Zugänge (wenige KB) und spricht selbst nur mit Jellyfin (kleine
-JSON-Antworten über das Zugriffsziel `jellyfin`). Handbuch: [HANDBUCH.md](HANDBUCH.md) / [HANDBOOK.md](HANDBOOK.md).
+Quellen und ihren Zugang automatisch über die App-API des Plugins (`permissions.app`), ohne Eingabe am Gerät. Das Plugin
+fasst keine Videos an – es liefert nur Liste, Adressen und Zugänge (wenige KB) und spricht selbst nur mit Jellyfin (kleine
+JSON-Antworten über das Zugriffsziel `jellyfin`). Zu Hause spielen die Geräte direkt im Heimnetz, unterwegs durch das VPN
+über die Route der Quelle (GateControl-Server → Gateway → Ziel). Handbuch: [HANDBUCH.md](HANDBUCH.md) / [HANDBOOK.md](HANDBOOK.md).
 
 Eigene Lizenz (`license.required`), **nie** im GateControl-Plan oder einer Server-Lifetime-Lizenz enthalten: eine
 Berechtigung mit `source` `plan` oder `lifetime` (`gc.license.info()`) zählt im Plugin nicht (`server/license.js`, App-Tab
@@ -116,7 +117,8 @@ deshalb kein ETag/304).
       "serverId": "4f1c…a9", "version": "10.10.7",
       "address": "http://192.168.1.20:8096",          // = home.address (bleibt für ältere Leser)
       "home": { "address": "http://192.168.1.20:8096" },
-      "away": { "mode": "vpn" },                       // oder { "mode": "direct", "address": "https://jellyfin.example.test" }
+      "away": { "mode": "vpn", "address": "https://jellyfin.example.test" },   // ab 1.3.0 mit address; ohne Route nur { "mode": "vpn" }
+                                                       // oder { "mode": "direct", "address": "https://jellyfin.example.test" }
       "user": { "id": "a71e…", "name": "mila" },       // null → problem "no_mapping"
       "problem": null,                                 // null | "no_mapping" | "quick_connect_off"
       "device": { "id": "gc-7Hq2mXk4Rb9tLp0sVw3N", "name": "GateControl · Pixel von Mila" },   // null ohne Gerätebindung
@@ -126,7 +128,7 @@ deshalb kein ETag/304).
       "smb": { "address": "smb://192.168.1.20/filme" },                                        // oder null
       "webdav": { "address": "https://192.168.1.20:5006/filme", "certSha256": "9c41…" },      // oder null; certSha256 optional (anheften)
       "user": "medien-lesen", "secretRev": 3,          // Passwort neu holen, wenn secretRev > eigener Stand
-      "away": { "mode": "vpn" } } ] }
+      "away": { "mode": "vpn", "address": "https://nas.example.test/filme" } } ] }   // WebDAV über die Route; reine SMB-Freigabe: { "mode": "vpn" }
 ```
 
 Quellen-IDs (`jf-<n>`, `sh-<n>`) sind auf allen Geräten aller Personen gleich und ändern sich nie.
@@ -185,8 +187,12 @@ Der Weg zur Quelle (z. B. `problem: "tunnel_unreachable"`, „NAS durch den Tunn
 - **Zu Hause** (Heimnetz erkannt): direkt im LAN an `home.address` bzw. `smb`/`webdav`, **nie** über Server oder Tunnel –
   auch bei eingeschaltetem VPN (Android: an das WLAN/LAN-Netz gebundener Socket, `Network.bindSocket`/`openConnection`;
   Windows: an die LAN-Schnittstelle gebunden). SMB bevorzugt.
-- **Unterwegs**, `away.mode == "vpn"` (Standard): Medien **nur durch das VPN** (dieselben Heimadressen durch den eigenen
-  WireGuard-Tunnel; Freigaben per WebDAV, sonst SMB durch den Tunnel). Ist das VPN aus, **startet die App es beim Abspielen
+- **Unterwegs**, `away.mode == "vpn"` (Standard): Medien **nur durch das VPN**, und zwar an `away.address` (ab 1.3.0;
+  `https://…` ohne abschließenden Schrägstrich, die Route der Quelle: Domain → Caddy auf dem Server → Gateway → Ziel; das
+  VPN-DNS löst sie auf, auch nur intern freigegebene Routen). **Nicht** an die Heimadressen: der Server gibt das Heimnetz
+  nicht in den Tunnel. Freigaben unterwegs nur per WebDAV an `away.address` (gleicher Pfad wie `webdav.address`, gleicher
+  Benutzer, normale TLS-Prüfung), nie SMB. Ohne `away.address` ist die Quelle unterwegs nicht erreichbar (ältere Plugins
+  schickten nie eine; dann wie bisher die Heimadresse versuchen). Ist das VPN aus, **startet die App es beim Abspielen
   selbst** (Android: VpnService der App; fehlt die Einwilligung, einmal fragen). Ohne VPN (abgelehnt, nicht möglich)
   wird **nicht** abgespielt: „Unterwegs nur über VPN – VPN einschalten“. Kein Rückfall auf andere Wege.
 - **Unterwegs**, `away.mode == "direct"` (Admin-Ausnahme „Unterwegs ohne VPN erlauben“, je Quelle oder global): ohne VPN
