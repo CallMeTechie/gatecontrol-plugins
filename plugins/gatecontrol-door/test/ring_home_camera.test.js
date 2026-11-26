@@ -84,6 +84,49 @@ test('a linked home camera: in the ring\'s push for those who see it, in /me and
   for (const p of host.notifications.filter((n) => n.topic === 'doorbell')) assert.deepEqual(Object.keys(p.data.door).sort(), ['cameraId', 'eventId', 'lockId', 'type']);
 }));
 
+test('1.10.0: a doorbell without a link and exactly one home camera — the ring\'s push names that camera (TV without a setting)', () => withDoor({ cameras: cams() }, async (host, ctx) => {
+  const { admin, call, cloud, clock, lockId } = ctx;
+  const { bell, homeId } = await setup(ctx);
+  assert.equal((await admin('GET', 'status')).json.cameras.find((c) => c.id === bell.id).homeCameraId, null, 'no link on the admin page');
+  for (const u of [ANNA, LENA]) assert.equal((await admin('PUT', `rights/${u.id}`, { homeCameraRights: { [homeId]: true } })).status, 200);
+  const live = { source: 'home', cameraId: homeId, path: `cameras/home/${homeId}/live` };
+  host.notifications.length = 0;
+  ring(cloud, 8201);
+  clock.add(31 * SEC);
+  await host.tick();
+  const byUser = new Map(host.notifications.filter((n) => n.topic === 'doorbell').flatMap((p) => p.users.map((u) => [u, p])));
+  const eventId = byUser.get(LENA.id).data.door.eventId;
+  assert.deepEqual(byUser.get(LENA.id).data.door, { type: 'ding', eventId, cameraId: bell.id, lockId, homeCameraId: homeId, live });
+  assert.deepEqual(byUser.get(MARC.id).data.door, { type: 'ding', eventId, cameraId: bell.id, lockId }, 'only for who sees the home camera');
+  // GET /me and the event: the same camera; the Ring camera that is no doorbell gets none
+  const me = (await call(app(LENA), 'GET', '/me')).json.cameras;
+  assert.equal(me.find((c) => c.id === bell.id).homeCameraId, homeId);
+  assert.equal(me.find((c) => !c.doorbell).homeCameraId, undefined);
+  assert.equal((await call(app(LENA), 'GET', `/events/${eventId}`)).json.event.homeCameraId, homeId);
+  // a second home camera: no guess any more — only a link decides
+  const second = (await admin('POST', 'home/cameras', { gatewayId: 7, name: 'Garage', host: '192.168.1.74', user: 'admin', password: 'geheim' })).json.camera.id;
+  assert.ok(second);
+  host.notifications.length = 0;
+  clock.add(MIN);
+  ring(cloud, 8202);
+  clock.add(31 * SEC);
+  await host.tick();
+  for (const p of host.notifications.filter((n) => n.topic === 'doorbell')) assert.deepEqual(Object.keys(p.data.door).sort(), ['cameraId', 'eventId', 'lockId', 'type']);
+  assert.equal((await call(app(LENA), 'GET', '/me')).json.cameras.find((c) => c.id === bell.id).homeCameraId, undefined);
+}));
+
+test('homeOf: the link wins, else the only home camera for a doorbell', () => {
+  const { homeOf } = require('../server/cameras');
+  const one = new Set(['c00000000000000a']);
+  const two = new Set(['c00000000000000a', 'c00000000000000b']);
+  assert.equal(homeOf({ doorbell: 1, home_camera_id: null }, one), 'c00000000000000a');
+  assert.equal(homeOf({ doorbell: 0, home_camera_id: null }, one), null);
+  assert.equal(homeOf({ doorbell: 1, home_camera_id: null }, two), null);
+  assert.equal(homeOf({ doorbell: 1, home_camera_id: 'c00000000000000b' }, two), 'c00000000000000b');
+  assert.equal(homeOf({ doorbell: 1, home_camera_id: 'c00000000000000f' }, one), null, 'a stale link is no guess');
+  assert.equal(homeOf({ doorbell: 1, home_camera_id: null }, new Set()), null);
+});
+
 test('unlinked again with null', () => withDoor({ cameras: cams() }, async (host, ctx) => {
   const { admin } = ctx;
   const { bell, homeId } = await setup(ctx);

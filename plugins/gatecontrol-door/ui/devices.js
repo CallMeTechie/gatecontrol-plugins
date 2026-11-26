@@ -185,7 +185,8 @@
       // 1.9.0: the camera in the home network the TV and the apps show live on a ring (only with home cameras)
       var homes = S.homeCameras || [];
       var hsel = homes.length ? el('select', { class: 'form-select', on: { change: function () { D.api('PATCH', 'admin/cameras/' + c.id, { homeCameraId: hsel.value || null }).then(function () { D.toast(T('common.saved')); }).catch(D.warn); } } },
-        [opt('', T('dev.camera_none'), !c.homeCameraId)].concat(homes.map(function (h) { return opt(h.id, h.name, h.id === c.homeCameraId); }))) : null;
+        // 1.10.0: a doorbell without a choice uses the only home camera — the empty choice says so
+        [opt('', c.doorbell && homes.length === 1 ? T('dev.camera_home_auto', { name: homes[0].name }) : T('dev.camera_none'), !c.homeCameraId)].concat(homes.map(function (h) { return opt(h.id, h.name, h.id === c.homeCameraId); }))) : null;
       var en = el('input', { type: 'checkbox', checked: c.enabled, on: { change: function () { D.api('PATCH', 'admin/cameras/' + c.id, { enabled: en.checked }).catch(D.warn); } } });
       box.appendChild(el('div', { class: 'dr-item' }, [
         el('div', { class: 'dr-item-main' }, [

@@ -1,4 +1,4 @@
-<!-- version: 1.9.0 -->
+<!-- version: 1.10.0 -->
 # Tür & Kamera
 
 ## Was das Plugin kann
@@ -58,7 +58,7 @@ Auf **„Geräte“** › **„Schloss hinzufügen“**:
 2. Den **Bestätigungscode** eingeben, den Ring dir per SMS, E-Mail oder Authenticator-App schickt.
 3. In der Ring-App erscheint danach ein angemeldetes Gerät „GateControl“.
 4. Unter „Kameras & Klingeln“ jede Kamera mit einem **Schloss verknüpfen**. Kameras ohne Schloss (z. B. am Briefkasten) gibst du stattdessen auf der Seite „Berechtigungen“ frei.
-5. Hast du [Kameras im Heimnetz](#kameras-einrichten), wählst du dort bei der Klingel unter **„Livebild beim Klingeln (Heimkamera)“** die Kamera, die die Haustür zeigt. Beim Klingeln öffnen der GateControl-TV und die Apps dann direkt deren Livebild – für alle, die diese Kamera sehen dürfen (Seite „Berechtigungen“, Spalte „sieht“).
+5. Hast du [Kameras im Heimnetz](#kameras-einrichten), wählst du dort bei der Klingel unter **„Livebild beim Klingeln (Heimkamera)“** die Kamera, die die Haustür zeigt. Beim Klingeln öffnen der GateControl-TV und die Apps dann direkt deren Livebild – für alle, die diese Kamera sehen dürfen (Seite „Berechtigungen“, Spalte „sieht“). Hast du nur **eine** Heimkamera, nimmt Tür & Kamera sie ohne Auswahl („automatisch: …“); bei mehreren entscheidet nur deine Auswahl.
 
 Das Passwort geht nur für diese Anmeldung an Ring und wird nicht gespeichert. Gespeichert wird nur ein Token, das sich laufend erneuert.
 
@@ -237,6 +237,10 @@ Firefox spielt das Live-Bild ab GateControl 1.242.0 über den eingebauten Player
 
 **Es werden keine Clips aufgenommen.**
 Prüfe unter „Aufnahmen“ den Modus. Bei „nur wenn niemand zu Hause ist“ muss die Anwesenheit der Familie bekannt sein. Unter 1 GB freiem Platz nimmt das Gateway nichts auf.
+
+## Neu in 1.10.0
+
+- **Richtige Kamera beim Klingeln ohne Einstellung:** Gibt es nur eine Kamera im Heimnetz, gehört sie automatisch zur Ring-Klingel. Der GateControl-TV und die Apps zeigen beim Klingeln ihr Livebild, auch wenn du auf der Seite „Geräte“ nichts gewählt hast. Eine Auswahl dort geht immer vor.
 
 ## Neu in 1.9.0
 
