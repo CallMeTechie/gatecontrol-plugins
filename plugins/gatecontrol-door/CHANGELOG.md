@@ -8,6 +8,19 @@ bleibt auf dem eigenen Server. Einrichtung, Risiken, Datenschutz und die App-API
 an; das Plugin nutzt die, die auch die Open-Source-Projekte ring-client-api (Homebridge) und
 python-ring-doorbell (Home Assistant) verwenden. Sie kann sich jederzeit ändern oder wegfallen.
 
+## 1.10.0
+
+- **Kamera-ID im Klingel-Push ohne Einstellung:** Hat eine Ring-Klingel keine verknüpfte Heimkamera und gibt es bei
+  GateControl genau **eine** Heimkamera (`gc.cameras`), gilt diese als Kamera der Klingel. Der Klingel- und der
+  Bewegungs-Push der Klingel tragen dann wie bei einer Verknüpfung `data.door.homeCameraId` und `data.door.live`
+  (gleiche Bedingungen: nur für Personen, die die Heimkamera sehen). So zeigt der GateControl-TV beim Klingeln ohne
+  Einstellung die richtige Kamera. Eine Verknüpfung auf der Seite „Geräte“ geht immer vor; bei zwei oder mehr
+  Heimkameras ohne Verknüpfung bleibt es ohne Feld; Ring-Kameras, die keine Klingel sind, bekommen ohne Verknüpfung
+  keine. `GET me` und `GET events/<id>` folgen derselben Regel (`cameras.homeOf`).
+- Seite „Geräte“: bei einer Klingel mit genau einer Heimkamera heißt die leere Auswahl „automatisch: <Name>“.
+- Abwärtskompatibel: dieselben Felder wie 1.9.0, nur öfter gefüllt. `data.door.cameraId` bleibt die Ring-Kamera
+  des Plugins. Tests `ring_home_camera.test.js`.
+
 ## 1.9.0
 
 - **Klingel und Heimkamera verknüpft:** Auf der Seite „Geräte“ bekommt jede Ring-Kamera/-Klingel die Auswahl

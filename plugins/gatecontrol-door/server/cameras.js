@@ -296,13 +296,23 @@ async function diagnosis(gc) {
 }
 
 /**
- * 1.9.0: the camera in the home network linked to this Ring camera (admin page „Geräte“) — its id when it still
- * exists at GateControl (gc.cameras), else null. Never throws.
+ * The home camera of a Ring camera, given the ids of GateControl's home cameras (`ids`, a Set):
+ *   * 1.9.0: the one linked on the admin page „Geräte“, while it still exists;
+ *   * 1.10.0: a Ring doorbell without a link, when GateControl has exactly one home camera — that one (so the TV
+ *     shows the right camera on a ring without a setting). A Ring camera that is no doorbell gets none without a link.
+ * → the id or null.
  */
+function homeOf(camera, ids) {
+  if (!camera || !ids || !ids.size) return null;
+  const id = camera.home_camera_id;
+  if (id) return ids.has(id) ? id : null;
+  return camera.doorbell === 1 && ids.size === 1 ? [...ids][0] : null;
+}
+
+/** The home camera of this Ring camera (homeOf) — read from gc.cameras now. Never throws. */
 async function linkedHome(gc, camera) {
-  const id = camera && camera.home_camera_id;
-  if (!id || !home.has(gc)) return null;
-  try { return (await gc.cameras.list()).some((c) => c.id === id) ? id : null; } catch { return null; }
+  if (!camera || !home.has(gc)) return null;
+  return homeOf(camera, await homeIds(gc));
 }
 
 /**
@@ -453,5 +463,5 @@ async function snapshot(gc, cfg, camera, { refresh = false, userId = 0 } = {}, n
 
 module.exports = {
   STATUS_KEY, MAX_EVENT_AGE_MS, DING_MAX_AGE_MS, DING_PUSH_MAX_AGE_MS, IMAGE_MAX, EVENTS_EVERY_MS, EVENTS_FAST_MS, ACTIVE_OFF_MS, SYNC_EVERY_MS, DIAG_KEY,
-  reset, status, loggedIn, loggedOut, all, get, sync, blocked, tick, handleEvent, snapshot, usableImage, jpegSize, prefsOf, diagnosis, linkedHome, homeFields, homeIds, _mem: mem,
+  reset, status, loggedIn, loggedOut, all, get, sync, blocked, tick, handleEvent, snapshot, usableImage, jpegSize, prefsOf, diagnosis, linkedHome, homeOf, homeFields, homeIds, _mem: mem,
 };

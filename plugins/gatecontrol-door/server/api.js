@@ -78,9 +78,10 @@ async function me(gc, c) {
   for (const p of await store.all(gc, 'SELECT camera_id, ding, motion FROM camera_prefs WHERE user_id = ?', [c.user.id])) camPrefs.set(p.camera_id, { ding: p.ding === 1, motion: p.motion === 1 });
   const lastAt = await history.lastMediaAt(gc, c.now);
   const st = await cameras.status(gc, c.now);
-  // 1.9.0: the linked home camera of a Ring camera, while it exists and the person sees it
-  const homeIds = cams.some((x) => x.home_camera_id) ? await cameras.homeIds(gc) : new Set();
-  const homeOf = (cam) => cameras.homeFields(c.r, c.user.id, homeIds.has(cam.home_camera_id) ? cam.home_camera_id : null);
+  // 1.9.0: the linked home camera of a Ring camera, while it exists and the person sees it;
+  // 1.10.0: a doorbell without a link gets GateControl's only home camera (cameras.homeOf)
+  const homeIds = cams.some((x) => x.home_camera_id || x.doorbell === 1) ? await cameras.homeIds(gc) : new Set();
+  const homeOf = (cam) => cameras.homeFields(c.r, c.user.id, cameras.homeOf(cam, homeIds));
   return {
     me: {
       userId: c.user.id, name: c.user.name || null, canAct: rights.canAct(c.user),

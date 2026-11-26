@@ -1,4 +1,4 @@
-<!-- version: 1.9.0 -->
+<!-- version: 1.10.0 -->
 # Door & Camera
 
 ## What the plugin does
@@ -58,7 +58,7 @@ On **“Devices”** › **“Add lock”**:
 2. Enter the **verification code** Ring sends you by SMS, email or authenticator app.
 3. The Ring app then lists a signed-in device “GateControl”.
 4. Under “Cameras & doorbells” **link each camera to a lock**. Cameras without a lock (e.g. at the letterbox) are shared on the page “Permissions” instead.
-5. If you have [cameras in the home network](#kameras-einrichten), pick the camera that shows the front door for the doorbell under **“Live picture on a ring (home camera)”**. On a ring the GateControl TV and the apps then open its live picture straight away – for everybody who may see that camera (page “Permissions”, column “sees”).
+5. If you have [cameras in the home network](#kameras-einrichten), pick the camera that shows the front door for the doorbell under **“Live picture on a ring (home camera)”**. On a ring the GateControl TV and the apps then open its live picture straight away – for everybody who may see that camera (page “Permissions”, column “sees”). With only **one** home camera Door & Camera takes it without a choice (“automatic: …”); with several only your choice counts.
 
 The password is only sent to Ring for this sign-in and never stored. Only a token that renews itself is kept.
 
@@ -238,6 +238,10 @@ Firefox plays the live picture from GateControl 1.242.0 through the built-in pla
 
 **No clips are recorded.**
 Check the mode under “Recordings”. With “only when nobody is at home” the Family presence must be known. With less than 1 GB free the gateway records nothing.
+
+## New in 1.10.0
+
+- **The right camera on a ring without a setting:** if there is only one camera in the home network, it belongs to the Ring doorbell by itself. The GateControl TV and the apps show its live picture on a ring, also when you chose nothing on the page “Devices”. A choice there always wins.
 
 ## New in 1.9.0
 

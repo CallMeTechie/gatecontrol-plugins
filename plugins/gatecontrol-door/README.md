@@ -527,6 +527,12 @@ people who see that home camera (page „Berechtigungen“, column „sieht“) 
 stream in the VPN or a snapshot every 10 s. The others get the same push without these fields (a send of its own).
 Apps and the TV open that camera's live picture at once; without the fields they behave as before.
 
+**Without a link** (1.10.0): a Ring **doorbell** without a linked home camera uses GateControl's home camera when there
+is exactly **one** (`gc.cameras`) — same fields, same conditions (`server/cameras.js` `homeOf`). A link always wins; with
+two or more home cameras and no link there are no such fields; a Ring camera that is no doorbell needs a link.
+`data.door.cameraId` stays the plugin's Ring camera id (a number) — the home camera to show is `data.door.homeCameraId`
+(= `data.door.live.cameraId`). `GET me` and `GET events/<id>` follow the same rule.
+
 `collapseKey`: `ring:<cameraId>` (doorbell/motion), `auto:<lockId>`, `door:<lockId>:<type>`, `ring:broken`.
 Doorbell pushes have `ttl` 3600 s (the picture expires with it).
 
