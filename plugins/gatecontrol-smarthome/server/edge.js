@@ -437,6 +437,13 @@ function setup(gc) {
   });
   gc.edge.on('found', ({ gatewayId, data }) => rememberFound(gatewayId, data && data.devices));
   gc.edge.on('z2m', ({ gatewayId, data }) => edgerules.setZ2mEdge(gc, gatewayId, data && data.state));
+  // since 1.20.0: the window contacts the gateway hears itself (its feed runs: the server sends no `win` for such rooms)
+  // and what the zigbee2mqtt thermostats it calibrates report
+  gc.edge.on('contacts', ({ gatewayId, data }) => {
+    // a changed state changes what the rooms of the gateway get (`win`): handed over with the next background run
+    require('./heating').setContactsEdge(gatewayId, data && data.state);
+  });
+  gc.edge.on('cal', ({ gatewayId, data }) => require('./heating').noteCal(gatewayId, data && data.list));
   gc.edge.on('fired', ({ gatewayId, data }) => edgerules.markFired(gc, gatewayId, data).catch((e) => gc.log.warn('edge rule mark failed', (e && (e.code || e.message)) || e)));
   return true;
 }

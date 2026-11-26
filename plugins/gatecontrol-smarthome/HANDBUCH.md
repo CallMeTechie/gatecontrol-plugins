@@ -1,4 +1,4 @@
-<!-- version: 1.19.0 -->
+<!-- version: 1.20.0 -->
 # Smart Home
 
 ## Was das Plugin kann
@@ -140,7 +140,7 @@ Die Heizung findest du unter **Smart Home › Heizung** (Knopf oben auf der Seit
 
 ### Räume
 
-- Ein **Raum** ist der **Bereich** seiner Thermostate (Dialog „Besitzer verwalten“). Ein Thermostat ohne Bereich ist ein Raum für sich.
+- Ein **Raum** ist der **Bereich** seiner Thermostate (Dialog „Besitzer verwalten“). Ein Thermostat ohne Bereich ist ein Raum für sich. Benennst du den Bereich um, behält der Raum seinen Plan (ab 1.20.0, [mehr](#heizung-1-20)).
 - Alle Thermostate eines Raums bekommen **ein gemeinsames Soll**. „Ist“ ist der Mittelwert der Thermostate.
 - Fensterkontakte mit demselben Bereich gehören zum Raum.
 - Die Übersicht zeigt je Raum Ist, was gerade gilt (Farbe des Presets; violett: von Hand; rot: Boost; gelb umrandet: Fenster offen oder Gerät nicht erreichbar) und den heutigen Plan. **„Öffnen“** führt zur Raumseite.
@@ -149,13 +149,13 @@ Die Heizung findest du unter **Smart Home › Heizung** (Knopf oben auf der Seit
 
 - Es gibt vier feste Presets: **Komfort, Eco, Nacht, Frostschutz** (Vorgabe 21 / 18 / 17 / 7 °C).
 - Die Temperaturen des Hauses stellst du unter **„Presets“** ein. Ein Plan oder ein Raum kann eigene haben; die des Raums gelten vor denen des Plans.
-- **Boost** ist kein Preset, sondern eine Aktion für 15, 30 oder 60 Minuten. Kann das Thermostat selbst Boost (deCONZ mit Preset, Shelly TRV, ab 1.19.0 auch zigbee2mqtt – [Boost, Fenster und Preset](#heizung-z2m-ext)), nutzt GateControl das, sonst stellt es 30 °C (auch beim BLU TRV). Danach gilt wieder, was vorher galt. Der Status heißt dann „Boost (Gerät)“.
+- **Boost** ist kein Preset, sondern eine Aktion für 15, 30 oder 60 Minuten. Kann das Thermostat selbst Boost (deCONZ mit Preset, Shelly TRV, ab 1.19.0 auch zigbee2mqtt – [Boost, Fenster und Preset](#heizung-z2m-ext)), nutzt GateControl das, sonst stellt es 30 °C (auch beim BLU TRV; ab 1.20.0 einstellbar, [Boost-Temperatur](#heizung-1-20)). Danach gilt wieder, was vorher galt. Der Status heißt dann „Boost (Gerät)“.
 
 ### Wochenplan
 
 1. **„Neuer Plan“** öffnet den Editor. Gib einen Namen ein, wähle eine Vorlage und die Räume, für die der Plan gilt. Ein Raum hat genau einen Plan.
 2. Jeder Wochentag ist ein Balken aus Abschnitten. Tippe einen Abschnitt an und ändere **Von**, **Bis** und **Preset**. Schaltpunkte rasten auf 15 Minuten. **„Abschnitt teilen“** macht aus einem Abschnitt zwei, **„Tag kopieren nach …“** übernimmt den Tag für andere Tage.
-3. Unter **Ausnahmen** stellst du „Fenster offen“ (nach 1, 2 oder 5 Minuten) und „Niemand zu Hause“ ein.
+3. Unter **Ausnahmen** stellst du „Fenster offen“ (nach 1, 2 oder 5 Minuten), „Niemand zu Hause“ und ab 1.20.0 „Feiertage wie Sonntag“ ein.
 4. **„Plan speichern“** – der Plan schickt sofort, was jetzt gilt.
 
 Der Plan **läuft am Server**: Etwa alle 30 Sekunden prüft er jeden Raum und schickt zu jedem Schaltpunkt das Soll. Ist der Server weg, halten die Thermostate das letzte Soll; ein verpasster Schaltpunkt wird nachgeholt, sobald der Server wieder da ist. Antwortet ein Thermostat nicht, versucht es der Plan nach 5 Minuten erneut; ein schlafendes Batteriegerät bekommt den Wert, sobald es wieder da ist.
@@ -198,6 +198,14 @@ Meldet das GateControl-Gateway (ab 1.47.0) für seine zigbee2mqtt-Thermostate Bo
 - Das **Preset im Gerät** (z. B. „manual“, „schedule“) steht auf der Raumseite beim Thermostat. Der Plan stellt es nicht um.
 
 Meldet das Gateway das nicht (älteres Gateway oder ein GateControl, das die Angaben noch nicht weitergibt), bleibt alles wie in 1.18.0.
+
+### Feiertage, Versatz und Fensterkontakte am Gateway (ab 1.20.0) {#heizung-1-20}
+
+- **Feiertage wie Sonntag:** Im Wochenplan unter **Ausnahmen** (Standard an). An gesetzlichen Feiertagen gilt dann der Sonntag des Plans – am Server und im Plan am Gateway (das Gateway bekommt die Liste der Feiertage mit, auch für die Zeit ohne Server). Welches Bundesland, stellst du in den Einstellungen des Smart Home unter **„Heizung: Feiertage von“** ein. **Automatisch** nimmt das Bundesland des Standorts der Logikketten (Sonnenauf- und -untergang); ohne Standort oder außerhalb Deutschlands gelten die bundeseinheitlichen Feiertage. Die Feiertage rechnet GateControl selbst aus (Ostern und die festen Tage), ohne Internetdienst. Nicht dabei: Feiertage einzelner Orte (z. B. Augsburger Friedensfest) und einmalige Feiertage. In Bayern zählt Mariä Himmelfahrt mit.
+- **Versatz je Thermostat:** Im Raum unter **„Bearbeiten“** (eigene Temperaturen) je Thermostat −5 bis +5 °C in halben Grad. Misst ein Thermostat 1 °C zu viel (z. B. direkt am Heizkörper), trägst du −1 ein: angezeigt wird die korrigierte Temperatur, und das Thermostat bekommt ein um den Versatz verschobenes Soll, damit der Raum die gewünschte Temperatur erreicht. Ein zigbee2mqtt-Thermostat im Plan am Gateway, das eine eigene Kalibrierung hat (`local_temperature_calibration`), bekommt den Wert stattdessen als Kalibrierung; sobald es sie meldet, steht beim Thermostat „(im Gerät)“ und das Soll geht unverändert. Shelly TRV, BLU TRV, deCONZ und zigbee2mqtt-Räume am Server: GateControl rechnet den Versatz ein.
+- **Boost-Temperatur:** Thermostate ohne eigenen Boost (z. B. Shelly BLU TRV) bekommen während eines Boosts das Soll aus der Einstellung **„Heizung: Boost-Temperatur“** (20–30 °C, Standard 30).
+- **Fensterkontakte am Gateway:** Läuft der Plan eines Raums am Gateway und hört das Gateway den Fensterkontakt des Raums selbst (Bluetooth, z. B. Shelly BLU Door/Window, oder zigbee2mqtt desselben Gateways), senkt das Gateway den Raum auch **ohne Server** – mit denselben Regeln: nach der Wartezeit des Plans Frostschutz, nach dem Schließen zurück; ein „offen“ gilt höchstens 2 Stunden nach der letzten Meldung des Kontakts. Dafür braucht es ein GateControl-Gateway mit der Kennung `radio-contacts` (ab der Version nach 1.47.0) und die zusätzliche Fähigkeit **`gatecontrol/contacts/#`**, die ein Admin unter **Gateways › Gateway › Edge-Plugins** bestätigt (Smart Home fragt einmal danach). Ohne beides senkt der Server wie bisher.
+- **Bereich umbenennen:** Ein Raum gehört zu seinen Thermostaten, nicht zum Namen des Bereichs. Benennst du den Bereich um – auch Gerät für Gerät –, behält der Raum Plan, Betrieb, eigene Temperaturen und Obergrenze. Hast du dem neuen Bereich in der Zwischenzeit selbst etwas eingestellt, gilt das.
 
 ### Urlaub und Heizung abwesend
 
@@ -264,6 +272,14 @@ Richte das Gerät „Von Hand …“ ein. Die Anleitung steht im Fenster.
 
 **Ein Gerät von zigbee2mqtt lässt sich nicht schalten („zigbee2mqtt auf dem Gateway antwortet gerade nicht“).**
 Im Reiter „Funk“ des Gateways nachsehen: Läuft zigbee2mqtt, sind Edge und MQTT an? Neue Geräte erscheinen spätestens nach einer halben Minute.
+
+## Neu in 1.20.0
+
+- **Bereich umbenennen** behält den Heizplan des Raums (vorher bekam der umbenannte Bereich einen neuen, leeren Raum).
+- **Feiertage wie Sonntag** je Wochenplan, Bundesland in den Einstellungen (Standard: aus dem Standort), auch im Plan am Gateway.
+- **Versatz je Thermostat** (−5 bis +5 °C) im Raum unter „Bearbeiten“; zigbee2mqtt-Thermostate am Gateway mit eigener Kalibrierung bekommen ihn als Kalibrierung.
+- **Boost-Temperatur** für Thermostate ohne eigenen Boost (z. B. BLU TRV) einstellbar, 20–30 °C.
+- **Fensterkontakte am Gateway:** mit einem Gateway mit `radio-contacts` und der bestätigten Fähigkeit `gatecontrol/contacts/#` senkt das Gateway den Raum bei offenem Fenster auch ohne Server ([mehr](#heizung-1-20)).
 
 ## Neu in 1.19.0
 

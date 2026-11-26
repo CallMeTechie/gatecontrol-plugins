@@ -137,6 +137,13 @@
     $('#ht-r-title').textContent = T('heat.ui.room_settings_of', { name: v.name });
     presetInputs($('#ht-r-presets'), v.own_presets, v.presets, 'ht-rp-');
     $('#ht-r-max').value = v.max_setpoint == null ? '' : String(v.max_setpoint);
+    // the Versatz per thermostat (since 1.20.0)
+    var offs = S.clear($('#ht-r-offsets'));
+    v.thermostats.forEach(function (x) {
+      var id = 'ht-ro-' + Number(x.id);
+      offs.appendChild(el('div', { class: 'row' }, [el('label', { class: 'grow', for: id, text: x.name || ('#' + x.id) }),
+        el('input', { class: 'form-input', id: id, type: 'number', min: '-5', max: '5', step: '0.5', value: String(x.offset || 0), style: 'max-width:120px', 'data-th': String(x.id) })]));
+    });
     $('#ht-r-error').hidden = true;
     S.openModal('ht-room-modal');
   }
@@ -146,7 +153,18 @@
     var max = raw ? Number(raw) : null;
     var err = $('#ht-r-error');
     if (!p || (max != null && !(max >= 5 && max <= 30))) { err.textContent = T('heat.ui.temps_invalid'); err.hidden = false; return; }
-    S.api('PUT', 'heating/rooms/' + Number(settingsFor.id), { presets: p, max_setpoint: max }).then(function () { S.closeModal('ht-room-modal'); S.toast(T('heat.ui.saved')); load(); },
+    var offsets = {};
+    var bad = false;
+    S.$$('#ht-r-offsets input').forEach(function (i) {
+      var n = Number(String(i.value).trim().replace(',', '.') || '0');
+      if (!(n >= -5 && n <= 5) || Math.round(n * 2) !== n * 2) bad = true;
+      var before = settingsFor.thermostats.filter(function (x) { return String(x.id) === i.getAttribute('data-th'); })[0];
+      if (before && Number(before.offset || 0) !== n) offsets[i.getAttribute('data-th')] = n;
+    });
+    if (bad) { err.textContent = T('heat.ui.offset_invalid'); err.hidden = false; return; }
+    var body = { presets: p, max_setpoint: max };
+    if (Object.keys(offsets).length) body.offsets = offsets;
+    S.api('PUT', 'heating/rooms/' + Number(settingsFor.id), body).then(function () { S.closeModal('ht-room-modal'); S.toast(T('heat.ui.saved')); load(); },
       function (e) { err.textContent = (e && e.message) || T('common.error'); err.hidden = false; });
   });
 
@@ -230,6 +248,9 @@
     [1, 2, 5].forEach(function (m) { var o = el('option', { value: String(m), text: T('heat.ui.after_min', { n: m }) }); if (m === win.min) o.selected = true; wm.appendChild(o); });
     winSub();
     setSwitch($('#ht-p-away'), p ? p.away : true);
+    setSwitch($('#ht-p-hol'), p ? p.holidays !== false : true);
+    var hr = data.holidays || { region: 'DE', auto: false };
+    $('#ht-p-hol-sub').textContent = T('heat.ui.ex_holidays_sub', { region: T('heat.region.' + hr.region) + (hr.auto ? ' ' + T('heat.region.auto') : '') });
     S.clear($('#ht-p-legend')).appendChild(H.legend());
     var w = S.clear($('#ht-p-where'));
     w.appendChild(H.icon('alert', 18));
@@ -249,6 +270,7 @@
   $('#ht-p-win-min').addEventListener('change', winSub);
   $('#ht-p-win').addEventListener('click', function () { setSwitch(this, !this.classList.contains('on')); });
   $('#ht-p-away').addEventListener('click', function () { setSwitch(this, !this.classList.contains('on')); });
+  $('#ht-p-hol').addEventListener('click', function () { setSwitch(this, !this.classList.contains('on')); });
   function renderChips() {
     var host = S.clear($('#ht-p-rooms'));
     var own = [];
@@ -380,7 +402,7 @@
     if (!name) { err.textContent = T('heat.ui.name_missing'); err.hidden = false; return; }
     if (!presets) { err.textContent = T('heat.ui.temps_invalid'); err.hidden = false; return; }
     var body = { name: name, week: editor.week, presets: presets, window: { on: $('#ht-p-win').classList.contains('on'), min: Number($('#ht-p-win-min').value) },
-      away: $('#ht-p-away').classList.contains('on'), rooms: Object.keys(editor.rooms).filter(function (k) { return editor.rooms[k]; }).map(Number) };
+      away: $('#ht-p-away').classList.contains('on'), holidays: $('#ht-p-hol').classList.contains('on'), rooms: Object.keys(editor.rooms).filter(function (k) { return editor.rooms[k]; }).map(Number) };
     var call = editor.id == null ? S.api('POST', 'heating/plans', body) : S.api('PUT', 'heating/plans/' + Number(editor.id), body);
     call.then(function () { S.closeModal('ht-plan-modal'); S.toast(T('heat.ui.plan_saved', { name: name })); load(); }, function (e) { err.textContent = (e && e.message) || T('common.error'); err.hidden = false; });
   });

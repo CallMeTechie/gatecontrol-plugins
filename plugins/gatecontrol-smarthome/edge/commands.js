@@ -33,11 +33,13 @@ const OPS = {
   switch: ['on', 'off'],
   light: ['on', 'off', 'bri'],
   cover: ['open', 'close', 'stop', 'pos'],
-  thermostat: ['setpoint', 'boost', 'schedule_off', 'mode'],
+  thermostat: ['setpoint', 'boost', 'schedule_off', 'mode', 'calibration'],
 };
 const Z2M_SETPOINTS = ['occupied_heating_setpoint', 'current_heating_setpoint'];
 const Z2M_MODES = ['off', 'heat', 'auto'];
 const Z2M_BOOSTS = ['boost_heating', 'boost'];
+// since 1.20.0: the correction of the measured temperature a zigbee2mqtt thermostat takes itself (Versatz)
+const Z2M_CAL = 'local_temperature_calibration';
 /** value_on / value_off of a binary zigbee2mqtt property: a short string or true / false. */
 const z2mBin = (v) => (typeof v === 'string' && v.length >= 1 && v.length <= 16) || typeof v === 'boolean';
 
@@ -54,6 +56,7 @@ function z2mPayload(c, type, value) {
   if (type === 'thermostat') {
     if (c.op === 'mode') return { system_mode: value };
     if (c.op === 'boost') return { [c.prop]: value ? c.on : c.off };
+    if (c.op === 'calibration') return { [Z2M_CAL]: value };
     return { [c.prop]: value };
   }
   if (type === 'cover') {
@@ -78,8 +81,11 @@ function check(cmd) {
   if (!OPS[type].includes(c.op)) throw bad('invalid operation');
   let value = null;
   if (type === 'thermostat' && c.family === 'z2m') {
-    if (idx !== 0 || !['setpoint', 'mode', 'boost'].includes(c.op)) throw bad('invalid operation');
-    if (c.op === 'mode') {
+    if (idx !== 0 || !['setpoint', 'mode', 'boost', 'calibration'].includes(c.op)) throw bad('invalid operation');
+    if (c.op === 'calibration') {
+      value = typeof c.value === 'number' && Number.isFinite(c.value) ? Math.round(c.value * 10) / 10 : NaN;
+      if (!(value >= -10 && value <= 10)) throw bad('invalid value');
+    } else if (c.op === 'mode') {
       if (!Z2M_MODES.includes(c.value)) throw bad('invalid value');
       value = c.value;
     } else if (c.op === 'boost') {
@@ -92,6 +98,7 @@ function check(cmd) {
       if (!(value >= 4 && value <= 31)) throw bad('invalid value');
     }
   } else if (type === 'thermostat') {
+    if (c.op === 'calibration') throw bad('invalid operation');
     if ((c.family !== 'shelly1' && !(c.family === 'shelly2' && c.op === 'setpoint')) || c.op === 'mode') throw bad('invalid operation');
     if (c.op === 'setpoint') {
       value = typeof c.value === 'number' && Number.isFinite(c.value) ? Math.round(c.value * 2) / 2 : NaN;
@@ -157,4 +164,4 @@ function refresh(dev) {
   return [];
 }
 
-module.exports = { messages, check, refresh, BASE_RE, Z2M_RE, Z2M_SETPOINTS, Z2M_MODES, Z2M_BOOSTS, z2mBin };
+module.exports = { messages, check, refresh, BASE_RE, Z2M_RE, Z2M_SETPOINTS, Z2M_MODES, Z2M_BOOSTS, Z2M_CAL, z2mBin };
