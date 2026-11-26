@@ -437,3 +437,20 @@ button.ht-sg{cursor:pointer}
 .ht-empty{color:var(--muted);font-size:13px;padding:14px 0}
 @media (max-width:860px){.ht-detail{grid-template-columns:minmax(0,1fr)}.ht-room{grid-template-columns:minmax(0,1fr)}.ht-room-r{justify-content:flex-end}}
 @media (max-width:640px){.ht-presets,.ht-pset{grid-template-columns:repeat(2,minmax(0,1fr))}.ht-big .ctl{margin-left:0}.ht-big .m b{font-size:34px}}
+/* Tuya (since 1.21.0): the steps of the assistant and the list of devices found */
+.sh-tsteps{list-style:none;margin:0;padding:0;display:flex;gap:8px;flex-wrap:wrap;counter-reset:tstep}
+.sh-tsteps li{counter-increment:tstep;display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:999px;border:1px solid var(--line);font-size:13px;font-weight:600;color:var(--muted)}
+.sh-tsteps li::before{content:counter(tstep);display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--surface-2);font-size:12px}
+.sh-tsteps li[data-state="running"]{color:var(--text);border-color:var(--accent)}
+.sh-tsteps li[data-state="running"]::before{background:var(--accent);color:var(--btn-text)}
+.sh-tsteps li[data-state="done"]::before{content:'✓';background:var(--accent-soft);color:var(--good)}
+.sh-t-head,.sh-t-row{display:grid;grid-template-columns:28px minmax(0,2.2fr) minmax(0,1.6fr) minmax(0,1.2fr) 44px;gap:10px;align-items:center}
+.sh-t-head{font-size:12px;font-weight:700;color:var(--muted);padding:0 12px}
+.sh-t-list{display:flex;flex-direction:column;gap:6px}
+.sh-t-row{padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--surface-2)}
+.sh-t-row.is-off{opacity:.7}
+.sh-t-dev,.sh-t-kind,.sh-t-where{display:flex;flex-direction:column;gap:3px;min-width:0;overflow-wrap:anywhere}
+.sh-t-name,.sh-t-ipin,.sh-t-dp{width:100%;min-height:32px}
+.sh-t-ip,.sh-t-ver{font:600 13px var(--mono)}
+@media (max-width:640px){.sh-t-head{display:none}.sh-t-row{grid-template-columns:28px minmax(0,1fr)}.sh-t-kind,.sh-t-where,.sh-t-ver{grid-column:2}.sh-t-where:empty,.sh-t-ver:empty{display:none}}
+.sh-gw-acts{display:inline-flex;gap:8px;align-items:center;flex-wrap:wrap}

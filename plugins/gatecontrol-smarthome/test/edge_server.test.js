@@ -10,7 +10,7 @@ const assert = require('node:assert/strict');
 const { createHost, hostError } = require('../../../tools/testing/mock-host');
 const { DIR, ADMIN, ADA, BOB, USERS, fakeDeconz, withHost, asAdmin, asPortal, connected } = require('./helpers');
 
-const GW = { id: 7, name: 'Pi Keller', state: 'running', version: '1.20.0' };
+const GW = { id: 7, name: 'Pi Keller', state: 'running', version: '1.49.0' };
 const DEVICE_PW = 'Shelly-Geheim-42';
 
 /** A fake edge part on the gateways (what gc.edge.call reaches). */
@@ -50,7 +50,7 @@ function fakeEdge(o = {}) {
 
 async function withEdge(o, fn) {
   const edge = fakeEdge(o);
-  const gateways = o.gateways || [GW, { id: 8, name: 'NAS Büro', state: 'disabled', version: '1.20.0' }, { id: 9, name: 'NAS Wohnzimmer', state: 'gateway_too_old', version: '1.18.0' }];
+  const gateways = o.gateways || [GW, { id: 8, name: 'NAS Büro', state: 'disabled', version: '1.49.0' }, { id: 9, name: 'NAS Wohnzimmer', state: 'gateway_too_old', version: '1.18.0' }];
   const host = await createHost(DIR, { users: USERS, gatecontrol: '1.228.1', edge: { gateways, call: edge.call }, targets: { gateway: (o.deconz || []).map((g, i) => ({ label: `phoscon-${i}`, fetch: g.fetch })) } });
   try {
     await host.start();
@@ -94,7 +94,7 @@ test('without gc.edge (GateControl < 1.228.1): the deCONZ part as before, the ed
 test('sources: every gateway of the edge part with its state, the running one with the edge part\'s info', () => withEdge({}, async (host) => {
   const r = await admin(host, 'GET', '/edge/gateways');
   assert.equal(r.json.available, true);
-  assert.equal(r.json.minGateway, '1.19.0');
+  assert.equal(r.json.minGateway, '1.49.0');
   assert.deepEqual(r.json.gateways.map((g) => [g.id, g.name, g.state, g.tooOld, g.info ? g.info.mqtt : null]), [
     [7, 'Pi Keller', 'running', false, 'ok'], [8, 'NAS Büro', 'disabled', false, null], [9, 'NAS Wohnzimmer', 'gateway_too_old', true, null],
   ]);
@@ -102,7 +102,7 @@ test('sources: every gateway of the edge part with its state, the running one wi
 }));
 
 test('an offline gateway: the reason from GateControl (sources and a failed set-up); without one (older GateControl) none', () => withEdge({ gateways: [
-  { ...GW }, { id: 8, name: 'NAS Büro', state: 'disabled', version: '1.20.0' }, { id: 9, name: 'NAS Wohnzimmer', state: 'gateway_too_old', version: '1.18.0' },
+  { ...GW }, { id: 8, name: 'NAS Büro', state: 'disabled', version: '1.49.0' }, { id: 9, name: 'NAS Wohnzimmer', state: 'gateway_too_old', version: '1.18.0' },
 ] }, async (host, edge, gateways) => {
   gateways[0].state = 'offline';
   gateways[0].reason = 'edge_missing';
@@ -469,7 +469,7 @@ test('every text the pages and the server use exists in German and English', () 
   const path = require('node:path');
   const texts = require('../server/texts.json');
   const used = new Set();
-  for (const f of ['ui/admin.js', 'ui/portal.js', 'ui/common.js', 'server/index.js', 'server/edge.js']) {
+  for (const f of ['ui/admin.js', 'ui/tuya.js', 'ui/portal.js', 'ui/common.js', 'server/index.js', 'server/edge.js']) {
     const src = fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
     for (const m of src.matchAll(/\bt?T\((?:lang, )?'([a-z0-9_.-]+)'/g)) used.add(m[1]);
   }

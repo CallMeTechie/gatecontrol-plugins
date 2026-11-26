@@ -25,13 +25,19 @@
 //   mode     (value off | heat | auto → system_mode)
 // Since 1.19.0 also the device's own boost (only when its exposes name it — edge/index.js boostOf):
 //   boost    (value true | false; prop boost_heating | boost, on / off its value_on / value_off)
+// Since 1.21.0 Tuya devices in the home network (family 'tuya', base "tuya/<device id>", edge/tuya.js): no MQTT — the
+// message is { tuya: { base, ch, op, value } }, edge/index.js writes it over the device's TCP connection (which
+// datapoints: edge/tuya.js toDps with the device's profile). Lights also take ct (mired 153–500), color ({ hue 0–65535,
+// sat 0–254 }) and scene (night | read | work | leisure).
 
-const BASE_RE = /^(?:(shellies|tasmota)\/[A-Za-z0-9][A-Za-z0-9_.-]{0,63}|zigbee2mqtt\/0x[0-9a-f]{16})$/;
+const BASE_RE = /^(?:(shellies|tasmota)\/[A-Za-z0-9][A-Za-z0-9_.-]{0,63}|zigbee2mqtt\/0x[0-9a-f]{16}|tuya\/[A-Za-z0-9]{8,32})$/;
+const TUYA_RE = /^tuya\/[A-Za-z0-9]{8,32}$/;
+const TUYA_SCENES = ['night', 'read', 'work', 'leisure'];
 const Z2M_RE = /^zigbee2mqtt\/0x[0-9a-f]{16}$/;
 const CH_RE = /^(switch|light|cover|thermostat):(\d{1,2})$/;
 const OPS = {
   switch: ['on', 'off'],
-  light: ['on', 'off', 'bri'],
+  light: ['on', 'off', 'bri', 'ct', 'color', 'scene'],
   cover: ['open', 'close', 'stop', 'pos'],
   thermostat: ['setpoint', 'boost', 'schedule_off', 'mode', 'calibration'],
 };
@@ -80,6 +86,29 @@ function check(cmd) {
   const idx = Number(idxStr);
   if (!OPS[type].includes(c.op)) throw bad('invalid operation');
   let value = null;
+  if ((c.family === 'tuya') !== TUYA_RE.test(c.base)) throw bad('unknown device family');
+  if (c.family !== 'tuya' && ['ct', 'color', 'scene'].includes(c.op)) throw bad('invalid operation');
+  if (c.family === 'tuya') {
+    if (type !== 'switch' && type !== 'light') throw bad('invalid channel');
+    if (c.op === 'bri') {
+      value = typeof c.value === 'number' && Number.isFinite(c.value) ? Math.round(c.value) : NaN;
+      if (!(value >= 1 && value <= 100)) throw bad('invalid value');
+    } else if (c.op === 'ct') {
+      value = typeof c.value === 'number' && Number.isFinite(c.value) ? Math.round(c.value) : NaN;
+      if (!(value >= 153 && value <= 500)) throw bad('invalid value');
+    } else if (c.op === 'color') {
+      const v = c.value && typeof c.value === 'object' ? c.value : {};
+      const ok = (n, hi) => typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= hi;
+      if (!ok(v.hue, 65535) || !ok(v.sat, 254)) throw bad('invalid value');
+      value = { hue: Math.round(v.hue), sat: Math.round(v.sat) };
+    } else if (c.op === 'scene') {
+      if (!TUYA_SCENES.includes(c.value)) throw bad('invalid value');
+      value = c.value;
+    }
+    if (type === 'switch' && c.op !== 'on' && c.op !== 'off') throw bad('invalid operation');
+    if (c.zch != null) throw bad('invalid channel');
+    return { type, idx, value };
+  }
   if (type === 'thermostat' && c.family === 'z2m') {
     if (idx !== 0 || !['setpoint', 'mode', 'boost', 'calibration'].includes(c.op)) throw bad('invalid operation');
     if (c.op === 'calibration') {
@@ -122,6 +151,7 @@ function messages(cmd, opts = {}) {
   const c = cmd && typeof cmd === 'object' ? cmd : {};
   const { type, idx, value } = check(c);
   const { base, family } = c;
+  if (family === 'tuya') return [{ tuya: { base, ch: c.ch, op: c.op, ...(value != null ? { value } : {}) } }];
   if (family === 'z2m') {
     const name = typeof opts.z2mTopic === 'function' ? opts.z2mTopic(base) : null;
     if (typeof name !== 'string' || !name || name.length > 128) throw bad('unknown zigbee2mqtt device');
@@ -161,7 +191,7 @@ function refresh(dev) {
   if (dev.family === 'shelly2') return [{ topic: `${dev.base}/command`, payload: 'status_update' }];
   if (dev.family === 'shelly1') return [{ topic: `${dev.base}/command`, payload: 'update' }];
   if (dev.family === 'tasmota') return [{ topic: `${dev.base}/cmnd/STATUS`, payload: '11' }, { topic: `${dev.base}/cmnd/STATUS`, payload: '10' }];
-  return [];
+  return []; // tuya: edge/index.js asks the device over its connection
 }
 
-module.exports = { messages, check, refresh, BASE_RE, Z2M_RE, Z2M_SETPOINTS, Z2M_MODES, Z2M_BOOSTS, Z2M_CAL, z2mBin };
+module.exports = { messages, check, refresh, BASE_RE, Z2M_RE, TUYA_RE, TUYA_SCENES, Z2M_SETPOINTS, Z2M_MODES, Z2M_BOOSTS, Z2M_CAL, z2mBin };

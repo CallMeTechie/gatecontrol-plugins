@@ -1,4 +1,4 @@
-<!-- version: 1.20.0 -->
+<!-- version: 1.21.0 -->
 # Smart Home
 
 ## Was das Plugin kann
@@ -7,6 +7,7 @@
 - **Shelly und Tasmota** über ein GateControl-Gateway im Heimnetz (ab 1.7.0): Schalter mit Leistungsmessung, Dimmer, Rollläden, Markisen und Tore, Temperatur- und Feuchtesensoren – ohne Hersteller-Cloud.
 - **Bluetooth-Sensoren** über ein GateControl-Gateway (ab 1.8.0): Thermometer und Sensoren, die du in GateControl unter Funk übernommen hast – auch verschlüsselte, wenn ihr Schlüssel dort eingetragen ist.
 - **Zigbee-Geräte von zigbee2mqtt** über ein GateControl-Gateway (ab 1.9.0): Lichter, Steckdosen, Rollläden, Sensoren und Taster, die du in GateControl unter Funk mit zigbee2mqtt angelernt hast. Ab 1.10.0 auch Schalter mit mehreren Kanälen, Thermostate und Firmware-Updates.
+- **Tuya-WLAN-Geräte lokal** über ein GateControl-Gateway (ab 1.21.0): Steckdosen, Leisten, Schalter, Lampen und LED-Streifen von Tuya (Smart Life) ohne Tuya-Cloud im Betrieb ([Tuya](#tuya)).
 - **Besitzer und Bereiche:** Du weist Geräte Personen zu. Diese Personen bedienen sie im Portal „Zuhause“ und in der App.
 - **Logikketten:** für deCONZ auf dem deCONZ-Gateway; für Shelly und Tasmota auf dem GateControl-Gateway (ab 1.10.0) – seit 1.11.0 mit Tastern, Uhrzeit, Bedingungen mit UND/ODER, Schritten mit Wartezeiten, Testlauf und Protokoll; seit 1.12.0 mit Sonnenauf-/untergang, „seit X min“, Ketten über mehrere Gateways (am Server), Mitteilungen und Schnellaktionen in der App; seit 1.15.0 auch mit Geräten von zigbee2mqtt am Gateway, sobald ein Admin das für das Gateway bestätigt hat.
 - **Heizung** (ab 1.14.0): Heizkörper-Thermostate von zigbee2mqtt, deCONZ und – ab 1.17.0 – Shelly TRV und Shelly BLU TRV je Raum mit Presets, Wochenplänen, Boost, „Fenster offen“, Urlaub und „Heizung abwesend“ ([Heizung](#heizung)). Hängen alle Thermostate eines Raums an einem Gateway (Shelly TRV, BLU TRV, ab 1.18.0 auch zigbee2mqtt nach Bestätigung), läuft sein Plan dort – auch ohne Server.
@@ -15,11 +16,13 @@
 
 ## Voraussetzungen
 
-- GateControl **1.317.0** oder neuer (seit 1.15.0).
+- GateControl **1.326.0** oder neuer (seit 1.21.0).
+- Für alles am GateControl-Gateway (Shelly, Tasmota, zigbee2mqtt, Tuya, Plan am Gateway): ein Gateway **1.49.0** oder neuer (seit 1.21.0). **Gateway zuerst aktualisieren**, dann das Plugin – ältere Gateways lehnen Smart Home 1.21.0 ab.
 - Für deCONZ: ein Phoscon/deCONZ-Gateway, das GateControl erreicht (über eine Route, ein VPN-Gerät oder eine Adresse).
-- Für Shelly und Tasmota: ein GateControl-Gateway **1.19.0** oder neuer im selben Heimnetz, mit den Diensten `edge` und `mqtt` in seiner Compose-Datei.
+- Für Shelly und Tasmota: ein GateControl-Gateway im selben Heimnetz, mit den Diensten `edge` und `mqtt` in seiner Compose-Datei.
 - Für Bluetooth-Sensoren: ein GateControl mit Funk (Reiter „Funk“ beim Gateway) und ein Gateway mit Bluetooth.
 - Für zigbee2mqtt: ein GateControl, das zigbee2mqtt kennt, und ein Gateway nach 1.30.0 mit „zigbee2mqtt“ im Reiter „Funk“ (dafür sind Edge und MQTT des Gateways an). Für mehrere Kanäle, Thermostate und Firmware-Updates: GateControl nach 1.258.4 und ein Gateway nach 1.34.2. Für Boost, Fenster und Preset von zigbee2mqtt-Thermostaten (ab 1.19.0): ein Gateway ab 1.47.0 und ein GateControl, das diese Angaben an Plugins weitergibt ([Boost, Fenster und Preset](#heizung-z2m-ext)).
+- Für Tuya: die bestätigten zusätzlichen Rechte des Gateways und einmal einen Tuya-IoT-Zugang oder eine devices.json von tinytuya ([Tuya](#tuya)).
 - Für zigbee2mqtt in Logikketten am Gateway (ab 1.15.0): ab Gateway 1.46.0 und die Bestätigung unter **Gateways › Gateway › Edge-Plugins** ([zigbee2mqtt am Gateway](#logikketten-z2m)).
 
 ## Einrichten
@@ -35,7 +38,7 @@ Der API-Key wird verschlüsselt gespeichert.
 
 ### Shelly und Tasmota über ein Gateway {#shelly-tasmota}
 
-1. **Compose-Datei prüfen:** Das Gateway braucht die Dienste `edge` und `mqtt` (Gateway ab 1.19.0). Fehlen sie, steht auf der Gateway-Seite „Edge-Dienst fehlt“ mit dem Knopf „docker-compose.yml herunterladen“. Neue Datei einsetzen und das Projekt neu erstellen. Das Raspberry-Pi-Image pflegt seine Compose-Datei selbst.
+1. **Compose-Datei prüfen:** Das Gateway braucht die Dienste `edge` und `mqtt` (seit Plugin 1.21.0: Gateway ab 1.49.0). Fehlen sie, steht auf der Gateway-Seite „Edge-Dienst fehlt“ mit dem Knopf „docker-compose.yml herunterladen“. Neue Datei einsetzen und das Projekt neu erstellen. Das Raspberry-Pi-Image pflegt seine Compose-Datei selbst.
 2. **MQTT einschalten:** **Gateways** › dein Gateway › **MQTT**.
 3. **Edge-Teil einschalten:** **Gateways** › dein Gateway › **Edge-Plugins** › „Smart Home“ einschalten.
 4. Im Plugin › **„Quelle hinzufügen“**: Je Gateway steht dort, ob der Edge-Teil läuft und der MQTT-Broker an ist.
@@ -62,6 +65,43 @@ GateControl ändert am Gerät nur die MQTT-Einstellungen. Cloud, WLAN und Zeitpl
 5. **Mehrere Kanäle:** Ein 2- oder 3-fach-Schalter steht als eine Karte je Kanal da („Kanal 1“, „Kanal 2“ …). Jeder Kanal hat eigenen Namen, Bereich und Besitzer und wird einzeln geschaltet. Seit 1.13.0 wählst du je Kanal unter **„Besitzer verwalten“ › Art**, wofür er steht: Licht, Steckdose oder Schalter. Das ändert Symbol, Begriffe und die Schnellaktion der Apps, nicht das Gerät; ein Kanal wird nur ein- und ausgeschaltet, nie gedimmt.
 6. **Thermostate:** Die Karte zeigt Ist- und Soll-Temperatur. Das Soll stellst du mit dem Regler, den Modus (Aus, Heizen, Automatik) mit den Knöpfen darunter. Zugewiesene Personen stellen das Soll im Portal mit − und +.
 7. **Firmware-Updates:** Kann ein Gerät Updates über Funk, steht unten auf seiner Karte „Firmware“. **„Nach Update suchen“** fragt zigbee2mqtt; gibt es eines, steht dort „Update verfügbar“ mit dem Knopf **„Aktualisieren“**. Ein Update dauert 10 bis 60 Minuten, die Karte zeigt den Fortschritt. Ein Batteriegerät muss dafür wach sein – betätige es einmal.
+
+### Tuya-Geräte (lokal, ab 1.21.0) {#tuya}
+
+WLAN-Steckdosen, Steckdosenleisten, Schalter, Lampen und LED-Streifen von Tuya (Smart Life) steuert das Gateway **direkt im Heimnetz** – ohne Tuya-Cloud im Betrieb. Die Cloud brauchst du nur einmal, um die Schlüssel der Geräte (Local Keys) zu holen.
+
+**Vorher am Gateway:**
+
+1. **Gateway auf 1.49.0 oder neuer aktualisieren** – zuerst, vor dem Update dieses Plugins. Ältere Gateways (1.46 bis 1.48) lehnen Smart Home 1.21.0 ganz ab; dann laufen dort auch Shelly, Tasmota und zigbee2mqtt nicht.
+2. **Zusätzliche Rechte bestätigen:** Tuya braucht „TCP im Heimnetz“ (`tcp.lan`), „UDP 6666, 6667, 7000“ (`udp.port:…`) und „UDP-Broadcast“ (`udp.broadcast`). Fehlen sie, fragt der Assistent sie an („Rechte anfragen“). Ein Admin bestätigt sie unter **Gateways › Gateway › Edge-Plugins › Zusätzliche Rechte (optional)** – einzeln oder alle auf einmal (ab der Server-Version mit diesem Knopf). Nur Gateways mit Tuya bekommen diese Rechte; das Update des Plugins läuft ohne neue Zustimmung durch.
+
+**Geräte hinzufügen:** Quelle (das Gateway) wählen › **„Tuya-Geräte hinzufügen“** (auch unter „Quelle hinzufügen“ beim Gateway). Der Assistent hat drei Schritte:
+
+1. **Keys holen** – einer von drei Wegen:
+   - **Tuya-IoT-Zugang:** Access ID, Access Secret und Rechenzentrum deines Cloud-Projekts. So bekommst du sie (einmalig, etwa 15 Minuten): auf der Website der Tuya IoT Platform ein kostenloses Entwickler-Konto anlegen; Cloud › Projekt anlegen, Rechenzentrum wie dein Smart-Life-Konto (z. B. Mitteleuropa); im Projekt die Dienste „IoT Core“ und „Authorization“ abonnieren (Testzeitraum, danach kostenlos verlängerbar); Geräte › App-Konto verknüpfen (QR-Code in der Smart-Life- bzw. Tuya-App scannen); Access ID und Secret aus der Projektübersicht kopieren. Der Zugang wird verschlüsselt behalten, damit „Key neu holen“ später ohne neue Eingabe geht (abwählbar, „Zugang löschen“ entfernt ihn).
+   - **devices.json hochladen:** die Datei von „tinytuya wizard“ von deinem Rechner. GateControl fragt keine Cloud; die Datei wird nur im Browser gelesen und nicht gespeichert.
+   - **Von Hand:** Geräte-ID und Local Key (16 Zeichen) eines Geräts, wahlweise die Art und eine feste IP. „Automatisch erkennen“ liest die Datenpunkte des Geräts.
+2. **Im Heimnetz finden:** Das Gateway lauscht etwa 15 Sekunden auf die Meldungen der Geräte (UDP 6666/6667/7000, 3.5-Geräte werden einmal gefragt) und ordnet ID → IP und Protokoll zu. Hake an, was übernommen werden soll, und passe die Namen an. „Nicht gefunden“: Gerät aus, in einem anderen Netz (Gast-WLAN, VLAN) oder ein 3.5-Gerät, das sich nur auf Anfrage meldet – dann die IP eintragen.
+3. **Fertig.** Bereich, Besitzer und Art je Kanal gibst du danach wie bei Shelly unter **„Bearbeiten“**.
+
+**Was geht:** Steckdosen und Leisten (je Kanal und USB eine Karte, Leistung in Watt), Schalter (je Kanal, Art Licht/Steckdose/Schalter wählbar), Lampen und LED-Streifen (Ein/Aus, Helligkeit, Weißton, Farbe, bei neueren Lampen die vier Szenen Nacht, Lesen, Arbeit, Freizeit). Protokolle 3.1 bis 3.5. Andere Geräte (Luftreiniger, Kameras, Saugroboter …) sind **nicht unterstützt**: Sie erscheinen im Assistenten mit „nicht unterstützt“; hat ein solches Gerät einen Ein/Aus-Datenpunkt, kannst du ihn als Schalter übernehmen. Ein Gerät „von Hand“, dessen Art sich nicht erkennen lässt, steht unter „Nicht unterstützt“ mit seinen Datenpunkten; unter „Bearbeiten“ wählst du dort „Ein/Aus als Schalter zeigen“.
+
+**Bedienen:** Die Geräte sind normale Smart-Home-Geräte: Seite, Portal „Zuhause“ (mit Farbe und Weißton), Schnellaktionen und Widgets der Apps (Helligkeit, Weißton in Kelvin, acht feste Farben, Szenen), **Logikketten am Gateway** (z. B. „Leistung der Waschmaschine unter 5 W → Mitteilung“, ein Shelly-Taster schaltet eine Tuya-Lampe) – auch ohne Server und Internet. Das Gateway hält je Gerät eine Verbindung; Änderungen am Gerät selbst (Taste am Schalter) kommen sofort an.
+
+**Nach der Einrichtung vom Internet trennen (empfohlen):** Im Router bzw. in der Firewall den Internetzugang der Tuya-Geräte sperren (am besten feste IPs per DHCP-Reservierung) oder ein eigenes WLAN ohne Internet, das das Gateway erreicht. GateControl braucht nur das Heimnetz. Die Tuya-App steuert die Geräte dann unterwegs nicht mehr, und deren Zeitpläne laufen eventuell nicht mehr – lege sie als Logikketten an. Ohne Internet gibt es keine Firmware-Updates.
+
+**Key passt nicht mehr:** Koppelst du ein Gerät in der Tuya-App neu, bekommt es einen neuen Local Key. Die Karte zeigt dann „Key passt nicht mehr“ (das Gerät ist im Heimnetz sichtbar, lehnt den Key aber ab), Admins bekommen einmal eine Mitteilung (Thema „Gateway nicht erreichbar“), das Gateway versucht es nur noch alle 10 Minuten. **„Key neu holen“:** aus der Tuya-Cloud (gespeicherter Zugang; das Gerät muss dafür kurz online sein), aus einer neuen devices.json oder von Hand.
+
+**Sicherheit:** Local Keys und der Tuya-Zugang liegen verschlüsselt als Plugin-Secrets am Server, nie im Browser, im Portal oder in den Apps. Das Gateway bekommt die Keys über seinen Edge-Kanal und **speichert sie im Speicher des Plugins auf dem Gateway**, damit die Geräte nach einem Neustart auch ohne Server laufen – der Datenträger des Gateways ist damit so schutzwürdig wie die WLAN-Daten der Geräte. Die Cloud fragt das Plugin nur auf Knopfdruck („Geräte holen“, „Key neu holen“). Die Lokal-Verschlüsselung älterer Tuya-Geräte (3.1–3.3) ist schwach: am besten ein eigenes WLAN bzw. VLAN.
+
+**Grenzen:** höchstens etwa 60 Tuya-Geräte je Gateway (eine Verbindung je Gerät, 64 je Edge-Teil). Viele Tuya-Geräte nehmen nur **eine** lokale Verbindung an – läuft daneben Home Assistant oder ein anderes Lokal-Werkzeug, stören sie sich. Batterie-WLAN-Geräte (Tür, Rauch, Thermometer) melden sich nur in die Cloud und gehen lokal nicht. Geräte in einem Netz, das das Gateway nicht erreicht, gehen nicht.
+
+**Zigbee-Geräte am Tuya-Hub** (Stufe 2, noch nicht): Hub und Untergeräte stehen im Assistenten, lassen sich aber noch nicht übernehmen. Empfehlung: zum Zigbee-Stick des Gateways umziehen – dann laufen sie ohne Tuya über zigbee2mqtt, mit Heizungsplan am Gateway:
+
+1. In der Tuya-App das Gerät entfernen.
+2. In GateControl beim Gateway **Funk › zigbee2mqtt › „Anlernen starten“**.
+3. Das Gerät in den Kopplungsmodus bringen (meist Taste 5 Sekunden halten).
+4. Im Plugin Name, Bereich und Besitzer vergeben ([zigbee2mqtt](#zigbee2mqtt)).
 
 ### Geräte zuweisen und benennen
 
@@ -272,6 +312,25 @@ Richte das Gerät „Von Hand …“ ein. Die Anleitung steht im Fenster.
 
 **Ein Gerät von zigbee2mqtt lässt sich nicht schalten („zigbee2mqtt auf dem Gateway antwortet gerade nicht“).**
 Im Reiter „Funk“ des Gateways nachsehen: Läuft zigbee2mqtt, sind Edge und MQTT an? Neue Geräte erscheinen spätestens nach einer halben Minute.
+
+**Tuya: „Rechte fehlen“ oder der Assistent findet nichts.**
+Die zusätzlichen Rechte für Tuya sind am Gateway noch nicht bestätigt (Gateways › Gateway › Edge-Plugins › Zusätzliche Rechte), oder das Gateway ist älter als 1.49.0 ([Tuya](#tuya)).
+
+**Ein Tuya-Gerät ist „nicht erreichbar“.**
+Strom und WLAN prüfen. Läuft daneben Home Assistant oder ein anderes Lokal-Werkzeug, belegt es oft die einzige lokale Verbindung des Geräts. Liegt das Gerät in einem anderen Netz, unter „Bearbeiten“ eine feste IP eintragen, die das Gateway erreicht.
+
+**Ein Tuya-Gerät zeigt „Key passt nicht mehr“.**
+Es wurde in der Tuya-App neu gekoppelt: „Key neu holen“ ([Tuya](#tuya)).
+
+**„Access ID oder Access Secret passt nicht“ / „Das Tuya-Projekt darf das nicht“.**
+Werte aus der Projektübersicht kopieren und das Rechenzentrum deines App-Kontos wählen; im Projekt „IoT Core“ und „Authorization“ abonnieren bzw. verlängern und das App-Konto verknüpfen. Die Fehlernummer der Tuya-Cloud steht in Klammern dahinter.
+
+## Neu in 1.21.0
+
+- **Tuya-Geräte lokal:** WLAN-Steckdosen, Leisten, Schalter, Lampen und LED-Streifen von Tuya (Smart Life) über das Gateway, ohne Tuya-Cloud im Betrieb – Protokolle 3.1 bis 3.5, Assistent „Tuya-Geräte hinzufügen“ (Tuya-IoT-Zugang, devices.json oder von Hand), Suche im Heimnetz, Logikketten am Gateway, „Key neu holen“ ([Tuya](#tuya)).
+- **Wichtig:** zuerst das Gateway auf **1.49.0** aktualisieren, dann dieses Plugin. GateControl ab **1.326.0**. Das Update fragt einmal nach Zustimmung für die Internet-Ziele der Tuya-Cloud (nur für „Geräte holen“ und „Key neu holen“); die Rechte für Tuya am Gateway sind optional und werden je Gateway bestätigt.
+- **Farblampen in den Apps:** Widgets haben jetzt neben der Helligkeit einen Regler für den Weißton (Kelvin) und acht feste Farben – auch für Farblampen von deCONZ und zigbee2mqtt; Tuya-Lampen dazu ihre Szenen.
+- Ist ein Shelly-, Tasmota- oder Tuya-Gerät nicht erreichbar, sind die Regler im Widget gesperrt.
 
 ## Neu in 1.20.0
 

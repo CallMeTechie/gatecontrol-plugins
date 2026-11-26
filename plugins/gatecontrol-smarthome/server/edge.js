@@ -26,6 +26,10 @@
 // plan of the rooms whose thermostats all hang on that gateway (server/heating.js edgeConfig) — it runs there, also
 // while the server is away. Since 1.18.0 zigbee2mqtt thermostats of that gateway count for it too, once zigbee2mqtt/#
 // is confirmed there.
+// Since 1.21.0 Tuya devices (server/tuya.js): edge_devices of family 'tuya' without an MQTT account; the configuration
+// carries `tuya` [{ id, key, ip?, hint?, ver?, p }] (the local keys from the plugin's secrets — gc.edge.configure is held
+// only in the edge part's memory), their reports the link (info.tuya: ok | connecting | searching | offline | key |
+// denied | busy) besides the channels. Routes /edge/tuya/… for the assistant "Tuya-Geräte hinzufügen".
 
 const crypto = require('node:crypto');
 const store = require('./store');
@@ -34,8 +38,9 @@ const alerts = require('./alerts');
 const batteryLevel = require('./battery');
 const edgerules = require('./edgerules');
 const { codeError } = require('./deconz');
+const tuya = require('./tuya');
 
-const MIN_GATEWAY = '1.19.0';
+const MIN_GATEWAY = '1.49.0'; // plugin.json edge.minGateway (1.21.0: the optional capabilities for Tuya)
 const CALL_MS = 10000;
 const SETUP_CALL_MS = 30000;
 const INFO_MS = 4000;
@@ -129,19 +134,22 @@ async function gateways(gc, { info = true } = {}) {
 
 async function configureGateway(gc, gatewayId) {
   if (!available(gc)) return false;
-  const devices = (await es.listDevices(gc, gatewayId)).map((d) => ({ base: d.base, family: d.family }));
+  const all = await es.listDevices(gc, gatewayId);
+  const devices = all.map((d) => ({ base: d.base, family: d.family }));
+  // Tuya (since 1.21.0): with their keys — only for this edge part's memory (and its gc.store on the gateway)
+  const tuyaList = await tuyaConfig(gc, all.filter((d) => d.family === 'tuya'));
   // the gateway's logic chains run in its edge part (edge/rules.js); an older edge part ignores them
   const { rules, tz, z2m, sun } = await edgerules.configFor(gc, gatewayId);
   // the heating of the rooms that hang on this gateway (since 1.17.0); when it cannot be worked out now, no `heat`:
   // the gateway keeps the rooms it has (an empty list would stop them)
   const heating = require('./heating');
   const heat = await heating.edgeConfig(gc, Number(gatewayId)).catch((e) => { gc.log.warn('heating config failed', gatewayId, (e && (e.code || e.message)) || e); return null; });
-  let data = { devices, rules, tz, z2m, sun, ...(heat ? { heat: heat.cfg } : {}) };
+  let data = { devices, rules, tz, z2m, sun, tuya: tuyaList, ...(heat ? { heat: heat.cfg } : {}) };
   if (heat && Buffer.byteLength(JSON.stringify(data)) > CONFIG_MAX) {
     // GateControl takes 48 KB: the devices and chains go first, the gateway keeps the heating it has
     if (!mem.heatTooBig.has(Number(gatewayId))) gc.log.warn(`the heating of gateway ${Number(gatewayId)} does not fit into its configuration (too many rooms, plans or chains) — the gateway keeps the plan it has`);
     mem.heatTooBig.add(Number(gatewayId));
-    data = { devices, rules, tz, z2m, sun };
+    data = { devices, rules, tz, z2m, sun, tuya: tuyaList };
   }
   try {
     await gc.edge.configure(Number(gatewayId), data);
@@ -151,6 +159,20 @@ async function configureGateway(gc, gatewayId) {
     gc.log.debug('edge configure failed', gatewayId, edgeErr(e));
     return false;
   }
+}
+
+/** The Tuya devices of a gateway as its edge part takes them; a device whose key is gone (secret removed) stays out. */
+async function tuyaConfig(gc, list) {
+  const out = [];
+  for (const d of list) {
+    const key = await gc.settings.get(tuya.keyName(d.prefix)).catch(() => null);
+    if (typeof key !== 'string' || !tuya.KEY_RE.test(key)) continue;
+    const t = (d.config && d.config.tuya) || {};
+    const p = tuya.cleanProfile(t.prof);
+    if (p.k === 'other') continue; // not supported and no switch chosen: no connection
+    out.push({ id: d.prefix, key, ...(t.ip ? { ip: t.ip } : {}), ...(d.ip ? { hint: d.ip } : {}), ...(t.ver ? { ver: t.ver } : {}), p });
+  }
+  return out;
 }
 
 /** The runs of the logic chains the gateway kept while the server part did not hear it. */
@@ -191,7 +213,7 @@ function sensorOnly(dev) {
  * that has not reported yet.
  */
 function sleeperOf(dev) {
-  if (!dev.last_seen_at || !sensorOnly(dev)) return false;
+  if (dev.family === 'tuya' || !dev.last_seen_at || !sensorOnly(dev)) return false;
   const s = (dev.state && dev.state.sensor) || {};
   return s.external !== true;
 }
@@ -212,6 +234,8 @@ function thermoOnly(dev) {
 function reachableOf(dev, now = Date.now()) {
   const seen = dev.last_seen_at ? Date.parse(dev.last_seen_at) : NaN;
   if (!Number.isFinite(seen)) return false;
+  // a Tuya device: its connection is up (the edge part asks it every 10 minutes)
+  if (dev.family === 'tuya') return dev.online === true && now - seen <= STALE_MS;
   const sleeper = sensorOnly(dev);
   if (!sleeper && dev.online === false) return false;
   return now - seen <= (sleeper ? SENSOR_STALE_MS : (thermoOnly(dev) ? THERMO_STALE_MS : STALE_MS));
@@ -221,6 +245,7 @@ const finite = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
 function defaultKind(dev, type) {
   if (type === 'light') return 'light';
+  if (dev.family === 'tuya') return dev.config && dev.config.tuya && dev.config.tuya.prof && dev.config.tuya.prof.k === 'plug' ? 'plug' : 'relay';
   const m = `${dev.model || ''} ${dev.name || ''}`;
   return /plug|steckdose|SHPLG|SNPL|S2[0-9]/i.test(m) ? 'plug' : 'relay';
 }
@@ -235,6 +260,11 @@ function channelState(type, c, reachable, prev, now) {
   } else {
     st.on = c.on === true;
     if (type === 'light' && finite(c.bri) != null) st.bri = Math.round(c.bri);
+    // a colour light (Tuya, since 1.21.0): as deCONZ and zigbee2mqtt keep it — ct in mired, hue 0–65535, sat 0–254
+    if (type === 'light') {
+      for (const f of ['ct', 'hue', 'sat']) if (finite(c[f]) != null) st[f] = Math.round(c[f]);
+      if (c.cm === 'ct' || c.cm === 'hs' || c.cm === 'scene') st.colormode = c.cm;
+    }
   }
   if (finite(c.power) != null) st.power = c.power;
   if (finite(c.today) != null) st.energy_today = Math.round(c.today * 1000) / 1000;
@@ -309,8 +339,16 @@ async function syncResources(gc, dev, { drop = [], now = Date.now() } = {}) {
       source: 'edge', ch: key, bri: type === 'light', power: finite(c.power) != null || !!(prev && prev.capabilities && prev.capabilities.power),
       position: type === 'cover' && (c.pos != null || !!(prev && prev.capabilities && prev.capabilities.position)),
     };
+    // a Tuya light: brightness, colour temperature, colour and scenes as its datapoints have them
+    if (type === 'light' && dev.family === 'tuya') Object.assign(capabilities, tuya.lightCaps(dev.config && dev.config.tuya && dev.config.tuya.prof));
     if (type === 'cover') capabilities.cover = COVERS.has(cc.cover) ? cc.cover : 'shutter';
-    await es.upsertChannel(gc, dev, key, { kind, name, capabilities, area: dev.area, state: channelState(type, c, reachable, prev && prev.state, now) });
+    const state = channelState(type, c, reachable, prev && prev.state, now);
+    if (dev.family === 'tuya') {
+      // why it does not answer: its key no longer fits (the widgets and the page say so); a scene it was set to
+      if (dev.state && dev.state.tuya && dev.state.tuya.link === 'key') state.tuya_key = true;
+      if (type === 'light' && state.colormode === 'scene' && prev && prev.state && typeof prev.state.scene === 'string') state.scene = prev.state.scene;
+    }
+    await es.upsertChannel(gc, dev, key, { kind, name, capabilities, area: dev.area, state });
   }
   const s = (dev.state && dev.state.sensor) || {};
   if (finite(s.temperature) != null || finite(s.humidity) != null) {
@@ -328,7 +366,8 @@ function cleanSnapshot(snap) {
     if (!CH_RE.test(k) || !v || typeof v !== 'object' || Object.keys(ch).length >= 16) continue;
     const c = {};
     if (typeof v.on === 'boolean') c.on = v.on;
-    for (const f of ['bri', 'pos', 'power', 'energy', 'today', 'temp', 'target', 'valve', 'boost', 'bat', 'rid']) if (finite(v[f]) != null) c[f] = v[f];
+    for (const f of ['bri', 'pos', 'power', 'energy', 'today', 'temp', 'target', 'valve', 'boost', 'bat', 'rid', 'ct', 'hue', 'sat']) if (finite(v[f]) != null) c[f] = v[f];
+    if (v.cm === 'ct' || v.cm === 'hs' || v.cm === 'scene') c.cm = v.cm;
     if (v.pos === null) c.pos = null;
     if (v.moving === 'opening' || v.moving === 'closing') c.moving = v.moving;
     for (const f of ['schedule', 'window', 'paired']) if (typeof v[f] === 'boolean') c[f] = v[f];
@@ -355,7 +394,8 @@ async function applySnapshot(gc, dev, snap, now = Date.now()) {
   if (typeof info.model === 'string' && info.model && !dev.model) patch.model = cleanText(info.model, 40);
   if (typeof info.firmware === 'string' && info.firmware) patch.firmware = cleanText(info.firmware, 60);
   if (typeof info.ip === 'string' && /^\d{1,3}(\.\d{1,3}){3}$/.test(info.ip)) patch.ip = info.ip;
-  if (dev.family !== 'tasmota' && (snap.family === 'shelly1' || snap.family === 'shelly2') && snap.family !== dev.family) patch.family = snap.family;
+  if (dev.family !== 'tasmota' && dev.family !== 'tuya' && (snap.family === 'shelly1' || snap.family === 'shelly2') && snap.family !== dev.family) patch.family = snap.family;
+  if (dev.family === 'tuya') await tuyaReport(gc, dev, info, patch);
   const next = await es.updateDevice(gc, dev.id, patch);
   await syncResources(gc, next, { drop: Array.isArray(snap.drop) ? snap.drop.slice(0, 16) : [], now });
   for (const job of mem.jobs.values()) {
@@ -365,6 +405,39 @@ async function applySnapshot(gc, dev, snap, now = Date.now()) {
     }
   }
   return next;
+}
+
+const TUYA_LINKS = new Set(['ok', 'connecting', 'searching', 'offline', 'key', 'denied', 'busy']);
+
+/**
+ * What a Tuya device's report adds (since 1.21.0): its link and version (state.tuya), a kind found from its first status
+ * (kind 'auto' — the gateway gets the profile at once), the datapoints of a device that is not supported, and one
+ * notification when its key no longer fits.
+ */
+async function tuyaReport(gc, dev, info, patch) {
+  const link = TUYA_LINKS.has(info.tuya) ? info.tuya : null;
+  const ver = tuya.VERSIONS.includes(info.ver) ? info.ver : null;
+  patch.state.tuya = { link, ver };
+  const cfg = dev.config || {};
+  const t = cfg.tuya || {};
+  const next = { ...t };
+  let reconfigure = false;
+  if (ver && ver !== t.ver) next.ver = ver;
+  const dps = info.dps && typeof info.dps === 'object' && !Array.isArray(info.dps) ? info.dps : null;
+  const prof = tuya.cleanProfile(t.prof);
+  if (dps && prof.k === 'auto' && Object.keys(dps).length) {
+    const found = tuya.classify(dps, t.want, t.cat);
+    next.prof = found ? tuya.cleanProfile(found) : { k: 'other' };
+    if (!found) next.dps = Object.entries(dps).slice(0, 32).map(([dp, v]) => ({ dp: Number(dp), code: null, type: typeof v === 'boolean' ? 'Boolean' : (typeof v === 'number' ? 'Integer' : 'String'), value: typeof v === 'string' ? v.slice(0, 32) : v }));
+    reconfigure = true;
+  }
+  if (link === 'key' && !t.keyNoted) { next.keyNoted = true; await tuya.noteKey(gc, dev); }
+  if (link === 'ok' && t.keyNoted) next.keyNoted = false;
+  if (JSON.stringify(next) !== JSON.stringify(t)) {
+    patch.config = { ...cfg, tuya: next };
+    dev.config = patch.config;
+  }
+  if (reconfigure) setImmediate(() => configureGateway(gc, dev.gateway_id).catch(() => null));
 }
 
 async function onStates(gc, ev) {
@@ -414,6 +487,7 @@ function setup(gc) {
   mem.orphanAt = 0;
   mem.z2mSeen = false;
   mem.heatTooBig.clear();
+  tuya._mem.sessions.clear();
   edgerules._z2mMem.clear();
   require('./heating').resetEdge();
   mem.ready = available(gc);
@@ -552,6 +626,8 @@ async function removeDevice(gc, dev) {
   for (const job of mem.jobs.values()) if (job.deviceId === dev.id) { job.secret = null; job.state = 'cancelled'; }
   await removeAccount(gc, dev.gateway_id, dev.mqtt_user);
   await es.removeDevice(gc, dev.id);
+  // a Tuya device's key goes with it — unless the same device is still set up on another gateway
+  if (dev.family === 'tuya' && !(await es.listDevices(gc)).some((d) => d.family === 'tuya' && d.prefix === dev.prefix)) await gc.settings.setSecret(tuya.keyName(dev.prefix), null).catch(() => null);
   await configureGateway(gc, dev.gateway_id);
 }
 
@@ -585,7 +661,8 @@ async function deviceView(gc, dev, users, owners, lowAt = BATTERY_LOW_DEFAULT) {
   const battery = dev.state && dev.state.sensor ? finite(dev.state.sensor.battery) : null;
   return {
     id: dev.id, gateway_id: dev.gateway_id, name: dev.name, area: dev.area || null, family: dev.family, model: dev.model || null, firmware: dev.firmware || null,
-    ip: dev.ip || null, page: dev.ip ? `http://${dev.ip}/` : null, username: dev.mqtt_user || null, prefix: dev.prefix, base: dev.base, configured: dev.configured, online: dev.online,
+    ip: dev.ip || null, page: dev.ip && dev.family !== 'tuya' ? `http://${dev.ip}/` : null,
+    ...(dev.family === 'tuya' ? { tuya: tuyaView(dev) } : {}), username: dev.mqtt_user || null, prefix: dev.prefix, base: dev.base, configured: dev.configured, online: dev.online,
     reachable, waiting: !dev.last_seen_at, last_seen_at: dev.last_seen_at || null, battery,
     // a battery device between two reports: "schläft – letzte Meldung vor …", never "nicht erreichbar"; overdue =
     // silent for longer than such a device sleeps (26 h) — the battery may be empty
@@ -602,6 +679,18 @@ async function deviceView(gc, dev, users, owners, lowAt = BATTERY_LOW_DEFAULT) {
   };
 }
 
+/** A Tuya device for the page: its link, version, kind, the short id — never the key. */
+function tuyaView(dev) {
+  const t = (dev.config && dev.config.tuya) || {};
+  const prof = tuya.cleanProfile(t.prof);
+  const st = (dev.state && dev.state.tuya) || {};
+  return {
+    short: tuya.shortId(dev.prefix), link: st.link || null, ver: st.ver || t.ver || null, kind: prof.k, category: t.cat || null, ip_fixed: t.ip || null,
+    dps: prof.k === 'other' && Array.isArray(t.dps) ? t.dps.slice(0, 32) : [],
+    bools: prof.k === 'other' && Array.isArray(t.dps) ? t.dps.filter((x) => x && x.type === 'Boolean').map((x) => ({ dp: x.dp, code: x.code || null })).slice(0, 8) : [],
+  };
+}
+
 // ─── Control ────────────────────────────────────
 
 /** Switch / dim / move an edge resource; the cached state follows what was sent. */
@@ -614,6 +703,7 @@ async function setState(gc, resource, raw) {
   const type = m[1];
   const p = raw && typeof raw === 'object' ? raw : {};
   if (type === 'thermostat') return setThermostat(gc, resource, dev, key, p);
+  if (dev.family === 'tuya') return setTuya(gc, resource, dev, key, type, p);
   let op = null;
   let value;
   if (type === 'cover') {
@@ -637,6 +727,56 @@ async function setState(gc, resource, raw) {
   if (op === 'open' || op === 'close') st.moving = op === 'open' ? 'opening' : 'closing';
   if (op === 'stop') st.moving = null;
   if (op === 'pos') st.moving = value > (st.pos == null ? -1 : st.pos) ? 'opening' : 'closing';
+  await es.setResourceState(gc, resource.id, st);
+  return { ok: true };
+}
+
+/**
+ * A Tuya channel (since 1.21.0): on / off, and a light also bri, ct (mired), hue + sat, scene — each its own command
+ * (the edge part turns it into datapoints). The cached state follows.
+ */
+async function setTuya(gc, resource, dev, key, type, p) {
+  const caps = resource.capabilities || {};
+  const ops = [];
+  const fin = (v) => typeof v === 'number' && Number.isFinite(v);
+  if (type === 'light') {
+    if (typeof p.scene === 'string') {
+      if (!Array.isArray(caps.scenes) || !caps.scenes.includes(p.scene)) throw codeError('SMARTHOME_INVALID_PATCH');
+      ops.push({ op: 'scene', value: p.scene });
+    }
+    if (fin(p.hue) || fin(p.sat)) {
+      if (caps.color !== 'hs') throw codeError('SMARTHOME_INVALID_PATCH');
+      const st0 = resource.state || {};
+      ops.push({ op: 'color', value: { hue: Math.max(0, Math.min(65535, Math.round(fin(p.hue) ? p.hue : (fin(st0.hue) ? st0.hue : 0)))), sat: Math.max(0, Math.min(254, Math.round(fin(p.sat) ? p.sat : (fin(st0.sat) ? st0.sat : 254)))) } });
+    }
+    if (fin(p.ct)) {
+      if (!caps.ct) throw codeError('SMARTHOME_INVALID_PATCH');
+      ops.push({ op: 'ct', value: Math.max(153, Math.min(500, Math.round(p.ct))) });
+    }
+    if (fin(p.bri) && p.on !== false && caps.bri !== false) ops.push({ op: 'bri', value: Math.max(1, Math.min(100, Math.round(p.bri))) });
+  }
+  if (!ops.length && 'on' in p) ops.push({ op: p.on ? 'on' : 'off' });
+  if (!ops.length) throw codeError('SMARTHOME_INVALID_PATCH');
+  if (!available(gc)) throw codeError('SMARTHOME_EDGE_UNAVAILABLE');
+  for (const o of ops) {
+    try {
+      await gc.edge.call(dev.gateway_id, 'command', { base: dev.base, family: 'tuya', ch: key, op: o.op, ...(o.value !== undefined ? { value: o.value } : {}) }, { timeoutMs: CALL_MS });
+    } catch (e) {
+      const code = edgeErr(e);
+      if (code === 'tuya_key') throw codeError('SMARTHOME_TUYA_KEY');
+      if (code === 'tuya_offline' || code === 'unknown_device') throw codeError('SMARTHOME_TUYA_OFFLINE');
+      throw codeError('SMARTHOME_EDGE_UNREACHABLE', code);
+    }
+  }
+  const st = { ...(resource.state || {}) };
+  for (const o of ops) {
+    if (o.op === 'on' || o.op === 'off') st.on = o.op === 'on';
+    else st.on = true;
+    if (o.op === 'bri') st.bri = o.value;
+    if (o.op === 'ct') { st.ct = o.value; st.colormode = 'ct'; }
+    if (o.op === 'color') { st.hue = o.value.hue; st.sat = o.value.sat; st.colormode = 'hs'; }
+    if (o.op === 'scene') { st.scene = o.value; st.colormode = 'scene'; }
+  }
   await es.setResourceState(gc, resource.id, st);
   return { ok: true };
 }
@@ -825,6 +965,8 @@ async function route(req, gc, seg, body, usersById) {
     try { return { json: { ok: true, ...(await gc.edge.call(gw, 'refresh', {}, { timeoutMs: CALL_MS })) } }; } catch (e) { throw codeError('SMARTHOME_EDGE_UNREACHABLE', edgeErr(e)); }
   }
 
+  if (a === 'tuya') return tuyaRoute(req, gc, seg.slice(1), body);
+
   if (a === 'found' && seg.length === 1 && m === 'GET') {
     const gw = await edgeGatewayOk(gc, req.query && req.query.gateway_id);
     return { json: { ok: true, devices: await newFound(gc, gw, { ask: req.query && req.query.ask === '1' }) } };
@@ -875,12 +1017,53 @@ async function route(req, gc, seg, body, usersById) {
         patch.config = { ...(dev.config || {}), channels };
       }
       if (body.http_user !== undefined) patch.config = withHttpUser(patch.config || dev.config, cleanHttpUser(body.http_user));
+      let reconfigure = false;
+      if (body.tuya !== undefined) {
+        if (dev.family !== 'tuya' || !body.tuya || typeof body.tuya !== 'object') throw codeError('INVALID');
+        const cfg = patch.config || dev.config || {};
+        const t = { ...(cfg.tuya || {}) };
+        if (body.tuya.ip !== undefined) {
+          const ip = body.tuya.ip == null ? '' : String(body.tuya.ip).trim();
+          if (ip && !(tuya.IP_RE.test(ip) && isPrivateIp(ip))) throw codeError('INVALID');
+          if (ip) { t.ip = ip; patch.ip = ip; } else delete t.ip;
+        }
+        if (body.tuya.dp !== undefined) {
+          // a device that is not supported: one of its on/off datapoints as a switch (or none again)
+          const view = tuyaView(dev);
+          if (body.tuya.dp === null) { if (tuya.cleanProfile(t.prof).k === 'switch' && t.chosen) { t.prof = { k: 'other' }; delete t.chosen; } } else {
+            if (view.kind !== 'other' || !view.bools.some((x) => x.dp === body.tuya.dp)) throw codeError('INVALID');
+            t.prof = { k: 'switch', sw: [body.tuya.dp] };
+            t.chosen = true;
+          }
+        }
+        patch.config = { ...cfg, tuya: t };
+        reconfigure = true;
+      }
       const next = await es.updateDevice(gc, dev.id, patch);
       await syncResources(gc, next);
+      if (reconfigure) await configureGateway(gc, dev.gateway_id);
       return { json: { ok: true } };
     }
     if (seg.length === 2 && m === 'DELETE') {
       await removeDevice(gc, dev);
+      return { json: { ok: true } };
+    }
+    // a Tuya device's key anew ("Key neu holen"): from the cloud (the access kept), or given (by hand, devices.json)
+    if (seg.length === 3 && c === 'tuya_key' && m === 'POST') {
+      if (dev.family !== 'tuya') throw codeError('INVALID');
+      let key;
+      if (body.source === 'cloud') {
+        const creds = await savedCloud(gc);
+        if (!creds) throw codeError('SMARTHOME_TUYA_NO_CLOUD');
+        key = await tuya.cloudKey(gc, creds, dev.prefix);
+      } else {
+        key = typeof body.key === 'string' ? body.key.trim() : '';
+        if (!tuya.KEY_RE.test(key)) throw codeError('INVALID');
+      }
+      await gc.settings.setSecret(tuya.keyName(dev.prefix), key);
+      const cfg = dev.config || {};
+      await es.updateDevice(gc, dev.id, { config: { ...cfg, tuya: { ...(cfg.tuya || {}), keyNoted: false } }, state: { ...(dev.state || {}), tuya: { ...((dev.state && dev.state.tuya) || {}), link: 'connecting' } } });
+      await configureGateway(gc, dev.gateway_id);
       return { json: { ok: true } };
     }
     if (seg.length === 3 && c === 'owners' && m === 'PUT') {
@@ -963,6 +1146,154 @@ async function route(req, gc, seg, body, usersById) {
       }
       return { json: { ok: true } };
     }
+  }
+  throw codeError('NOT_FOUND');
+}
+
+// ─── Tuya: the assistant "Tuya-Geräte hinzufügen" (server/tuya.js) ───
+
+function isPrivateIp(ip) {
+  const [a, b] = ip.split('.').map(Number);
+  return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
+}
+
+async function savedCloud(gc) {
+  const raw = await gc.settings.get(tuya.CLOUD_KEY).catch(() => null);
+  if (typeof raw !== 'string' || !raw) return null;
+  try { return tuya.cleanCreds(JSON.parse(raw)); } catch { return null; }
+}
+
+/** The optional capabilities Tuya needs on a gateway: confirmed, missing, asked for; whether the gateway is new enough. */
+async function tuyaCaps(gc, gatewayId) {
+  const need = tuya.CAPS;
+  if (typeof gc.edge.capabilities !== 'function') return { ok: false, host: false, approved: [], missing: need.slice(), requested: [], unsupported: [], gatewaySupported: null, link: `/gateways#gw/${gatewayId}/edge` };
+  let c = {};
+  try { c = await gc.edge.capabilities(gatewayId); } catch (e) { throw codeError('SMARTHOME_EDGE_UNREACHABLE', edgeErr(e)); }
+  const has = (list, k) => Array.isArray(list) && list.includes(k);
+  const approved = need.filter((k) => has(c.approved, k));
+  const unsupported = need.filter((k) => has(c.unsupported, k));
+  return {
+    ok: approved.length === need.length, host: true, approved, missing: need.filter((k) => !approved.includes(k)), requested: need.filter((k) => has(c.requested, k)),
+    unsupported, gatewaySupported: typeof c.gatewaySupported === 'boolean' ? c.gatewaySupported : null, link: `/gateways#gw/${gatewayId}/edge`,
+  };
+}
+
+/** How many Tuya devices a gateway takes (its edge part says: TCP connections minus a few), and how many it has. */
+async function tuyaLimit(gc, gatewayId) {
+  let max = tuya.LIMIT_DEFAULT;
+  try {
+    const info = await gc.edge.call(gatewayId, 'info', {}, { timeoutMs: INFO_MS });
+    if (info && info.tuya && Number.isInteger(info.tuya.max) && info.tuya.max > 0) max = info.tuya.max;
+  } catch { /* the default */ }
+  const count = (await es.listDevices(gc, gatewayId)).filter((d) => d.family === 'tuya').length;
+  return { max, count, warn: Math.max(1, max - 8) };
+}
+
+/** The devices of a manual entry, a devices.json or the cloud → the session's list. */
+async function tuyaSource(gc, body) {
+  if (body.source === 'cloud') {
+    let creds;
+    if (body.saved === true) {
+      creds = await savedCloud(gc);
+      if (!creds) throw codeError('SMARTHOME_TUYA_NO_CLOUD');
+    } else creds = tuya.cleanCreds(body);
+    const list = await tuya.cloudDevices(gc, creds);
+    if (body.keep === false) await gc.settings.setSecret(tuya.CLOUD_KEY, null);
+    else if (body.saved !== true) await gc.settings.setSecret(tuya.CLOUD_KEY, JSON.stringify(creds));
+    return list;
+  }
+  if (body.source === 'file') {
+    if (!Array.isArray(body.devices) || !body.devices.length || body.devices.length > 200) throw codeError('INVALID');
+    const list = body.devices.map(tuya.fromRaw).filter(Boolean);
+    if (!list.length) throw codeError('SMARTHOME_TUYA_FILE');
+    return list;
+  }
+  if (body.source === 'manual') {
+    const e = tuya.fromRaw({ id: typeof body.id === 'string' ? body.id.trim() : '', key: typeof body.key === 'string' ? body.key.trim() : '', name: body.name, ip: body.ip });
+    if (!e || !e.key) throw codeError('INVALID');
+    const want = ['plug', 'switch', 'light'].includes(body.kind) ? body.kind : null;
+    const ip = typeof body.ip === 'string' && body.ip.trim() ? body.ip.trim() : null;
+    if (ip && !(tuya.IP_RE.test(ip) && isPrivateIp(ip))) throw codeError('INVALID');
+    return [{ ...e, ip, manual: true, want, fixedIp: ip }];
+  }
+  throw codeError('INVALID');
+}
+
+async function tuyaRoute(req, gc, seg, body) {
+  const m = req.method;
+  const [a] = seg;
+  if (a === 'status' && seg.length === 1 && m === 'GET') {
+    const gw = await edgeGatewayOk(gc, req.query && req.query.gateway_id);
+    const creds = await savedCloud(gc);
+    return { json: { ok: true, caps: await tuyaCaps(gc, gw), cloud: { saved: !!creds, region: creds ? creds.region : null }, limit: await tuyaLimit(gc, gw), regions: Object.keys(tuya.REGIONS) } };
+  }
+  // ask an administrator for the rights that are missing (one note per gateway and right per 24 hours)
+  if (a === 'request' && seg.length === 1 && m === 'POST') {
+    const gw = await edgeGatewayOk(gc, body.gateway_id);
+    if (typeof gc.edge.requestCapability !== 'function') throw codeError('SMARTHOME_EDGE_UNAVAILABLE');
+    const caps = await tuyaCaps(gc, gw);
+    for (const k of caps.missing) {
+      try { await gc.edge.requestCapability(gw, k); } catch (e) { gc.log.warn('tuya capability request failed', k, edgeErr(e)); }
+    }
+    return { json: { ok: true, caps: await tuyaCaps(gc, gw) } };
+  }
+  if (a === 'cloud' && seg.length === 1 && m === 'DELETE') {
+    await gc.settings.setSecret(tuya.CLOUD_KEY, null);
+    return { json: { ok: true } };
+  }
+  if (a === 'import' && seg.length === 1 && m === 'POST') {
+    const gw = await edgeGatewayOk(gc, body.gateway_id);
+    const list = await tuyaSource(gc, body);
+    const exists = new Set((await es.listDevices(gc, gw)).map((d) => d.base));
+    const s = tuya.newSession(gw, list, exists);
+    for (const d of s.devices) {
+      if (d.manual) { d.supported = true; d.reason = null; d.prof = { k: 'auto' }; }
+    }
+    return { json: { ok: true, ...tuya.sessionOut(s) } };
+  }
+  if (a === 'scan' && seg.length === 1 && m === 'POST') {
+    const s = tuya.getSession(body.session);
+    let r;
+    try { r = await gc.edge.call(s.gatewayId, 'tuya.scan', { seconds: tuya.SCAN_S }, { timeoutMs: (tuya.SCAN_S + 10) * 1000 }); } catch (e) { throw codeError('SMARTHOME_EDGE_UNREACHABLE', edgeErr(e)); }
+    for (const f of (r && Array.isArray(r.found) ? r.found : []).slice(0, 256)) {
+      const d = f && s.devices.find((x) => x.id === f.id);
+      if (!d) continue;
+      d.found = true;
+      if (typeof f.ip === 'string' && tuya.IP_RE.test(f.ip) && isPrivateIp(f.ip) && !d.fixedIp) d.ip = f.ip;
+      if (tuya.VERSIONS.includes(f.ver)) d.ver = f.ver;
+    }
+    s.scanned = true;
+    return { json: { ok: true, ...tuya.sessionOut(s), udp: (r && typeof r.udp === 'string' ? r.udp : null), denied: !!(r && r.denied) } };
+  }
+  if (a === 'add' && seg.length === 1 && m === 'POST') {
+    const s = tuya.getSession(body.session);
+    if (!Array.isArray(body.devices) || body.devices.length > 200) throw codeError('INVALID');
+    const lim = await tuyaLimit(gc, s.gatewayId);
+    let count = lim.count;
+    const added = [];
+    let limited = 0;
+    for (const item of body.devices) {
+      const d = item && s.devices.find((x) => x.ref === item.ref);
+      if (!d || d.exists) continue;
+      let prof = d.prof;
+      if (!d.supported) {
+        if (d.reason !== 'unsupported' || !Number.isInteger(item.dp) || !d.bools.some((b) => b.dp === item.dp)) continue;
+        prof = { k: 'switch', sw: [item.dp] };
+      }
+      if (count >= lim.max) { limited++; continue; }
+      const ipIn = typeof item.ip === 'string' && item.ip.trim() ? item.ip.trim() : null;
+      if (ipIn && !(tuya.IP_RE.test(ipIn) && isPrivateIp(ipIn))) throw codeError('INVALID');
+      const fixed = ipIn || d.fixedIp || null;
+      const name = cleanText(item.name, NAME_MAX) || d.name || d.product || `Tuya ${tuya.shortId(d.id)}`;
+      const t = { cat: d.category || null, ...(d.ver ? { ver: d.ver } : {}), prof: tuya.cleanProfile(prof), ...(fixed ? { ip: fixed } : {}), ...(d.want ? { want: d.want } : {}), ...(!d.supported ? { chosen: true } : {}) };
+      const dev = await es.createDevice(gc, { gateway_id: s.gatewayId, base: `tuya/${d.id}`, prefix: d.id, family: 'tuya', name, area: cleanText(item.area, AREA_MAX) || null, model: d.product, ip: fixed || d.ip, config: { tuya: t } });
+      await gc.settings.setSecret(tuya.keyName(d.id), d.key);
+      d.exists = true;
+      count++;
+      added.push(dev.id);
+    }
+    if (added.length) await configureGateway(gc, s.gatewayId);
+    return { json: { ok: true, added: added.length, ids: added, limited, max: lim.max } };
   }
   throw codeError('NOT_FOUND');
 }

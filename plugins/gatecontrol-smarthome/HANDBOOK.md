@@ -1,4 +1,4 @@
-<!-- version: 1.20.0 -->
+<!-- version: 1.21.0 -->
 # Smart Home
 
 ## What the plugin does
@@ -7,6 +7,7 @@
 - **Shelly and Tasmota** through a GateControl gateway in the home network (since 1.7.0): switches with power metering, dimmers, shutters, awnings and gates, temperature and humidity sensors – without a vendor cloud.
 - **Bluetooth sensors** through a GateControl gateway (since 1.8.0): thermometers and sensors you took over in GateControl under radio – encrypted ones too, once their key is entered there.
 - **Zigbee devices of zigbee2mqtt** through a GateControl gateway (since 1.9.0): lights, plugs, shutters, sensors and buttons you paired in GateControl under radio with zigbee2mqtt. Since 1.10.0 also switches with several channels, thermostats and firmware updates.
+- **Tuya Wi-Fi devices locally** through a GateControl gateway (since 1.21.0): Tuya (Smart Life) plugs, strips, switches, lamps and LED strips without the Tuya cloud while they run ([Tuya](#tuya)).
 - **Owners and areas:** you assign devices to people. They use them in the portal “Home” and in the app.
 - **Logic chains:** for deCONZ on the deCONZ gateway; for Shelly and Tasmota on the GateControl gateway (since 1.10.0) – since 1.11.0 with buttons, times, conditions with AND/OR, steps with waits, test run and log; since 1.12.0 with sunrise/sunset, “for X min”, chains across several gateways (on the server), notifications and quick actions in the app; since 1.15.0 with zigbee2mqtt devices on the gateway too, once an administrator confirmed it for the gateway.
 - **Heating** (since 1.14.0): radiator thermostats of zigbee2mqtt, deCONZ and – since 1.17.0 – Shelly TRV and Shelly BLU TRV per room with presets, weekly plans, boost, “window open”, holiday and “Heating away” ([Heating](#heizung)). If all thermostats of a room hang on one gateway (Shelly TRV, BLU TRV, since 1.18.0 zigbee2mqtt too once confirmed), its plan runs there – also without the server.
@@ -15,11 +16,13 @@
 
 ## Requirements
 
-- GateControl **1.317.0** or later (since 1.15.0).
+- GateControl **1.326.0** or later (since 1.21.0).
+- For everything on the GateControl gateway (Shelly, Tasmota, zigbee2mqtt, Tuya, plan on the gateway): a gateway **1.49.0** or later (since 1.21.0). **Update the gateway first**, then the plugin – older gateways refuse Smart Home 1.21.0.
 - For deCONZ: a Phoscon/deCONZ gateway GateControl can reach (through a route, a VPN device or an address).
-- For Shelly and Tasmota: a GateControl gateway **1.19.0** or later in the same home network, with the services `edge` and `mqtt` in its compose file.
+- For Shelly and Tasmota: a GateControl gateway in the same home network, with the services `edge` and `mqtt` in its compose file.
 - For Bluetooth sensors: a GateControl with radio (tab “Radio” of the gateway) and a gateway with Bluetooth.
 - For zigbee2mqtt: a GateControl that knows zigbee2mqtt and a gateway newer than 1.30.0 with “zigbee2mqtt” in the tab “Radio” (edge and MQTT of the gateway are on for it). For several channels, thermostats and firmware updates: GateControl newer than 1.258.4 and a gateway newer than 1.34.2. For boost, window and preset of zigbee2mqtt thermostats (since 1.19.0): a gateway from 1.47.0 and a GateControl that passes them on to plugins ([Boost, window and preset](#heizung-z2m-ext)).
+- For Tuya: the confirmed additional rights of the gateway and, once, a Tuya IoT access or a devices.json of tinytuya ([Tuya](#tuya)).
 - For zigbee2mqtt in logic chains on the gateway (since 1.15.0): from gateway 1.46.0, and the confirmation under **Gateways › gateway › Edge plugins** ([zigbee2mqtt on the gateway](#logikketten-z2m)).
 
 ## Setting up
@@ -35,7 +38,7 @@ The API key is stored encrypted.
 
 ### Shelly and Tasmota through a gateway {#shelly-tasmota}
 
-1. **Check the compose file:** the gateway needs the services `edge` and `mqtt` (gateway 1.19.0 or later). If they are missing, the gateway page says “Edge service missing” with the button to download docker-compose.yml. Put the new file in place and build the project again. The Raspberry Pi image maintains its compose file itself.
+1. **Check the compose file:** the gateway needs the services `edge` and `mqtt` (since plugin 1.21.0: gateway 1.49.0 or later). If they are missing, the gateway page says “Edge service missing” with the button to download docker-compose.yml. Put the new file in place and build the project again. The Raspberry Pi image maintains its compose file itself.
 2. **Switch MQTT on:** **Gateways** › your gateway › **MQTT**.
 3. **Switch the edge part on:** **Gateways** › your gateway › **Edge plugins** › switch “Smart Home” on.
 4. In the plugin › **“Add source”**: per gateway it shows whether the edge part runs and the MQTT broker is on.
@@ -62,6 +65,43 @@ GateControl only changes the device's MQTT settings. Cloud, Wi-Fi and schedules 
 5. **Several channels:** a 2- or 3-gang switch shows as one card per channel (“channel 1”, “channel 2” …). Each channel has its own name, area and owners and is switched by itself. Since 1.13.0 you choose per channel under **“Manage owners” › Kind** what it stands for: light, plug or switch. That changes the icon, the words and the quick action of the apps, not the device; a channel is only switched on and off, never dimmed.
 6. **Thermostats:** the card shows the measured and the target temperature. Set the target with the slider and the mode (off, heat, auto) with the buttons below. Assigned people set the target in the portal with − and +.
 7. **Firmware updates:** if a device takes updates over the air, its card says “Firmware” at the bottom. **“Check for an update”** asks zigbee2mqtt; if there is one, it says “Update available” with the button **“Update”**. An update takes 10 to 60 minutes, the card shows the progress. A battery device has to be awake for it – operate it once.
+
+### Tuya devices (local, since 1.21.0) {#tuya}
+
+The gateway controls Tuya (Smart Life) Wi-Fi plugs, power strips, switches, lamps and LED strips **directly in the home network** – without the Tuya cloud while they run. You need the cloud only once, to fetch the devices' keys (local keys).
+
+**First, on the gateway:**
+
+1. **Update the gateway to 1.49.0 or newer** – first, before updating this plugin. Older gateways (1.46 to 1.48) refuse Smart Home 1.21.0 altogether; Shelly, Tasmota and zigbee2mqtt then stop there, too.
+2. **Confirm the additional rights:** Tuya needs “TCP in the home network” (`tcp.lan`), “UDP 6666, 6667, 7000” (`udp.port:…`) and “UDP broadcast” (`udp.broadcast`). If they are missing the assistant requests them (“Request rights”). An administrator confirms them under **Gateways › gateway › Edge plugins › Additional rights (optional)** – one by one or all at once (from the server version with that button). Only gateways with Tuya get these rights; the plugin update needs no new consent.
+
+**Adding devices:** choose the source (the gateway) › **“Add Tuya devices”** (also under “Add source” at the gateway). The assistant has three steps:
+
+1. **Fetch keys** – one of three ways:
+   - **Tuya IoT access:** access ID, access secret and data center of your cloud project. How to get them (once, about 15 minutes): create a free developer account on the website of the Tuya IoT Platform; Cloud › create a project, data center like your Smart Life account (e.g. Central Europe); subscribe to the services “IoT Core” and “Authorization” in the project (trial, then extendable for free); Devices › link the app account (scan the QR code in the Smart Life or Tuya app); copy access ID and secret from the project overview. The access is kept encrypted so that “Fetch key again” works later without typing it again (can be unticked; “Delete access” removes it).
+   - **Upload devices.json:** the file of “tinytuya wizard” from your computer. GateControl asks no cloud; the file is read in the browser only and not kept.
+   - **By hand:** device ID and local key (16 characters) of one device, optionally the kind and a fixed IP. “Detect automatically” reads the device's datapoints.
+2. **Find at home:** the gateway listens for about 15 seconds to the devices' announcements (UDP 6666/6667/7000, 3.5 devices are asked once) and maps ID → IP and protocol. Tick what to add and adjust the names. “Not found”: the device is off, in another network (guest Wi-Fi, VLAN) or a 3.5 device that only reports on request – then enter the IP.
+3. **Done.** Area, owners and the kind of each channel are set afterwards like for Shelly under **“Edit”**.
+
+**What works:** plugs and power strips (one card per channel and USB, power in watts), switches (per channel, kind light/plug/switch selectable), lamps and LED strips (on/off, brightness, white tone, colour, on newer lamps the four scenes Night, Reading, Work, Leisure). Protocols 3.1 to 3.5. Other devices (air purifiers, cameras, robot vacuums …) are **not supported**: the assistant shows them as “not supported”; if such a device has an on/off datapoint you can add it as a switch. A device added by hand whose kind cannot be recognised is listed under “Not supported” with its datapoints; under “Edit” choose “Show on/off as a switch” there.
+
+**Using them:** the devices are ordinary Smart Home devices: page, portal “Home” (with colour and white tone), quick actions and widgets of the apps (brightness, white tone in kelvin, eight fixed colours, scenes), **logic chains on the gateway** (e.g. “washing machine below 5 W → notification”, a Shelly button switches a Tuya lamp) – also without the server and the internet. The gateway holds one connection per device; changes at the device itself (a press on the switch) arrive at once.
+
+**Cut them off the internet after setting up (recommended):** block the internet access of the Tuya devices in the router or firewall (best with fixed IPs by DHCP reservation) or use a Wi-Fi of their own without internet that the gateway reaches. GateControl needs only the home network. The Tuya app then no longer controls the devices from outside, and their schedules may stop – create them as logic chains. Without internet there are no firmware updates.
+
+**Key no longer fits:** if you pair a device anew in the Tuya app, it gets a new local key. The card then shows “Key no longer fits” (the device is visible in the home network but refuses the key), administrators get one notification (topic “Gateway unreachable”), and the gateway tries only every 10 minutes. **“Fetch key again”:** from the Tuya cloud (stored access; the device must be online for a moment), from a new devices.json or by hand.
+
+**Security:** local keys and the Tuya access are kept encrypted as plugin secrets on the server, never in the browser, the portal or the apps. The gateway gets the keys over its edge channel and **stores them in the plugin's storage on the gateway**, so the devices run after a restart without the server – the gateway's disk is therefore as sensitive as the devices' Wi-Fi data. The plugin asks the cloud only on request (“Fetch devices”, “Fetch key again”). The local encryption of older Tuya devices (3.1–3.3) is weak: best use a Wi-Fi or VLAN of their own.
+
+**Limits:** at most about 60 Tuya devices per gateway (one connection per device, 64 per edge part). Many Tuya devices accept only **one** local connection – Home Assistant or another local tool next to it interferes. Battery Wi-Fi devices (door, smoke, thermometers) report only to the cloud and do not work locally. Devices in a network the gateway cannot reach do not work.
+
+**Zigbee devices on a Tuya hub** (stage 2, not yet): the hub and its sub-devices are listed in the assistant but cannot be added yet. Recommendation: move them to the gateway's Zigbee stick – then they run without Tuya through zigbee2mqtt, with the heating plan on the gateway:
+
+1. Remove the device in the Tuya app.
+2. In GateControl at the gateway **Radio › zigbee2mqtt › “Start pairing”**.
+3. Put the device into pairing mode (usually hold the button for 5 seconds).
+4. Give it name, area and owners in the plugin ([zigbee2mqtt](#zigbee2mqtt)).
 
 ### Assigning and naming devices
 
@@ -272,6 +312,25 @@ Set the device up “By hand …”. The instructions are in the window.
 
 **A zigbee2mqtt device cannot be switched (“zigbee2mqtt on the gateway is not answering right now”).**
 Look at the gateway's tab “Radio”: does zigbee2mqtt run, are edge and MQTT on? New devices show up within half a minute.
+
+**Tuya: “Rights missing” or the assistant finds nothing.**
+The additional rights for Tuya are not confirmed at the gateway yet (Gateways › gateway › Edge plugins › Additional rights), or the gateway is older than 1.49.0 ([Tuya](#tuya)).
+
+**A Tuya device is “unreachable”.**
+Check power and Wi-Fi. If Home Assistant or another local tool runs next to it, it often holds the device's only local connection. If the device is in another network, enter a fixed IP the gateway reaches under “Edit”.
+
+**A Tuya device shows “Key no longer fits”.**
+It was paired anew in the Tuya app: “Fetch key again” ([Tuya](#tuya)).
+
+**“Access ID or access secret does not fit” / “The Tuya project may not do that”.**
+Copy the values from the project overview and choose the data center of your app account; subscribe to (or extend) “IoT Core” and “Authorization” in the project and link the app account. The Tuya cloud's error number is shown in brackets.
+
+## New in 1.21.0
+
+- **Tuya devices locally:** Tuya (Smart Life) Wi-Fi plugs, strips, switches, lamps and LED strips through the gateway, without the Tuya cloud while they run – protocols 3.1 to 3.5, assistant “Add Tuya devices” (Tuya IoT access, devices.json or by hand), search in the home network, logic chains on the gateway, “Fetch key again” ([Tuya](#tuya)).
+- **Important:** update the gateway to **1.49.0** first, then this plugin. GateControl **1.326.0** or later. The update asks once for consent to the internet targets of the Tuya cloud (only for “Fetch devices” and “Fetch key again”); the rights for Tuya on the gateway are optional and confirmed per gateway.
+- **Colour lamps in the apps:** widgets now have a white-tone slider (kelvin) and eight fixed colours besides the brightness – for colour lamps of deCONZ and zigbee2mqtt, too; Tuya lamps also their scenes.
+- When a Shelly, Tasmota or Tuya device is unreachable, the widget's controls are greyed out.
 
 ## New in 1.20.0
 

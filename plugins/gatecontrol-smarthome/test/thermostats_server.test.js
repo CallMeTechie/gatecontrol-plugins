@@ -175,10 +175,12 @@ describe('Thermostate Stufe 2: Shelly TRV and BLU TRV, the plan on the gateway',
     assert.deepEqual((await roomOf('Gast')).runs_at, { kind: 'server' });
   }));
 
-  it('the manifest: version 1.20.0, edge.capabilities unchanged (no update_pending), zigbee2mqtt/# and gatecontrol/contacts/# optional only', () => {
+  it('the manifest: version 1.21.0, edge.capabilities unchanged (no update_pending); optional: zigbee2mqtt/#, gatecontrol/contacts/# and (1.21.0, Tuya) tcp.lan, UDP 6666/6667/7000 with broadcast — gateway 1.49.0', () => {
     const manifest = require('../plugin.json');
-    assert.equal(manifest.version, '1.20.0');
+    assert.equal(manifest.version, '1.21.0');
     assert.deepEqual(manifest.edge.capabilities, { mdns: { services: ['_shelly._tcp', '_http._tcp'] }, http: { lan: true }, mqtt: { topics: ['shellies/#', 'tasmota/#'] } });
-    assert.deepEqual(manifest.edge.optionalCapabilities, { mqtt: { topics: ['zigbee2mqtt/#', 'gatecontrol/contacts/#'] } });
+    assert.deepEqual(manifest.edge.optionalCapabilities, { mqtt: { topics: ['zigbee2mqtt/#', 'gatecontrol/contacts/#'] }, tcp: { lan: true }, udp: { ports: [6666, 6667, 7000], broadcast: true } });
+    // gateways 1.46.0–1.48.0 refuse a package with tcp / udp in optionalCapabilities altogether
+    assert.equal(manifest.edge.minGateway, '1.49.0');
   });
 });

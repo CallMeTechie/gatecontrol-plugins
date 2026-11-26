@@ -4,17 +4,17 @@
     "de": "Smart Home",
     "en": "Smart Home"
   },
-  "version": "1.20.0",
+  "version": "1.21.0",
   "publisher": "CallMeTechie",
   "description": {
-    "de": "Phoscon/deCONZ-Gateways, Shelly- und Tasmota-Geräte, Zigbee-Geräte von zigbee2mqtt und Bluetooth-Sensoren über ein GateControl-Gateway einbinden: Lichter, Steckdosen, Schalter, Rollläden, Gruppen, Szenen und Sensoren steuern, Haushaltsmitgliedern zuweisen (Portal „Zuhause“), Heizkörper-Thermostate (Plan am Gateway für Shelly TRV, BLU TRV und bestätigtes zigbee2mqtt) mit Presets und Wochenplänen je Raum steuern und Logikketten anlegen – für deCONZ auf dem deCONZ-Gateway, für Shelly, Tasmota und – nach Bestätigung – zigbee2mqtt auf dem GateControl-Gateway, über mehrere Gateways auf dem Server.",
-    "en": "Connect Phoscon/deCONZ gateways, Shelly and Tasmota devices, Zigbee devices of zigbee2mqtt and Bluetooth sensors through a GateControl gateway: control lights, plugs, switches, shutters, groups, scenes and sensors, assign them to household members (portal “Home”), run radiator thermostats (plan on the gateway for Shelly TRV, BLU TRV and confirmed zigbee2mqtt) with presets and weekly plans per room and create logic chains – for deCONZ on the deCONZ gateway, for Shelly, Tasmota and – once confirmed – zigbee2mqtt on the GateControl gateway, across several gateways on the server."
+    "de": "Phoscon/deCONZ-Gateways, Shelly-, Tasmota- und Tuya-Geräte (lokal), Zigbee-Geräte von zigbee2mqtt und Bluetooth-Sensoren über ein GateControl-Gateway einbinden: Lichter, Steckdosen, Schalter, Rollläden, Gruppen, Szenen und Sensoren steuern, Haushaltsmitgliedern zuweisen (Portal „Zuhause“), Heizkörper-Thermostate (Plan auch am Gateway) mit Presets und Wochenplänen je Raum steuern und Logikketten anlegen – für deCONZ auf dem deCONZ-Gateway, für Shelly, Tasmota, Tuya und – nach Bestätigung – zigbee2mqtt auf dem GateControl-Gateway, über mehrere Gateways auf dem Server.",
+    "en": "Connect Phoscon/deCONZ gateways, Shelly, Tasmota and Tuya devices (locally), Zigbee devices of zigbee2mqtt and Bluetooth sensors through a GateControl gateway: control lights, plugs, switches, shutters, groups, scenes and sensors, assign them to household members (portal “Home”), run radiator thermostats (plan also on the gateway) with presets and weekly plans per room and create logic chains – for deCONZ on the deCONZ gateway, for Shelly, Tasmota, Tuya and – once confirmed – zigbee2mqtt on the GateControl gateway, across several gateways on the server."
   },
-  "gatecontrol": ">=1.317.1",
+  "gatecontrol": ">=1.326.0",
   "entry": "server/index.js",
   "edge": {
     "entry": "edge/index.js",
-    "minGateway": "1.19.0",
+    "minGateway": "1.49.0",
     "memoryMb": 32,
     "capabilities": {
       "mdns": {
@@ -39,11 +39,30 @@
           "zigbee2mqtt/#",
           "gatecontrol/contacts/#"
         ]
+      },
+      "tcp": {
+        "lan": true
+      },
+      "udp": {
+        "ports": [
+          6666,
+          6667,
+          7000
+        ],
+        "broadcast": true
       }
     }
   },
   "permissions": {
     "network": {
+      "internet": [
+        "openapi.tuyaeu.com:443",
+        "openapi-weaz.tuyaeu.com:443",
+        "openapi.tuyaus.com:443",
+        "openapi-ueaz.tuyaus.com:443",
+        "openapi.tuyain.com:443",
+        "openapi.tuyacn.com:443"
+      ],
       "homeTargets": [
         {
           "id": "gateway",

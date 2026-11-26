@@ -50,6 +50,15 @@
 //             gateway hears itself: MQTT gatecontrol/contacts/# (a GateControl gateway with radio-contacts, optional
 //             capability) only while a room lists contacts; event `contacts` { state: 'ok' (the gateway's feed is
 //             there) | 'none' (subscribed, no feed — an older gateway) | 'denied' | 'error' | 'off' }.
+//   tuya      (since 1.21.0) Tuya devices in the home network, without the Tuya cloud (edge/tuya.js): gc.edge.configure
+//             { tuya: [{ id, key, ip, ver, p }] } — one TCP connection per device (port 6668, protocols 3.1–3.5), the
+//             datapoints → channels switch:<n> / light:0 (base tuya/<id>, family tuya) and back for commands, the logic
+//             chains and the quick actions. UDP 6666 / 6667 / 7000 (bound while there are Tuya devices or a scan runs)
+//             find the devices and follow a new address; gc.handle('tuya.scan', { seconds }) → { udp, found: [{ id,
+//             ip, ver }] } for the set-up. The list (with the local keys) is kept in gc.store `tuya`, so the devices go
+//             on after a restart of the gateway while the server is away. All of it needs the optional capabilities
+//             tcp.lan, udp.port:6666/6667/7000 and udp.broadcast (an administrator confirms them per gateway): without
+//             them the device's link is `denied`, Shelly, Tasmota and zigbee2mqtt go on as before.
 //
 // Capabilities (plugin.json edge.capabilities): mdns _shelly._tcp and _http._tcp, http.lan, mqtt shellies/# and
 // tasmota/#; optional (edge.optionalCapabilities, since 1.15.0): mqtt zigbee2mqtt/# (the chains, since 1.18.0 the heating too). On disk (gc.store) only the last list of logic chains, so they run after a restart of the gateway
@@ -63,6 +72,7 @@ const commands = require('./commands');
 const devices = require('./devices');
 const rules = require('./rules');
 const heat = require('./heat');
+const tuya = require('./tuya');
 
 const FLUSH_MS = 2000;
 const REFRESH_MS = 10 * 60 * 1000;
@@ -92,6 +102,10 @@ const RUNS_PAGE = 40;
 const RUNS_PER_EVENT = 10;
 const RUNS_SAVE_MS = 60 * 1000;
 const UID_RE = /^[A-Za-z0-9]{1,16}:\d{1,12}$/;
+const TUYA_KEY = 'tuya';
+const TUYA_FOUND_MAX = 256;
+const TUYA_SCAN_MAX_S = 25;
+const TUYA_ASK_MS = 60 * 1000;
 
 const st = {
   gc: null,
@@ -139,6 +153,12 @@ const st = {
   heatFromServer: false,     // the server part sent one (the stored one is no longer needed)
   heatStored: null,          // what gc.store `heat` holds: { cfg, applied } as JSON
   heatSoon: null,            // a tick asked for by a report of one of the rooms' thermostats
+  tuya: null,                // edge/tuya.js — the connections to the Tuya devices (since 1.21.0)
+  tuyaKey: null,             // the list it runs (JSON)
+  tuyaFromServer: false,     // the server part sent one (the stored one is no longer needed)
+  tuyaStored: null,          // what gc.store `tuya` holds (JSON)
+  tuyaUdp: null,             // null | 'pending' | { ports: Map port → handle, state: ok | denied | busy | error }
+  tuyaFound: new Map(),      // device id → { ip, ver, at } — what the broadcasts said
 };
 
 /** For tests: where the gateway's network interfaces come from. */
@@ -501,13 +521,21 @@ async function doSubscribe() {
 async function publishAll(list) {
   let n = 0;
   for (const m of list) {
-    await st.gc.mqtt.publish(m.topic, m.payload, { qos: 0, retain: false });
+    if (m && m.tuya) await sendTuya(m.tuya);
+    else await st.gc.mqtt.publish(m.topic, m.payload, { qos: 0, retain: false });
     n++;
   }
   return n;
 }
 
+/** The chains' and the heating's way out: MQTT only for MQTT messages (a Tuya command needs no broker). */
+async function publishSome(list) {
+  if (st.mqtt !== 'ok' && list.some((m) => !(m && m.tuya))) throw Object.assign(new Error('the MQTT broker of this gateway is not available'), { code: 'mqtt_off' });
+  await publishAll(list);
+}
+
 function refreshDevice(base, family) {
+  if (family === 'tuya') { if (st.tuya) st.tuya.query(base.slice('tuya/'.length)); return; }
   if (st.mqtt !== 'ok') return;
   publishAll(commands.refresh({ base, family })).catch(() => null);
 }
@@ -538,7 +566,8 @@ function onConfig(cfg) {
   const list = cfg && Array.isArray(cfg.devices) ? cfg.devices : [];
   const next = new Map();
   for (const d of list.slice(0, MAX_DEVICES)) {
-    if (d && typeof d.base === 'string' && commands.BASE_RE.test(d.base) && ['shelly1', 'shelly2', 'tasmota'].includes(d.family)) next.set(d.base, d.family);
+    if (d && typeof d.base === 'string' && commands.BASE_RE.test(d.base) && ['shelly1', 'shelly2', 'tasmota', 'tuya'].includes(d.family)
+      && (d.family === 'tuya') === commands.TUYA_RE.test(d.base)) next.set(d.base, d.family);
   }
   const before = st.configured || new Map();
   st.configured = next;
@@ -553,6 +582,164 @@ function onConfig(cfg) {
   setRules({ rules: cfg && cfg.rules, tz: cfg && cfg.tz, sun: cfg && cfg.sun }, true);
   // the heating: only when the server part sends it (an older one does not — the rooms stay as they are)
   if (cfg && cfg.heat && typeof cfg.heat === 'object') setHeat(cfg.heat, true);
+  // Tuya (since 1.21.0): the server part's list is the truth once it sends one (an older one sends none)
+  if (cfg && Array.isArray(cfg.tuya)) setTuya(cfg.tuya, true);
+}
+
+// ─── Tuya (edge/tuya.js) ────────────────────────
+
+const tuyaBase = (id) => `tuya/${id}`;
+
+/** A Tuya device's state changed (datapoints, link, address): its record for the server part, the chains, the bundle. */
+function onTuya(id) {
+  if (!st.tuya) return;
+  const v = st.tuya.view(id);
+  if (!v) return;
+  const base = tuyaBase(id);
+  let dev = st.devices.get(base);
+  if (!dev) {
+    if (st.devices.size >= MAX_DEVICES) return;
+    dev = normalize.newDevice(base, 'tuya');
+    st.devices.set(base, dev);
+  }
+  dev.family = 'tuya';
+  normalize.apply(dev, tuya.toPatch(v.prof, v.dps));
+  dev.online = v.link === 'ok';
+  const kind = v.prof && v.prof.k;
+  dev.info = { ...dev.info, ip: v.ip || undefined, tuya: v.link, ver: v.ver || undefined };
+  // a device whose kind is not known yet (a key entered by hand) or not supported: its datapoints for the server part
+  if (kind === 'auto' || kind === 'other') dev.info.dps = compactDps(v.dps); else delete dev.info.dps;
+  if (v.lastAt) dev.seenAt = new Date(v.lastAt).toISOString();
+  if (st.configured && st.configured.has(base)) st.dirty.add(base);
+  if (st.engine) st.engine.onDevice(base);
+}
+
+/** At most 32 datapoints, short strings only (what the server part shows and recognises a kind from). */
+function compactDps(dps) {
+  const out = {};
+  for (const [k, v] of Object.entries(dps || {}).slice(0, 32)) out[k] = typeof v === 'string' ? v.slice(0, 64) : v;
+  return out;
+}
+
+function storeTuya(list) {
+  if (!st.gc || !st.gc.store) return;
+  const gc = st.gc;
+  const key = JSON.stringify(list);
+  st.stored = (st.stored || Promise.resolve()).then(async () => {
+    if (st.gc !== gc || key === st.tuyaStored) return;
+    await gc.store.set(TUYA_KEY, list);
+    st.tuyaStored = key;
+  }).catch(() => warnOnce('store-tuya', 'the Tuya devices could not be kept for a restart of the gateway'));
+}
+
+function setTuya(list, fromServer) {
+  if (!st.tuya) return;
+  const clean = (Array.isArray(list) ? list : []).map(tuya.cleanDevice).filter(Boolean).slice(0, tuyaMax())
+    .map((d) => ({ id: d.id, key: d.key, ip: d.ip, hint: d.hint, ver: d.ver, p: d.prof }));
+  if (Array.isArray(list) && list.length > clean.length && list.length > tuyaMax()) warnOnce('tuya:max', `more Tuya devices than this gateway takes connections for (${tuyaMax()}) — the rest stay off`);
+  if (fromServer) st.tuyaFromServer = true;
+  const key = JSON.stringify(clean);
+  if (key !== st.tuyaKey) {
+    st.tuyaKey = key;
+    const before = new Set(st.tuya.list());
+    st.tuya.set(clean);
+    for (const id of before) if (!clean.some((d) => d.id === id)) st.devices.delete(tuyaBase(id));
+    for (const d of clean) {
+      const seen = st.tuyaFound.get(d.id);
+      if (seen) st.tuya.seen(d.id, seen.ip, seen.ver);
+    }
+  }
+  if (fromServer) storeTuya(clean);
+  if (clean.length) bindTuyaUdp();
+}
+
+/** After a restart: the last list until the server part sends its own. */
+function restoreTuya() {
+  if (!st.gc.store) return;
+  const gc = st.gc;
+  st.stored = (st.stored || Promise.resolve()).then(async () => {
+    const v = await gc.store.get(TUYA_KEY).catch(() => null);
+    if (st.gc !== gc || !Array.isArray(v)) return;
+    st.tuyaStored = JSON.stringify(v);
+    if (!st.tuyaFromServer) setTuya(v, false);
+  }).catch(() => null);
+}
+
+/** Connections for Tuya: what the gateway allows per edge part (64 from gateway 1.49.0) minus a few for the rest. */
+function tuyaMax() {
+  const lim = st.gc && st.gc.gateway && st.gc.gateway.limits && Number.isInteger(st.gc.gateway.limits.tcpConnections) ? st.gc.gateway.limits.tcpConnections : 32;
+  return Math.max(1, lim - 4);
+}
+
+function onTuyaUdp(buf, from) {
+  const f = tuya.decodeUdp(buf, from);
+  if (!f) return;
+  if (!st.tuyaFound.has(f.id) && st.tuyaFound.size >= TUYA_FOUND_MAX) return;
+  st.tuyaFound.set(f.id, { ip: f.ip, ver: f.ver, at: Date.now() });
+  if (st.tuya) st.tuya.seen(f.id, f.ip, f.ver);
+}
+
+/** UDP 6666 / 6667 / 7000: bound once there are Tuya devices or a scan asks for them; refused ports are tried again. */
+async function bindTuyaUdp() {
+  if (!st.gc || st.tuyaUdp === 'pending') return st.tuyaUdp;
+  const have = st.tuyaUdp && typeof st.tuyaUdp === 'object' ? st.tuyaUdp.ports : new Map();
+  if (have.size === tuya.UDP_PORTS.length) return st.tuyaUdp;
+  const gc = st.gc;
+  st.tuyaUdp = 'pending';
+  let state = 'ok';
+  for (const port of tuya.UDP_PORTS) {
+    if (have.has(port)) continue;
+    try {
+      have.set(port, await gc.lan.udp.bind(port, {}, onTuyaUdp));
+    } catch (e) {
+      const code = (e && e.code) || 'error';
+      state = code === 'denied' ? 'denied' : (code === 'busy' || code === 'port_busy' || code === 'EADDRINUSE' ? 'busy' : 'error');
+      warnOnce('tuya-udp:' + port + ':' + state, state === 'denied'
+        ? `UDP ${port} for Tuya is not granted yet — confirm the optional capabilities of Smart Home for this gateway in GateControl`
+        : `UDP ${port} for Tuya not available (${code}) — tried again every minute`);
+    }
+  }
+  if (st.gc !== gc) { for (const h of have.values()) h.close(); return null; }
+  st.tuyaUdp = { ports: have, state };
+  return st.tuyaUdp;
+}
+
+/** The request some 3.5 devices answer only to — a broadcast to UDP 7000 (capability udp.broadcast). */
+async function askTuya() {
+  const u = st.tuyaUdp && typeof st.tuyaUdp === 'object' ? st.tuyaUdp : null;
+  const buf = tuya.discoveryRequest((lan()[0] || {}).address);
+  try {
+    const h = u && u.ports.get(7000);
+    if (h) await h.send('255.255.255.255', 7000, buf);
+    else await st.gc.lan.udp.send('255.255.255.255', 7000, buf);
+    return true;
+  } catch (e) {
+    warnOnce('tuya-bcast:' + ((e && e.code) || 'error'), `the Tuya search request could not be sent (${(e && e.code) || 'error'}) — devices that report themselves are found anyway`);
+    return false;
+  }
+}
+
+/** Every Tuya device is asked for all its datapoints (refreshAll does it every 10 minutes per device: a sign of life). */
+function queryTuya() {
+  if (!st.tuya) return;
+  for (const id of st.tuya.list()) st.tuya.query(id);
+}
+
+/** A minute's look: devices without an address are asked for (broadcast), refused UDP ports tried again. */
+function tuyaMinute() {
+  if (!st.tuya || !st.tuya.list().length) return;
+  bindTuyaUdp();
+  if (st.tuya.list().some((id) => { const v = st.tuya.view(id); return v && (v.link === 'searching' || !v.ip); })) askTuya();
+}
+
+/** A command for a Tuya device ({ tuya: { base, ch, op, value } }) → its datapoints over its connection. */
+async function sendTuya(m) {
+  if (!st.tuya) throw Object.assign(new Error('Tuya is not running'), { code: 'tuya_offline' });
+  const id = String(m.base || '').slice('tuya/'.length);
+  const v = st.tuya.view(id);
+  if (!v) throw Object.assign(new Error('unknown Tuya device'), { code: 'unknown_device' });
+  const dps = tuya.toDps(v.prof, m, v.dps);
+  await st.tuya.command(id, dps);
 }
 
 // ─── Heating (edge/heat.js) ─────────────────────
@@ -791,12 +978,15 @@ module.exports = {
     st.heatKey = null;
     st.heatFromServer = false;
     st.heatStored = null;
+    st.tuyaKey = null;
+    st.tuyaFromServer = false;
+    st.tuyaStored = null;
+    st.tuyaUdp = null;
+    st.tuyaFound = new Map();
+    st.tuya = tuya.create({ tcp: gc.lan.tcp, log: gc.log, onUpdate: onTuya });
     st.heat = heat.create({
       device: (base) => st.devices.get(base) || null,
-      publish: async (list) => {
-        if (st.mqtt !== 'ok') throw Object.assign(new Error('the MQTT broker of this gateway is not available'), { code: 'mqtt_off' });
-        await publishAll(list);
-      },
+      publish: publishSome,
       save: (applied) => storeHeat(undefined, applied),
       z2mTopic,
       z2mBoost: (base) => st.z2mBoost.get(String(base || '').slice('zigbee2mqtt/'.length)) || null,
@@ -806,10 +996,7 @@ module.exports = {
     });
     st.engine = rules.create({
       device: (base) => st.devices.get(base) || null,
-      publish: async (list) => {
-        if (st.mqtt !== 'ok') throw Object.assign(new Error('the MQTT broker of this gateway is not available'), { code: 'mqtt_off' });
-        await publishAll(list);
-      },
+      publish: publishSome,
       fired: (id, at) => { if (st.fired.length < 200) st.fired.push({ id, at }); },
       notify: (n) => { if (st.notes.length >= 50) return false; st.notes.push(n); return true; },
       z2mTopic,
@@ -822,6 +1009,28 @@ module.exports = {
       version: gc.version || null, startedAt: st.startedAt, mqtt: st.mqtt, lan: lan().map((a) => a.address).slice(0, 8),
       devices: st.configured ? st.configured.size : 0, found: st.found.size, rules: st.engine ? st.engine.count() : 0,
       z2m: st.z2m.size ? st.z2mState : null, heat: st.heat ? st.heat.count() : 0,
+      tuya: st.tuya ? { devices: st.tuya.list().length, max: tuyaMax(), udp: st.tuyaUdp && typeof st.tuyaUdp === 'object' ? st.tuyaUdp.state : null } : null,
+    }));
+
+    // Tuya (since 1.21.0): listen for the devices' broadcasts for `seconds` (≤ 25; ask the 3.5 devices once) → what was
+    // heard so far — the ports stay bound, a device seen before counts as well
+    gc.handle('tuya.scan', async (p) => {
+      const o = p && typeof p === 'object' ? p : {};
+      const s = Number.isInteger(o.seconds) ? Math.max(1, Math.min(TUYA_SCAN_MAX_S, o.seconds)) : 15;
+      const u = await bindTuyaUdp();
+      const state = u && typeof u === 'object' ? u.state : 'error';
+      const ports = u && typeof u === 'object' ? [...u.ports.keys()] : [];
+      if (ports.length) {
+        await askTuya();
+        await new Promise((r) => { const t = setTimeout(r, s * 1000); if (t.unref) t.unref(); });
+      }
+      const found = [...st.tuyaFound].sort((a, b) => b[1].at - a[1].at).slice(0, 128).map(([id, f]) => ({ id, ip: f.ip, ver: f.ver }));
+      return { udp: ports.length ? (ports.length === tuya.UDP_PORTS.length ? 'ok' : 'partial') : state, denied: state === 'denied', found };
+    });
+
+    // the link of every Tuya device (for the server part's page): ok | connecting | searching | offline | key | denied | busy
+    gc.handle('tuya.status', () => ({
+      devices: st.tuya ? st.tuya.list().map((id) => { const v = st.tuya.view(id); return { id, link: v.link, ip: v.ip, ver: v.ver }; }) : [],
     }));
 
     // the heating rooms of this gateway: what applies now and whether every thermostat has it
@@ -858,8 +1067,9 @@ module.exports = {
     });
 
     gc.handle('command', async (p) => {
-      if (st.mqtt !== 'ok') throw Object.assign(new Error('the MQTT broker of this gateway is not available'), { code: 'mqtt_off' });
-      const n = await publishAll(commands.messages(p));
+      const msgs = commands.messages(p);
+      if (st.mqtt !== 'ok' && msgs.some((m) => !m.tuya)) throw Object.assign(new Error('the MQTT broker of this gateway is not available'), { code: 'mqtt_off' });
+      const n = await publishAll(msgs);
       return { sent: n };
     });
 
@@ -881,6 +1091,7 @@ module.exports = {
 
     restoreRules();
     restoreHeat();
+    restoreTuya();
     gc.onConfig((cfg) => onConfig(cfg));
     if (gc.config()) onConfig(gc.config());
 
@@ -894,6 +1105,7 @@ module.exports = {
     }, RETRY_MQTT_MS);
     every(() => { saveRuns(); }, RUNS_SAVE_MS);
     every(heatTick, HEAT_MS);
+    every(tuyaMinute, TUYA_ASK_MS);
 
     subscribe();
     browse();
@@ -921,6 +1133,14 @@ module.exports = {
     st.notes = [];
     if (st.heatSoon) clearTimeout(st.heatSoon);
     st.heatSoon = null;
+    if (st.tuya) st.tuya.stop();
+    st.tuya = null;
+    if (st.tuyaUdp && typeof st.tuyaUdp === 'object') for (const h of st.tuyaUdp.ports.values()) { try { h.close(); } catch { /* gone */ } }
+    st.tuyaUdp = null;
+    st.tuyaKey = null;
+    st.tuyaFromServer = false;
+    st.tuyaStored = null;
+    st.tuyaFound = new Map();
     st.heat = null;
     st.heatKey = null;
     st.heatFromServer = false;
@@ -947,5 +1167,5 @@ module.exports = {
     st.gc = null;
   },
 
-  _test: { st, hooks, flush, saveRuns, heatTick },
+  _test: { st, hooks, flush, saveRuns, heatTick, queryTuya, tuyaMinute },
 };

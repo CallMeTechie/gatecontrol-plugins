@@ -10,6 +10,7 @@
     <button class="btn" type="button" data-nav="heating">{{t:heat.title}}</button>
     <span class="sh-spacer"></span>
     <button class="btn" type="button" id="sh-source-open">{{t:source.add}}</button>
+    <button class="btn" type="button" id="sh-tuya-open" data-for="edge" hidden>{{t:tuya.add}}</button>
     <button class="btn btn-primary" type="button" id="sh-add-open" data-for="edge" hidden><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>{{t:device.add}}</button>
   </div>
   <div class="sh-gwinfo" id="sh-gwinfo"></div>
@@ -181,7 +182,27 @@
           <span class="form-label" id="sh-d-owners-label">{{t:device.owners}}</span>
           <div class="sh-chips" id="sh-d-owners" role="group" aria-labelledby="sh-d-owners-label"></div>
         </div>
-        <div class="sh-stack-sm sh-sep">
+        <!-- a Tuya device (since 1.21.0): its address, the key, an on/off datapoint of an unsupported one -->
+        <div class="sh-stack-sm sh-sep" id="sh-d-tuya" hidden>
+          <span class="form-label">{{t:tuya.device.title}}</span>
+          <span class="sh-sub" id="sh-d-tuya-info"></span>
+          <div class="sh-two">
+            <div class="form-group">
+              <label class="form-label" for="sh-d-tuya-ip">{{t:tuya.device.ip}}</label>
+              <input class="form-input" id="sh-d-tuya-ip" type="text" maxlength="15" autocomplete="off" spellcheck="false" placeholder="{{t:tuya.device.ip_ph}}" aria-describedby="sh-d-tuya-ip-hint">
+              <span class="form-hint" id="sh-d-tuya-ip-hint">{{t:tuya.device.ip_hint}}</span>
+            </div>
+            <div class="form-group" id="sh-d-tuya-dp-row" hidden>
+              <label class="form-label" for="sh-d-tuya-dp">{{t:tuya.device.as_switch}}</label>
+              <select class="form-select" id="sh-d-tuya-dp"></select>
+            </div>
+          </div>
+          <div class="sh-kvs" id="sh-d-tuya-dps" hidden></div>
+          <div class="page-actions">
+            <button class="btn" type="button" id="sh-d-tuya-key">{{t:tuya.rekey.open}}</button>
+          </div>
+        </div>
+        <div class="sh-stack-sm sh-sep" id="sh-d-conn">
           <span class="form-label">{{t:device.connection}}</span>
           <div class="sh-two" id="sh-d-http">
             <div class="form-group">
@@ -207,6 +228,164 @@
           <button class="btn" type="button" data-close="sh-device-modal">{{t:common.cancel}}</button>
           <button class="btn btn-primary" type="button" id="sh-d-save">{{t:common.save}}</button>
         </span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tuya-Geräte hinzufügen (since 1.21.0): keys → in the home network → done -->
+  <div class="modal-overlay" id="sh-tuya-modal" role="dialog" aria-modal="true" aria-labelledby="sh-t-title" aria-describedby="sh-t-sub" hidden>
+    <div class="modal modal-wide">
+      <div class="modal-head">
+        <div>
+          <h2 class="modal-title" id="sh-t-title">{{t:tuya.add}}</h2>
+          <div class="sh-sub" id="sh-t-sub"></div>
+        </div>
+        <button class="btn modal-close" type="button" data-close="sh-tuya-modal" aria-label="{{t:common.close}}">×</button>
+      </div>
+      <div class="modal-body sh-stack">
+        <ol class="sh-tsteps" id="sh-t-steps">
+          <li data-state="running">{{t:tuya.step.keys}}</li>
+          <li data-state="pending">{{t:tuya.step.find}}</li>
+          <li data-state="pending">{{t:tuya.step.done}}</li>
+        </ol>
+        <div class="sh-notice" id="sh-t-caps" role="status" hidden></div>
+        <section id="sh-t-p1" class="sh-stack">
+          <p class="sh-lead">{{t:tuya.lead}}</p>
+          <fieldset class="sh-fieldset">
+            <legend class="form-label">{{t:tuya.source}}</legend>
+            <div class="sh-opts">
+              <label class="sh-opt"><input type="radio" name="sh-t-src" value="cloud" checked><span class="sh-opt-text"><strong>{{t:tuya.src.cloud}}</strong><span class="sh-sub">{{t:tuya.src.cloud_hint}}</span></span></label>
+              <label class="sh-opt"><input type="radio" name="sh-t-src" value="file"><span class="sh-opt-text"><strong>{{t:tuya.src.file}}</strong><span class="sh-sub">{{t:tuya.src.file_hint}}</span></span></label>
+              <label class="sh-opt"><input type="radio" name="sh-t-src" value="manual"><span class="sh-opt-text"><strong>{{t:tuya.src.manual}}</strong><span class="sh-sub">{{t:tuya.src.manual_hint}}</span></span></label>
+            </div>
+          </fieldset>
+          <div id="sh-t-cloud" class="sh-stack-sm">
+            <div class="form-group" id="sh-t-saved-row" hidden>
+              <label class="check"><input type="checkbox" id="sh-t-saved" checked> {{t:tuya.cloud.use_saved}}</label>
+              <button class="btn btn-sm" type="button" id="sh-t-forget">{{t:tuya.cloud.forget}}</button>
+            </div>
+            <div id="sh-t-cloud-fields" class="sh-stack-sm">
+              <details class="sh-details">
+                <summary>{{t:tuya.howto.title}}</summary>
+                <ol class="sh-howto">
+                  <li>{{t:tuya.howto.1}}</li>
+                  <li>{{t:tuya.howto.2}}</li>
+                  <li>{{t:tuya.howto.3}}</li>
+                  <li>{{t:tuya.howto.4}}</li>
+                  <li>{{t:tuya.howto.5}}</li>
+                </ol>
+              </details>
+              <div class="sh-two">
+                <div class="form-group">
+                  <label class="form-label" for="sh-t-id">{{t:tuya.cloud.id}}</label>
+                  <input class="form-input" id="sh-t-id" type="text" maxlength="64" autocomplete="off" spellcheck="false" autocapitalize="none">
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="sh-t-secret">{{t:tuya.cloud.secret}}</label>
+                  <input class="form-input" id="sh-t-secret" type="password" maxlength="128" autocomplete="off" spellcheck="false">
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="sh-t-region">{{t:tuya.cloud.region}}</label>
+                  <select class="form-select" id="sh-t-region"></select>
+                </div>
+              </div>
+              <label class="check"><input type="checkbox" id="sh-t-keep" checked> {{t:tuya.cloud.keep}}</label>
+            </div>
+            <div class="sh-info">
+              <svg class="sh-info-ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
+              <span>{{t:tuya.cloud.note}}</span>
+            </div>
+          </div>
+          <div id="sh-t-file" class="sh-stack-sm" hidden>
+            <div class="form-group">
+              <label class="form-label" for="sh-t-json">{{t:tuya.file.label}}</label>
+              <input class="form-input" id="sh-t-json" type="file" accept=".json,application/json">
+              <span class="form-hint">{{t:tuya.file.hint}}</span>
+            </div>
+          </div>
+          <div id="sh-t-manual" class="sh-stack-sm" hidden>
+            <div class="sh-two">
+              <div class="form-group">
+                <label class="form-label" for="sh-t-mid">{{t:tuya.manual.id}}</label>
+                <input class="form-input" id="sh-t-mid" type="text" maxlength="32" autocomplete="off" spellcheck="false" autocapitalize="none">
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="sh-t-mkey">{{t:tuya.manual.key}}</label>
+                <input class="form-input" id="sh-t-mkey" type="password" maxlength="16" autocomplete="off" spellcheck="false">
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="sh-t-mkind">{{t:tuya.manual.kind}}</label>
+                <select class="form-select" id="sh-t-mkind">
+                  <option value="auto">{{t:tuya.manual.kind_auto}}</option>
+                  <option value="plug">{{t:kind.plug}}</option>
+                  <option value="switch">{{t:tuya.kind.switch}}</option>
+                  <option value="light">{{t:tuya.manual.kind_light}}</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="sh-t-mip">{{t:tuya.manual.ip}}</label>
+                <input class="form-input" id="sh-t-mip" type="text" maxlength="15" autocomplete="off" spellcheck="false" placeholder="{{t:tuya.device.ip_ph}}">
+              </div>
+            </div>
+            <span class="sh-sub">{{t:tuya.manual.hint}}</span>
+          </div>
+        </section>
+        <section id="sh-t-p2" class="sh-stack" hidden>
+          <p class="sh-lead" role="status"><span class="sh-spin-wrap" id="sh-t-spin" hidden><svg class="sh-ico sh-spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9"/></svg></span> <span id="sh-t-sum"></span></p>
+          <div class="sh-t-head" aria-hidden="true"><span></span><span>{{t:tuya.col.device}}</span><span>{{t:tuya.col.kind}}</span><span>{{t:tuya.col.where}}</span><span>{{t:tuya.col.ver}}</span></div>
+          <div class="sh-t-list" id="sh-t-list" aria-live="polite"></div>
+          <p class="sh-sub is-warn" id="sh-t-limit" role="status" hidden></p>
+          <p class="sh-sub">{{t:tuya.scan.hint}}</p>
+        </section>
+        <section id="sh-t-p3" class="sh-stack" hidden>
+          <p class="sh-lead" id="sh-t-done" role="status"></p>
+          <div class="sh-info">
+            <svg class="sh-info-ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/></svg>
+            <span>{{t:tuya.done.offline}}</span>
+          </div>
+          <p class="sh-sub">{{t:tuya.done.repair}}</p>
+          <p class="sh-sub">{{t:tuya.done.zigbee}}</p>
+        </section>
+        <p class="sh-form-error" id="sh-t-error" role="alert" hidden></p>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" type="button" id="sh-t-cancel">{{t:common.cancel}}</button>
+        <button class="btn" type="button" id="sh-t-back" hidden>{{t:tuya.back}}</button>
+        <button class="btn btn-primary" type="button" id="sh-t-next">{{t:tuya.fetch}}</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Key neu holen (Tuya) -->
+  <div class="modal-overlay" id="sh-tkey-modal" role="dialog" aria-modal="true" aria-labelledby="sh-k-title" aria-describedby="sh-k-sub" hidden>
+    <div class="modal">
+      <div class="modal-head">
+        <div>
+          <h2 class="modal-title" id="sh-k-title">{{t:tuya.rekey.open}}</h2>
+          <div class="sh-sub" id="sh-k-sub"></div>
+        </div>
+        <button class="btn modal-close" type="button" data-close="sh-tkey-modal" aria-label="{{t:common.close}}">×</button>
+      </div>
+      <div class="modal-body sh-stack">
+        <p class="sh-sub">{{t:tuya.rekey.lead}}</p>
+        <div class="sh-opts">
+          <label class="sh-opt" id="sh-k-cloud-row"><input type="radio" name="sh-k-src" value="cloud"><span class="sh-opt-text"><strong>{{t:tuya.rekey.cloud}}</strong><span class="sh-sub">{{t:tuya.rekey.cloud_hint}}</span></span></label>
+          <label class="sh-opt"><input type="radio" name="sh-k-src" value="file"><span class="sh-opt-text"><strong>{{t:tuya.src.file}}</strong></span></label>
+          <label class="sh-opt"><input type="radio" name="sh-k-src" value="manual"><span class="sh-opt-text"><strong>{{t:tuya.rekey.manual}}</strong></span></label>
+        </div>
+        <div class="form-group" id="sh-k-file" hidden>
+          <label class="form-label" for="sh-k-json">{{t:tuya.file.label}}</label>
+          <input class="form-input" id="sh-k-json" type="file" accept=".json,application/json">
+        </div>
+        <div class="form-group" id="sh-k-manual" hidden>
+          <label class="form-label" for="sh-k-key">{{t:tuya.manual.key}}</label>
+          <input class="form-input" id="sh-k-key" type="password" maxlength="16" autocomplete="off" spellcheck="false">
+        </div>
+        <p class="sh-form-error" id="sh-k-error" role="alert" hidden></p>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" type="button" data-close="sh-tkey-modal">{{t:common.cancel}}</button>
+        <button class="btn btn-primary" type="button" id="sh-k-submit">{{t:tuya.rekey.submit}}</button>
       </div>
     </div>
   </div>
