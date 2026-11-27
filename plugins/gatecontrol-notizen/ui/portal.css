@@ -361,3 +361,17 @@ button.na-chip{cursor:pointer}
 .na-dl-box .dp-hint{margin:0}
 .na-dl-note{padding:12px;display:flex;flex-direction:column;gap:4px}
 .na-dl-note .dp-hint{margin:0}
+
+/* 1.9.0 „Termin“: an event of a calendar in the lists, the quick entry as an event, „Termine aus dem Kalender“ */
+.na-ev-ic{width:22px;height:22px;flex:none;display:inline-flex;align-items:center;justify-content:center;color:var(--accent)}
+.na-ev-dot{width:10px;height:10px;border-radius:50%;flex:none;background:var(--accent)}
+.na-ev-top{display:flex;flex-direction:column;gap:6px}
+.na-ev-top:empty{display:none}
+.na-ev-mode .dp-seg{max-width:260px}
+.na-chip.is-dashed{background:none;border:1px dashed var(--line-2);color:var(--muted)}
+.na-ev-note{display:flex;flex-direction:column;gap:6px;padding:10px 12px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line);font-size:13px;line-height:1.4}
+.na-ev-note b{display:flex;align-items:center;gap:6px;font-size:13.5px}
+.na-ev-note p{margin:0;color:var(--muted)}
+.na-ev-note .dp-actions{justify-content:flex-start;flex-wrap:wrap;margin:0}
+.na-ev-line{flex:1 1 100%;margin:0}
+.na-set-row .na-ev-dot{margin-right:2px}

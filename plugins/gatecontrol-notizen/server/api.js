@@ -189,6 +189,10 @@ async function itemComplete(gc, ctx, id, b) {
 
 async function parseText(gc, ctx, b) {
   if (!b || typeof b.text !== 'string' || b.text.length > 1000) throw fail('invalid', { field: 'text' });
+  // 1.9.0: mode 'event' — the line as an event of a calendar (ui/quickparse.js „Termin“): no shopping list, no place to
+  // remind at (location is the place as text)
+  if (b.mode != null && b.mode !== 'event' && b.mode !== 'task') throw fail('invalid', { field: 'mode' });
+  if (b.mode === 'event') return { parsed: Q.parse(b.text, { today: ctx.today, now: ctx.time, mode: 'event', times: (await prefs.get(gc, ctx.userId)).times }), attach: null, place: null };
   const parsed = await tasks.fromText(gc, ctx, b.text, b.area, b.listId);
   // 1.4.0: the shopping list the line names („bei Lidl einkaufen“ → „Einkauf“) — beside what the parser made of it
   // 1.5.0: the place the line names („beim Baumarkt“, „bei Lidl“, „bei Oma“) — found by the server, not by the parser

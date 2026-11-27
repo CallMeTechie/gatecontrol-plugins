@@ -43,10 +43,10 @@ async function einkauf(h) {
 }
 
 test('the parser and its vectors are as they were (Android and Windows use the same vectors)', () => {
-  // the state of 1.8.1 (a weekday next to a calendar date belongs to it): a change here is a change for every port
+  // the state of 1.9.0 („Termin“: mode 'event' with a span of time and the place, looksLikeEvent — task mode as in 1.8.1): a change here is a change for every port
   const sha = (f) => crypto.createHash('sha256').update(fs.readFileSync(path.join(__dirname, '..', f))).digest('hex');
-  assert.equal(sha('ui/quickparse.js'), '9d8b1cb444308a60f75005121dc8cf073f515534d97e771995bcb6990bf0f9aa');
-  assert.equal(sha('test/vectors/quickparse.json'), 'ee7a6f38b8fb7c4cbe5ceae7220f2968987877b8c308e767416d8665c34ea84e');
+  assert.equal(sha('ui/quickparse.js'), 'aeb7ab3f0db8dec9c5bfcebc760d67a9153330cb195b733920cdfae121e8d6f1');
+  assert.equal(sha('test/vectors/quickparse.json'), '66b9dec6cb2aa989307e81a3559112f84a124897d0dd3ff9eb15a2aaca5e5115');
 });
 
 test('a task carries a list: set by its number or the id of the device, shown with its numbers, taken off again', async () => {

@@ -481,6 +481,10 @@ async function complete(gc, ctx, plugin, extId, done) {
   return store.one(gc, 'SELECT * FROM src_items WHERE plugin = ? AND ext_id = ?', [plugin, extId]);
 }
 
+// 1.9.0: the events of Mail's calendars are no to-dos of Mail and their calendars no groups to map to an area — they
+// have their own switches (GET events/calendars)
+const NO_EVENTS = "NOT (i.plugin = 'gatecontrol-mail' AND i.kind = 'event')";
+
 /** „Quellen“: per source whether it is there, the person's groups and counts, the last reconciliation. */
 async function status(gc, ctx) {
   const cfg = await config.get(gc);
@@ -489,8 +493,8 @@ async function status(gc, ctx) {
     const st = await store.one(gc, 'SELECT * FROM src_state WHERE plugin = ?', [p]);
     const sync = await store.one(gc, 'SELECT * FROM src_sync WHERE plugin = ? AND user_id = ?', [p, ctx.userId]);
     const groups = await store.all(gc, `SELECT i.group_id, MAX(i.group_label) AS label, COUNT(*) AS n FROM src_item_users u JOIN src_items i ON i.id = u.item_id
-      WHERE u.user_id = ? AND i.plugin = ? AND i.group_id IS NOT NULL GROUP BY i.group_id LIMIT 50`, [ctx.userId, p]);
-    const n = await store.one(gc, 'SELECT COUNT(*) AS n FROM src_item_users u JOIN src_items i ON i.id = u.item_id WHERE u.user_id = ? AND i.plugin = ? AND i.done = 0', [ctx.userId, p]);
+      WHERE u.user_id = ? AND i.plugin = ? AND i.group_id IS NOT NULL AND ${NO_EVENTS} GROUP BY i.group_id LIMIT 50`, [ctx.userId, p]);
+    const n = await store.one(gc, `SELECT COUNT(*) AS n FROM src_item_users u JOIN src_items i ON i.id = u.item_id WHERE u.user_id = ? AND i.plugin = ? AND i.done = 0 AND ${NO_EVENTS}`, [ctx.userId, p]);
     out.push({
       plugin: p, enabled: config.sourceOn(cfg, p), available: !!(st && st.available), open: n.n,
       lastSync: sync && sync.last_at ? sync.last_at : null, error: sync && sync.state === 'error' ? sync.error : null,

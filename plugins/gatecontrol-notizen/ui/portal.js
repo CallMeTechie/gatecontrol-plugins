@@ -701,9 +701,11 @@
 
   function itemRow(x) {
     var open = S.detail && S.detail.uid === x.uid;
-    var row = h('div', { class: 'na-item' + (open ? ' is-open' : '') + (x.done ? ' is-done' : ''), role: 'button', tabindex: '0', on: {
-      click: function () { openDetail(x); },
-      keydown: function (ev) { if (ev.key === 'Enter') openDetail(x); },
+    // 1.9.0: an event opens where it lives — the event's own view in Mail (the calendar's day for the family calendar)
+    var act = x.event ? function () { openOriginal(x.source.open); } : function () { openDetail(x); };
+    var row = h('div', { class: 'na-item' + (open ? ' is-open' : '') + (x.done ? ' is-done' : '') + (x.event ? ' is-event' : ''), role: 'button', tabindex: '0', on: {
+      click: act,
+      keydown: function (ev) { if (ev.key === 'Enter') act(); },
     } });
     if (x.type === 'task') {
       // a member who may only look: the box is greyed out unless the task is theirs
@@ -713,10 +715,22 @@
     } else if (x.canComplete) {
       row.appendChild(h('button', { type: 'button', class: 'na-ck' + (x.done ? ' is-on' : ''), attrs: { 'aria-label': x.done ? T('p.undo') : T('p.complete'), 'aria-pressed': x.done ? 'true' : 'false' },
         on: { click: function (ev) { ev.stopPropagation(); complete(x, !x.done); } } }, icon('check', 14)));
+    } else if (x.event) {
+      // 1.9.0: an event of a calendar — its sign in the calendar's colour instead of a check box
+      var sign = h('span', { class: 'na-ev-ic', attrs: { 'aria-label': T('ev.kind') } }, icon('cal', 16));
+      if (x.event.calendar.color) sign.style.color = x.event.calendar.color;
+      row.appendChild(sign);
     } else row.appendChild(h('span', { class: 'na-ck-none' }));
     var meta = h('div', { class: 'na-meta' });
     var l = x.type === 'task' ? listOf(x.listId) : null;
-    if (x.type === 'source') {
+    if (x.event) {
+      // the place, „ganztägig“, the calendar — no „Mail“: an event is no to-do of a mail
+      if (x.event.location) meta.appendChild(h('span', { text: x.event.location }));
+      if (x.allDay) meta.appendChild(h('span', { text: x.event.end && x.event.end.date !== (x.show || x.due).date ? T('ev.until', { date: dayText(x.event.end.date) }) : T('ev.all_day_l') }));
+      else if (x.event.end && x.due && x.due.time) meta.appendChild(h('span', { text: T('ev.to', { time: x.event.end.time.replace(/^0/, '') }) }));
+      if (x.event.recurring) meta.appendChild(h('span', { text: '↻', attrs: { 'aria-label': T('ev.recurring') } }));
+      if (x.event.calendar.name) meta.appendChild(h('span', { text: x.event.calendar.name }));
+    } else if (x.type === 'source') {
       meta.appendChild(h('span', { class: 'na-src', 'data-src': x.source.plugin, text: x.source.label + (x.kind === 'deadline' ? ' · ' + T('k.deadline') : x.kind === 'homework' ? ' · ' + T('k.homework') : x.kind === 'exam' ? ' · ' + T('k.exam') : '') }));
       if (x.subtitle) meta.appendChild(h('span', { text: x.subtitle }));
       if (x.meta && x.meta.amount) meta.appendChild(h('span', { text: x.meta.amount }));
@@ -1038,9 +1052,31 @@
 
   // ── quick entry ──────────────────────────────────────────
 
+  /** 1.9.0: does the server know events („Termin“)? */
+  function evOn() { return !!(S.me && S.me.events && (S.me.features || []).indexOf('calendarEvents') >= 0); }
+  /**
+   * A reminder in words: minutes before the start („15 Min. vorher“); for an all-day event minutes before midnight of
+   * its day („Vortag, 18 Uhr“); null: none.
+   */
+  function remText(min, allDay) {
+    if (min == null || min === false) return T('ev.rem_none');
+    if (allDay) {
+      var days = Math.ceil(min / 1440);
+      var at = (1440 - (min % 1440)) % 1440;
+      var clock = Math.floor(at / 60) + (at % 60 ? ':' + (at % 60 < 10 ? '0' : '') + (at % 60) : '');
+      return days <= 0 ? T('ev.rem_day_of') : days === 1 ? T('ev.rem_eve', { time: clock }) : T('ev.rem_days_at', { n: days, time: clock });
+    }
+    if (min === 0) return T('ev.rem_start');
+    if (min % 1440 === 0) return min === 1440 ? T('ev.rem_day') : T('ev.rem_days', { n: min / 1440 });
+    if (min % 60 === 0) return min === 60 ? T('ev.rem_hour') : T('ev.rem_hours', { n: min / 60 });
+    return T('ev.rem_min', { n: min });
+  }
+
   function quickBox(l) {
     var input = h('input', { id: 'na-quick', type: 'text', autocomplete: 'off', attrs: { placeholder: T(l && l.shared ? 'p.quick_ph_shared' : 'p.quick_ph'), 'aria-label': T('p.quick'), maxlength: '500' } });
     var chips = h('div', { class: 'na-chips', attrs: { 'aria-live': 'polite' } });
+    // 1.9.0: above the chips — „Aufgabe | Termin“, the question „Als Termin anlegen?“, the note „Kein Kalender“
+    var top = h('div', { class: 'na-ev-top' });
     var parsed = null;
     // 1.4.0: the shopping list the line names („bei Lidl einkaufen“ → „Einkauf“) — asked of the server, the parser does not know it
     var att = { hint: null, forText: null, off: false, pick: null, timer: null };
@@ -1079,14 +1115,105 @@
         }, function () {});
       }, 350);
     }
+    // 1.9.0: „Termin“ — the line as an event in a calendar of Mail (stored only there). mode: what the line becomes;
+    // ev: the calendars (asked once the mode is used), what the person picked on the chips, „Aufgabe lassen“
+    var mode = 'task';
+    var ev = { cals: null, loading: false, cal: null, reminder: undefined, loc: undefined, keepTask: false, busy: false };
+    function evReset() { ev.cal = null; ev.reminder = undefined; ev.loc = undefined; ev.keepTask = false; }
+    function evLoad() {
+      if (ev.loading) return;
+      ev.loading = true;
+      api('GET', 'events/calendars').then(function (r) { ev.cals = r; ev.loading = false; show(); }, function () { ev.cals = { state: 'none', reason: 'unreachable', calendars: [], reminders: {} }; ev.loading = false; show(); });
+    }
+    function evCal() {
+      var list = (ev.cals && ev.cals.calendars || []).filter(function (c) { return c.target; });
+      for (var i = 0; i < list.length; i++) if (list[i].id === ev.cal) return list[i];
+      for (var j = 0; j < list.length; j++) if (list[j].isDefault) return list[j];
+      return list[0] || null;
+    }
+    function evLoc() { return ev.loc !== undefined ? ev.loc : (parsed && parsed.location) || null; }
+    function evDate() { return (parsed && parsed.date) || S.me.today; }
+    function evBody() {
+      var b = { title: parsed.title || input.value.trim(), date: evDate(), clientId: uuid() };
+      if (parsed.time) { b.time = parsed.time; if (parsed.endTime) b.endTime = parsed.endTime; }
+      var loc = evLoc();
+      if (loc) b.location = loc;
+      var c = evCal();
+      if (c && !c.isDefault) b.calendarId = c.id;
+      if (ev.reminder !== undefined) b.reminder = ev.reminder;
+      if (parsed.repeat) b.repeat = parsed.repeat;
+      return b;
+    }
+    function setMode(m) { mode = m; if (m === 'event' && !ev.cals) evLoad(); show(); if (m === 'task') ask(); input.focus(); }
+    function locDialog() {
+      var f = h('input', { type: 'text', class: 'dp-input', value: evLoc() || '', attrs: { maxlength: '255', 'aria-label': T('ev.loc_label'), placeholder: T('ev.loc_label') } });
+      var done = function (v) { ev.loc = v; closeDialog(); show(); input.focus(); };
+      dialog(T('ev.loc_title'), [field(T('ev.loc_label'), f), h('p', { class: 'dp-hint', text: T('ev.loc_hint') }),
+        h('div', { class: 'dp-actions' }, [evLoc() ? btn(T('ev.loc_remove'), function () { done(null); }) : null, btn(T('ev.loc_take'), function () { done(f.value.trim() || null); }, { primary: true })])]);
+      f.addEventListener('keydown', function (e) { if (e.key === 'Enter') done(f.value.trim() || null); });
+      f.focus();
+    }
+    function showEvent() {
+      var cs = ev.cals;
+      if (!cs) { chips.appendChild(h('span', { class: 'na-chip is-plain', text: T('p.loading') })); return; }
+      if (cs.state !== 'ok') {
+        // no calendar: the reason, and the way out — the same line as a task with its date
+        top.appendChild(h('div', { class: 'na-ev-note', role: 'status' }, [h('b', null, [icon('cal', 15), h('span', { text: T('ev.none_title') })]),
+          h('p', { text: T(cs.reason === 'no_mail' || cs.reason === 'mail_old' ? 'ev.none_mail' : cs.reason === 'unreachable' ? 'ev.none_later' : cs.reason === 'no_calendar' ? 'ev.none_cal' : 'ev.none_person') }),
+          h('div', { class: 'dp-actions' }, [btn(T('ev.as_task'), function () { mode = 'task'; ev.keepTask = true; show(); submit(); }, { small: true })])]));
+        return;
+      }
+      chips.appendChild(h('span', { class: 'na-chip' }, [icon('cal', 13), h('span', { text: dayText(evDate()) })]));
+      chips.appendChild(h('span', { class: 'na-chip', text: parsed.time ? parsed.time.replace(/^0/, '') + '–' + (parsed.endTime || '').replace(/^0/, '') : T('ev.all_day') }));
+      var loc = evLoc();
+      if (loc) chips.appendChild(h('button', { type: 'button', class: 'na-chip', attrs: { 'aria-haspopup': 'dialog' }, on: { click: locDialog } }, [icon('place', 13), h('span', { text: T('ev.loc_chip', { name: loc }) })]));
+      else if (parsed.title) {
+        // no place word in the line: the title may be the place too — one tap; the pencil opens the text field
+        chips.appendChild(h('span', { class: 'na-chip is-dashed' }, [icon('place', 13),
+          h('button', { type: 'button', class: 'na-chip-t', text: T('ev.loc_ask', { name: parsed.title }), on: { click: function () { ev.loc = parsed.title; show(); input.focus(); } } }),
+          h('button', { type: 'button', class: 'na-chip-x', title: T('ev.loc_other'), attrs: { 'aria-label': T('ev.loc_other'), 'aria-haspopup': 'dialog' }, on: { click: locDialog } }, icon('edit', 12))]));
+      }
+      var cal = evCal();
+      var targets = cs.calendars.filter(function (c) { return c.target; });
+      var dot = h('span', { class: 'na-ev-dot' });
+      if (cal && cal.color) dot.style.background = cal.color;
+      var cb = h('button', { type: 'button', class: 'na-chip', attrs: { 'aria-haspopup': 'menu' } }, [dot, h('span', { text: T('ev.cal_chip', { name: cal ? cal.name : '' }) })]);
+      cb.addEventListener('click', function () {
+        popMenu(cb, targets.map(function (c) { return { icon: 'cal', label: c.name, end: c.isDefault ? T('ev.cal_default') : '', fn: function () { ev.cal = c.id; show(); input.focus(); } }; }));
+      });
+      chips.appendChild(cb);
+      var allDay = !parsed.time;
+      var dflt = allDay ? cs.reminders.allDay : cs.reminders.timed;
+      var cur = ev.reminder === undefined ? dflt : ev.reminder === false ? null : ev.reminder;
+      var rb = h('button', { type: 'button', class: 'na-chip', attrs: { 'aria-haspopup': 'menu' } }, [icon('bell', 13), h('span', { text: remText(cur, allDay) })]);
+      rb.addEventListener('click', function () {
+        var opts = [{ icon: 'bell', label: T('ev.rem_default'), end: remText(dflt, allDay), fn: function () { ev.reminder = undefined; show(); input.focus(); } }];
+        (allDay ? [360, 720, 1800] : [0, 15, 30, 60, 1440]).forEach(function (n) { opts.push({ icon: 'bell', label: remText(n, allDay), fn: function () { ev.reminder = n; show(); input.focus(); } }); });
+        opts.push({ icon: 'x', label: T('ev.rem_none'), fn: function () { ev.reminder = false; show(); input.focus(); } });
+        popMenu(rb, opts);
+      });
+      chips.appendChild(rb);
+      if (parsed.repeat) chips.appendChild(h('span', { class: 'na-chip', text: '↻ ' + RP.describe(parsed.repeat, S.me.lang) }));
+      chips.appendChild(h('p', { class: 'dp-hint na-ev-line', text: T('ev.title_line', { title: parsed.title || input.value.trim() }) }));
+    }
     function ctxParse() {
-      return { today: S.me.today, now: S.me.time, lists: ((S.nav && S.nav.lists) || []).filter(function (x) { return x.canEdit !== false; }).map(function (x) { return { id: x.id, name: x.name }; }), people: S.people, times: S.me.prefs && S.me.prefs.times };
+      return { mode: mode === 'event' ? 'event' : undefined, today: S.me.today, now: S.me.time, lists: ((S.nav && S.nav.lists) || []).filter(function (x) { return x.canEdit !== false; }).map(function (x) { return { id: x.id, name: x.name }; }), people: S.people, times: S.me.prefs && S.me.prefs.times };
     }
     function show() {
       clear(chips);
+      clear(top);
       var s = input.value.trim();
+      if (!s) { evReset(); mode = 'task'; }
       parsed = s ? Q.parse(s, ctxParse()) : null;
+      // 1.9.0: what the line becomes — a task or an event (only where the server knows events)
+      if (evOn() && s) top.appendChild(h('div', { class: 'na-ev-mode' }, segOf([['task', T('ev.mode_task')], ['event', T('ev.mode_event')]], mode, setMode)));
       if (!parsed) return;
+      if (mode === 'event') { showEvent(); return; }
+      // a date and a time: it may be an event — the page asks, it never switches by itself
+      if (evOn() && parsed.looksLikeEvent && !ev.keepTask) {
+        top.appendChild(h('div', { class: 'na-ev-note', role: 'status' }, [h('p', { text: T('ev.ask') }),
+          h('div', { class: 'dp-actions' }, [btn(T('ev.ask_yes'), function () { setMode('event'); }, { small: true, primary: true }), btn(T('ev.ask_no'), function () { ev.keepTask = true; show(); input.focus(); }, { small: true })])]));
+      }
       if (parsed.date) chips.appendChild(h('span', { class: 'na-chip', text: dayText(parsed.date) + (parsed.time ? ', ' + parsed.time : '') }));
       if (parsed.remind) chips.appendChild(h('span', { class: 'na-chip', text: T('p.reminder') + ' ' + parsed.remind.time }));
       // 1.3.0: with a time it also becomes an event in the calendar „Aufgaben“ of Mail
@@ -1133,9 +1260,23 @@
         chips.appendChild(h('div', { class: 'na-turn-q' }, [h('div', { class: 'na-lb', text: T('p.turn_label') }), turnSeg(twTurn(), function (v) { tw.pick = v; show(); input.focus(); })]));
       } else tw.pick = undefined;
     }
-    input.addEventListener('input', function () { show(); ask(); });
-    input.addEventListener('keydown', function (ev) {
-      if (ev.key !== 'Enter' || !input.value.trim()) return;
+    input.addEventListener('input', function () { show(); if (mode !== 'event') ask(); });
+    input.addEventListener('keydown', function (e) { if (e.key === 'Enter' && input.value.trim()) submit(); });
+    function submitEvent() {
+      if (!ev.cals || ev.cals.state !== 'ok' || ev.busy || !parsed) return;
+      ev.busy = true;
+      input.disabled = true;
+      api('POST', 'events', evBody()).then(function () {
+        ev.busy = false; input.value = ''; mode = 'task'; evReset(); show(); input.disabled = false; input.focus(); toast(T('ev.saved')); soon();
+      }, function (e) {
+        ev.busy = false; input.disabled = false;
+        // Mail cannot take it (any more): the note with the way out instead of an error only
+        if (e && e.code === 'unavailable') { ev.cals = null; evLoad(); }
+        fail(e);
+      });
+    }
+    function submit() {
+      if (mode === 'event') { submitEvent(); return; }
       var text = input.value.trim();
       var body = { text: text, area: S.area, createList: !!(parsed && parsed.listName) && !(att.hint && att.hint.via === 'tag') };
       clearTimeout(att.timer);
@@ -1153,9 +1294,9 @@
       if (S.view.kind === 'smart' && S.view.id === 'myday') body.myDay = true;
       if (S.view.kind === 'smart' && S.view.id === 'important') body.important = true;
       input.disabled = true;
-      api('POST', 'tasks', body).then(function () { input.value = ''; tw.pick = undefined; tw.words = null; att.hint = null; att.forText = null; att.off = false; att.pick = null; pl.hint = null; pl.off = false; pl.pick = null; show(); input.disabled = false; input.focus(); soon(); }, function (e) { input.disabled = false; fail(e); });
-    });
-    return h('div', { class: 'na-quick' }, [h('label', { class: 'na-quick-box' }, [icon('plus'), input, h('span', { class: 'na-kbd', text: T('p.kbd_new') })]), chips]);
+      api('POST', 'tasks', body).then(function () { input.value = ''; evReset(); tw.pick = undefined; tw.words = null; att.hint = null; att.forText = null; att.off = false; att.pick = null; pl.hint = null; pl.off = false; pl.pick = null; show(); input.disabled = false; input.focus(); soon(); }, function (e) { input.disabled = false; fail(e); });
+    }
+    return h('div', { class: 'na-quick' }, [h('label', { class: 'na-quick-box' }, [icon('plus'), input, h('span', { class: 'na-kbd', text: T('p.kbd_new') })]), top, chips]);
   }
 
   // ── details ──────────────────────────────────────────────
@@ -2325,6 +2466,8 @@
     wrap.appendChild(h('h3', { text: T('p.sources_title') }));
     wrap.appendChild(h('p', { class: 'dp-hint', text: T('p.sources_intro') }));
     sourceCards(wrap, prefs);
+    // 1.9.0: which calendars of Mail show their events on „Mein Tag“ and „Geplant“
+    if (evOn()) calendarCard(wrap);
     // 1.7.0: who reminds of Drive's deadlines (the administrator's choice in Drive's settings) — only while Drive can do it
     var dd = S.me.driveDeadlines;
     if (dd && (dd.available || dd.active)) {
@@ -2427,6 +2570,31 @@
         btn(T('p.sync_now'), function () { api('POST', 'sources/' + s.plugin + '/sync').then(function (r) { toast(r.scheduled ? T('p.sync_soon') : T('p.sync_recent')); }, fail); }, { small: true })]));
       wrap.appendChild(card);
     });
+  }
+
+  /** 1.9.0 „Termine aus dem Kalender“: a switch per calendar (subscribed ones and „Aufgaben“ start off). */
+  function calendarCard(wrap) {
+    var card = h('div', { class: 'na-card', id: 'na-ev-cals' }, [h('div', { class: 'na-set-h' }, [h('span', { class: 'na-badge', 'data-src': 'gatecontrol-mail' }, icon('cal', 16)),
+      h('div', null, [h('b', { text: T('ev.src_title') }), h('span', { text: T('ev.src_hint') })])])]);
+    var body = h('div', { class: 'na-tl' }, h('p', { class: 'dp-hint', text: T('p.loading') }));
+    card.appendChild(body);
+    wrap.appendChild(card);
+    api('GET', 'events/calendars').then(function (r) {
+      clear(body);
+      if (!r.calendars.length) {
+        body.appendChild(h('p', { class: 'dp-hint', text: T(r.reason === 'no_mail' || r.reason === 'mail_old' ? 'ev.none_mail' : r.reason === 'unreachable' ? 'ev.none_later' : 'ev.none_person') }));
+        return;
+      }
+      r.calendars.forEach(function (c) {
+        var sub = c.kind === 'tasks' ? T('ev.k_tasks') : c.kind === 'subscribed' ? T('ev.k_subscribed') : c.kind === 'shared' ? T('ev.k_shared') : c.kind === 'family' ? T('ev.k_family') : c.isDefault ? T('ev.k_default') : null;
+        var row = swRow(c.name, sub, c.shown, function (v) { var o = {}; o['gatecontrol-mail|' + c.key] = v ? 'show' : 'hide'; savePrefs({ groups: o }); });
+        var dot = h('span', { class: 'na-ev-dot' });
+        if (c.color) dot.style.background = c.color;
+        row.insertBefore(dot, row.firstChild);
+        body.appendChild(row);
+      });
+      body.appendChild(h('p', { class: 'dp-hint', text: T('ev.src_foot') }));
+    }, function () { clear(body); body.appendChild(h('p', { class: 'dp-hint', text: T('ev.none_later') })); });
   }
 
   function mstodoCard() {
