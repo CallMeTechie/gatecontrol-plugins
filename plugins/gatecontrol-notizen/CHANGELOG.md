@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.8.1
+
+Schnell-Erkennung: Ein Wochentag direkt neben einem Datum gehört zum Datum. An der API ändert sich nichts.
+
+- **Fehler:** „Freitag 4. Dezember Fashion Outlet“ ergab den Titel „Freitag Fashion Outlet“ – das Datum war gesetzt,
+  der Wochentag blieb stehen (ebenso „Freitag, 4.12.“, „am Freitag den 4. Dezember“, „Fr. 4.12. 14 Uhr“).
+- **Jetzt** (`ui/quickparse.js`, derselbe Code im Portal und im Server): Steht ein Wochentag direkt vor einem
+  Kalenderdatum (`2026-12-04`, `4.12.`, `4. Dezember`, `December 4`) – ausgeschrieben oder abgekürzt, mit oder ohne
+  Punkt, mit „am“/„bis“/„on“ davor, Komma und „den“/„dem“/„the“ dazwischen – oder direkt dahinter („4. Dezember,
+  Freitag“, „4.12. Fr.“), wird er mit dem Datum aus dem Titel genommen; die Markierung (`marks`) umfasst beides.
+  Es gilt das Datum. Auch Englisch: „Friday, December 4“, „Fri 4 Dec“.
+- **Passt der Wochentag nicht zum Datum** („Samstag 4. Dezember“, der 4.12. ist ein Freitag), gilt das Datum und der
+  Wochentag bleibt zur Kontrolle im Titel.
+- Unverändert: ein Wochentag, der nicht direkt am Datum steht („Freitag Outlet 4.12.“), oder zwischen dem schon etwas
+  anderes erkannt wurde („Freitag #büro 4.12.“).
+- Tests: `test/vectors/quickparse.json` um 22 Fälle erweitert (jetzt 73; die neuen tragen ihre Markierungen in
+  `marks`). Die Apps übernehmen die Datei mit ihrer nächsten Version.
+
 ## 1.8.0
 
 „Meine Orte“ ziehen ins Profil von GateControl (braucht GateControl 1.299.0).
