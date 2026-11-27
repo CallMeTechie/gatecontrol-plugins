@@ -1,4 +1,4 @@
-<!-- version: 1.5.0 -->
+<!-- version: 1.6.0 -->
 # Medien – Handbuch
 
 ## Was das Plugin kann {#was-das-plugin-kann}
@@ -12,11 +12,12 @@ Medien bringt deine eigene Sammlung aus **Jellyfin** und den **Freigaben deiner 
 
 ## Voraussetzungen {#voraussetzungen}
 
-- GateControl ab 1.325.0.
+- GateControl ab 1.328.0.
 - Eine **eigene Lizenz für Medien**. Sie ist nicht in GateControl Lifetime oder einem Paket enthalten.
 - **Jellyfin ab 10.9** mit Quick Connect (z. B. das Synology-Paket) und/oder SMB/WebDAV-Freigaben auf der NAS.
 - Ein Gateway im Heimnetz und eine **Route** für Jellyfin bzw. das WebDAV der NAS (Domain → Gateway → Ziel). Über sie erreicht der Server die Quelle (Zugriffsziel), und über sie spielen die Geräte unterwegs durch das VPN. Eine nur intern freigegebene Route genügt. Das Heimnetz selbst gibt der Server nicht in den Tunnel.
 - Die GateControl-Apps in einer Version mit Medien vom Server.
+- Zum **Umwandeln** (optional): ein Gateway ab 1.50.0 auf der NAS (Docker, amd64) mit eingeschalteter Funktion **„Videos umwandeln“** und das Recht „Videos umwandeln“ für Medien (siehe [Videos umwandeln](#umwandeln-nachts)).
 
 ## Einrichten {#einrichten}
 
@@ -92,7 +93,42 @@ Je Zeile stehen der **Grund**, die drei **Geräte** (✓ spielt direkt, ~ je nac
 
 **Geschätzt, nicht gemessen:** Größe und Dauer gelten für eine NAS mit Intel J3455 (Apollo Lake) und das Ziel H.264 8 Bit per Hardware; Ton, Untertitel und Kapitel blieben unverändert. Eine 20-Minuten-Folge in 1080p50 mit 10 Bit braucht danach etwa 15–30 Minuten.
 
-**Umwandeln selbst kommt später.** Es braucht einen eigenen Dienst „umwandeln“ auf dem Gateway (nachts 1–6 Uhr, Pause beim Schauen, Original 14 Tage im Ordner `.gc-papierkorb`). Bis dahin zeigt die Seite nur die Liste. Die Videos spielen trotzdem: Jellyfin wandelt live um, bei „Umwandeln“ mit Ruckeln.
+Ohne Gateway mit dem Dienst „umwandeln“ zeigt die Seite nur die Liste und sagt, was fehlt. Die Videos spielen trotzdem: Jellyfin wandelt live um, bei „Umwandeln“ mit Ruckeln.
+
+## Videos umwandeln {#umwandeln-nachts}
+
+Ab Medien 1.6.0 wandelt das **Gateway auf der NAS** die Videos der Liste um – in H.264 mit 8 Bit, per Intel-Grafik. Ton, Untertitel, Kapitel und Schriften werden kopiert, die Datei behält Namen und Ort. Jellyfin behält so das Video mit „gesehen“ und Fortschritt.
+
+**Einrichten (einmal):**
+
+1. Gateway ab 1.50.0 auf der NAS. In GateControl: **Gateways › Gateway › Funktionen › Geräte im Heimnetz › „Videos umwandeln“** einschalten, unter **„Ordner und Benutzer“** die Medienordner (z. B. `/volume2/mediathek`) und die UID/GID eines eigenen DSM-Benutzers mit Schreibrecht nur auf diese Ordner eintragen.
+2. **docker-compose.yml herunterladen** und auf der NAS übernehmen (sie enthält den Dienst „umwandeln“).
+3. Beim Update auf Medien 1.6.0 das neue Recht **„Videos umwandeln“** bestätigen (Einstellungen › Plugins › Medien). Ohne das Recht bleibt die Seite bei der Liste.
+
+Fehlt etwas, steht oben auf der Seite, was zu tun ist (Gateway zu alt, Funktion aus, Dienst fehlt, Gruppe der Grafik fehlt …).
+
+**Umwandeln:**
+
+- **Umwandeln** bei einer Zeile merkt die Datei für die nächste Nacht vor, **„Alle über Nacht“** alle offenen Zeilen der Stufe „Umwandeln“. Mit den Kästchen wählst du mehrere aus. **⋮ › Jetzt umwandeln** startet sofort, auch tagsüber.
+- **Nachts 1–6 Uhr** (Ortszeit des Servers, unter **Einstellungen** änderbar): eine Datei nach der anderen. Eine neue startet nur, wenn sie voraussichtlich vor dem Ende des Fensters fertig wird; eine laufende darf fertig werden. Die Dauer rechnet Medien mit dem gemessenen Tempo des Gateways (anfangs 3 × Echtzeit mit Grafik).
+- **Reihenfolge:** „Jetzt“, dann Folgen einer Serie, die gerade jemand schaut (in Folgenreihenfolge), dann „beim Abspielen gestockt“, dann in der Reihenfolge des Vormerkens.
+- **Pause beim Schauen:** Spielt Jellyfin gerade etwas ab, hält das Gateway an und macht nach der Wiedergabe weiter (abschaltbar unter Einstellungen). Fällt der Server aus, läuft es nach drei Minuten von selbst weiter.
+- **Läuft gerade** zeigt Fortschritt, Tempo, Restzeit und freien Platz, mit **Pause** und **Abbrechen** (das Original bleibt unverändert).
+- Nur **MKV**-Dateien in den Medienordnern des Gateways. MP4 und AVI stehen mit „kommt später“ in der Liste.
+
+**Prüfung:** Das Gateway prüft vor dem Tausch Spuren, Dauer, Kapitel und einen kompletten Probelauf. Danach liest Jellyfin die Datei neu ein, und Medien prüft, dass Jellyfin 8 Bit und dieselbe Laufzeit sieht. **„geprüft ›“** zeigt den Vergleich Original/Neu, den Probelauf, Jellyfins Befund und wo das Original liegt.
+
+**Papierkorb:** Das Original liegt im Ordner `.gc-papierkorb` derselben Freigabe, standardmäßig **14 Tage** (Einstellung **Papierkorb-Tage**), dann löscht das Gateway es. Die Kachel **Papierkorb** öffnet die Liste mit **Wiederherstellen** (die umgewandelte Datei wird ersetzt, Jellyfin liest neu ein, Medien wandelt sie nicht wieder von selbst um), **Jetzt löschen** und **Papierkorb leeren**. Bei Btrfs mit Schnappschüssen wird der Platz erst frei, wenn auch die Schnappschüsse ablaufen.
+
+**Fehler:** *Zu wenig Platz* – die Datei bleibt vorgemerkt und kommt in der nächsten Nacht wieder dran. *Keine Grafik / Gruppe fehlt* – Medien hält das Umwandeln für dieses Gateway an, bis es wieder bereit meldet. *Datei geändert* – sie wird neu bewertet. Sonst ein Fehlversuch; nach **zwei** Fehlversuchen wird die Datei übersprungen (Filter **Fehler**, mit den letzten Zeilen von ffmpeg). In jedem Fehlerfall bleibt das Original unverändert.
+
+**Am Morgen** bekommen die Administratoren eine Mitteilung „3 Videos umgewandelt · 1 Fehler“ – nur wenn in der Nacht etwas geschah (Thema „Medien: Videos umgewandelt“).
+
+**Aus der App angefragt:** Personen können in den Apps „Umwandeln anfragen“. Die Datei bekommt in der Liste „aus der App angefragt“ (Filter **Angefragt**); vormerken entscheidest du.
+
+**Einstellungen** (Zahnrad): Zeitfenster, Anhalten beim Schauen, Papierkorb-Tage (1–365) und Qualität (16–32, Standard 23; kleiner = besser und größer). Papierkorb-Tage und Qualität gelten für die Funktion des Gateways.
+
+Ein Update des Gateways in der Nacht startet die laufende Umwandlung neu.
 
 ## Berechtigungen {#berechtigungen}
 
@@ -102,6 +138,8 @@ Je Zeile stehen der **Grund**, die drei **Geräte** (✓ spielt direkt, ~ je nac
 | Personen mit „Medien“ | sehen Medien in ihren Apps mit den Quellen, die für sie freigegeben sind. |
 | Kinder (Familie: Kind) | sehen NAS-Freigaben nur mit der Einstellung „Kinder sehen NAS-Freigaben“. Bei Jellyfin gilt der Jugendschutz ihres Jellyfin-Benutzers. |
 | Geräte | bekommen ein NAS-Passwort nur mit Gerätebindung, einer aktiven Person mit Recht auf die Freigabe. Der Jellyfin-Zugang entsteht auf dem Gerät selbst, der Server sieht ihn nie. |
+
+Das Plugin-Recht **„Videos umwandeln“** (ab 1.6.0) erlaubt Medien, dem Gateway Dateien aus den Medienordnern zum Umwandeln zu geben – die Datei wird dabei ersetzt, das Original bleibt im Papierkorb. Der Administrator bestätigt es beim Update. Die Seite „Umwandeln“ sehen nur Administratoren.
 
 Der Jellyfin-Schlüssel verlässt den Server nie. Das Protokoll nennt Personen, Geräte und Quellen, nie Passwörter, Schlüssel, Codes oder Jellyfin-Zugänge.
 
@@ -113,6 +151,13 @@ Der Jellyfin-Schlüssel verlässt den Server nie. Das Protokoll nennt Personen, 
 - **„durch den Tunnel nicht erreichbar“** im Reiter Geräte: Stimmt die HTTPS-Adresse für unterwegs der Quelle (die Domain der Route)? Ist die Route an, das Gateway online, und lässt die DSM-Firewall das Gateway zu (8096, 5006)?
 - **Ein Handy ist verloren**: in GateControl entfernen (Jellyfin ist sofort bzw. nach höchstens 5 Minuten zu). Das NAS-Passwort lässt sich von einem Gerät, das nicht mehr online kommt, nicht zurückholen: Passwort in DSM ändern und unter Quellen ersetzen.
 - **Lizenz**: Ohne eigene Lizenz für Medien blenden die Apps Medien aus. Eine GateControl-Lifetime-Lizenz zählt hier nicht.
+
+## Neu in 1.6.0 {#neu-1-6-0}
+
+- **Videos umwandeln:** Das Gateway auf der NAS wandelt die Videos der Liste nachts um – vormerken, „Alle über Nacht“, „Jetzt umwandeln“, Pause beim Schauen, Prüfung in Jellyfin, Papierkorb mit Wiederherstellen (siehe [Videos umwandeln](#umwandeln-nachts)).
+- **Neues Recht „Videos umwandeln“** – bitte beim Update bestätigen. Braucht GateControl ab 1.328.0 und ein Gateway ab 1.50.0.
+- **Mitteilung am Morgen** an die Administratoren, wenn in der Nacht etwas umgewandelt wurde.
+- **App-API:** `v1/convert/status` nennt Warteschlange, Platz, Startzeit und Fortschritt; `v1/convert/request` („Umwandeln anfragen“).
 
 ## Neu in 1.5.0 {#neu-1-5-0}
 

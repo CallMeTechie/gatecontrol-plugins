@@ -46,7 +46,10 @@ test('the first visit starts the scan; the list: convert first, then notices, no
     assert.match(e05.path, /^\/volume2\/mediathek\/Serien\/Sternenhafen\//);
     // the totals of "convert": estimated minutes and sizes, the night window of the Entwurf
     assert.ok(r.totals.minutes > 60 && r.totals.sizeAfter > r.totals.sizeBefore * 0.5);
-    assert.deepEqual(r.window, { from: '01:00', to: '06:00', minutes: 300 });
+    assert.deepEqual([r.window.from, r.window.to, r.window.minutes], ['01:00', '06:00', 300]);
+    // an older GateControl (no gc.transcode): only the list, nothing to convert with
+    assert.equal(r.available, false);
+    assert.equal(r.transcode.reason, 'server');
     // pages through the target: films and episodes with their media sources, only existing files
     const call = t.jelly.state.calls.find((c) => c.path.startsWith('/Items?'));
     const q = new URL(call.path, 'http://jf').searchParams;
@@ -147,7 +150,7 @@ test('no sessions are read while the list is empty or was never opened', async (
   } finally { await t.host.close(); }
 });
 
-test('App API v1/convert/status: what the list knows, only from visible sources, state "none" until converting exists', async () => {
+test('App API v1/convert/status: what the list knows, only from visible sources, state "none" without converting', async () => {
   const { t } = await scanned();
   try {
     const a = idOf('Die stille Werft');
@@ -156,10 +159,12 @@ test('App API v1/convert/status: what the list knows, only from visible sources,
     assert.equal(r.ok, true);
     assert.equal(r.v, 1);
     assert.equal(r.available, false);
+    const none = { state: 'none', position: null, startsAt: null, percent: null };
     assert.deepEqual(r.items, [
-      { id: a, sourceId: 'jf-1', level: 'convert', reasons: ['h264_10bit'], devices: { phone: 'no', tv: 'no', windows: 'no' }, stalled: false, state: 'none' },
-      { id: b, sourceId: null, level: null, reasons: [], devices: null, stalled: false, state: 'none' },
+      { id: a, sourceId: 'jf-1', level: 'convert', reasons: ['h264_10bit'], devices: { phone: 'no', tv: 'no', windows: 'no' }, stalled: false, requested: false, ...none },
+      { id: b, sourceId: null, level: null, reasons: [], devices: null, stalled: false, requested: false, ...none },
     ]);
+    assert.deepEqual(r.states, { [a]: none, [b]: none });
     // a person who does not see the source learns nothing
     await t.adminReq('PUT', 'sources/jf-1/access', { mode: 'list', users: [MILA.id], groups: [] });
     for (const [who, dev] of [[LENA, '31'], [PAUL, null]]) {

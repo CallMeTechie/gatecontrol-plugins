@@ -12,7 +12,8 @@
 //   rights "Medien" and per source, children                           — server/rights.js
 //   person ↔ Jellyfin user                                             — server/mapping.js
 //   pairings, deliveries, revocation, reconcile                        — server/devices.js
-//   "Videos umwandeln" step 1: the list, admin/convert, v1/convert     — server/convert.js, server/convert-rules.js
+//   "Videos umwandeln": the list, admin/convert, v1/convert             — server/convert.js, server/convert-rules.js
+//   converting through the gateway (gc.transcode), queue, night window  — server/convert-jobs.js
 //
 // Background (every 60 s): the reconcile every 5 minutes (devices removed in GateControl, rights, mappings, the
 // Jellyfin servers), the log's retention once an hour. With a GateControl that has the hook devicesChanged a removed
@@ -71,6 +72,10 @@ module.exports = {
     state.lastReconcile = 0;
     state.lastPurge = 0;
     rights.reset();
+    // "Videos umwandeln" (GateControl with permissions.transcode): every report of a gateway (hook transcodeChanged)
+    if (gc.transcode && typeof gc.transcode.on === 'function') {
+      gc.transcode.on((ev) => require('./convert-jobs').onReport(gc, ev).catch((e) => gc.log.debug('transcode report failed', (e && e.code) || 'error')));
+    }
     gc.log.info('medien started', gc.plugin && gc.plugin.version);
   },
 

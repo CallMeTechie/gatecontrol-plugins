@@ -34,12 +34,14 @@ test('text keys: the same in de and en, and every key the pages use exists', () 
   for (const code of Object.keys(require('../server/util').STATUS)) assert.ok(('error.' + code) in texts.de, code);
 });
 
-test('manifest: own licence, app tab, the three settings tabs, a signal topic', () => {
-  assert.equal(manifest.version, '1.5.0');
+test('manifest: own licence, app tab, the three settings tabs, a signal topic, transcode', () => {
+  assert.equal(manifest.version, '1.6.0');
   assert.deepEqual(manifest.ui.pages.map((p) => p.id), ['overview', 'convert', 'sources', 'people', 'devices']);
   assert.deepEqual(manifest.license, { required: true });
   assert.deepEqual(manifest.ui.settingsPages, ['sources', 'people', 'devices']);
   assert.equal(manifest.ui.app.label.de, 'Medien');
-  assert.deepEqual(manifest.notifyTopics.map((x) => [x.id, x.signal]), [['media_signal', true]]);
+  assert.deepEqual(manifest.notifyTopics.map((x) => [x.id, x.signal]), [['media_signal', true], ['convert', undefined]]);
+  // „Videos umwandeln“ (1.6.0): the permission the administrator confirms with the update
+  assert.equal(manifest.permissions.transcode, true);
   assert.deepEqual(manifest.permissions.network.homeTargets.map((x) => x.id), ['jellyfin', 'webdav', 'smb']);
 });

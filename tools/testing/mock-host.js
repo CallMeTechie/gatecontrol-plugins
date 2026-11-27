@@ -464,6 +464,9 @@
 // GateControl 1.289.0 (opt-in: opts.gatecontrol: '1.289.0' or opts.avatarVisibility) — „Wer sieht dein Bild?“: gc.users with
 // a viewer / unmasked and avatarVisibility, gc.users.setAvatarVisibility / adoptAvatarVisibility: see tools/testing/mock-avatars.js.
 //
+// GateControl with "Videos umwandeln" (opt-in: opts.transcode) — gc.transcode, jobs for the service umwandeln of the
+// gateways (only with permissions.transcode), the hook transcodeChanged: see tools/testing/mock-transcode.js.
+//
 // GateControl 1.298.0 (opt-in: opts.gatecontrol: '1.298.0' or opts.places) — „Meine Orte“: gc.places (only with
 // permissions.places: list / get / resolve / markUsed / reportUsage / importFor) and the hook placesChanged: see
 // tools/testing/mock-places.js.
@@ -478,6 +481,7 @@ const mockPrint = require('./mock-print');
 const mockRemote = require('./mock-remote');
 const mockVpnDns = require('./mock-vpn-dns');
 const mockCameras = require('./mock-cameras');
+const mockTranscode = require('./mock-transcode');
 const mockBridges = require('./mock-bridges');
 const mockProfile = require('./mock-profile');
 const mockAvatars = require('./mock-avatars');
@@ -3478,6 +3482,9 @@ async function createHost(pluginDir, opts = {}) {
   // ─── Kameras im Heimnetz (GateControl with phase 3c step 4, src/services/homeCameras.js; tools/testing/mock-cameras.js) ───
   const cams = mockCameras.install({ opts, perms, hostError });
   Object.assign(api, cams.api);
+  // ─── Videos umwandeln (GateControl with permissions.transcode, src/services/homeTranscode.js; tools/testing/mock-transcode.js) ───
+  const tc = mockTranscode.install({ opts, perms, hostError });
+  Object.assign(api, tc.api);
 
   // Writes of the plugin (host.dbWrites): what the host's storage worker commits — a statement outside BEGIN … COMMIT
   // that changed rows, a COMMIT of a transaction that changed rows, a migration-free db.exec, storage.set (kv.set) and
@@ -3776,6 +3783,8 @@ async function createHost(pluginDir, opts = {}) {
       ...(zigbeeOn ? { zigbee: () => call('radio.zigbee', {}), command: (id, set) => call('radio.command', { id, set }) } : {}) }) } : {}),
     // gc.cameras only with permissions.cameras and opts.cameras (like the child bootstrap)
     ...(cams.on ? { cameras: cams.gcPart(call) } : {}),
+    // gc.transcode only with permissions.transcode and opts.transcode (like the child bootstrap)
+    ...(tc.on ? { transcode: tc.gcPart(call) } : {}),
     ...(hcOn ? {
       homeCache: Object.freeze({
         offer: (o) => call('homeCache.offer', o && typeof o === 'object' ? o : {}),
@@ -4509,6 +4518,8 @@ async function createHost(pluginDir, opts = {}) {
     cameraEvent: (ev) => cams.deliver(ev),
     /** Kameras: what the host holds (cameras, calls, passwords it was given) */
     cameras: cams.state,
+    /** Videos umwandeln (opts.transcode): { state, gateway, report, job, finish, fail, calls } — see tools/testing/mock-transcode.js */
+    transcode: tc.control,
     /** legacyImport hook: the host hands over the built-in data (first-party plugins only) */
     legacyImport: (snapshot) => hook('legacyImport', snapshot),
     /** keys stored with gc.settings.setSecret */

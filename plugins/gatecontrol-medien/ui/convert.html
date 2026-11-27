@@ -1,11 +1,16 @@
 <main class="md-page md-cv">
   <div class="md-cv-head">
-    <p class="md-intro">{{t:cv.intro}}</p>
-    <div class="md-actions"><button type="button" class="btn" id="md-c-scan">{{t:cv.rescan}}</button></div>
+    <p class="md-intro" id="md-c-intro">{{t:cv.intro}}</p>
+    <div class="md-actions">
+      <button type="button" class="btn" id="md-c-scan">{{t:cv.rescan}}</button>
+      <button type="button" class="btn" id="md-c-settings" hidden>{{t:cv.settings}}</button>
+      <button type="button" class="btn btn-primary" id="md-c-all" hidden></button>
+    </div>
   </div>
-  <p class="md-info" id="md-c-service">{{t:cv.service_note}}</p>
+  <p class="md-info" id="md-c-service" hidden></p>
   <div id="md-c-problems"></div>
   <div class="md-stats md-cv-stats" id="md-c-stats"></div>
+  <section class="md-card md-cv-now" id="md-c-current" aria-label="{{t:cv.now_title}}" hidden></section>
   <section class="md-card" aria-label="{{t:cv.col_title}}">
     <div class="md-cv-tools">
       <div class="md-chips" id="md-c-filters" role="group"></div>
@@ -18,6 +23,6 @@
     <div class="md-table-wrap"><table class="md-table md-cv-table" id="md-c-table"></table></div>
     <p class="md-hint" id="md-c-empty" hidden></p>
     <div class="md-actions" id="md-c-more"></div>
-    <p class="md-hint" id="md-c-foot"></p>
+    <div class="md-cv-foot"><p class="md-hint" id="md-c-foot"></p><div class="md-actions" id="md-c-sel"></div></div>
   </section>
 </main>

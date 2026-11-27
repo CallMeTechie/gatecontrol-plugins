@@ -1,5 +1,42 @@
 # Changelog
 
+## 1.6.0
+
+Mindestversion **GateControl 1.328.0**. **Neues Recht `transcode` („Videos umwandeln“)** – der Administrator bestätigt es
+mit dem Update (heikles Recht: Dateien in den Medienordnern werden ersetzt). Ohne Bestätigung bleibt es bei der Liste.
+
+- **Videos umwandeln (Schritt 2, Entwurf vom 26.11., Fragen 92–102):** Die Liste wandelt über den Dienst „umwandeln“ des
+  Gateways (ab 1.50.0, Host-API `gc.transcode`) um – H.264 8 Bit per Intel-Grafik, Ton/Untertitel/Kapitel kopiert, gleicher
+  Name und Ort. „Umwandeln“ merkt für die Nacht vor, „Alle über Nacht“ alle offenen Zeilen der Stufe „Umwandeln“, Auswahl
+  per Kästchen, „Jetzt umwandeln“ sofort. Nur `.mkv` in den Medienordnern des Gateways und nur Pfade, die Jellyfin
+  gemeldet hat; MP4/AVI „kommt später“.
+- **Nachtfenster 01:00–06:00** (Ortszeit des Servers, einstellbar): je Gateway genau ein Auftrag, der nächste nach dessen
+  Ende, ein neuer nur, wenn er voraussichtlich ins Fenster passt (Dauer ÷ gemessenes Tempo + 10 %, ohne Messung 3,0 × mit
+  Grafik bzw. 0,3 × ohne). Reihenfolge: „Jetzt“, Serien, die gerade jemand schaut (Folgenreihenfolge), „beim Abspielen
+  gestockt“, Vormerkzeit.
+- **Pause beim Schauen:** Meldet Jellyfin (`/Sessions`) eine Wiedergabe, ruft Medien `pause { ttlSec: 180 }` und erneuert
+  es jede Minute; danach `resume`. Einzelner Auftrag: „Pause“/„Fortsetzen“, „Abbrechen“.
+- **Berichte und Prüfung:** Hook `transcodeChanged` und `report()` jede Minute; erledigte Aufträge werden gespeichert und
+  quittiert (`ack`). Nach dem Tausch `POST /Library/Media/Updated` (Rückfall `/Items/{id}/Refresh`), danach prüft Medien,
+  dass Jellyfin 8 Bit und dieselbe Laufzeit sieht (`checking` → `done`). Ansicht „geprüft“: Original/Neu, Probelauf,
+  Jellyfin, Ort im Papierkorb.
+- **Fehler:** `no_space` → nächste Nacht mit neuer `id`, kein Fehlversuch; `no_device`/`device_denied`/`no_encoder` →
+  dieses Gateway angehalten, bis es wieder bereit meldet; Pfadfehler → übersprungen; `source_changed` → neu bewerten;
+  sonst Fehlversuch, nach zwei übersprungen (mit den letzten ffmpeg-Zeilen). Verlorene Aufträge kommen mit neuer `id`
+  wieder in die Warteschlange.
+- **Papierkorb** (Kachel): Originale mit Titel, Größe und Löschdatum, „Wiederherstellen“ (Jellyfin liest neu ein, Datei
+  `restored`, nicht wieder automatisch), „Jetzt löschen“, „Papierkorb leeren“, Hinweis auf Btrfs-Schnappschüsse.
+- **Einstellungen** (Zahnrad): Zeitfenster, Anhalten beim Schauen, Papierkorb-Tage (Standard 14) und Qualität (Standard
+  23) – die beiden letzten über `gc.transcode.settings` an die Gateway-Funktion.
+- **Mitteilung am Morgen** (Thema `convert`): „3 Videos umgewandelt · 1 Fehler“ an die Administratoren, nur wenn etwas
+  geschah, einmal am Tag.
+- **Hinweise ohne Umwandeln:** älterer Server, kein Gateway, Gateway zu alt, Funktion aus, Dienst fehlt/steht, Gruppe der
+  Grafik fehlt (mit GID), keine Grafik – jeweils mit dem Weg unter Gateways › Funktionen.
+- **App-API:** `v1/convert/status` mit `state queued | running | done`, `position`, `startsAt`, `percent`, `requested` (und
+  `states` je ID); neu `POST v1/convert/request { itemId }` („Umwandeln anfragen“ – nur auf die Liste, Filter „Angefragt“).
+- Admin-API `convert/queue`, `convert/all`, `convert/file`, `convert/trash`, `convert/settings`; Migration 003
+  (`conv_files`, `conv_jobs`). Mock-Host: `gc.transcode` (`tools/testing/mock-transcode.js`).
+
 ## 1.5.0
 
 - **Neuer Reiter „Umwandeln“ (Schritt 1 von „Videos umwandeln“, Entwurf vom 26.11., Fragen 92–102):** die Liste der
