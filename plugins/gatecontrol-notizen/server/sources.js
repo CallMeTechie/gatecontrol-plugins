@@ -10,6 +10,7 @@ const config = require('./config');
 const events = require('./events');
 const calsync = require('./calsync');
 const drivedue = require('./drivedue');
+const termine = require('./termine');
 const { fail, posInt, line, area: areaOf, parse } = require('./util');
 
 const SOURCES = config.SOURCES;
@@ -26,6 +27,8 @@ const PAGES_PER_RUN = 5;
 const ACTIVE_DAYS = 30;
 const GONE_PURGE = 7 * 86400000;
 const DONE_KEEP = 36 * 3600 * 1000; // done items without news from their source go after this
+const ACCEPTS = ['calendar'];
+const MAIL = termine.MAIL;
 
 const calls = new Map(); // plugin → [times] of pulls in the last hour
 
@@ -228,7 +231,9 @@ async function pullPage(gc, ctx, s) {
   calls.get(plugin).push(ctx.now);
   let res;
   try {
-    res = await gc.services.call({ plugin, service: 'todo_items', userId: s.user_id, payload: { v: 1, cursor: s.cursor || null, limit: 50 } });
+    // 1.9.0: accepts — what the hub takes beside the items of contract v1 ('calendar': the events of Mail's calendars,
+    // which Mail reports only to a hub that asks; a source that does not know the word ignores it)
+    res = await gc.services.call({ plugin, service: 'todo_items', userId: s.user_id, payload: { v: 1, cursor: s.cursor || null, limit: 50, accepts: ACCEPTS } });
   } catch (e) {
     const code = (e && e.code) || 'failed';
     const wait = code === 'ERR_RATE_LIMIT' ? 600000 : code === 'ERR_SERVICE_UNAVAILABLE' ? 3600000 : code === 'ERR_INVALID' ? PULL_EVERY : 900000;
@@ -344,20 +349,55 @@ async function visible(gc, ctx, prefs, opts = {}) {
       if (sp.kids === 'none' || sp.kids === 'mine') continue;
     }
     if (r.plugin === 'gatecontrol-mail' && meta.flagged === true && sp.flagged === false) continue;
+    // 1.9.0: an event of a calendar in Mail — its calendar is the group; iCal subscriptions and the calendar „Aufgaben“
+    // (every task with a time is in it already) stay out until the person switches them on („Quellen“)
+    if (isEvent(r, meta)) {
+      if (opts.events === false) continue;
+      if (!termine.shownOf(prefs, r.group_id || '', meta.cal)) continue;
+    }
     out.push({ row: r, area, meta });
   }
   return out;
+}
+
+/** Is the item an event of a calendar in Mail (1.9.0)? */
+const isEvent = (r, meta) => r.plugin === MAIL && r.kind === 'event' && !!meta && meta.type === 'calendar';
+
+/** A date-time with an offset ('2026-12-04T15:00:00+01:00') → { date, time } in `zone`, or null. */
+function wallOf(iso, zone) {
+  const ms = typeof iso === 'string' ? Date.parse(iso) : NaN;
+  if (!Number.isFinite(ms)) return null;
+  const p = tz.parts(ms, zone);
+  return { date: tz.dateStr(p.y, p.m, p.d), time: `${tz.pad(p.hh)}:${tz.pad(p.mm)}` };
+}
+
+/**
+ * Item.event (1.9.0) — what a row of an event shows beside title and start: { end: { date, time } | null (a time:
+ * with a time; a date only: the last day of an all-day event over days), location, calendar: { key, name, color,
+ * kind }, eventId (Mail's; null for the family calendar), recurring, writable }.
+ */
+function eventOf(ctx, r, meta) {
+  const end = r.all_day ? (typeof meta.endDate === 'string' && tz.parseDate(meta.endDate) ? { date: meta.endDate, time: null } : null) : wallOf(meta.end, ctx.tz);
+  return {
+    end, location: typeof meta.location === 'string' && meta.location ? meta.location : null,
+    calendar: { key: r.group_id || null, name: r.group_label || null, color: typeof meta.color === 'string' && /^#[0-9A-Fa-f]{6}$/.test(meta.color) ? meta.color : null, kind: typeof meta.cal === 'string' ? meta.cal : 'own' },
+    eventId: posInt(meta.eventId), recurring: meta.recurring === true, writable: meta.writable === true,
+  };
 }
 
 /** An item row → the API's Item. */
 function view(ctx, x, prefs, labels) {
   const r = x.row;
   let show = r.due_date ? { date: r.due_date, time: r.due_time || null } : null;
+  const event = isEvent(r, x.meta) ? eventOf(ctx, r, x.meta) : null;
+  // an event that began before today and still runs (a trip, a night) is shown today
+  if (event && show && show.date < ctx.today && event.end && event.end.date >= ctx.today) show = { date: ctx.today, time: null };
   if (r.lead === 'evening' && r.due_date) {
     const sp = prefs.sources[r.plugin] || {};
     show = { date: tz.addDays(r.due_date, -1), time: /^\d{2}:\d{2}$/.test(sp.evening || '') ? sp.evening : prefs.evening };
   }
-  const overdue = !r.done && !!show && (show.time ? tz.at(show.date, tz.parseTime(show.time), ctx.tz) < ctx.now && r.kind !== 'event' : show.date < ctx.today);
+  // (an event of a calendar is never overdue — it is over, or it runs)
+  const overdue = !event && !r.done && !!show && (show.time ? tz.at(show.date, tz.parseTime(show.time), ctx.tz) < ctx.now && r.kind !== 'event' : show.date < ctx.today);
   return {
     uid: 's:' + r.id, type: 'source', id: r.id, kind: r.kind, title: r.title, subtitle: r.subtitle || null,
     source: { plugin: r.plugin, label: labels(r.plugin), open: { plugin: r.plugin, route: r.open_route || '' } },
@@ -366,8 +406,52 @@ function view(ctx, x, prefs, labels) {
     assignee: r.assignee_id || r.assignee_name ? { id: r.assignee_id || null, name: r.assignee_name || null } : null,
     progress: r.prog_total != null ? { done: r.prog_done || 0, total: r.prog_total } : null,
     group: r.group_id ? { id: r.group_id, label: r.group_label } : null, meta: x.meta, updatedAt: r.updated_at,
+    ...(event ? { event } : {}),
   };
 }
+
+// ── 1.9.0: an event the hub handed to Mail itself (termine.js) ──
+
+const eventIds = (gc, eventId) => store.all(gc, "SELECT id, ext_id FROM src_items WHERE plugin = ? AND (ext_id = ? OR ext_id LIKE ?)", [MAIL, `ev:${eventId}`, `ev:${eventId}:%`]);
+
+/**
+ * Mail answered a write with the event's items: they go into the hub's copy at once (the push that follows brings the
+ * same) — only items of that event, and only for the person. → the Items as the person sees them.
+ */
+termine.hooks.take = async (gc, ctx, eventId, raw) => {
+  const good = [];
+  for (const x of raw.slice(0, 60)) {
+    const c = check(x, MAIL, true);
+    if (!c.item || c.item.kind !== 'event' || !(c.item.extId === `ev:${eventId}` || c.item.extId.startsWith(`ev:${eventId}:`))) continue;
+    if (c.item.users.length !== 1 || c.item.users[0] !== ctx.userId) continue;
+    good.push(c.item); // (updatedAt is Mail's own clock, as in its pushes)
+  }
+  const keep = new Set(good.map((x) => x.extId));
+  await store.tx(gc, async () => {
+    const gone = (await eventIds(gc, eventId)).filter((r) => !keep.has(r.ext_id)).map((r) => r.ext_id);
+    if (gone.length) await removeIds(gc, MAIL, gone);
+    await write(gc, ctx, MAIL, good);
+  });
+  events.changed(gc, [ctx.userId], 'items');
+  const prefs = await require('./prefs').get(gc, ctx.userId);
+  const out = [];
+  for (const r of await eventIds(gc, eventId)) {
+    const row = await store.one(gc, 'SELECT i.* FROM src_items i JOIN src_item_users u ON u.item_id = i.id AND u.user_id = ? WHERE i.id = ?', [ctx.userId, r.id]);
+    if (row) out.push(view(ctx, { row, area: row.area, meta: parse(row.meta_json, {}) || {} }, prefs, (p) => p));
+  }
+  return out.sort((a, b) => ((a.due ? a.due.date + (a.due.time || '') : '') < (b.due ? b.due.date + (b.due.time || '') : '') ? -1 : 1));
+};
+
+/** The hub removed an event in Mail: its items go at once. */
+termine.hooks.drop = async (gc, ctx, eventId) => {
+  const ids = (await eventIds(gc, eventId)).map((r) => r.ext_id);
+  if (!ids.length) return;
+  const r = await store.tx(gc, () => removeIds(gc, MAIL, ids));
+  events.changed(gc, [...r.touched, ctx.userId], 'items');
+};
+
+/** Mail of 1.18.0 showed up for the person: their events are asked for with the next background run. */
+termine.hooks.pull = (gc, ctx) => schedule(gc, ctx.userId, MAIL, ctx.now);
 
 /** An item the person sees (by the hub's id) → its row (not_found otherwise). */
 async function access(gc, ctx, id) {
@@ -416,4 +500,4 @@ async function status(gc, ctx) {
   return out;
 }
 
-module.exports = { SOURCES, KINDS, check, write, push, tick, schedule, visible, view, access, complete, status, removeIds, _calls: calls };
+module.exports = { SOURCES, KINDS, ACCEPTS, check, write, push, tick, schedule, visible, view, access, complete, status, removeIds, isEvent, _calls: calls };

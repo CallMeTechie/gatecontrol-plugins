@@ -53,6 +53,7 @@
       "gatecontrol-mail:ms_accounts",
       "gatecontrol-mail:ms_tasks_token",
       "gatecontrol-mail:ms_tasks_consent",
+      "gatecontrol-mail:calendar_list",
       "gatecontrol-mail:calendar_tasks",
       "gatecontrol-mail:calendar_add",
       "gatecontrol-mail:calendar_update",

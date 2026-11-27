@@ -47,6 +47,8 @@ function portal(host, user, o = {}) {
   };
   const f = createWindow(ui.render({ view: 'portal', lang: 'de', user: { id: user.id, loggedIn: true }, allowed: true }, t), gc);
   f.window.confirm = () => true;
+  // o.search: the query of the frame's address (a direct link, GC.openPortal)
+  if (o.search) f.window.location = { search: o.search };
   f.window.atob = globalThis.atob;
   f.window.Uint8Array = Uint8Array;
   f.run();
@@ -410,3 +412,28 @@ test('a GC contact (1.4.0): the account it is linked with, a conflict „Überne
     } finally { p.stop(); }
   });
 });
+
+test('1.18.0 a direct link „?open=event/<id>“ (an event tapped in Notizen & Aufgaben): the calendar opens with the event in its dialog; one that is gone only says so', () => withMail({ gatecontrol: '1.219.0' }, async (host, c) => {
+  const anna = c.as(ANNA);
+  const cals = (await anna('GET', 'calendars')).json.calendars;
+  const today = L.ymd(new Date());
+  const ev = (await anna('POST', 'events', { calendarId: cals[0].id, title: 'Zahnarzt', allDay: false, start: L.at(today, '16:30'), end: L.at(today, '17:30'), timeZone: 'Europe/Berlin', location: 'Praxis am Markt' })).json.event;
+  const p = portal(host, ANNA, { search: `?open=event%2F${ev.eventId}` });
+  try {
+    await until('the dialog', () => p.dialogText().includes('Praxis am Markt'));
+    assert.ok(p.dialogText().includes('Zahnarzt') && p.dialogText().includes('Bearbeiten'));
+    assert.match(p.el('mp-app').className, /is-calendar/);
+    assert.ok(p.calls.some((x) => x.method === 'GET' && x.path === `events/${ev.eventId}`));
+  } finally { p.stop(); }
+  const gone = portal(host, ANNA, { search: '?open=event/99999' });
+  try {
+    await until('the calendar', () => /is-calendar/.test(gone.el('mp-app').className) && gone.calls.some((x) => x.path === 'events/99999'));
+    assert.ok(!gone.dialogText().includes('Bearbeiten'));
+  } finally { gone.stop(); }
+  // no link: the mail as ever
+  const plain = portal(host, ANNA);
+  try {
+    await until('the foot', () => plain.byLabel('Kalender'));
+    assert.doesNotMatch(plain.el('mp-app').className, /is-calendar/);
+  } finally { plain.stop(); }
+}));

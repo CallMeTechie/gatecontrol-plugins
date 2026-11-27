@@ -411,8 +411,25 @@
     return { days: d, from: from, to: end };
   }
 
+  /**
+   * A direct link into the tab (1.18.0): the query of the frame's address („?open=event/<id>[/<occurrence>]“ or
+   * „?open=calendar/<YYYY-MM-DD>“, as „Notizen & Aufgaben“ opens an event with GC.openPortal) → { area: 'calendar',
+   * eventId?, occurrence?, date? } or null (no link, or one this tab does not know).
+   */
+  function openLink(search) {
+    var m = /[?&]open=([^&#]*)/.exec(String(search || ''));
+    if (!m) return null;
+    var route;
+    try { route = decodeURIComponent(m[1].replace(/\+/g, ' ')); } catch (e) { return null; }
+    var ev = /^event\/([1-9]\d{0,14})(?:\/([A-Za-z0-9:._-]{1,40}))?$/.exec(route);
+    if (ev) return { area: 'calendar', eventId: Number(ev[1]), occurrence: ev[2] || null };
+    var day = /^calendar\/(\d{4}-\d{2}-\d{2})$/.exec(route);
+    if (day && dateOf(day[1]) && ymd(dateOf(day[1])) === day[1]) return { area: 'calendar', date: day[1] };
+    return null;
+  }
+
   var api = {
-    DAY: DAY, digits: digits, barOf: barOf, clashes: clashes, dayWindow: dayWindow, workHours: workHours, WEEKDAYS: WEEKDAYS, ymd: ymd, dateOf: dateOf, midnight: midnight, addDays: addDays, addMonths: addMonths, weekday: weekday, weekStartOf: weekStartOf,
+    DAY: DAY, openLink: openLink, digits: digits, barOf: barOf, clashes: clashes, dayWindow: dayWindow, workHours: workHours, WEEKDAYS: WEEKDAYS, ymd: ymd, dateOf: dateOf, midnight: midnight, addDays: addDays, addMonths: addMonths, weekday: weekday, weekStartOf: weekStartOf,
     hhmm: hhmm, at: at, rangeOf: rangeOf, onDay: onDay, wholeDay: wholeDay, layoutDay: layoutDay, allDayOn: allDayOn, agenda: agenda,
     reminderText: reminderText, recurrenceText: recurrenceText, birthdayText: birthdayText, countOf: countOf,
     repeatOf: repeatOf, nthOf: nthOf, recurrenceOf: recurrenceOf, eventFields: eventFields, shiftSeries: shiftSeries, calendarGroups: calendarGroups, letters: letters, addressesOf: addressesOf,

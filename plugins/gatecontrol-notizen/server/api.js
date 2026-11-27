@@ -24,6 +24,7 @@ const places = require('./places');
 const duty = require('./duty');
 const famtasks = require('./famtasks');
 const drivedue = require('./drivedue');
+const termine = require('./termine');
 const Q = require('../ui/quickparse');
 const { t } = require('./text');
 const { fail, isKnown, statusOf, posInt } = require('./util');
@@ -61,7 +62,11 @@ const FEATURES = ['tasks', 'notes', 'sources', 'vault', 'mstodo', 'dsnote', 'sea
   // profile's ('profile:<id>' in `ref`), POST / PATCH / DELETE places change them there (gc.places version 2; DELETE
   // → 409 in_use { usedBy } while another plugin uses the place, ?force=1), an address search through GateControl's
   // search, GET places notMoved, me.places.profile
-  'profilePlaces'];
+  'profilePlaces',
+  // 1.9.0 (README "1.9.0"): `calendarEvents` — „Termin“: GET events/calendars, POST / PATCH / DELETE events (a real event
+  // in a calendar of Mail, stored only there), Item.event, me.events, the group choice 'show', `mode: 'event'` of
+  // POST parse (location, endTime, allDay) and `looksLikeEvent`
+  'calendarEvents'];
 
 const ok = (json) => ({ status: 200, json: { ok: true, ...json } });
 
@@ -149,6 +154,9 @@ async function me(gc, ctx) {
     // 1.7.0: the reminders of Drive's deadlines — available: Drive offers its part (≥ 1.30.0, the permission confirmed);
     // active: Drive has handed reminders over (its administrator chose „Notizen & Aufgaben“ there)
     driveDeadlines: { available: await drivedue.claimable(gc), active: await drivedue.active(gc) },
+    // 1.9.0: „Termin“ — can the person make an event now (Mail ≥ 1.18.0 with a calendar to write into)? reason when
+    // not: no_mail | mail_old | feature_off | not_allowed | not_licensed | no_seat | no_calendar (termine.js)
+    events: await termine.meInfo(gc, ctx),
   };
 }
 
@@ -266,6 +274,12 @@ async function handle(gc, ctx, req) {
   if (m === 'POST' && n === 2 && a === 'shopping' && x === 'ops') return ok(await shopping.applyOps(gc, ctx, b));
   if (m === 'PUT' && n === 4 && a === 'shopping' && x === 'lists' && z === 'family') return ok(await shopping.setFamily(gc, ctx, y, b));
   if (m === 'POST' && n === 4 && a === 'shopping' && x === 'lists' && (z === 'going' || z === 'assign')) return ok(await shopping.forward(gc, ctx, y, z, b));
+
+  // 1.9.0: „Termin“ — an event in a calendar of Mail (server/termine.js)
+  if (m === 'GET' && n === 2 && a === 'events' && x === 'calendars') return ok(await termine.calendars(gc, ctx, await prefs.get(gc, ctx.userId)));
+  if (is('POST', 1, 'events')) return ok(await termine.create(gc, ctx, b));
+  if (m === 'PATCH' && n === 2 && a === 'events') return ok(await termine.update(gc, ctx, x, b));
+  if (m === 'DELETE' && n === 2 && a === 'events') return ok(await termine.remove(gc, ctx, x));
 
   // items of the other plugins
   if (m === 'GET' && n === 2 && a === 'items') return ok(await itemGet(gc, ctx, x));

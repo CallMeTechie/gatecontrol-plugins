@@ -71,7 +71,11 @@ async function listDays(gc, ctx, area) {
   return out;
 }
 
-/** „Mein Tag“: Termine heute, Überfällig, Heute, Demnächst, Erledigt heute (+ 1.2.0: listdays, the card of the list days). */
+/**
+ * „Mein Tag“: Termine heute, Überfällig, Heute, Demnächst, Erledigt heute (+ 1.2.0: listdays, the card of the list days).
+ * 1.9.0: the events of the person's calendars in Mail (Item.event) — today's under „Termine heute“, the next 14 days
+ * mixed into „Demnächst“ by date; without a check box, never overdue.
+ */
 async function myDay(gc, ctx, area, opts = {}) {
   const prefs = await prefsMod.get(gc, ctx.userId);
   const soon = tz.addDays(ctx.today, UPCOMING_DAYS);
@@ -101,7 +105,8 @@ async function myDay(gc, ctx, area, opts = {}) {
     if (x.kind === 'event' && x.show.date === ctx.today) out.events.push(x);
     else if (x.overdue) out.overdue.push(x);
     else if (x.show.date === ctx.today) out.today.push(x);
-    else if (x.show.date <= soon && x.kind !== 'event') out.upcoming.push(x);
+    // 1.9.0: the events of the calendars in Mail to come stand among the tasks (never those of Schule or Alltag)
+    else if (x.show.date <= soon && (x.kind !== 'event' || x.event)) out.upcoming.push(x);
   }
   out.done = out.done.slice(0, 100);
   for (const k of Object.keys(out)) if (k !== 'today') out[k].sort(byTime);
@@ -172,7 +177,8 @@ async function list(gc, ctx, id) {
 async function source(gc, ctx, plugin, area) {
   if (!sources.SOURCES.includes(plugin)) throw fail('not_found');
   const prefs = await prefsMod.get(gc, ctx.userId);
-  const items = (await srcItems(gc, ctx, prefs, area, { plugin, withCarried: false })).filter((x) => !x.done).sort(byTime);
+  // (1.9.0: the events of Mail's calendars are no to-dos of Mail — they stand in „Mein Tag“ and „Geplant“)
+  const items = (await srcItems(gc, ctx, prefs, area, { plugin, withCarried: false, events: false })).filter((x) => !x.done).sort(byTime);
   const groups = new Map();
   for (const x of items) {
     const k = x.group ? x.group.id : '';
@@ -210,7 +216,7 @@ async function nav(gc, ctx, q, notesNav) {
   const open = src.filter((x) => !x.done);
   const bySource = {};
   for (const p of sources.SOURCES) bySource[p] = 0;
-  for (const x of open) bySource[x.source.plugin]++;
+  for (const x of open) if (!x.event) bySource[x.source.plugin]++;
   const status = await sources.status(gc, ctx);
   const ls = await lists.all(gc, ctx, area);
   return {

@@ -145,6 +145,7 @@ module.exports = {
     storage.reset();
     // 1.11.0: „Notizen & Aufgaben“ — a fresh push state; is the hub there (asks nobody)?
     notizen.source.reset();
+    notizen.resetHub();
     await notizen.source.available(gc);
     engine.start(gc);
     // 1.14.0: the search index — its table and triggers before the first mail comes (never fails the start)
@@ -182,7 +183,8 @@ module.exports = {
       const ctx = { userId: req.user.id, userName: req.user.name || '', lang, seat, licence };
       const json = await api.route(gc, ctx, req, s);
       // 1.11.0: a flag, a to-do or a mail changed — „Notizen & Aufgaben“ gets the difference in a few seconds
-      if (String(req.method || 'GET').toUpperCase() !== 'GET' && (s[0] === 'messages' || s[0] === 'ai')) notizen.source.soon(gc);
+      // (1.18.0: an event, a calendar, a shared calendar or an overlay too)
+      if (String(req.method || 'GET').toUpperCase() !== 'GET' && ['messages', 'ai', 'events', 'calendars', 'calendar', 'shared', 'overlays', 'invitations'].includes(s[0])) notizen.source.soon(gc);
       return { status: 200, json };
     } catch (e) {
       if (!isKnown(e) && !(e && HOST_CODES[e.code])) gc.log.warn('request failed', req && req.method, String((req && req.path) || '').split('/').slice(0, 2).join('/'), (e && (e.code || e.message)) || 'error');
@@ -251,8 +253,11 @@ module.exports = {
    */
   async service(call, gc) {
     // 1.11.0: todo_items / todo_complete for „Notizen & Aufgaben“ (gatecontrol-notizen only) — notizen.js
+    // 1.18.0: a hub that takes events says so in its pull (accepts: ['calendar']); the answer names what Mail gives
+    const pull = call && call.name === 'todo_items' && call.caller === 'gatecontrol-notizen';
+    if (pull) await notizen.hubAsked(gc, call.payload);
     const hub = await notizen.source.service(gc, call);
-    if (hub !== undefined) return hub;
+    if (hub !== undefined) return pull && hub && hub.ok === true && await notizen.takesEvents(gc) ? { ...hub, provides: ['calendar'] } : hub;
     return services.handle(gc, call);
   },
 
