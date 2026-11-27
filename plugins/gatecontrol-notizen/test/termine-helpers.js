@@ -59,7 +59,8 @@ function fakeMail() {
     const ev = m.events.get(payload.eventId);
     if (name === 'calendar_update') {
       if (!ev || ev.user !== user.id) return { ok: false, code: 'not_found' };
-      const { userId, lang, items, eventId, ...rest } = payload;
+      const { userId, lang, items, eventId, keyKind, ...rest } = payload;
+      if (keyKind !== 'event') return { ok: false, code: 'invalid' };
       if (rest.allDay === true) { delete ev.start; delete ev.end; }
       if (rest.allDay === false) { delete ev.startsAt; delete ev.endsAt; }
       Object.assign(ev, rest);
@@ -67,6 +68,7 @@ function fakeMail() {
       return { ok: true, eventId: ev.id, calendarId: ev.calendarId, items: itemsOf(ev) };
     }
     if (name === 'calendar_delete') {
+      if (payload.keyKind !== 'event') return { ok: false, code: 'invalid' };
       if (!ev || ev.user !== user.id) return { ok: true, removed: false };
       m.events.delete(ev.id);
       return { ok: true, removed: true };

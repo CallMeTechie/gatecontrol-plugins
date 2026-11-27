@@ -22,7 +22,7 @@
 //                          — every calendar the person sees, from today (their zone) EVENT_DAYS days on: the own ones,
 //                          the GateControl calendars shared with them that they show („Mit mir geteilt“, never a private
 //                          event or one they only see as „Gebucht“), the family calendar of Familie ('overlay:familie',
-//                          id 'ov:…', cal 'family'), iCal subscriptions and the calendar „Aufgaben“ (the hub hides those
+//                          id 'ov:<person>:…', cal 'family'; a shared one: id 'sh:<person>:<eventId>…'), iCal subscriptions and the calendar „Aufgaben“ (the hub hides those
 //                          two until the person switches them on). Not: cancelled events, declined invitations and the
 //                          ones not answered yet. Only for a hub that asks for them (its todo_items carries
 //                          accepts: ['calendar'] — an older hub would show every event as „Termine heute“ unasked);
@@ -193,6 +193,18 @@ async function collect(gc, now) {
 
 const safe = (v) => String(v).replace(/[^A-Za-z0-9:._-]/g, '_');
 
+/**
+ * The item's id. An own event: 'ev:<eventId>[:<occurrence>]' (the hub finds the events it made by it). An event several
+ * people see — a GateControl calendar shared with the person ('sh:<person>:<eventId>[:<occurrence>]') and the family
+ * calendar ('ov:<person>:<key>') — carries the person: one item has one set of users, and the owner's item must not
+ * become the reader's (or one family member's the others').
+ */
+function idOf(uid, o, occ, cal) {
+  if (!o.eventId) return `ov:${uid}:${safe(o.key)}`.slice(0, 120);
+  const tail = `${o.eventId}${occ ? ':' + occ : ''}`;
+  return (cal.share ? `sh:${uid}:${tail}` : `ev:${tail}`).slice(0, 120);
+}
+
 /** One occurrence (calendars.occurrenceView, an item of shares.items or of overlays.items) → the item. */
 function eventItem(uid, zone, o, cal) {
   const allDay = !!o.allDay;
@@ -201,7 +213,7 @@ function eventItem(uid, zone, o, cal) {
   if (allDay) { if (o.endDate && o.endDate !== o.startDate) meta.endDate = o.endDate; } else meta.end = todohub.isoIn(o.end, zone);
   const occ = o.occurrence ? safe(o.occurrence) : null;
   return {
-    id: (o.eventId ? `ev:${o.eventId}${occ ? ':' + occ : ''}` : `ov:${safe(o.key)}`).slice(0, 120), kind: 'event', title: todohub.plain(o.title, 200) || '–',
+    id: idOf(uid, o, occ, cal), kind: 'event', title: todohub.plain(o.title, 200) || '–',
     subtitle: o.location ? todohub.plain(o.location, 200) : null, due: allDay ? o.startDate : todohub.isoIn(o.start, zone), area: cal.area, users: [uid],
     important: false, done: false, canComplete: false, group: { id: cal.key, label: cal.name }, meta,
     open: { plugin: PLUGIN, route: o.eventId ? `event/${o.eventId}${occ ? '/' + occ : ''}` : `calendar/${allDay ? o.startDate : tz.localDate(o.start, zone)}` }, updatedAt: 0,
@@ -237,7 +249,7 @@ async function eventItems(gc, cfg, uid, p, now, only) {
       for (const o of await shares.items(gc, ctx, from, to, null, { owner: true })) {
         const c = shared.get(o.calendarId);
         if (!c || !o.eventId || o.shared === 'freebusy' || !eventShown({ ...o, myResponse: o.ownerResponse })) continue;
-        out.push(eventItem(uid, p.zone, o, { key: `cal:${c.id}`, name: c.name, color: c.color, kind: 'shared', area: 'private', writable: false }));
+        out.push(eventItem(uid, p.zone, o, { key: `cal:${c.id}`, name: c.name, color: c.color, kind: 'shared', area: 'private', writable: false, share: true }));
       }
     } catch (e) { gc.log.warn('notizen: shared calendars failed', (e && (e.code || e.message)) || 'error'); }
   }

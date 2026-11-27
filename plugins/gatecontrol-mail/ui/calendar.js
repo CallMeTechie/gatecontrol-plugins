@@ -671,9 +671,23 @@
       ]);
     }
 
-    /** A new event: at a slot ({ startDate, hour }), else the next full hour of the day shown. */
+    /**
+     * A new event: at a slot ({ startDate, hour }), else the next full hour of the day shown. 1.18.0: { prefill } — the
+     * form filled in with what „Notizen & Aufgaben“ made of a line (L.newEventArgs: title, date, time, endTime,
+     * location, calendarId, reminder, recurrence); no time: all day, no end: an hour, an end not after the start: the
+     * next day.
+     */
     function newEvent(at) {
       load().then(function () {
+        var f = at && at.prefill;
+        if (f && f.date) {
+          var t0 = f.time || '09:00';
+          var e0 = f.time ? (f.endTime || L.hhmm(L.at(f.date, t0) + 3600000)) : '10:00';
+          var eDay = f.time && (e0 <= t0) ? L.addDays(f.date, 1) : f.date;
+          editEvent(null, { startDate: f.date, startTime: t0, endDate: eDay, endTime: e0, allDay: !f.time, title: f.title, location: f.location,
+            calendarId: f.calendarId, reminders: f.reminder === false ? [] : f.reminder != null ? [f.reminder] : null, recurrence: f.recurrence });
+          return;
+        }
         var now = new Date();
         var day = at && at.startDate ? at.startDate : (C.view === 'day' ? C.anchor : L.ymd(now));
         var hour = at && at.hour != null ? at.hour : Math.min(23, now.getHours() + 1);
@@ -697,17 +711,19 @@
       var p = pre || {};
       var writable = C.calendars.filter(function (c) { return c.writable; })
         .concat(C.shared.filter(function (x) { return x.level === 'write'; }).map(function (x) { return calOf(x.id); }));
-      var defCal = ev ? calOf(ev.calendarId) : (calOf(C.prefs && C.prefs.defaultCalendarId) || writable[0]);
+      // (1.18.0 p.calendarId: the calendar chosen in „Notizen & Aufgaben“ — when the person can write into it here)
+      var preCal = !ev && p.calendarId != null ? writable.filter(function (c) { return c && c.id === p.calendarId; })[0] : null;
+      var defCal = ev ? calOf(ev.calendarId) : (preCal || calOf(C.prefs && C.prefs.defaultCalendarId) || writable[0]);
       if (!defCal) { ui.toast(T('p.c.no_writable'), 'error'); return; }
       var startMs = ev ? ev.start : L.at(p.startDate, p.startTime);
       var endMs = ev ? ev.end : L.at(p.endDate, p.endTime);
-      var allDay0 = ev ? !!ev.allDay : false;
-      var title = h('input', { class: 'dp-input', type: 'text', value: ev ? ev.title : '', attrs: { 'aria-label': T('p.c.title_field'), maxlength: '255' } });
+      var allDay0 = ev ? !!ev.allDay : !!p.allDay;
+      var title = h('input', { class: 'dp-input', type: 'text', value: ev ? ev.title : p.title || '', attrs: { 'aria-label': T('p.c.title_field'), maxlength: '255' } });
       var calSel = h('select', { class: 'dp-input', disabled: !!ev }, (ev ? [defCal] : writable).map(function (c) { return h('option', { value: String(c.id), selected: c.id === defCal.id, text: calName(c) }); }));
       var allDay = h('input', { type: 'checkbox', class: 'dp-sw', checked: allDay0, attrs: { 'aria-label': T('p.c.all_day') } });
-      var sd = h('input', { class: 'dp-input', type: 'date', value: allDay0 && ev.startDate ? ev.startDate : L.ymd(startMs) });
+      var sd = h('input', { class: 'dp-input', type: 'date', value: allDay0 && ev && ev.startDate ? ev.startDate : L.ymd(startMs) });
       var st = h('input', { class: 'dp-input', type: 'time', value: L.hhmm(startMs) });
-      var ed = h('input', { class: 'dp-input', type: 'date', value: allDay0 && ev.endDate ? ev.endDate : L.ymd(endMs) });
+      var ed = h('input', { class: 'dp-input', type: 'date', value: allDay0 && ev && ev.endDate ? ev.endDate : allDay0 ? p.startDate : L.ymd(endMs) });
       var et = h('input', { class: 'dp-input', type: 'time', value: L.hhmm(endMs) });
       var zone0 = ev && ev.timeZone ? ev.timeZone : (deviceZone() || (C.prefs && C.prefs.timeZone) || 'Europe/Berlin');
       var zone = h('select', { class: 'dp-input' }, zonesList(zone0).map(function (z) { return h('option', { value: z, selected: z === zone0, text: z }); }));
@@ -734,7 +750,7 @@
       syncAllDay();
 
       // repetition
-      var rep = L.repeatOf(ev ? ev.recurrence : null, sd.value);
+      var rep = L.repeatOf(ev ? ev.recurrence : p.recurrence || null, sd.value);
       var canRepeat = !ev || !ev.occurrence;
       var fixedRule = ev && ev.recurrence && ev.recurrence.editable === false;
       var nth = L.nthOf(sd.value);
@@ -770,7 +786,7 @@
       [interval, until, count].forEach(function (x) { x.addEventListener('change', function () { rep.touched = true; }); });
       drawRep();
 
-      var location = h('input', { class: 'dp-input', type: 'text', value: ev && ev.location ? ev.location : '' });
+      var location = h('input', { class: 'dp-input', type: 'text', value: ev && ev.location ? ev.location : !ev && p.location ? p.location : '' });
       var canOnline = calOf(Number(calSel.value)) ? calOf(Number(calSel.value)).canOnline : false;
       var online0 = ev && ev.online ? (ev.online.provider === 'teams' && canOnline ? 'teams' : 'link') : 'none';
       var onlineSel = h('select', { class: 'dp-input' });
@@ -791,7 +807,8 @@
       var drawRems = function () {
         var c = calOf(Number(calSel.value));
         var max = c ? c.maxReminders || 3 : 3;
-        var cur = remSels.length ? remSels.map(function (x) { return x.value; }) : (ev ? (ev.reminders || []).map(String) : (C.prefs && C.prefs.defaultReminder != null ? [String(C.prefs.defaultReminder)] : []));
+        var cur = remSels.length ? remSels.map(function (x) { return x.value; }) : (ev ? (ev.reminders || []).map(String) : Array.isArray(p.reminders) ? p.reminders.map(String)
+          : (C.prefs && C.prefs.defaultReminder != null ? [String(C.prefs.defaultReminder)] : []));
         clear(reminderBox);
         remSels = [];
         for (var i = 0; i < max; i++) {

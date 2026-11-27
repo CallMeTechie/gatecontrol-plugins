@@ -93,6 +93,10 @@ test('portal: the quick entry as „Termin“ — the question, the chips, the p
     await until('the menu', () => /Wie im Kalender eingestellt/.test(p.text('na-pop')) && /Keine Erinnerung/.test(p.text('na-pop')));
     p.byText('button', '1 Stunde vorher').click();
     assert.match(p.chips(), /1 Stunde vorher/);
+    // „Mehr Angaben …“: Mail's own form of a new event, filled in with all of it (nothing saved here)
+    p.byText('button', 'Mehr Angaben …', p.box()).click();
+    assert.deepEqual(JSON.parse(JSON.stringify(p.opened.at(-1))), { plugin: MAIL, query: { open: 'event/new', title: 'Fashion Outlet Zweibrücken', date: '2026-12-04', time: '14:00-15:00', loc: 'Outlet, Halle 2', cal: '8', rem: '60' } });
+    assert.equal(m.events.size, 0);
     // Enter: one event in Mail, nothing in the task list
     p.quick().dispatchEvent({ type: 'keydown', key: 'Enter' });
     await until('saved', () => m.events.size === 1 && p.quick().value === '');
@@ -108,6 +112,8 @@ test('portal: the quick entry as „Termin“ — the question, the chips, the p
     assert.match(p.chips(), /Ort: Fashion Outlet Zweibrücken(?!\?)/);
     assert.match(p.chips(), /Vortag, 18 Uhr/);
     assert.match(p.chips(), /Titel: „Einkaufen“/);
+    p.byText('button', 'Mehr Angaben …', p.box()).click();
+    assert.deepEqual(JSON.parse(JSON.stringify(p.opened.at(-1).query)), { open: 'event/new', title: 'Einkaufen', date: '2026-12-04', loc: 'Fashion Outlet Zweibrücken', cal: '7', rem: '360' });
     p.quick().dispatchEvent({ type: 'keydown', key: 'Enter' });
     await until('saved', () => m.events.size === 2);
     const b = m.calls.filter((c) => c.name === 'calendar_add').at(-1).payload;

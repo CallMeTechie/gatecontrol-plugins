@@ -483,8 +483,13 @@ Since 1.6.0 (`tofile_count` since 1.7.0) for Drive only (`server/services.js`; a
     `{ calendars: [], reason }` for a person without the calendars); `calendar_add` takes for it no `calendarId` (the
     default calendar), `endsAt`, `location`, `reminder` in minutes, `recurrence`, `items: true` (→ `{ eventId,
     calendarId, items, replayed? }`); `calendar_update` also `location`, `allDay` + `startsAt` / `endsAt`, `reminder`,
-    `recurrence`. The events themselves go to the hub as items of the source (`server/notizen.js`,
+    `recurrence`, and with `calendar_delete` `keyKind: 'event'` (only events made with a key `event:…`, never the entry of
+    a task). The events themselves go to the hub as items of the source (`server/notizen.js`,
     `docs/notes-sources-contract.md` § 6b) once the hub asks for them (`todo_items { accepts: ['calendar'] }`).
+    Items of events several people see carry the person in their id (`sh:<person>:<eventId>…` for a shared GateControl
+    calendar, `ov:<person>:…` for the family calendar). The portal tab opens `?open=event/<id>[/<occurrence>]`,
+    `?open=calendar/<date>` and `?open=event/new&title&date&time&loc&cal&rem&rep` (the new event's form, filled in —
+    „Mehr Angaben …“ of the hub's quick entry; `ui/pimlogic.js` `newEventArgs`).
     Details: the head of `server/services.js`, CHANGELOG „1.18.0“.
   * `calendar_tasks` `{ userId, lang? }` → `{ ok: true, calendar: { id, name, color, created } }` — the person's calendar
     „Aufgaben“ (`calendars.role = 'tasks'`, `role` of the Calendar in the API), made on the first call. Always a

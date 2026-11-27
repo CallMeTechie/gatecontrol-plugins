@@ -117,6 +117,7 @@ The person switched free/busy off or is not in GateControl. Colleagues in Micros
 - **Your events on the task overview:** Mail reports the events of the next 30 days to “Notes & Tasks”. They show there under “Today’s events”, “Coming up” and “Planned”. Which calendars show up is set in “Notes & Tasks” (Settings › “Events from the calendar”). Subscribed calendars and the “Tasks” calendar start switched off there.
 - **What is not reported:** invitations you have not answered or have declined, cancelled events, and from shared calendars everything you only see as “Busy”.
 - **Straight to the event:** Tapping an event in “Notes & Tasks” in the portal opens the calendar here with that event.
+- **“More details …”:** In the quick entry of “Notes & Tasks” in the portal, this button opens the “New event” form here – already filled in with title, day, time, place, calendar, reminder and repeat. You save it here, with everything the form offers (attendees, description …).
 - For administrators: the update of Mail needs no new consent. The update of “Notes & Tasks” to 1.9.0 asks once for the permission “List the calendars in Mail”.
 
 ## New in 1.17.3

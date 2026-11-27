@@ -1118,8 +1118,8 @@
     // 1.9.0: „Termin“ — the line as an event in a calendar of Mail (stored only there). mode: what the line becomes;
     // ev: the calendars (asked once the mode is used), what the person picked on the chips, „Aufgabe lassen“
     var mode = 'task';
-    var ev = { cals: null, loading: false, cal: null, reminder: undefined, loc: undefined, keepTask: false, busy: false };
-    function evReset() { ev.cal = null; ev.reminder = undefined; ev.loc = undefined; ev.keepTask = false; }
+    var ev = { cals: null, loading: false, cal: null, reminder: undefined, loc: undefined, keepTask: false, busy: false, sent: null };
+    function evReset() { ev.cal = null; ev.reminder = undefined; ev.loc = undefined; ev.keepTask = false; ev.sent = null; }
     function evLoad() {
       if (ev.loading) return;
       ev.loading = true;
@@ -1134,7 +1134,7 @@
     function evLoc() { return ev.loc !== undefined ? ev.loc : (parsed && parsed.location) || null; }
     function evDate() { return (parsed && parsed.date) || S.me.today; }
     function evBody() {
-      var b = { title: parsed.title || input.value.trim(), date: evDate(), clientId: uuid() };
+      var b = { title: parsed.title || input.value.trim(), date: evDate() };
       if (parsed.time) { b.time = parsed.time; if (parsed.endTime) b.endTime = parsed.endTime; }
       var loc = evLoc();
       if (loc) b.location = loc;
@@ -1142,6 +1142,10 @@
       if (c && !c.isDefault) b.calendarId = c.id;
       if (ev.reminder !== undefined) b.reminder = ev.reminder;
       if (parsed.repeat) b.repeat = parsed.repeat;
+      // the same event sent again (no answer came, the net was gone) keeps its clientId: Mail makes it only once
+      var same = JSON.stringify(b);
+      if (!ev.sent || ev.sent.body !== same) ev.sent = { body: same, clientId: uuid() };
+      b.clientId = ev.sent.clientId;
       return b;
     }
     function setMode(m) { mode = m; if (m === 'event' && !ev.cals) evLoad(); show(); if (m === 'task') ask(); input.focus(); }
@@ -1152,6 +1156,22 @@
         h('div', { class: 'dp-actions' }, [evLoc() ? btn(T('ev.loc_remove'), function () { done(null); }) : null, btn(T('ev.loc_take'), function () { done(f.value.trim() || null); }, { primary: true })])]);
       f.addEventListener('keydown', function (e) { if (e.key === 'Enter') done(f.value.trim() || null); });
       f.focus();
+    }
+    /** „Mehr Angaben …“ → GC.openPortal of Mail with the event as a query (at most 8 keys of 200 characters). */
+    function moreDetails(cal, rem) {
+      var b = evBody();
+      var q = { open: 'event/new', title: b.title.slice(0, 200), date: b.date };
+      if (b.time) q.time = b.time + (b.endTime ? '-' + b.endTime : '');
+      if (b.location) q.loc = b.location.slice(0, 200);
+      if (cal) q.cal = String(cal.id);
+      // the reminder the chip shows (the calendar's default included) — the form then shows the same
+      q.rem = rem == null ? 'none' : String(rem);
+      var r = b.repeat ? RP.normalize(b.repeat) : null;
+      if (r && r.type !== 'after') {
+        q.rep = r.type + ':' + (r.interval || 1) + (r.type === 'weekly' && r.days && r.days.length ? ':' + r.days.map(function (d) { return ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'][d - 1]; }).join(',') : '');
+      }
+      window.GC.openPortal({ plugin: 'gatecontrol-mail', query: q }).then(function (x) { if (x && x.ok === false) toast(T('p.open_there', { plugin: T('src.gatecontrol-mail') })); },
+        function () { toast(T('p.open_there', { plugin: T('src.gatecontrol-mail') })); });
     }
     function showEvent() {
       var cs = ev.cals;
@@ -1194,6 +1214,10 @@
       });
       chips.appendChild(rb);
       if (parsed.repeat) chips.appendChild(h('span', { class: 'na-chip', text: '↻ ' + RP.describe(parsed.repeat, S.me.lang) }));
+      // „Mehr Angaben …“: Mail's own form of a new event, filled in with all of this (saved there, not here)
+      if (window.GC && typeof window.GC.openPortal === 'function') {
+        chips.appendChild(h('button', { type: 'button', class: 'na-chip is-dashed', on: { click: function () { moreDetails(cal, cur); } } }, [icon('edit', 13), h('span', { text: T('ev.more') })]));
+      }
       chips.appendChild(h('p', { class: 'dp-hint na-ev-line', text: T('ev.title_line', { title: parsed.title || input.value.trim() }) }));
     }
     function ctxParse() {

@@ -249,7 +249,7 @@ async function update(gc, ctx, id, b) {
   if (!eventId) throw fail('not_found');
   const p = fields(ctx, b, false);
   await need(gc, ctx);
-  const r = await mail(gc, ctx, 'calendar_update', { ...p, eventId, items: true });
+  const r = await mail(gc, ctx, 'calendar_update', { ...p, eventId, items: true, keyKind: 'event' });
   if (!r.ok) throw refusal(r);
   return answer(gc, ctx, r);
 }
@@ -259,7 +259,7 @@ async function remove(gc, ctx, id) {
   const eventId = posInt(id);
   if (!eventId) throw fail('not_found');
   await need(gc, ctx);
-  const r = await mail(gc, ctx, 'calendar_delete', { eventId });
+  const r = await mail(gc, ctx, 'calendar_delete', { eventId, keyKind: 'event' });
   if (!r.ok) throw refusal(r);
   // an event Mail did not make for the hub (or one that is gone): nothing was removed
   if (r.removed && hooks.drop) await hooks.drop(gc, ctx, eventId);

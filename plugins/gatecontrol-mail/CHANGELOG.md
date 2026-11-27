@@ -19,10 +19,14 @@ meldet die Termine der Kalender an die Übersicht. Keine neuen Dienste, keine ne
     angelegten Termin in jedem Kalender (idempotent, auch nach geändertem Standardkalender).
   - `calendar_update`: zusätzlich `location` (null entfernt), `allDay: true` mit `startsAt`/`endsAt`, `reminder`,
     `recurrence` (null beendet die Serie), `items: true`. Wie bisher nur für Termine, die der Aufrufer mit `key`
-    angelegt hat. Drive bleibt bei seinen bisherigen Feldern (alles andere `invalid`).
+    angelegt hat. Drive bleibt bei seinen bisherigen Feldern (alles andere `invalid`). Mit `keyKind: 'event'` (auch bei
+    `calendar_delete`) nur Termine, die mit einem Schlüssel `event:…` angelegt wurden – nie der Eintrag einer Aufgabe
+    im Kalender „Aufgaben“.
 - **Termine für die Übersicht** (`server/notizen.js`, Vertrag `docs/notes-sources-contract.md` § 6b): Einträge der Art
   `event` mit `meta.type: 'calendar'`, Gruppe = Kalender (`cal:<id>`), von heute an 30 Tage (höchstens 400 je Person),
-  je Vorkommen einer Serie ein Eintrag. Eigene Kalender, mit der Person geteilte GateControl-Kalender (nur was sie lesen
+  je Vorkommen einer Serie ein Eintrag (`ev:<id>[:<Vorkommen>]`). Termine, die mehrere Personen sehen, tragen die
+  Person in der Kennung (`sh:<Person>:<id>…` für geteilte GateControl-Kalender, `ov:<Person>:…` für den
+  Familienkalender) – sonst bekäme nur eine Person den Eintrag. Eigene Kalender, mit der Person geteilte GateControl-Kalender (nur was sie lesen
   darf, nie private Termine), der Familienkalender (`overlay:familie`), abonnierte Kalender und „Aufgaben“ (die
   Übersicht blendet die letzten beiden aus, bis die Person sie einschaltet). Nicht: abgesagte Termine, abgelehnte und
   unbeantwortete Einladungen. Auch für Personen ohne Mail-Konto. Nur an einen Hub, der danach fragt
@@ -31,10 +35,12 @@ meldet die Termine der Kalender an die Übersicht. Keine neuen Dienste, keine ne
   gehen nach wenigen Sekunden hinaus. `todo_complete` lehnt einen Termin mit `read_only` ab.
 - **Portal:** Direktlink `?open=event/<id>[/<Vorkommen>]` und `?open=calendar/<Datum>` (`ui/pimlogic.js` `openLink`,
   `ui/portal.js`): öffnet den Kalender und den Termin in seinem Dialog – so öffnet Notizen & Aufgaben einen Termin
-  (`GC.openPortal`).
+  (`GC.openPortal`). Neu auch `?open=event/new&title=…&date=…&time=HH:MM[-HH:MM]&loc=…&cal=<id>&rem=<Minuten|none>&rep=<Art>[:<Abstand>][:MO,…]`
+  („Mehr Angaben …“ der Schnell-Eingabe dort): das Formular „Neuer Termin“, vorbelegt; gespeichert wird wie immer
+  über Mail. Was nicht passt, wird weggelassen (`ui/pimlogic.js` `newEventArgs`, `ui/calendar.js` `newEvent({ prefill })`).
 - **Tests:** `test/termine.test.js` (Dienste, Rechte, Standardkalender, Erinnerung, Serie, Schlüssel, Meldung an den
   Hub mit Einladungen, geteilten Kalendern und Familienkalender, älterer Hub), `test/portal.test.js`,
-  `test/portal-pim.test.js` (Direktlink).
+  `test/portal-pim.test.js` (Direktlink, vorbelegtes Formular).
 
 ## 1.17.3
 

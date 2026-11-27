@@ -117,6 +117,7 @@ Die Person hat Frei/Gebucht abgeschaltet oder ist nicht in GateControl. Kollegin
 - **Deine Termine auf der Aufgaben-Übersicht:** Mail meldet die Termine der nächsten 30 Tage an „Notizen & Aufgaben“. Sie stehen dort unter „Termine heute“, „Demnächst“ und „Geplant“. Welche Kalender erscheinen, stellst du in „Notizen & Aufgaben“ ein (Einstellungen › „Termine aus dem Kalender“). Abonnierte Kalender und der Kalender „Aufgaben“ sind dort zunächst aus.
 - **Was nicht gemeldet wird:** Einladungen, die du noch nicht beantwortet oder abgesagt hast, abgesagte Termine, und aus geteilten Kalendern alles, was du dort nur als „Gebucht“ siehst.
 - **Direkt zum Termin:** Tippst du in „Notizen & Aufgaben“ im Portal auf einen Termin, öffnet sich hier der Kalender mit diesem Termin.
+- **„Mehr Angaben …“:** In der Schnell-Eingabe von „Notizen & Aufgaben“ im Portal öffnet dieser Knopf hier das Formular „Neuer Termin“ – schon ausgefüllt mit Titel, Tag, Uhrzeit, Ort, Kalender, Erinnerung und Wiederholung. Gespeichert wird hier, mit allem, was das Formular kann (Teilnehmer, Beschreibung …).
 - Für Administratoren: Das Update von Mail braucht keine neue Zustimmung. Das Update von „Notizen & Aufgaben“ auf 1.9.0 fragt einmal nach der Berechtigung „Kalender in Mail auflisten“.
 
 ## Neu in 1.17.3

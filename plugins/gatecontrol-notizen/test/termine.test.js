@@ -189,7 +189,7 @@ test('PATCH and DELETE events: only what is given goes to Mail; the overview fol
     assert.deepEqual(titles(await h.ok(ANNA, 'GET', 'views/myday'), 'events'), ['Zahnarzt']);
     // the title only
     let r = await h.ok(ANNA, 'PATCH', 'events/' + id, { title: 'Zahnärztin' });
-    assert.deepEqual(Object.keys(m.calls.at(-1).payload).sort(), ['eventId', 'items', 'lang', 'title', 'userId']);
+    assert.deepEqual(Object.keys(m.calls.at(-1).payload).sort(), ['eventId', 'items', 'keyKind', 'lang', 'title', 'userId']);
     assert.deepEqual(r.items.map((x) => x.title), ['Zahnärztin']);
     // moved to tomorrow, the place gone, all day
     r = await h.ok(ANNA, 'PATCH', 'events/' + id, { date: '2026-11-09', time: '10:00', endTime: '10:30', location: null });

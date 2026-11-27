@@ -250,7 +250,9 @@ itself (`gatecontrol-mail:calendar_add`, § 6c) and otherwise only shows and ope
 
 ```jsonc
 { "id": "ev:4711",                       // 'ev:<eventId>'; an occurrence of a series: 'ev:<eventId>:<occurrence>'
-                                         // (the family calendar read through Mail: 'ov:familie:<id>:<date>')
+                                         // seen by several people, the id carries the person: a GateControl calendar
+                                         // shared with person 12 'sh:12:<eventId>[:<occurrence>]', the family
+                                         // calendar read through Mail 'ov:12:familie:<id>:<date>'
   "kind": "event", "title": "Zahnarzt", "subtitle": "Praxis am Markt",       // subtitle: the place, or null
   "due": "2026-12-04T14:00:00+01:00", "allDay": false,                         // the start; all day: "2026-12-04", true
   "area": "private",                     // 'work' for a business calendar
@@ -290,8 +292,10 @@ The hub lists `gatecontrol-mail:calendar_list`, `calendar_add`, `calendar_update
   — no `calendarId`: the default calendar; no `reminder`: the calendar's default; `key` makes it idempotent (the same
   key answers the event made before, `replayed: true`); `items`: the event as the items of § 6b, which the hub takes at
   once (the push brings the same).
-* `calendar_update { userId, eventId, …the same fields, location: null, recurrence: null }` and
-  `calendar_delete { userId, eventId }` → `{ ok, removed }` — only for events the hub made with a key.
+* `calendar_update { userId, eventId, …the same fields, location: null, recurrence: null, keyKind? }` and
+  `calendar_delete { userId, eventId, keyKind? }` → `{ ok, removed }` — only for events the hub made with a key;
+  `keyKind: 'event'`: only those made with a key `event:…` (the hub's „Termin“), never the entry of a task in the
+  calendar „Aufgaben“ (`not_found` / `removed: false`).
 * Refusals: `invalid`, `not_found` (no such calendar / event of the caller), `forbidden`, `unavailable { reason }`.
 
 ## 6a. Reminders of Drive's deadlines (hub ≥ 1.7.0, Drive ≥ 1.30.0)

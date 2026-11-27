@@ -166,6 +166,15 @@ test('calendar_update for Notizen: place, reminder, all day, a series and back �
   // an event the person made in Mail stays out of reach
   const own = (await anna('POST', 'events', { title: 'Eigener', allDay: false, start: at(d, 11), end: at(d, 12) })).json.event;
   assert.deepEqual(await call(host, 'calendar_update', ANNA, { userId: ANNA.id, eventId: own.eventId, location: 'x' }), { ok: false, code: 'not_found' });
+  // keyKind 'event' (Notizen's „Termin“): never the entry of a task in the calendar „Aufgaben“
+  const tasks = (await call(host, 'calendar_tasks', ANNA, { userId: ANNA.id })).calendar;
+  const task = await call(host, 'calendar_add', ANNA, { userId: ANNA.id, calendarId: tasks.id, title: 'Müll', allDay: false, start: at(d, 7), end: at(d, 7, 30), reminder: false, key: 'task:3' });
+  assert.deepEqual(await call(host, 'calendar_update', ANNA, { userId: ANNA.id, eventId: task.eventId, title: 'Anders', keyKind: 'event' }), { ok: false, code: 'not_found' });
+  assert.deepEqual(await call(host, 'calendar_delete', ANNA, { userId: ANNA.id, eventId: task.eventId, keyKind: 'event' }), { ok: true, removed: false });
+  assert.equal((await anna('GET', `events/${task.eventId}`)).json.title, 'Müll');
+  assert.equal((await upd({ title: 'Zahnarzt Dr. Weber', keyKind: 'event' })).ok, true);
+  assert.deepEqual(await upd({ keyKind: 'task' }), { ok: false, code: 'invalid' });
+  assert.deepEqual(await call(host, 'calendar_delete', ANNA, { userId: ANNA.id, eventId: r.eventId, keyKind: 'event' }), { ok: true, removed: true });
 }));
 
 test('events for the hub: only when it asks; own, tasks, shared and family calendars; invitations without an answer, declined and cancelled ones stay out', async () => {
@@ -203,9 +212,12 @@ test('events for the hub: only when it asks; own, tasks, shared and family calen
     const m = evs.find((x) => x.title === 'Messe');
     assert.deepEqual([m.id, m.due, m.allDay, m.area, m.meta.endDate, m.meta.end], [`ev:${trip.eventId}`, d, true, 'work', tz.addDays(d, 1), undefined]);
     const o = evs.find((x) => x.title === 'Geburtstag Oma');
-    assert.deepEqual([o.id.startsWith('ov:familie'), o.due, o.subtitle, o.group, o.meta.cal, o.meta.writable, o.open.route], [true, day(3), 'Bei Oma', { id: 'overlay:familie', label: 'Familie' }, 'family', false, `calendar/${day(3)}`]);
-    // nobody else sees them
-    assert.equal((await pull(host, BOB)).items.filter((x) => x.kind === 'event').length, 0);
+    assert.deepEqual([o.id.startsWith(`ov:${ANNA.id}:familie`), o.due, o.subtitle, o.group, o.meta.cal, o.meta.writable, o.open.route], [true, day(3), 'Bei Oma', { id: 'overlay:familie', label: 'Familie' }, 'family', false, `calendar/${day(3)}`]);
+    // nobody else sees Anna's own events; the family calendar (the same for every member here) each person has as an
+    // item of their own
+    const bobs = (await pull(host, BOB)).items.filter((x) => x.kind === 'event');
+    assert.deepEqual(bobs.map((x) => [x.title, x.users, x.id.startsWith(`ov:${BOB.id}:familie`)]), [['Geburtstag Oma', [BOB.id], true]]);
+    assert.notEqual(bobs[0].id, o.id);
     // an invitation: Marc sees it only once he said yes; declined: gone again
     const meet = (await anna('POST', 'events', { calendarId: cals[0].id, title: 'Planung', allDay: false, start: at(d, 10), end: at(d, 11), timeZone: BERLIN, attendees: [{ email: 'marc@gmx.de', name: 'Marc' }] })).json.event;
     const titles = async (u) => (await pull(host, u)).items.filter((x) => x.kind === 'event' && x.meta.cal !== 'family').map((x) => x.title).sort();
@@ -229,6 +241,12 @@ test('events for the hub: only when it asks; own, tasks, shared and family calen
     const all = (await pull(host, ANNA)).items.filter((x) => x.kind === 'event');
     assert.deepEqual(all.filter((x) => x.meta.cal === 'tasks').map((x) => [x.title, x.group.label]), [['Müll rausstellen', 'Aufgaben']]);
     assert.deepEqual(all.filter((x) => x.meta.cal === 'shared').map((x) => [x.title, x.group.id, x.meta.writable]), [['Marc beim Friseur', `cal:${marcCal.id}`, false]]);
+    // the same event for its owner and for the reader: one item each (an item has one set of users)
+    const friseur = all.find((x) => x.title === 'Marc beim Friseur');
+    const marcOwn = (await pull(host, MARC)).items.find((x) => x.title === 'Marc beim Friseur');
+    assert.ok(marcOwn, 'the owner still sees his own event');
+    assert.deepEqual([marcOwn.id, marcOwn.users, marcOwn.meta.cal], [`ev:${marcOwn.meta.eventId}`, [MARC.id], 'own']);
+    assert.deepEqual([friseur.id, friseur.users], [`sh:${ANNA.id}:${marcOwn.meta.eventId}`, [ANNA.id]]);
     assert.ok(!JSON.stringify(all).includes('Geheim'));
     // the push: what changed, in one call; a deleted event is removed
     // (what a pull answered is not pushed again)

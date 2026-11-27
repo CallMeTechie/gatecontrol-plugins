@@ -179,7 +179,7 @@ copy. Feature word `calendarEvents`; the contract for the apps: `apps-contract-t
 |---|---|
 | `GET events/calendars` | `{ state: 'ok' \| 'none', reason, calendars: [{ id, key, name, color, kind: own \| shared \| family \| subscribed \| tasks, writable, target, isDefault, area, shown }], defaultId, reminders: { timed, allDay }, timeZone }` — `target`: a new event may go into it; `shown`: its events are on the overview; `reason` when `none`: `no_mail`, `mail_old`, `feature_off`, `not_allowed`, `not_licensed`, `no_seat`, `no_calendar`, `unreachable`. Asked of Mail at most once a minute per person. |
 | `POST events` | `{ title, date, time?, endDate?, endTime?, allDay?, location?, calendarId?, reminder?, repeat?, clientId? }` → `{ event: { id, calendarId }, items: [Item], clientId?, replayed? }`. `date`/`time` wall-clock in the hub's zone. No time: all day. A time: an hour unless `endTime` (an end not after the start is the next day). No `calendarId`: Mail's default calendar. `reminder`: minutes, `false` none, left out: the calendar's default. `repeat`: a rule of `ui/repeat.js` except `after`. `clientId` sent again answers the event made before (`replayed: true`) — Mail keeps the key. |
-| `PATCH events/<id>` · `DELETE events/<id>` | only events made here; any other → `404` / `{ removed: false }` (changed in Mail's own form). A change of the time sends `date` (and `time`) whole. |
+| `PATCH events/<id>` · `DELETE events/<id>` | only events made here as events (Mail: `keyKind: 'event'`, never the calendar entry of a task); any other → `404` / `{ removed: false }` (changed in Mail's own form). A change of the time sends `date` (and `time`) whole. |
 | `GET me` | `events: { available, reason }` |
 | `POST parse` | `mode: 'event'` → `parsed` of `Q.parse(text, { mode: 'event' })` (`endTime`, `allDay`, `location`); `attach` and `place` are null |
 
@@ -193,6 +193,11 @@ Mail (`event/<id>[/<occurrence>]`, `calendar/<date>` for the family calendar). �
 next 14 days in `upcoming` among the tasks; „Geplant“ by day; never under `overdue`; not in `views/source:gatecontrol-mail`
 and not in its count. A person's choice per calendar is `prefs.groups['gatecontrol-mail|<key>']`: `hide`, or `show`
 (new) for a calendar that starts hidden (`subscribed`, `tasks`). Every pull carries `accepts: ['calendar']`.
+
+**Portal.** „Aufgabe | Termin“ appears once something is typed; „Mehr Angaben …“ opens Mail's form of a new event
+filled in (`GC.openPortal({ plugin: 'gatecontrol-mail', query: { open: 'event/new', title, date, time: 'HH:MM-HH:MM',
+loc, cal, rem: minutes | 'none', rep: '<type>:<interval>[:MO,…]' } })` — eight keys of at most 200 characters, the
+limit of `GC.openPortal`). The same event sent again after an error keeps its `clientId`.
 
 **Tasks with a time** keep going into the calendar „Aufgaben“ (1.3.0) — nothing changed there.
 

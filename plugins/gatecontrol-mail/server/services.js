@@ -51,7 +51,8 @@
 //                  replayed? } with the event as the hub's items (notizen.js) and replayed: true when the key
 //                  answered an event made before. A key without calendarId finds that event in whatever calendar it is.
 //   calendar_update also: location (null removes it), allDay: true with startsAt / endsAt, reminder, recurrence (null: no
-//                  series any more), items: true as calendar_add.
+//                  series any more), items: true as calendar_add; with calendar_delete keyKind: 'event' — only an event
+//                  made with a key 'event:…' (else not_found / removed: false), never the entry of a task.
 //   1.16.0 — for the Messenger („Neuer Chat“: the section „Aus deinem Adressbuch“):
 //   contacts_phones { userId, q?, cursor?, limit?, ids? } → { ok: true, items: [{ id, name, phones: [{ key, kind, value,
 //                  e164, landline }] }], next }   (caller gatecontrol-messenger only, read only) — the person's OWN
@@ -357,12 +358,22 @@ async function calendarTasks(gc, payload, user) {
 }
 
 /** The event `eventId` the caller made for the person with a key (service_keys), with its calendar — or null. */
-async function keyedEvent(gc, caller, uid, eventId) {
+async function keyedEvent(gc, caller, uid, eventId, prefix) {
   const id = posInt(eventId);
   if (!id) throw no('invalid');
   const k = await store.one(gc, `SELECT k.key, k.calendar_id FROM service_keys k JOIN events e ON e.id = k.event_id AND e.calendar_id = k.calendar_id AND e.user_id = k.user_id
     WHERE k.caller = ? AND k.user_id = ? AND k.event_id = ?`, [caller, uid, id]);
+  // (1.18.0) prefix: only an event made with a key of that kind — „Termin“ of Notizen ('event:') never reaches the
+  // entry of a task in the calendar „Aufgaben“ ('task:'), which the hub keeps in step with the task itself
+  if (k && prefix && !String(k.key).startsWith(prefix)) return null;
   return k ? { id, key: k.key, calendarId: k.calendar_id } : null;
+}
+
+/** keyKind of calendar_update / calendar_delete (Notizen only, 1.18.0): 'event' — only events made with a key 'event:…'. */
+function prefixArg(payload, caller) {
+  if (payload.keyKind === undefined) return null;
+  if (caller !== NOTIZEN || payload.keyKind !== 'event') throw no('invalid');
+  return 'event:';
 }
 
 /** calendar_update { userId, eventId, title?, start?, end?, note?, busy? } */
@@ -383,7 +394,7 @@ async function calendarUpdate(gc, payload, user, caller) {
   const cfg = await config.get(gc);
   const why = await blocked(gc, cfg, uid);
   if (why) throw no('unavailable', { reason: why });
-  const ev = await keyedEvent(gc, caller, uid, payload.eventId);
+  const ev = await keyedEvent(gc, caller, uid, payload.eventId, prefixArg(payload, caller));
   if (!ev) throw no('not_found');
   const answer = async () => {
     const items = await hubItems(gc, caller, uid, ev.id, payload);
@@ -405,11 +416,12 @@ async function calendarDelete(gc, payload, user, caller) {
   const uid = personOf(user, payload);
   const id = posInt(payload.eventId);
   if (!id) throw no('invalid');
+  const prefix = prefixArg(payload, caller);
   // the key goes even when the event went before (deleted in the calendar)
   const k = await store.one(gc, 'SELECT key, calendar_id FROM service_keys WHERE caller = ? AND user_id = ? AND event_id = ?', [caller, uid, id]);
-  if (!k) return { ok: true, removed: false };
+  if (!k || (prefix && !String(k.key).startsWith(prefix))) return { ok: true, removed: false };
   return serial(`${caller}|${uid}|${k.calendar_id}|${k.key}`, async () => {
-    const ev = await keyedEvent(gc, caller, uid, id);
+    const ev = await keyedEvent(gc, caller, uid, id, prefix);
     let removed = false;
     if (ev) {
       try {

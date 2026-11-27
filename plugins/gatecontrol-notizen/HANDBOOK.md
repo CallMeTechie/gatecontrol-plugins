@@ -4,14 +4,15 @@
 ## New in 1.9.0
 
 - **Events in the quick entry:** As soon as you type something in the portal, the switch **“Task | Event”** appears. An event is stored straight in the calendar of the Mail plugin – not as a copy here. Move it in the calendar and it is right on the overview at once.
-- **The page asks:** When it finds a date and a time, it asks “Make it an event?”. It never switches by itself.
-- **Chips of an event:** day, time (“2 to 4 o’clock” is read as a span; without an end it is an hour; without a time it is all day), place, calendar and reminder. Tap calendar and reminder to change them. The reminder comes from the calendar, not from here.
-- **The place as text:** After “im”, “in”, “bei” or “beim” the page reads the rest as the place. Otherwise a dashed chip offers to take the title as the place too. The place is just a text in the calendar – no reminder on arriving.
-- **Events on the overview:** Today’s events are under “Today’s events”, those of the next 14 days under “Coming up”, all of them under “Planned”. You know them by the calendar sign in the colour of their calendar. They have no check box and are never overdue. A tap opens the event in Mail.
+- **The page asks:** When it finds a date and a time, it asks “Create as an event?”. It never switches by itself.
+- **Chips of an event:** day, time (“2 to 4 o’clock” is a span; without an end the event lasts an hour; without a time it is all day), place, calendar and reminder. Tap the calendar or the reminder to change it. The reminder comes from the calendar, not from this plugin.
+- **“More details …”** opens the “New event” form in Mail, already filled in with everything the quick entry found. Add attendees, a description and more there, then save the event.
+- **The place as text:** After “im”, “in”, “bei” or “beim” the rest of the line is the place. Without such a word, a dashed chip offers to use the title as the place as well. The place is only a text in the calendar – there is no reminder on arrival.
+- **Events on the overview:** Today’s events are under “Today’s events”, those of the next 14 days under “Coming up”, and all of them under “Planned”. A calendar sign in the colour of their calendar marks them. They have no check box and are never overdue. Tap one to open it in Mail.
 - **Which calendars show up:** Settings › **“Events from the calendar”** – a switch per calendar. Subscribed calendars (holidays) and the “Tasks” calendar start switched off.
-- **Without a calendar:** When the Mail plugin is missing or the calendar is off for you, the switch stays, says why and offers “Save as a task with a date”.
-- **Unchanged:** tasks with a time still go into the “Tasks” calendar.
-- Needs Mail 1.18.0 or newer. The update asks once for the permission “List the calendars in Mail”. The Android and Windows apps get “Event” with one of their next versions.
+- **Without a calendar:** If the Mail plugin is missing or the calendar is switched off for you, the switch stays, explains why and offers “Save as a task with a date”.
+- **Unchanged:** Tasks with a time still go into the “Tasks” calendar.
+- Requires Mail 1.18.0 or newer. With the update, GateControl asks the administrator once for the permission “List the calendars in Mail”. The Android and Windows apps get “Event” in one of their next versions.
 
 ## New in 1.8.1
 
@@ -197,6 +198,7 @@ What Family (tasks, shopping lists), Mail ("To do", flagged mails), Drive (deadl
 - Want your own **sub-tasks, a note or a reminder** for it: "Sub-tasks, note, reminder …" – then it becomes a task here. Done here = done there.
 - **Settings › Tasks from other plugins** (gear at the bottom left): each source on/off, "Show the children's tasks" (all / only mine / none), "Shopping lists in My Day", "Flagged mails as tasks", "Remind at" for the waste collection the evening before. Mail accounts and children can be mapped to an area ("Work (Microsoft 365) → Work") or hidden. "Sync now" fetches the state right away.
 - Vehicles, NAS and Proxmox come in step 2.
+- **Events from the calendar** (1.9.0 or newer, Mail 1.18.0 or newer): your events from Mail show under “Today’s events”, “Coming up” and “Planned” – without a check box. Switch them on or off per calendar under Settings › “Events from the calendar”.
 
 > **Note:** The plugins send their changes themselves; a full reconciliation runs about every 12 hours. A change in a source therefore shows up within seconds, at the latest after the next reconciliation.
 
@@ -237,7 +239,14 @@ A vault has no search, no tags and no "→ Task" – the server does not know th
 
 German works too: "morgen 9 Uhr", "jeden Montag", "in 2 Wochen".
 
-**As an event** (the switch “Event”, 1.9.0 or newer) the same holds, plus: “14 bis 16 Uhr”, “14–16 Uhr”, “2 to 4 o’clock”, “14:00-15:30” give start and end (without an end: an hour); no time means all day; “im …”, “in …”, “bei …”, “beim …” give the place as text; “every monday”, “monthly”, “yearly” make a series in the calendar.
+**As an event** (the switch “Event”, 1.9.0 or newer) the same applies, plus:
+
+| You write | Result |
+|---|---|
+| 2 to 4 o’clock, 14–16 Uhr, von 9:30 bis 11 Uhr, 14:00-15:30 | start and end (without an end: one hour) |
+| no time | all day |
+| im Outlet, in der Schule, bei Oma, beim Zahnarzt | the place as text (stored in the calendar) |
+| every monday, monthly, yearly | a series in the calendar (“after completion” does not exist for events) |
 
 ## Moving over
 
