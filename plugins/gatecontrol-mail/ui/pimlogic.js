@@ -411,8 +411,65 @@
     return { days: d, from: from, to: end };
   }
 
+  /**
+   * A direct link into the tab (1.18.0): the query of the frame's address („?open=event/<id>[/<occurrence>]“ or
+   * „?open=calendar/<YYYY-MM-DD>“, as „Notizen & Aufgaben“ opens an event with GC.openPortal; „?open=event/new&…“ its
+   * „Mehr Angaben …“, see newEventArgs) → { area: 'calendar', eventId?, occurrence?, date?, create? } or null (no link,
+   * or one this tab does not know).
+   */
+  function openLink(search) {
+    var route = queryArg(search, 'open');
+    if (route == null) return null;
+    if (route === 'event/new') return { area: 'calendar', create: newEventArgs(search) };
+    var ev = /^event\/([1-9]\d{0,14})(?:\/([A-Za-z0-9:._-]{1,40}))?$/.exec(route);
+    if (ev) return { area: 'calendar', eventId: Number(ev[1]), occurrence: ev[2] || null };
+    var day = /^calendar\/(\d{4}-\d{2}-\d{2})$/.exec(route);
+    if (day && dateOf(day[1]) && ymd(dateOf(day[1])) === day[1]) return { area: 'calendar', date: day[1] };
+    return null;
+  }
+
+  /** One value of a query ('?a=1&b=2'), decoded; null when it is not there or cannot be decoded. */
+  function queryArg(search, key) {
+    var m = new RegExp('[?&]' + key + '=([^&#]*)').exec(String(search || ''));
+    if (!m) return null;
+    try { return decodeURIComponent(m[1].replace(/\+/g, ' ')); } catch (e) { return null; }
+  }
+
+  var REP_FREQS = ['daily', 'weekly', 'monthly', 'yearly'];
+
+  /**
+   * „Mehr Angaben …“ of „Notizen & Aufgaben“ (1.18.0): „?open=event/new“ with what its quick entry made of the line —
+   * title, date (YYYY-MM-DD), time (HH:MM or HH:MM-HH:MM), loc, cal (a calendar's id), rem (minutes before, or „none“),
+   * rep (<daily|weekly|monthly|yearly>[:<interval>][:MO,TU,…]). → { title, date, time, endTime, location, calendarId,
+   * reminder (minutes | false | undefined), recurrence } for the new event's form; what does not fit is left out (the
+   * form then has its usual value), never a reason to fail the link.
+   */
+  function newEventArgs(search) {
+    var arg = function (k) { var v = queryArg(search, k); return v == null ? null : v.replace(/[\u0000-\u001f\u007f]+/g, ' ').trim(); };
+    var out = { title: null, date: null, time: null, endTime: null, location: null, calendarId: null, reminder: undefined, recurrence: null };
+    var title = arg('title');
+    if (title) out.title = title.slice(0, 255);
+    var date = arg('date');
+    if (date && /^\d{4}-\d{2}-\d{2}$/.test(date) && dateOf(date) && ymd(dateOf(date)) === date) out.date = date;
+    var tm = /^([01]\d|2[0-3]):([0-5]\d)(?:-([01]\d|2[0-3]):([0-5]\d))?$/.exec(arg('time') || '');
+    if (tm && out.date) { out.time = tm[1] + ':' + tm[2]; if (tm[3]) out.endTime = tm[3] + ':' + tm[4]; }
+    var loc = arg('loc');
+    if (loc) out.location = loc.slice(0, 255);
+    var cal = arg('cal');
+    if (cal && /^[1-9]\d{0,14}$/.test(cal)) out.calendarId = Number(cal);
+    var rem = arg('rem');
+    if (rem === 'none') out.reminder = false;
+    else if (rem && /^\d{1,5}$/.test(rem) && Number(rem) <= 40320) out.reminder = Number(rem);
+    var rp = /^(daily|weekly|monthly|yearly)(?::([1-9]\d{0,2}))?(?::((?:MO|TU|WE|TH|FR|SA|SU)(?:,(?:MO|TU|WE|TH|FR|SA|SU)){0,6}))?$/.exec(arg('rep') || '');
+    if (rp && REP_FREQS.indexOf(rp[1]) >= 0) {
+      out.recurrence = { freq: rp[1], interval: rp[2] ? Number(rp[2]) : 1 };
+      if (rp[3] && rp[1] === 'weekly') out.recurrence.byDay = rp[3].split(',').filter(function (d, i, a) { return a.indexOf(d) === i; });
+    }
+    return out;
+  }
+
   var api = {
-    DAY: DAY, digits: digits, barOf: barOf, clashes: clashes, dayWindow: dayWindow, workHours: workHours, WEEKDAYS: WEEKDAYS, ymd: ymd, dateOf: dateOf, midnight: midnight, addDays: addDays, addMonths: addMonths, weekday: weekday, weekStartOf: weekStartOf,
+    DAY: DAY, openLink: openLink, newEventArgs: newEventArgs, digits: digits, barOf: barOf, clashes: clashes, dayWindow: dayWindow, workHours: workHours, WEEKDAYS: WEEKDAYS, ymd: ymd, dateOf: dateOf, midnight: midnight, addDays: addDays, addMonths: addMonths, weekday: weekday, weekStartOf: weekStartOf,
     hhmm: hhmm, at: at, rangeOf: rangeOf, onDay: onDay, wholeDay: wholeDay, layoutDay: layoutDay, allDayOn: allDayOn, agenda: agenda,
     reminderText: reminderText, recurrenceText: recurrenceText, birthdayText: birthdayText, countOf: countOf,
     repeatOf: repeatOf, nthOf: nthOf, recurrenceOf: recurrenceOf, eventFields: eventFields, shiftSeries: shiftSeries, calendarGroups: calendarGroups, letters: letters, addressesOf: addressesOf,

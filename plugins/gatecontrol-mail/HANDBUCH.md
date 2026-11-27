@@ -1,4 +1,4 @@
-<!-- version: 1.17.3 -->
+<!-- version: 1.18.0 -->
 # Mail
 
 ## Was das Plugin kann
@@ -72,6 +72,7 @@ Die Zugangsdaten werden verschlüsselt gespeichert. Die erste Synchronisierung h
 - **Teilen:** im Menü eines eigenen Kalenders „Teilen“ mit Personen oder Gruppen – Frei/Gebucht, Lesen oder Bearbeiten. Mit dir Geteiltes steht unter „Mit mir geteilt“. Ist ein Kalender mit dir auf „Bearbeiten“ geteilt, kannst du dort auch neue Termine anlegen (ohne Teilnehmer).
 - **Ressource buchen** im Kalender oder „Ressource hinzufügen“ im Termin. Mit Freigabe geht eine Anfrage an die Freigebenden; sie sehen sie unter „Anfragen“.
 - **Kalender „Aufgaben“** (ab 1.15.0, mit Notizen & Aufgaben ab 1.3.0): Aufgaben mit Datum und Uhrzeit stehen als Termin von 30 Minuten in einem eigenen Kalender „Aufgaben“ – ohne Termin-Erinnerung, denn erinnert wird über die Aufgabe. Geändert wird in Notizen & Aufgaben; eine erledigte Aufgabe bleibt als „✓ …“ stehen. Der Kalender ist immer ein GateControl-eigener Kalender, auch wenn du ein Microsoft- oder CalDAV-Konto hast. Ausblenden kannst du ihn wie jeden Kalender; abschalten in Notizen & Aufgaben › Einstellungen.
+- **Termine in „Notizen & Aufgaben“** (ab 1.18.0, mit Notizen & Aufgaben ab 1.9.0): Die Schnell-Eingabe dort legt echte Termine in deinem Kalender an, und deine Termine der nächsten 30 Tage stehen dort auf der Übersicht. Siehe „Neu in 1.18.0“.
 - **Kontakte:** Suche, Gruppen, Dubletten zusammenführen, vCard-Import und -Export, „Als Kontakt speichern“ aus einer Mail.
 
 ### Mitteilungen
@@ -109,6 +110,15 @@ Liegen die Anhänge auf einem Speicherziel, das nicht erreichbar ist, versucht M
 
 **Frei/Gebucht zeigt „unbekannt“.**
 Die Person hat Frei/Gebucht abgeschaltet oder ist nicht in GateControl. Kolleginnen in Microsoft 365 erscheinen über dein Microsoft-Konto.
+
+## Neu in 1.18.0
+
+- **Termine aus „Notizen & Aufgaben“:** Dort gibt es in der Schnell-Eingabe jetzt die Art „Termin“ (Notizen & Aufgaben ab 1.9.0). Ein solcher Termin steht direkt in deinem Kalender hier – in deinem Standardkalender oder in dem, den du wählst. Mit Ort, mit der Erinnerung deines Kalenders (oder einer gewählten), ganztägig oder mit Uhrzeit, auch als Serie.
+- **Deine Termine auf der Aufgaben-Übersicht:** Mail meldet die Termine der nächsten 30 Tage an „Notizen & Aufgaben“. Sie stehen dort unter „Termine heute“, „Demnächst“ und „Geplant“. Welche Kalender erscheinen, stellst du in „Notizen & Aufgaben“ ein (Einstellungen › „Termine aus dem Kalender“). Abonnierte Kalender und der Kalender „Aufgaben“ sind dort zunächst aus.
+- **Was nicht gemeldet wird:** Einladungen, die du noch nicht beantwortet oder abgesagt hast, abgesagte Termine, und aus geteilten Kalendern alles, was du dort nur als „Gebucht“ siehst.
+- **Direkt zum Termin:** Tippst du in „Notizen & Aufgaben“ im Portal auf einen Termin, öffnet sich hier der Kalender mit diesem Termin.
+- **„Mehr Angaben …“:** In der Schnell-Eingabe von „Notizen & Aufgaben“ im Portal öffnet dieser Knopf hier das Formular „Neuer Termin“ – schon ausgefüllt mit Titel, Tag, Uhrzeit, Ort, Kalender, Erinnerung und Wiederholung. Gespeichert wird hier, mit allem, was das Formular kann (Teilnehmer, Beschreibung …).
+- Für Administratoren: Das Update von Mail braucht keine neue Zustimmung. Das Update von „Notizen & Aufgaben“ auf 1.9.0 fragt einmal nach der Berechtigung „Kalender in Mail auflisten“.
 
 ## Neu in 1.17.3
 

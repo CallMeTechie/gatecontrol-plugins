@@ -1,4 +1,4 @@
-<!-- version: 1.17.3 -->
+<!-- version: 1.18.0 -->
 # Mail
 
 ## What the plugin does
@@ -72,6 +72,7 @@ Credentials are stored encrypted. The first sync fetches the newest mail first.
 - **Working hours:** in the portal under Calendar › Calendar settings, in the apps under Mail › Settings › Calendar – the working days and “From”/“To” (default Mon–Fri 8–18). Suggestions only come from this time.
 - **Sharing:** in an own calendar's menu “Share” with people or groups – free/busy, read or edit. What is shared with you is under “Shared with me”. When a calendar is shared with you at “Edit”, you can also create new events in it (without attendees).
 - **Book a resource** in the calendar or “Add resource” in an event. With approval a request goes to the approvers; they see it under “Requests”.
+- **Events in “Notes & Tasks”** (1.18.0 or newer, with Notes & Tasks 1.9.0 or newer): the quick entry there creates real events in your calendar, and your events of the next 30 days show on its overview. See “New in 1.18.0”.
 - **Contacts:** search, groups, merging duplicates, vCard import and export, “Save as contact” from a mail.
 
 ### Notifications
@@ -109,6 +110,15 @@ When attachments live on a storage target that is unreachable, Mail tries again 
 
 **Free/busy shows “unknown”.**
 The person switched free/busy off or is not in GateControl. Colleagues in Microsoft 365 appear through your Microsoft account.
+
+## New in 1.18.0
+
+- **Events from “Notes & Tasks”:** Its quick entry now has the kind “Event” (Notes & Tasks 1.9.0 or newer). Such an event goes straight into your calendar here – your default calendar or the one you choose. With a place, with your calendar’s reminder (or a chosen one), all day or with a time, also as a series.
+- **Your events on the task overview:** Mail reports the events of the next 30 days to “Notes & Tasks”. They show there under “Today’s events”, “Coming up” and “Planned”. Which calendars show up is set in “Notes & Tasks” (Settings › “Events from the calendar”). Subscribed calendars and the “Tasks” calendar start switched off there.
+- **What is not reported:** invitations you have not answered or have declined, cancelled events, and from shared calendars everything you only see as “Busy”.
+- **Straight to the event:** Tapping an event in “Notes & Tasks” in the portal opens the calendar here with that event.
+- **“More details …”:** In the quick entry of “Notes & Tasks” in the portal, this button opens the “New event” form here – already filled in with title, day, time, place, calendar, reminder and repeat. You save it here, with everything the form offers (attendees, description …).
+- For administrators: the update of Mail needs no new consent. The update of “Notes & Tasks” to 1.9.0 asks once for the permission “List the calendars in Mail”.
 
 ## New in 1.17.3
 

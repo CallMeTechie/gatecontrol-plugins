@@ -299,9 +299,9 @@ async function shownCalendars(gc, userId, want) {
 /**
  * The occurrences of shared calendars in [from, to) as person `userId` may see them: freebusy (and every private
  * event) only „Gebucht“ / „Vorläufig“ without anything else and without eventId; read: title, place, times; write: the
- * same, editable. → [Occurrence + { shared: level }]
+ * same, editable. → [Occurrence + { shared: level }] (opts.owner: + ownerResponse)
  */
-async function items(gc, ctx, from, to, want) {
+async function items(gc, ctx, from, to, want, opts = {}) {
   const calendars = require('./calendars');
   const out = [];
   for (const { cal, level } of await shownCalendars(gc, ctx.userId, want)) {
@@ -319,7 +319,9 @@ async function items(gc, ctx, from, to, want) {
         });
         continue;
       }
-      out.push({ ...o, myResponse: null, reminder: null, ...(level === 'read' ? { online: null } : {}), shared: level });
+      // opts.owner (1.18.0, notizen.js): what the calendar's owner answered — an invitation they declined or did not
+      // answer is not an event of theirs for „Notizen & Aufgaben“
+      out.push({ ...o, myResponse: null, reminder: null, ...(level === 'read' ? { online: null } : {}), shared: level, ...(opts.owner ? { ownerResponse: o.myResponse || null } : {}) });
     }
   }
   return out;

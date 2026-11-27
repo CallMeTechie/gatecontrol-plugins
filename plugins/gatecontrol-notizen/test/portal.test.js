@@ -199,7 +199,7 @@ test('portal 1.3.0: the card „Gestern offen geblieben“ with its three button
     assert.match(textOf(today), /^Heute1Mülltonne rausstellenPrivat › AufgabenErinnerungim Kalender15:00$/);
     // the quick entry names the calendar for a task with a time, not for one without
     const q = p.doc.getElementById('na-quick');
-    const chips = () => textOf(q.parentNode.parentNode.childNodes[1]);
+    const chips = () => textOf(q.parentNode.parentNode.childNodes[2]);
     q.value = 'morgen 9 Uhr Altglas wegbringen';
     q.dispatchEvent({ type: 'input' });
     assert.equal(chips(), 'morgen, 09:00Erinnerung 09:00Kalender: Aufgaben');
@@ -257,7 +257,7 @@ test('portal 1.4.0: the shopping lists in the menu, the list at the task, the ch
     await until('the task with its list', () => p.text('na-main').includes('Bei Lidl einkaufenPrivat › AufgabenEinkauf 0/2'));
     // the quick entry asks the server: „einkaufen“ fits the list „Einkauf“; the chip can be taken away
     const q = p.doc.getElementById('na-quick');
-    const chips = () => textOf(q.parentNode.parentNode.childNodes[1]);
+    const chips = () => textOf(q.parentNode.parentNode.childNodes[2]);
     q.value = 'morgen bei Lidl einkaufen';
     q.dispatchEvent({ type: 'input' });
     // 1.5.0: „bei Lidl“ is offered as a place as well (a chip to choose from; nothing is taken without a choice)
@@ -300,7 +300,7 @@ test('portal 1.5.0: the place of a task — the chip of the quick entry, the dia
     p = portal(h.host, ANNA);
     await until('the page', () => p.doc.getElementById('na-quick'));
     const q = p.doc.getElementById('na-quick');
-    const chipBox = () => q.parentNode.parentNode.childNodes[1];
+    const chipBox = () => q.parentNode.parentNode.childNodes[2];
     const dlg = () => p.doc.getElementById('na-dialog');
     const rows = () => dlg().all().filter((x) => x.localName === 'button' && /(^| )na-pl( |$)/.test(x.className));
     const button = (root, text) => root.all().filter((x) => x.localName === 'button' && textOf(x).trim() === text).pop();
@@ -398,7 +398,7 @@ test('portal 1.6.0: the family list — several people in the quick entry („We
     // „Ansehen“ opens the family list: the star of the task, the quick entry
     await until('the list', () => p.text('na-main').includes('Zimmer aufräumen2'));
     const q = p.doc.getElementById('na-quick');
-    const chips = () => textOf(q.parentNode.parentNode.childNodes[1]);
+    const chips = () => textOf(q.parentNode.parentNode.childNodes[2]);
     q.value = '@Lena @Marc Spülmaschine täglich 18 Uhr reihum 1 Stern';
     q.dispatchEvent({ type: 'input' });
     await until('the chips', () => chips().includes('Lena, MarcReihum · zuerst Lena1 SternWer ist dran?Eine PersonReihumWer zuerst'));

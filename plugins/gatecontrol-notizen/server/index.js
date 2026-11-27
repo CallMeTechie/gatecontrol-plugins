@@ -43,6 +43,7 @@ module.exports = {
   async start(gc) {
     config.reset();
     calsync.reset();
+    require('./termine').reset();
     yesterday.reset();
     shopping.reset();
     places.reset();

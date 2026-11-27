@@ -151,3 +151,23 @@ test('free/busy bars (1.9.0): blocks clipped to the window, gaps free or unknown
   assert.deepEqual([w.from, w.to], [a('08:00'), a('20:30')]);
   assert.deepEqual(L.dayWindow(d, null), { from: a('08:00'), to: a('18:00') });
 });
+
+test('1.18.0 a direct link into the tab: an event (with its occurrence), a day of the calendar — anything else is no link', () => {
+  assert.deepEqual(L.openLink('?open=event%2F42'), { area: 'calendar', eventId: 42, occurrence: null });
+  assert.deepEqual(L.openLink('?x=1&open=event/42/2026-12-04'), { area: 'calendar', eventId: 42, occurrence: '2026-12-04' });
+  assert.deepEqual(L.openLink('?open=event/42/1796302800000'), { area: 'calendar', eventId: 42, occurrence: '1796302800000' });
+  assert.deepEqual(L.openLink('?open=calendar/2026-12-06'), { area: 'calendar', date: '2026-12-06' });
+  for (const s of ['', '?open=', '?open=message/7', '?open=event/0', '?open=event/abc', '?open=event/1/<script>', '?open=calendar/2026-02-31', '?open=%E0%A4%A', '?section=x']) assert.equal(L.openLink(s), null, s);
+});
+
+test('1.18.0 „Mehr Angaben …“ of Notizen & Aufgaben: „?open=event/new“ with the line as a query — what does not fit is left out', () => {
+  const q = '?open=event%2Fnew&title=Flohmarkt&date=2026-11-14&time=14%3A00-16%3A00&loc=Bei%20Oma&cal=7&rem=30&rep=weekly%3A2%3AMO%2CFR';
+  assert.deepEqual(L.openLink(q), { area: 'calendar', create: { title: 'Flohmarkt', date: '2026-11-14', time: '14:00', endTime: '16:00', location: 'Bei Oma', calendarId: 7, reminder: 30, recurrence: { freq: 'weekly', interval: 2, byDay: ['MO', 'FR'] } } });
+  assert.deepEqual(L.openLink('?open=event/new&title=Messe&date=2026-11-14&rem=none&rep=yearly').create, { title: 'Messe', date: '2026-11-14', time: null, endTime: null, location: null, calendarId: null, reminder: false, recurrence: { freq: 'yearly', interval: 1 } });
+  // bad values: each one left out, the link stays
+  const bad = L.openLink('?open=event/new&title=%0A%3Cb%3EX%3C%2Fb%3E%0A&date=2026-02-30&time=25:00&cal=-1&rem=99999&rep=hourly&loc=' + 'x'.repeat(300)).create;
+  assert.deepEqual([bad.title, bad.date, bad.time, bad.calendarId, bad.reminder, bad.recurrence, bad.location.length], ['<b>X</b>', null, null, null, undefined, null, 255]);
+  // a time without a date is no time; days only for weekly
+  assert.equal(L.openLink('?open=event/new&time=14:00').create.time, null);
+  assert.deepEqual(L.openLink('?open=event/new&date=2026-11-14&rep=daily:1:MO').create.recurrence, { freq: 'daily', interval: 1 });
+});

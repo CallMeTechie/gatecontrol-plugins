@@ -1,5 +1,41 @@
 # Changelog
 
+## 1.9.0
+
+„Termin“: Die Schnell-Eingabe kennt neben der Aufgabe den Termin. Er wird **nur** im Kalender des Plugins Mail
+gespeichert (Mail ≥ 1.18.0), Notizen & Aufgaben legt ihn an und zeigt ihn. Neue Berechtigung
+`gatecontrol-mail:calendar_list` – das Update braucht einmal die Zustimmung des Administrators. Keine Migration.
+
+- **Erkennung** (`ui/quickparse.js`, `parse(text, { mode: 'event' })`): im Termin-Modus zusätzlich eine Zeitspanne
+  („14 bis 16 Uhr“, „14–16 Uhr“, „von 9:30 bis 11 Uhr“, „14:00-15:30“) und der Ort nach „im“, „in“, „bei“, „beim“
+  (der Rest wird Ort und verlässt den Titel; ein Artikel dahinter fällt weg). Neue Felder in jedem Modus: `endTime`,
+  `allDay`, `location`, `looksLikeEvent` (Datum **und** Uhrzeit erkannt – ein Client fragt „Als Termin anlegen?“).
+  Der Aufgaben-Modus ist unverändert. Vektoren: `test/vectors/quickparse.json` um die optionalen Schlüssel
+  `eventCases` (30) und `signalCases` (10) erweitert; `version` bleibt 1, `cases` unverändert.
+- **API** (`server/termine.js`, Merkmal `calendarEvents`): `GET events/calendars` (Kalender der Person, Standard,
+  Standard-Erinnerungen, je Kalender `shown`/`target`; `state: 'none'` mit `reason` no_mail | mail_old | feature_off |
+  not_allowed | not_licensed | no_seat | no_calendar | unreachable), `POST events` (Titel, Datum, Uhrzeit, Ende,
+  ganztägig, Ort, Kalender, Erinnerung, Wiederholung; `clientId` macht die Anlage idempotent – der Schlüssel liegt bei
+  Mail), `PATCH events/<id>`, `DELETE events/<id>` (nur hier als Termin angelegte – nie der Kalender-Eintrag einer
+  Aufgabe), `me.events { available, reason }`,
+  `POST parse { mode: 'event' }`. Keine Tabelle, keine Kopie.
+- **Übersicht** (`server/sources.js`, `server/views.js`): Termine aus Mail (`Item.event` mit Ende, Ort, Kalender,
+  Farbe) stehen heute unter „Termine heute“, die nächsten 14 Tage gemischt unter „Demnächst“, alle unter „Geplant“ –
+  ohne Haken, nie überfällig; ein mehrtägiger Termin, der schon läuft, steht heute. Je Kalender schaltbar über
+  `prefs.groups['gatecontrol-mail|cal:<id>']` (`hide`, neu `show`); abonnierte Kalender und „Aufgaben“ sind ohne Wahl
+  aus. Termine zählen nicht als „Zu tun“ der Quelle Mail und erscheinen nicht in deren Ansicht. Der Hub fragt Mail bei
+  jedem Abgleich nach Terminen (`todo_items { accepts: ['calendar'] }`).
+- **Portal** (`ui/portal.js`): Umschalter „Aufgabe | Termin“ in der Schnell-Eingabe, Nachfrage „Als Termin anlegen?“,
+  Bausteine Tag, Uhrzeit, Ort (Textfeld „Ort des Termins“, gestrichelter Vorschlag aus dem Titel), Kalender,
+  Erinnerung; ohne Kalender der Grund und „Als Aufgabe mit Datum speichern“. Termin-Zeilen mit Kalender-Zeichen in der
+  Farbe des Kalenders; ein Tipp öffnet den Termin in Mail (`GC.openPortal`). **„Mehr Angaben …“** öffnet das Formular
+  „Neuer Termin“ in Mail, vorbelegt mit Titel, Tag, Zeit, Ort, Kalender, Erinnerung und Wiederholung (gespeichert wird
+  dort). Wird derselbe Termin nach einem Fehler erneut gesendet, bleibt sein `clientId` gleich (keine doppelte
+  Anlage). Einstellungen: Karte „Termine aus dem Kalender“.
+- **Unverändert:** Aufgaben mit Uhrzeit stehen weiter als 30-Minuten-Eintrag im Kalender „Aufgaben“ (`server/calsync.js`).
+- **Tests:** `test/termine.test.js` (Zustände, Anlegen/Ändern/Löschen, Übersicht, mit dem echten Mail-Plugin in beide
+  Richtungen), `test/termine-portal.test.js`, `test/vectors.test.js`.
+
 ## 1.8.1
 
 Schnell-Erkennung: Ein Wochentag direkt neben einem Datum gehört zum Datum. An der API ändert sich nichts.

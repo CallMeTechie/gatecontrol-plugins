@@ -35,6 +35,24 @@
 //   ms_accounts, ms_tasks_consent, ms_tasks_token (1.12.0, caller gatecontrol-notizen only, maxPerHour 600 each) — the
 //                  person's Microsoft accounts for the move from Microsoft To Do; see msAccounts / msTasksConsent /
 //                  msTasksToken below.
+//   1.18.0 — for Notizen & Aufgaben („Termin“ in its quick entry: a real event in a calendar of the person):
+//   calendar_list  also for gatecontrol-notizen, and then EVERY calendar the person sees: { ok: true, calendars: [{ id,
+//                  key, name, color, kind: own | shared | family | subscribed | tasks, writable, isDefault, area,
+//                  account: { label, kind } }], defaultId, reminders: { timed, allDay }, timeZone } — `key` is the
+//                  group of the calendar's events in the hub ('cal:<id>'; the family calendar of Familie:
+//                  'overlay:familie' with id null); writable: calendar_add takes it; defaultId: the calendar a new
+//                  event goes into (CalPrefs); reminders: the person's defaults in minutes (null: none; allDay: before
+//                  midnight of the day, 360 = 18:00 the day before). No addresses. A person who cannot use the
+//                  calendars: { ok: true, calendars: [], reason } (feature_off, not_allowed, not_licensed, no_seat).
+//   calendar_add   for gatecontrol-notizen also: no calendarId (or null) — the person's default calendar; endsAt
+//                  ('YYYY-MM-DD', the last day of an all-day event, ≤ 7 days); location (≤ 255); reminder: false | minutes
+//                  before (0 … 40320) — without it the calendar's default; recurrence (as POST events: { freq, interval?,
+//                  byDay?, byMonthDay?, until?, count? }); items: true — the answer is { ok, eventId, calendarId, items,
+//                  replayed? } with the event as the hub's items (notizen.js) and replayed: true when the key
+//                  answered an event made before. A key without calendarId finds that event in whatever calendar it is.
+//   calendar_update also: location (null removes it), allDay: true with startsAt / endsAt, reminder, recurrence (null: no
+//                  series any more), items: true as calendar_add; with calendar_delete keyKind: 'event' — only an event
+//                  made with a key 'event:…' (else not_found / removed: false), never the entry of a task.
 //   1.16.0 — for the Messenger („Neuer Chat“: the section „Aus deinem Adressbuch“):
 //   contacts_phones { userId, q?, cursor?, limit?, ids? } → { ok: true, items: [{ id, name, phones: [{ key, kind, value,
 //                  e164, landline }] }], next }   (caller gatecontrol-messenger only, read only) — the person's OWN
@@ -64,6 +82,8 @@ const pimstore = require('./pimstore');
 const accounts = require('./accounts');
 const ms = require('./microsoft');
 const { t } = require('./text');
+const notizen = require('./notizen');
+const tz = require('./tz');
 const { posInt, line, isKnown, parse } = require('./util');
 
 const DRIVE = 'gatecontrol-drive';
@@ -78,6 +98,8 @@ const TITLE_MAX_TASK = 255; // Notizen & Aufgaben: a task's title (events take 2
 const SPAN_MAX = 7 * 86400000;
 const BUSY = ['busy', 'free'];
 const TASKS_ROLE = 'tasks';
+const LOCATION_MAX = 255;
+const REMINDER_MAX = 40320;
 
 class Refusal extends Error { constructor(code, extra) { super(code); this.code = code; this.extra = extra || null; } }
 const no = (code, extra) => new Refusal(code, extra);
@@ -110,19 +132,54 @@ function accountOf(a, lang) {
 const canWrite = (c) => c.writable === 1 && c.source !== 'ics';
 
 /** calendar_list { userId, lang? } */
-async function calendarList(gc, payload, user) {
+async function calendarList(gc, payload, user, caller) {
   const uid = personOf(user, payload);
   const lang = payload.lang === 'en' ? 'en' : 'de';
   const cfg = await config.get(gc);
-  if (await blocked(gc, cfg, uid)) return { ok: true, calendars: [] };
+  const why = await blocked(gc, cfg, uid);
+  if (why) return { ok: true, calendars: [], ...(caller === NOTIZEN ? { reason: why } : {}) };
   await pimstore.ensureSetup(gc, uid, lang);
   const { rows, accounts } = await calendars.visibleRows(gc, cfg, uid);
+  if (caller === NOTIZEN) return calendarListAll(gc, cfg, uid, lang, rows, accounts);
   return {
     ok: true,
     calendars: rows.filter(canWrite).slice(0, LIST_MAX).map((c) => ({
       id: c.id, name: c.name, account: accountOf(c.account_id ? accounts.get(c.account_id) : null, lang), color: c.color, writable: true,
     })),
   };
+}
+
+/** The calendar a new event of the person goes into: their default (CalPrefs) when they see it and can write, else the first such one — never „Aufgaben“. */
+async function defaultOf(gc, uid, rows) {
+  const ok = rows.filter((c) => canWrite(c) && c.role !== TASKS_ROLE);
+  const def = await pimstore.defaultCalendar(gc, uid);
+  return (def && ok.find((c) => c.id === def.id)) || ok[0] || null;
+}
+
+/** calendar_list for Notizen & Aufgaben (1.18.0): every calendar the person sees, the default and the default reminders. */
+async function calendarListAll(gc, cfg, uid, lang, rows, accounts) {
+  const { prefs } = await pimstore.calPrefs(gc, uid, cfg);
+  const def = await defaultOf(gc, uid, rows);
+  const list = rows.slice(0, LIST_MAX).map((c) => {
+    const a = accountOf(c.account_id ? accounts.get(c.account_id) : null, lang);
+    return {
+      id: c.id, key: `cal:${c.id}`, name: c.name, color: c.color, kind: calendars.kindFor(c, accounts), writable: canWrite(c), isDefault: !!def && def.id === c.id,
+      area: c.kind === 'business' ? 'work' : 'private', account: { label: a.label, kind: a.kind },
+    };
+  });
+  if (cfg.calendar.sharing) {
+    try {
+      for (const c of (await require('./shares').shared(gc, { userId: uid, lang })).items) {
+        if (!c.visible || c.level === 'freebusy' || list.length >= LIST_MAX) continue;
+        list.push({ id: c.id, key: `cal:${c.id}`, name: c.name, color: c.color, kind: 'shared', writable: false, isDefault: false, area: 'private', account: { label: t(lang, 'p.c.group_gc'), kind: 'local' } });
+      }
+    } catch { /* the shared ones are optional */ }
+  }
+  try {
+    const fam = (await require('./overlays').list(gc, cfg, uid, lang)).find((x) => x.id === 'familie');
+    if (fam && list.length < LIST_MAX) list.push({ id: null, key: 'overlay:familie', name: fam.name, color: fam.color, kind: 'family', writable: false, isDefault: false, area: 'private', account: { label: t(lang, 'p.c.group_gc'), kind: 'local' } });
+  } catch { /* Familie answers later */ }
+  return { ok: true, calendars: list, defaultId: def ? def.id : null, reminders: { timed: prefs.defaultReminder, allDay: prefs.allDayReminder }, timeZone: prefs.timeZone };
 }
 
 // one call per key at a time — a second one waits and finds the first one's event
@@ -157,11 +214,67 @@ function refusalOf(e) {
   return no('unavailable', { reason: code || 'failed' });
 }
 
-/** calendar_add { userId, calendarId, title, startsAt, allDay: true, note?, key? } | { …, allDay: false, start, end, reminder?, busy? } */
+/** A date 'YYYY-MM-DD' that exists. */
+const dateArg = (v) => { if (typeof v !== 'string' || !DATE_RE.test(v) || !tz.parseDate(v) || !Number.isFinite(Date.parse(v + 'T00:00:00Z'))) throw no('invalid'); return v; };
+
+/** The first and the last day of an all-day event (endsAt: Notizen only, ≤ 7 days). */
+function daysArg(payload, caller) {
+  const startDate = dateArg(payload.startsAt);
+  let endDate = startDate;
+  if (payload.endsAt != null) {
+    if (caller !== NOTIZEN) throw no('invalid');
+    endDate = dateArg(payload.endsAt);
+    if (endDate < startDate || tz.diffDays(startDate, endDate) > 7) throw no('invalid');
+  }
+  return { allDay: true, startDate, endDate };
+}
+
+/**
+ * What only Notizen & Aufgaben may send with calendar_add / calendar_update (1.18.0): location, reminder (false |
+ * minutes), recurrence → the fields of events.create / events.update. `update`: null removes a location or a rule.
+ */
+function eventArgs(payload, caller, update) {
+  const x = {};
+  if (payload.reminder !== undefined) {
+    if (payload.reminder === false) x.reminders = [];
+    else if (caller === NOTIZEN && Number.isInteger(payload.reminder) && payload.reminder >= 0 && payload.reminder <= REMINDER_MAX) x.reminders = [payload.reminder];
+    else throw no('invalid');
+  }
+  if (payload.location !== undefined && !(payload.location === null && !update)) {
+    if (caller !== NOTIZEN) throw no('invalid');
+    if (payload.location === null) x.location = null;
+    else {
+      const loc = typeof payload.location === 'string' ? line(payload.location) : '';
+      if (!loc || loc.length > LOCATION_MAX) throw no('invalid');
+      x.location = loc;
+    }
+  }
+  if (payload.recurrence !== undefined && !(payload.recurrence === null && !update)) {
+    if (caller !== NOTIZEN || (payload.recurrence !== null && (typeof payload.recurrence !== 'object' || Array.isArray(payload.recurrence)))) throw no('invalid');
+    x.recurrence = payload.recurrence;
+  }
+  return x;
+}
+
+/** What the hub shows of event `eventId` now — for Notizen & Aufgaben only, and never a reason to fail the call. */
+async function hubItems(gc, caller, uid, eventId, payload) {
+  if (caller !== NOTIZEN) return null;
+  notizen.source.soon(gc);
+  if (payload.items !== true) return null;
+  // a hub that asks for the items takes events (it may not have pulled yet since it was updated)
+  await notizen.hubAsked(gc, { accepts: ['calendar'] });
+  try { return await notizen.itemsOfEvent(gc, uid, eventId, Date.now()); } catch { return []; }
+}
+
+/**
+ * calendar_add { userId, calendarId, title, startsAt, allDay: true, note?, key? } | { …, allDay: false, start, end, reminder?, busy? }
+ * — for Notizen & Aufgaben also calendarId null (the default calendar), endsAt, location, reminder in minutes, recurrence.
+ */
 async function calendarAdd(gc, payload, user, caller) {
   const uid = personOf(user, payload);
-  const calId = posInt(payload.calendarId);
-  if (!calId) throw no('invalid');
+  const anyCal = caller === NOTIZEN && payload.calendarId == null;
+  const calId = anyCal ? null : posInt(payload.calendarId);
+  if (!anyCal && !calId) throw no('invalid');
   const title = titleArg(payload.title, caller);
   const timed = payload.allDay === false && payload.start !== undefined;
   let when;
@@ -169,38 +282,44 @@ async function calendarAdd(gc, payload, user, caller) {
     const span = spanArg(payload.start, payload.end);
     when = { allDay: false, start: span.start, end: span.end };
   } else {
-    const date = payload.startsAt;
-    if (typeof date !== 'string' || !DATE_RE.test(date) || !Number.isFinite(Date.parse(date + 'T00:00:00Z'))) throw no('invalid');
     if (payload.allDay !== undefined && payload.allDay !== true) throw no('invalid');
-    when = { allDay: true, startDate: date, endDate: date };
+    when = daysArg(payload, caller);
   }
-  if (payload.reminder !== undefined && payload.reminder !== false) throw no('invalid');
+  const more = eventArgs(payload, caller, false);
   if (payload.busy !== undefined && !BUSY.includes(payload.busy)) throw no('invalid');
   if (payload.note != null && (typeof payload.note !== 'string' || payload.note.length > NOTE_MAX)) throw no('invalid');
   if (payload.key != null && (typeof payload.key !== 'string' || !KEY_RE.test(payload.key))) throw no('invalid');
   const cfg = await config.get(gc);
   const why = await blocked(gc, cfg, uid);
   if (why) throw no('unavailable', { reason: why });
+  if (anyCal) await pimstore.ensureSetup(gc, uid, payload.lang === 'en' ? 'en' : 'de');
   const { rows, accounts } = await calendars.visibleRows(gc, cfg, uid);
-  const cal = rows.find((c) => c.id === calId);
+  const cal = anyCal ? await defaultOf(gc, uid, rows) : rows.find((c) => c.id === calId);
   if (!cal || !canWrite(cal)) throw no('not_found');
   if (cal.account_id) {
     const a = accounts.get(cal.account_id);
     if (!a || a.state === 'auth_failed') throw no('unavailable', { reason: 'auth_failed' });
     if (cal.state === 'consent_required') throw no('unavailable', { reason: 'consent_required' });
   }
+  const answer = async (eventId, calendarId, replayed) => {
+    const items = await hubItems(gc, caller, uid, eventId, payload);
+    return { ok: true, eventId, ...(items ? { calendarId, items, ...(replayed ? { replayed: true } : {}) } : {}) };
+  };
   const make = async () => {
     if (payload.key) {
-      const have = await store.one(gc, 'SELECT k.event_id FROM service_keys k JOIN events e ON e.id = k.event_id AND e.calendar_id = k.calendar_id WHERE k.caller = ? AND k.user_id = ? AND k.calendar_id = ? AND k.key = ?',
-        [caller, uid, cal.id, payload.key]);
-      if (have) return { ok: true, eventId: have.event_id };
+      // without a calendar named: the event made with this key before, in whatever calendar it went into then
+      const have = anyCal
+        ? await store.one(gc, 'SELECT k.event_id, k.calendar_id FROM service_keys k JOIN events e ON e.id = k.event_id AND e.calendar_id = k.calendar_id WHERE k.caller = ? AND k.user_id = ? AND k.key = ? ORDER BY k.at DESC LIMIT 1',
+          [caller, uid, payload.key])
+        : await store.one(gc, 'SELECT k.event_id, k.calendar_id FROM service_keys k JOIN events e ON e.id = k.event_id AND e.calendar_id = k.calendar_id WHERE k.caller = ? AND k.user_id = ? AND k.calendar_id = ? AND k.key = ?',
+          [caller, uid, cal.id, payload.key]);
+      if (have) return answer(have.event_id, have.calendar_id, true);
     }
     const lang = payload.lang === 'en' ? 'en' : 'de';
     let r;
     try {
       r = await events.create(gc, { userId: uid, lang, userName: (user && user.name) || '' }, {
-        calendarId: cal.id, title, ...when, ...(payload.note ? { description: payload.note } : {}),
-        ...(payload.reminder === false ? { reminders: [] } : {}), ...(payload.busy ? { busy: payload.busy } : {}),
+        calendarId: cal.id, title, ...when, ...(payload.note ? { description: payload.note } : {}), ...more, ...(payload.busy ? { busy: payload.busy } : {}),
       });
     } catch (e) {
       throw refusalOf(e);
@@ -210,9 +329,9 @@ async function calendarAdd(gc, payload, user, caller) {
       await store.run(gc, `INSERT INTO service_keys (caller, user_id, calendar_id, key, event_id, at) VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT(caller, user_id, calendar_id, key) DO UPDATE SET event_id = excluded.event_id, at = excluded.at`, [caller, uid, cal.id, payload.key, eventId, Date.now()]);
     }
-    return { ok: true, eventId };
+    return answer(eventId, cal.id);
   };
-  return payload.key ? serial(`${caller}|${uid}|${cal.id}|${payload.key}`, make) : make();
+  return payload.key ? serial(`${caller}|${uid}|${anyCal ? '*' : cal.id}|${payload.key}`, make) : make();
 }
 
 // ─── the calendar „Aufgaben“ for Notizen & Aufgaben (1.15.0) ──
@@ -239,12 +358,22 @@ async function calendarTasks(gc, payload, user) {
 }
 
 /** The event `eventId` the caller made for the person with a key (service_keys), with its calendar — or null. */
-async function keyedEvent(gc, caller, uid, eventId) {
+async function keyedEvent(gc, caller, uid, eventId, prefix) {
   const id = posInt(eventId);
   if (!id) throw no('invalid');
   const k = await store.one(gc, `SELECT k.key, k.calendar_id FROM service_keys k JOIN events e ON e.id = k.event_id AND e.calendar_id = k.calendar_id AND e.user_id = k.user_id
     WHERE k.caller = ? AND k.user_id = ? AND k.event_id = ?`, [caller, uid, id]);
+  // (1.18.0) prefix: only an event made with a key of that kind — „Termin“ of Notizen ('event:') never reaches the
+  // entry of a task in the calendar „Aufgaben“ ('task:'), which the hub keeps in step with the task itself
+  if (k && prefix && !String(k.key).startsWith(prefix)) return null;
   return k ? { id, key: k.key, calendarId: k.calendar_id } : null;
+}
+
+/** keyKind of calendar_update / calendar_delete (Notizen only, 1.18.0): 'event' — only events made with a key 'event:…'. */
+function prefixArg(payload, caller) {
+  if (payload.keyKind === undefined) return null;
+  if (caller !== NOTIZEN || payload.keyKind !== 'event') throw no('invalid');
+  return 'event:';
 }
 
 /** calendar_update { userId, eventId, title?, start?, end?, note?, busy? } */
@@ -252,7 +381,11 @@ async function calendarUpdate(gc, payload, user, caller) {
   const uid = personOf(user, payload);
   const b = {};
   if (payload.title !== undefined) b.title = titleArg(payload.title, caller);
-  if (payload.start !== undefined || payload.end !== undefined) Object.assign(b, { allDay: false }, spanArg(payload.start, payload.end));
+  if (payload.allDay === true && caller === NOTIZEN) {
+    if (payload.start !== undefined || payload.end !== undefined) throw no('invalid');
+    Object.assign(b, daysArg(payload, caller));
+  } else if (payload.start !== undefined || payload.end !== undefined) Object.assign(b, { allDay: false }, spanArg(payload.start, payload.end));
+  Object.assign(b, eventArgs(payload, caller, true));
   if (payload.note !== undefined) {
     if (payload.note !== null && (typeof payload.note !== 'string' || payload.note.length > NOTE_MAX)) throw no('invalid');
     b.description = payload.note || null;
@@ -261,16 +394,20 @@ async function calendarUpdate(gc, payload, user, caller) {
   const cfg = await config.get(gc);
   const why = await blocked(gc, cfg, uid);
   if (why) throw no('unavailable', { reason: why });
-  const ev = await keyedEvent(gc, caller, uid, payload.eventId);
+  const ev = await keyedEvent(gc, caller, uid, payload.eventId, prefixArg(payload, caller));
   if (!ev) throw no('not_found');
-  if (!Object.keys(b).length) return { ok: true, eventId: ev.id };
+  const answer = async () => {
+    const items = await hubItems(gc, caller, uid, ev.id, payload);
+    return { ok: true, eventId: ev.id, ...(items ? { calendarId: ev.calendarId, items } : {}) };
+  };
+  if (!Object.keys(b).length) return answer();
   return serial(`${caller}|${uid}|${ev.calendarId}|${ev.key}`, async () => {
     try {
       await events.update(gc, { userId: uid, lang: payload.lang === 'en' ? 'en' : 'de', userName: (user && user.name) || '' }, ev.id, { ...b, scope: 'series', sendInvites: false });
     } catch (e) {
       throw refusalOf(e);
     }
-    return { ok: true, eventId: ev.id };
+    return answer();
   });
 }
 
@@ -279,11 +416,12 @@ async function calendarDelete(gc, payload, user, caller) {
   const uid = personOf(user, payload);
   const id = posInt(payload.eventId);
   if (!id) throw no('invalid');
+  const prefix = prefixArg(payload, caller);
   // the key goes even when the event went before (deleted in the calendar)
   const k = await store.one(gc, 'SELECT key, calendar_id FROM service_keys WHERE caller = ? AND user_id = ? AND event_id = ?', [caller, uid, id]);
-  if (!k) return { ok: true, removed: false };
+  if (!k || (prefix && !String(k.key).startsWith(prefix))) return { ok: true, removed: false };
   return serial(`${caller}|${uid}|${k.calendar_id}|${k.key}`, async () => {
-    const ev = await keyedEvent(gc, caller, uid, id);
+    const ev = await keyedEvent(gc, caller, uid, id, prefix);
     let removed = false;
     if (ev) {
       try {
@@ -294,6 +432,7 @@ async function calendarDelete(gc, payload, user, caller) {
       }
     }
     await store.run(gc, 'DELETE FROM service_keys WHERE caller = ? AND user_id = ? AND event_id = ?', [caller, uid, id]);
+    if (removed && caller === NOTIZEN) notizen.source.soon(gc);
     return { ok: true, removed };
   });
 }
@@ -524,7 +663,7 @@ async function contactsPhones(gc, payload, user) {
 // ─── the hook ───────────────────────────────────
 
 const HANDLERS = {
-  calendar_list: (gc, payload, user) => calendarList(gc, payload, user),
+  calendar_list: (gc, payload, user, caller) => calendarList(gc, payload, user, caller),
   calendar_add: (gc, payload, user, caller) => calendarAdd(gc, payload, user, caller),
   calendar_tasks: (gc, payload, user) => calendarTasks(gc, payload, user),
   calendar_update: (gc, payload, user, caller) => calendarUpdate(gc, payload, user, caller),
@@ -535,7 +674,7 @@ const HANDLERS = {
   ms_tasks_token: (gc, payload, user) => msTasksToken(gc, payload, user),
   contacts_phones: (gc, payload, user) => contactsPhones(gc, payload, user),
 };
-const CALLERS = { calendar_list: [DRIVE], calendar_add: [DRIVE, NOTIZEN], calendar_tasks: [NOTIZEN], calendar_update: [NOTIZEN], calendar_delete: [NOTIZEN], tofile_count: [DRIVE], ms_accounts: [NOTIZEN], ms_tasks_consent: [NOTIZEN], ms_tasks_token: [NOTIZEN], contacts_phones: [MESSENGER] };
+const CALLERS = { calendar_list: [DRIVE, NOTIZEN], calendar_add: [DRIVE, NOTIZEN], calendar_tasks: [NOTIZEN], calendar_update: [NOTIZEN], calendar_delete: [NOTIZEN], tofile_count: [DRIVE], ms_accounts: [NOTIZEN], ms_tasks_consent: [NOTIZEN], ms_tasks_token: [NOTIZEN], contacts_phones: [MESSENGER] };
 
 /** service({ name, caller, user, payload }) → the answer (see the head of this file). */
 async function handle(gc, call) {

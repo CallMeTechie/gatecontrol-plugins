@@ -24,6 +24,32 @@ test('quick entry: every vector', () => {
   assert.deepEqual(Q.parse(qv.cases[0].input, qv.ctx).marks, qv.marksOfFirst);
 });
 
+test('quick entry, 1.9.0 „Termin“: every event vector (mode event) and the signal of task mode', () => {
+  assert.ok(qv.eventCases.length >= 25 && qv.signalCases.length >= 8);
+  for (const c of qv.eventCases) {
+    const p = Q.parse(c.input, { ...qv.ctx, mode: 'event' });
+    assert.deepEqual({ title: p.title, date: p.date, time: p.time, endTime: p.endTime, allDay: p.allDay, location: p.location, repeat: p.repeat }, c.expect, c.input);
+    assert.deepEqual(p.marks, c.marks, c.input + ' (marks)');
+  }
+  for (const c of qv.signalCases) assert.equal(Q.parse(c.input, qv.ctx).looksLikeEvent, c.looksLikeEvent, c.input);
+  // task mode stays what it was: no place, no span, no end — whatever the line says
+  for (const c of [...qv.cases, ...qv.eventCases]) {
+    const p = Q.parse(c.input, qv.ctx);
+    assert.deepEqual([p.endTime, p.allDay, p.location, p.marks.some((m) => m.kind === 'place')], [null, false, null, false], c.input);
+  }
+  // event mode changes nothing but the span, the place and „nach Erledigung“: the old vectors without those words give the same
+  for (const c of qv.cases) {
+    if (/\b(im|in|bei|beim)\b|bis|nach Erledigung|after compl|\d\s*(-|–|to)\s*\d/i.test(c.input)) continue;
+    const a = Q.parse(c.input, qv.ctx);
+    const b = Q.parse(c.input, { ...qv.ctx, mode: 'event' });
+    assert.deepEqual([b.title, b.date, b.time, b.repeat, b.list, b.assignee, b.important, b.marks], [a.title, a.date, a.time, a.repeat, a.list, a.assignee, a.important, a.marks], c.input);
+  }
+  // the mockups of the draft
+  const e = (s) => Q.parse(s, { today: '2026-11-27', mode: 'event' });
+  assert.deepEqual([e('Freitag 4. Dezember 14 Uhr Fashion Outlet Zweibrücken')].map((p) => [p.title, p.date, p.time, p.endTime, p.allDay, p.location]), [['Fashion Outlet Zweibrücken', '2026-12-04', '14:00', '15:00', false, null]]);
+  assert.deepEqual([e('Freitag 4. Dezember Einkaufen im Fashion Outlet Zweibrücken')].map((p) => [p.title, p.date, p.time, p.endTime, p.allDay, p.location]), [['Einkaufen', '2026-12-04', null, null, true, 'Fashion Outlet Zweibrücken']]);
+});
+
 test('quick entry: the mockup line and what must stay text', () => {
   const p = Q.parse('Morgen 9 Uhr Zahnarzt anrufen, wichtig , #gesundheit', { today: '2026-11-08', lists: [{ id: 7, name: 'Gesundheit' }] });
   assert.deepEqual([p.title, p.date, p.time, p.important, p.list && p.list.name], ['Zahnarzt anrufen', '2026-11-09', '09:00', true, 'Gesundheit']);

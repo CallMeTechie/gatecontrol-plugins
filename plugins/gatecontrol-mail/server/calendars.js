@@ -47,6 +47,19 @@ function view(c, accounts) {
   };
 }
 
+/**
+ * What kind of calendar row `c` is for „Notizen & Aufgaben“ (1.18.0, services.js calendar_list and notizen.js):
+ * 'tasks' (the calendar „Aufgaben“), 'subscribed' (an iCal subscription), 'shared' (a calendar of another mailbox the
+ * account sees), else 'own'.
+ */
+function kindFor(c, accounts) {
+  if (c.role === 'tasks') return 'tasks';
+  if (c.source === 'ics') return 'subscribed';
+  const a = c.account_id ? accounts.get(c.account_id) : null;
+  if (c.source === 'graph' && c.owner_email && a && c.owner_email !== String(a.email || '').toLowerCase()) return 'shared';
+  return 'own';
+}
+
 async function accountsOf(gc, userId) {
   return new Map((await store.all(gc, 'SELECT * FROM accounts WHERE user_id = ?', [userId])).map((a) => [a.id, a]));
 }
@@ -478,5 +491,5 @@ async function get(gc, ctx, id, q) {
 
 module.exports = {
   list, create, patch, remove, subscribe, createSubscription, settings, events, get, full, ownEvent, occurrences, occurrenceView, etagOf, view, visibleRows, accountsOf,
-  rebuildZone, contactIds, OCC_COLS, RANGE_MAX, upcoming,
+  rebuildZone, contactIds, OCC_COLS, RANGE_MAX, upcoming, kindFor,
 };

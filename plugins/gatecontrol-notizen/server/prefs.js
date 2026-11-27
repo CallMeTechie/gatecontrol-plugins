@@ -7,6 +7,8 @@
 //   sources   { <plugin>: { on: bool, kids?: 'all'|'mine'|'none' (Familie), shoppingInMyDay?: bool (Familie),
 //               flagged?: bool (Mail), evening?: 'HH:MM' (Alltag) } }
 //   groups    { '<plugin>|<group id>': 'private' | 'work' | 'hide' } — Mail accounts, Schule children, Familie lists
+//             + 'show' (1.9.0): a group that is hidden unless the person asks for it — the events of a calendar in Mail
+//             that is subscribed („Feiertage“) or the calendar „Aufgaben“ ('gatecontrol-mail|cal:<id>', termine.js)
 //   times     { morning, noon, afternoon, evening, night } of the quick entry (ui/quickparse.js)
 //   myday     { listdays: bool, showDone: bool } (1.2.0) — the list day card at the top of „Mein Tag“, the done ones of today
 //   startArea 'last' | 'private' | 'work' (1.2.0) — the area on opening („last“: `area`)
@@ -62,7 +64,7 @@ function normalize(raw) {
   }
   if (r.groups && typeof r.groups === 'object') {
     for (const [k, v] of Object.entries(r.groups).slice(0, 200)) {
-      if (/^gatecontrol-[a-z]+\|[A-Za-z0-9:._-]{1,80}$/.test(k) && ['private', 'work', 'hide'].includes(v)) out.groups[k] = v;
+      if (/^gatecontrol-[a-z]+\|[A-Za-z0-9:._-]{1,80}$/.test(k) && ['private', 'work', 'hide', 'show'].includes(v)) out.groups[k] = v;
     }
   }
   if (r.times && typeof r.times === 'object') for (const k of TIME_KEYS) if (isTime(r.times[k])) out.times[k] = r.times[k];

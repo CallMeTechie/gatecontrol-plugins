@@ -47,6 +47,8 @@ function portal(host, user, o = {}) {
   };
   const f = createWindow(ui.render({ view: 'portal', lang: 'de', user: { id: user.id, loggedIn: true }, allowed: true }, t), gc);
   f.window.confirm = () => true;
+  // o.search: the query of the frame's address (a direct link, GC.openPortal)
+  if (o.search) f.window.location = { search: o.search };
   f.window.atob = globalThis.atob;
   f.window.Uint8Array = Uint8Array;
   f.run();
@@ -410,3 +412,59 @@ test('a GC contact (1.4.0): the account it is linked with, a conflict „Überne
     } finally { p.stop(); }
   });
 });
+
+test('1.18.0 a direct link „?open=event/<id>“ (an event tapped in Notizen & Aufgaben): the calendar opens with the event in its dialog; one that is gone only says so', () => withMail({ gatecontrol: '1.219.0' }, async (host, c) => {
+  const anna = c.as(ANNA);
+  const cals = (await anna('GET', 'calendars')).json.calendars;
+  const today = L.ymd(new Date());
+  const ev = (await anna('POST', 'events', { calendarId: cals[0].id, title: 'Zahnarzt', allDay: false, start: L.at(today, '16:30'), end: L.at(today, '17:30'), timeZone: 'Europe/Berlin', location: 'Praxis am Markt' })).json.event;
+  const p = portal(host, ANNA, { search: `?open=event%2F${ev.eventId}` });
+  try {
+    await until('the dialog', () => p.dialogText().includes('Praxis am Markt'));
+    assert.ok(p.dialogText().includes('Zahnarzt') && p.dialogText().includes('Bearbeiten'));
+    assert.match(p.el('mp-app').className, /is-calendar/);
+    assert.ok(p.calls.some((x) => x.method === 'GET' && x.path === `events/${ev.eventId}`));
+  } finally { p.stop(); }
+  const gone = portal(host, ANNA, { search: '?open=event/99999' });
+  try {
+    await until('the calendar', () => /is-calendar/.test(gone.el('mp-app').className) && gone.calls.some((x) => x.path === 'events/99999'));
+    assert.ok(!gone.dialogText().includes('Bearbeiten'));
+  } finally { gone.stop(); }
+  // no link: the mail as ever
+  const plain = portal(host, ANNA);
+  try {
+    await until('the foot', () => plain.byLabel('Kalender'));
+    assert.doesNotMatch(plain.el('mp-app').className, /is-calendar/);
+  } finally { plain.stop(); }
+}));
+
+test('1.18.0 „?open=event/new&…“ („Mehr Angaben …“ in Notizen & Aufgaben): the form of a new event, filled in; saved through Mail', () => withMail({ gatecontrol: '1.219.0' }, async (host, c) => {
+  const anna = c.as(ANNA);
+  const cals = (await anna('GET', 'calendars')).json.calendars;
+  const d = L.addDays(L.ymd(new Date()), 3);
+  const search = `?open=event%2Fnew&title=Flohmarkt&date=${d}&time=23%3A30&loc=Bei%20Oma&cal=${cals[1].id}&rem=30&rep=weekly%3A1`;
+  const p = portal(host, ANNA, { search });
+  try {
+    await until('the form', () => p.dialogText().includes('Neuer Termin'));
+    const inputs = p.el('mp-dialog').all().filter((x) => x.localName === 'input' || x.localName === 'select');
+    const val = (type) => inputs.filter((x) => x.getAttribute('type') === type).map((x) => x.value);
+    assert.equal(inputs.find((x) => x.getAttribute('aria-label') === 'Titel').value, 'Flohmarkt');
+    assert.deepEqual(val('date').slice(0, 2), [d, L.addDays(d, 1)], 'an hour past midnight: the next day');
+    assert.deepEqual(val('time').slice(0, 2), ['23:30', '00:30']);
+    assert.ok(inputs.some((x) => x.value === 'Bei Oma'));
+    click(p.byText('button', 'Speichern', p.el('mp-dialog')));
+    await until('saved', () => p.calls.some((x) => x.method === 'POST' && x.path === 'events'));
+    const b = p.calls.find((x) => x.method === 'POST' && x.path === 'events').body;
+    assert.deepEqual([b.title, b.calendarId, b.location, b.reminders, b.recurrence && b.recurrence.freq, b.allDay], ['Flohmarkt', cals[1].id, 'Bei Oma', [30], 'weekly', false]);
+    assert.equal(b.end - b.start, 3600000);
+  } finally { p.stop(); }
+  // without a time: all day
+  const q = portal(host, ANNA, { search: `?open=event/new&title=Messe&date=${d}&rem=none` });
+  try {
+    await until('the form', () => q.dialogText().includes('Neuer Termin'));
+    click(q.byText('button', 'Speichern', q.el('mp-dialog')));
+    await until('saved', () => q.calls.some((x) => x.method === 'POST' && x.path === 'events'));
+    const b = q.calls.find((x) => x.method === 'POST' && x.path === 'events').body;
+    assert.deepEqual([b.title, b.allDay, b.startDate, b.endDate, b.reminders, b.calendarId], ['Messe', true, d, d, [], cals[0].id]);
+  } finally { q.stop(); }
+}));

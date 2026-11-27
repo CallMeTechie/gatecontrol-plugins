@@ -256,9 +256,27 @@
       $('mp-msg').hidden = true;
       $('mp-app').hidden = false;
       live();
-      if (!S.accounts.length) { renderNav(); renderEmpty(); return; }
-      reloadAll();
+      if (!S.accounts.length) { renderNav(); renderEmpty(); openLinked(); return; }
+      reloadAll().then(openLinked, openLinked);
     }, function (e) { message(T('p.failed_title'), errText(e)); });
+  }
+
+  /**
+   * 1.18.0: the tab was opened with a direct link („?open=event/<id>“ — an event tapped in „Notizen & Aufgaben“): the
+   * calendar, and the event in the dialog every event opens in. A link to something that is gone says so.
+   * „?open=event/new&title=…“ („Mehr Angaben …“ there): the form of a new event, filled in.
+   */
+  function openLinked() {
+    var search = '';
+    try { search = window.location.search || ''; } catch (e) { search = ''; }
+    var link = window.MailPimLogic.openLink(search);
+    if (!link || !CAL || !has('calendar')) return;
+    if (link.date) CAL.state.anchor = link.date;
+    if (link.create && link.create.date) CAL.state.anchor = link.create.date;
+    setArea('calendar');
+    // „Mehr Angaben …“ of the quick entry there: the form of a new event, filled in with what it made of the line
+    if (link.create) { CAL.newEvent({ prefill: link.create }); return; }
+    if (link.eventId) CAL.load().then(function () { CAL.openEvent({ eventId: link.eventId, occurrence: link.occurrence }); }, function () {});
   }
 
   function loadMe() {
