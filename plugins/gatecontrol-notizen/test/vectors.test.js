@@ -17,7 +17,10 @@ test('quick entry: every vector', () => {
     const p = Q.parse(c.input, qv.ctx);
     const got = { title: p.title, date: p.date, time: p.time, remind: p.remind, important: p.important, list: p.list, listName: p.listName, assignee: p.assignee, assigneeName: p.assigneeName, repeat: p.repeat };
     assert.deepEqual(got, c.expect, c.input);
+    if (c.marks) assert.deepEqual(p.marks, c.marks, c.input + ' (marks)');
   }
+  // a weekday next to a calendar date belongs to it (the cases with marks): there are enough of them, and the old ones stay
+  assert.ok(qv.cases.filter((c) => c.marks).length >= 20);
   assert.deepEqual(Q.parse(qv.cases[0].input, qv.ctx).marks, qv.marksOfFirst);
 });
 

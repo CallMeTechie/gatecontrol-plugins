@@ -25,9 +25,10 @@ const fenceOf = async (h, t) => 'p:' + (await store.one(h.host.gc, 'SELECT place
 const parse = async (h, user, text) => (await h.ok(user, 'POST', 'parse', { text }));
 
 test('the parser and its vectors are as they were (Android and Windows carry the same vectors)', () => {
+  // the state of 1.8.1 (a weekday next to a calendar date belongs to it): a change here is a change for every port
   const sha = (f) => crypto.createHash('sha256').update(fs.readFileSync(path.join(__dirname, '..', f))).digest('hex');
-  assert.equal(sha('ui/quickparse.js'), '1fcb5e337f4fd5ea8e42a8e73be614b3e94c75aeddf4f9ef6975b8dbbc8793d7');
-  assert.equal(sha('test/vectors/quickparse.json'), '72f79800c231127a286f816230b3822ff6bc28d7cf0cc5a80c110a9cc90e8367');
+  assert.equal(sha('ui/quickparse.js'), '9d8b1cb444308a60f75005121dc8cf073f515534d97e771995bcb6990bf0f9aa');
+  assert.equal(sha('test/vectors/quickparse.json'), 'ee7a6f38b8fb7c4cbe5ceae7220f2968987877b8c308e767416d8665c34ea84e');
 });
 
 test('me: the feature words, the search off by default, the person\'s own switches', async () => {

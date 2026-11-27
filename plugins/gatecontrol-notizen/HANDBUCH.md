@@ -1,5 +1,11 @@
-<!-- version: 1.8.0 -->
+<!-- version: 1.8.1 -->
 # Notizen & Aufgaben
+
+## Neu in 1.8.1
+
+- **Wochentag neben dem Datum:** Schreibst du „Freitag 4. Dezember Outlet“, „Freitag, 4.12.“, „am Freitag den 4. Dezember“ oder „4. Dezember, Freitag“, gehört der Wochentag jetzt zum Datum und steht nicht mehr im Titel der Aufgabe.
+- **Passt der Wochentag nicht zum Datum** (z. B. „Samstag 4. Dezember“, obwohl der 4.12. ein Freitag ist), gilt das Datum – und der Wochentag bleibt im Titel stehen, damit du den Widerspruch siehst.
+- **Apps:** Im Portal gilt das sofort; die Android- und die Windows-App folgen mit einer der nächsten Versionen.
 
 ## Neu in 1.8.0
 
@@ -208,7 +214,7 @@ Im Tresor gibt es keine Suche, keine Schlagwörter und kein „→ Aufgabe“ �
 | heute, morgen, übermorgen | das Datum |
 | Montag … Sonntag, Mo. … So., „Fr 10 Uhr“ | der nächste solche Tag |
 | in 3 Tagen, in einer Woche, in 2 Wochen, in einem Monat | das Datum |
-| 13.11., 13.11.2026, 13. November | das Datum |
+| 13.11., 13.11.2026, 13. November – auch mit Wochentag: „Freitag, 13.11.“, „Fr. 13. November“ | das Datum (passt der Wochentag nicht dazu, bleibt er im Titel stehen) |
 | 9 Uhr, 9:30, um 9, halb 10, 14h | die Uhrzeit (und eine Erinnerung) |
 | früh, mittags, nachmittags, abends, heute Abend, morgen früh | 9:00, 12:00, 15:00, 19:00 |
 | jeden Tag, täglich, werktags, jeden Montag, jeden Mo, Mi und Fr, alle 2 Wochen, monatlich, jährlich, 3 Tage nach Erledigung | eine Wiederholung |
