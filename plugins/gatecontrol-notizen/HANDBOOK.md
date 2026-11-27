@@ -1,5 +1,17 @@
-<!-- version: 1.8.1 -->
+<!-- version: 1.9.0 -->
 # Notes & Tasks
+
+## New in 1.9.0
+
+- **Events in the quick entry:** As soon as you type something in the portal, the switch **“Task | Event”** appears. An event is stored straight in the calendar of the Mail plugin – not as a copy here. Move it in the calendar and it is right on the overview at once.
+- **The page asks:** When it finds a date and a time, it asks “Make it an event?”. It never switches by itself.
+- **Chips of an event:** day, time (“2 to 4 o’clock” is read as a span; without an end it is an hour; without a time it is all day), place, calendar and reminder. Tap calendar and reminder to change them. The reminder comes from the calendar, not from here.
+- **The place as text:** After “im”, “in”, “bei” or “beim” the page reads the rest as the place. Otherwise a dashed chip offers to take the title as the place too. The place is just a text in the calendar – no reminder on arriving.
+- **Events on the overview:** Today’s events are under “Today’s events”, those of the next 14 days under “Coming up”, all of them under “Planned”. You know them by the calendar sign in the colour of their calendar. They have no check box and are never overdue. A tap opens the event in Mail.
+- **Which calendars show up:** Settings › **“Events from the calendar”** – a switch per calendar. Subscribed calendars (holidays) and the “Tasks” calendar start switched off.
+- **Without a calendar:** When the Mail plugin is missing or the calendar is off for you, the switch stays, says why and offers “Save as a task with a date”.
+- **Unchanged:** tasks with a time still go into the “Tasks” calendar.
+- Needs Mail 1.18.0 or newer. The update asks once for the permission “List the calendars in Mail”. The Android and Windows apps get “Event” with one of their next versions.
 
 ## New in 1.8.1
 
@@ -224,6 +236,8 @@ A vault has no search, no tags and no "→ Task" – the server does not know th
 | at the DIY store, at the pharmacy, at Lidl, at grandma’s, at home, 21 Ring Street | a place (see [Places](#places)) |
 
 German works too: "morgen 9 Uhr", "jeden Montag", "in 2 Wochen".
+
+**As an event** (the switch “Event”, 1.9.0 or newer) the same holds, plus: “14 bis 16 Uhr”, “14–16 Uhr”, “2 to 4 o’clock”, “14:00-15:30” give start and end (without an end: an hour); no time means all day; “im …”, “in …”, “bei …”, “beim …” give the place as text; “every monday”, “monthly”, “yearly” make a series in the calendar.
 
 ## Moving over
 

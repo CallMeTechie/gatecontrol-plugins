@@ -367,7 +367,7 @@ button.na-chip{cursor:pointer}
 .na-ev-dot{width:10px;height:10px;border-radius:50%;flex:none;background:var(--accent)}
 .na-ev-top{display:flex;flex-direction:column;gap:6px}
 .na-ev-top:empty{display:none}
-.na-ev-mode .dp-seg{max-width:260px}
+.na-seg.na-ev-mode{margin:0;max-width:240px}
 .na-chip.is-dashed{background:none;border:1px dashed var(--line-2);color:var(--muted)}
 .na-ev-note{display:flex;flex-direction:column;gap:6px;padding:10px 12px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line);font-size:13px;line-height:1.4}
 .na-ev-note b{display:flex;align-items:center;gap:6px;font-size:13.5px}

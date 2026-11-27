@@ -725,7 +725,7 @@
     var l = x.type === 'task' ? listOf(x.listId) : null;
     if (x.event) {
       // the place, „ganztägig“, the calendar — no „Mail“: an event is no to-do of a mail
-      if (x.event.location) meta.appendChild(h('span', { text: x.event.location }));
+      if (x.event.location && x.event.location !== x.title) meta.appendChild(h('span', { text: x.event.location }));
       if (x.allDay) meta.appendChild(h('span', { text: x.event.end && x.event.end.date !== (x.show || x.due).date ? T('ev.until', { date: dayText(x.event.end.date) }) : T('ev.all_day_l') }));
       else if (x.event.end && x.due && x.due.time) meta.appendChild(h('span', { text: T('ev.to', { time: x.event.end.time.replace(/^0/, '') }) }));
       if (x.event.recurring) meta.appendChild(h('span', { text: '↻', attrs: { 'aria-label': T('ev.recurring') } }));
@@ -1206,7 +1206,11 @@
       if (!s) { evReset(); mode = 'task'; }
       parsed = s ? Q.parse(s, ctxParse()) : null;
       // 1.9.0: what the line becomes — a task or an event (only where the server knows events)
-      if (evOn() && s) top.appendChild(h('div', { class: 'na-ev-mode' }, segOf([['task', T('ev.mode_task')], ['event', T('ev.mode_event')]], mode, setMode)));
+      if (evOn() && s) {
+        top.appendChild(h('div', { class: 'na-seg na-ev-mode', role: 'group', attrs: { 'aria-label': T('ev.mode') } }, [['task', T('ev.mode_task')], ['event', T('ev.mode_event')]].map(function (v) {
+          return h('button', { type: 'button', text: v[1], attrs: { 'aria-pressed': v[0] === mode ? 'true' : 'false' }, on: { click: function () { setMode(v[0]); } } });
+        })));
+      }
       if (!parsed) return;
       if (mode === 'event') { showEvent(); return; }
       // a date and a time: it may be an event — the page asks, it never switches by itself

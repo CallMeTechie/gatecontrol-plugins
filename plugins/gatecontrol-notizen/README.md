@@ -169,6 +169,33 @@ second) and `vault` `{ vault, event: 'request' | 'approved', device }` — clien
 Opening: an item's `source.open` → apps `gatecontrol://plugin/<plugin>/<route>`, portal `GC.openPortal({ plugin,
 query: { open: route } })`; a note of Familie's notebooks is `{ plugin: 'gatecontrol-notizen', route: 'note/<id>' }`.
 
+## 1.9.0 — „Termin“: an event in a calendar of Mail
+
+A third kind beside task and note: the **event**. It is stored **only in the calendar** of the Mail plugin (Mail
+≥ 1.18.0) — this plugin hands it over (`server/termine.js`) and shows what Mail reports back as a source. No table, no
+copy. Feature word `calendarEvents`; the contract for the apps: `apps-contract-termine.md` (kept with the app work).
+
+| Route | What |
+|---|---|
+| `GET events/calendars` | `{ state: 'ok' \| 'none', reason, calendars: [{ id, key, name, color, kind: own \| shared \| family \| subscribed \| tasks, writable, target, isDefault, area, shown }], defaultId, reminders: { timed, allDay }, timeZone }` — `target`: a new event may go into it; `shown`: its events are on the overview; `reason` when `none`: `no_mail`, `mail_old`, `feature_off`, `not_allowed`, `not_licensed`, `no_seat`, `no_calendar`, `unreachable`. Asked of Mail at most once a minute per person. |
+| `POST events` | `{ title, date, time?, endDate?, endTime?, allDay?, location?, calendarId?, reminder?, repeat?, clientId? }` → `{ event: { id, calendarId }, items: [Item], clientId?, replayed? }`. `date`/`time` wall-clock in the hub's zone. No time: all day. A time: an hour unless `endTime` (an end not after the start is the next day). No `calendarId`: Mail's default calendar. `reminder`: minutes, `false` none, left out: the calendar's default. `repeat`: a rule of `ui/repeat.js` except `after`. `clientId` sent again answers the event made before (`replayed: true`) — Mail keeps the key. |
+| `PATCH events/<id>` · `DELETE events/<id>` | only events made here; any other → `404` / `{ removed: false }` (changed in Mail's own form). A change of the time sends `date` (and `time`) whole. |
+| `GET me` | `events: { available, reason }` |
+| `POST parse` | `mode: 'event'` → `parsed` of `Q.parse(text, { mode: 'event' })` (`endTime`, `allDay`, `location`); `attach` and `place` are null |
+
+Errors: `400 invalid { field }`, `404 not_found` (`field: 'calendarId'` for a calendar that cannot take it),
+`503 unavailable { reason }` (the reasons above, or Mail's own: `auth_failed`, `consent_required`, …).
+
+**On the overview.** Mail reports its events as items (`kind: 'event'`, `meta.type: 'calendar'`, the calendar as the
+group; contract § 6b). The API's Item then carries `event: { end: { date, time } | null, location, calendar: { key,
+name, color, kind }, eventId, recurring, writable }`, `canComplete: false`, `overdue: false`; `source.open` leads to
+Mail (`event/<id>[/<occurrence>]`, `calendar/<date>` for the family calendar). „Mein Tag“: today's under `events`, the
+next 14 days in `upcoming` among the tasks; „Geplant“ by day; never under `overdue`; not in `views/source:gatecontrol-mail`
+and not in its count. A person's choice per calendar is `prefs.groups['gatecontrol-mail|<key>']`: `hide`, or `show`
+(new) for a calendar that starts hidden (`subscribed`, `tasks`). Every pull carries `accepts: ['calendar']`.
+
+**Tasks with a time** keep going into the calendar „Aufgaben“ (1.3.0) — nothing changed there.
+
 ## 1.8.0 — „Meine Orte“ live in the user profile
 
 GateControl keeps a person's places in the user profile („Mein Profil › Meine Orte“: portal, Android, Windows).
@@ -685,7 +712,8 @@ and notebook, 30 s after the last change); changes Familie makes itself are not 
 
 Deterministic, no AI, the same code in the server and the portal, ported 1:1 by the apps:
 `parse(text, { today, now?, lists, people, times }) → { title, date, time, remind, important, list, listName,
-assignee, assigneeName, repeat, marks }`. Understood words: README of the module (head comment) and the handbook;
+assignee, assigneeName, repeat, marks, endTime, allDay, location, looksLikeEvent }` (1.9.0: `mode: 'event'` reads a
+span of time and the place — see the module's head; `eventCases` / `signalCases` of the vectors). Understood words: README of the module (head comment) and the handbook;
 **test/vectors/quickparse.json** (51 cases, `today` 2026-11-08, a Sunday) is what every port must give. Rules worth
 knowing: a weekday means the next such day after today; a time alone means today, or tomorrow when it is over; a
 reminder is set when date and time are given; `@name` matches the first word of a person's name, `#list` a list

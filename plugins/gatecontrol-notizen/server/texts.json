@@ -811,7 +811,8 @@
   "ev.k_shared": "geteilter Kalender",
   "ev.k_family": "Familienkalender",
   "ev.k_subscribed": "abonniert",
-  "ev.k_tasks": "stehen schon als Aufgabe da"
+  "ev.k_tasks": "stehen schon als Aufgabe da",
+  "ev.mode": "Art des Eintrags"
  },
  "en": {
   "s.default_list": "Tasks",
@@ -1625,6 +1626,7 @@
   "ev.k_shared": "shared calendar",
   "ev.k_family": "family calendar",
   "ev.k_subscribed": "subscribed",
-  "ev.k_tasks": "already there as tasks"
+  "ev.k_tasks": "already there as tasks",
+  "ev.mode": "Kind of entry"
  }
 }

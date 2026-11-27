@@ -1,5 +1,17 @@
-<!-- version: 1.8.1 -->
+<!-- version: 1.9.0 -->
 # Notizen & Aufgaben
+
+## Neu in 1.9.0
+
+- **Termine in der Schnell-Eingabe:** Sobald du im Portal etwas eintippst, erscheint der Umschalter **„Aufgabe | Termin“**. Ein Termin wird direkt im Kalender des Plugins Mail gespeichert – nicht als Kopie hier. Verschiebst du ihn im Kalender, stimmt er sofort auch auf der Übersicht.
+- **Die Seite fragt nach:** Erkennt sie ein Datum und eine Uhrzeit, fragt sie „Als Termin anlegen?“. Sie schaltet nie von selbst um.
+- **Bausteine am Termin:** Tag, Uhrzeit („14 bis 16 Uhr“ wird als Dauer erkannt; ohne Ende gilt eine Stunde; ohne Uhrzeit ganztägig), Ort, Kalender und Erinnerung. Kalender und Erinnerung kannst du antippen und ändern. Die Erinnerung kommt vom Kalender, nicht von hier.
+- **Ort als Text:** Nach „im“, „in“, „bei“ oder „beim“ liest die Seite den Rest als Ort („Einkaufen im Outlet“). Sonst bietet ein gestrichelter Baustein an, den Titel auch als Ort zu nehmen. Der Ort ist nur ein Text im Kalender – keine Erinnerung beim Ankommen.
+- **Termine auf der Übersicht:** Termine von heute stehen unter „Termine heute“, die der nächsten 14 Tage unter „Demnächst“, alle unter „Geplant“. Du erkennst sie am Kalender-Zeichen in der Farbe ihres Kalenders. Sie haben keinen Haken und sind nie überfällig. Ein Tipp öffnet den Termin in Mail.
+- **Welche Kalender erscheinen:** Einstellungen › **„Termine aus dem Kalender“** – ein Schalter je Kalender. Abonnierte Kalender (Feiertage) und der Kalender „Aufgaben“ sind zunächst aus.
+- **Ohne Kalender:** Fehlt das Plugin Mail oder ist der Kalender für dich aus, bleibt der Umschalter, erklärt den Grund und bietet „Als Aufgabe mit Datum speichern“.
+- **Unverändert:** Aufgaben mit Uhrzeit stehen weiter im Kalender „Aufgaben“.
+- Voraussetzung: Mail 1.18.0 oder neuer. Beim Update fragt GateControl einmal nach der Berechtigung „Kalender in Mail auflisten“. Die Android- und die Windows-App bekommen „Termin“ mit einer der nächsten Versionen.
 
 ## Neu in 1.8.1
 
@@ -185,6 +197,7 @@ Was Familie (Aufgaben, Einkaufslisten), Mail („Zu tun“, markierte Mails), Dr
 - Brauchst du eigene **Unteraufgaben, eine Notiz oder eine Erinnerung** dazu: „Unteraufgaben, Notiz, Erinnerung …“ – dann wird daraus eine Aufgabe hier. Erledigt hier = dort erledigt.
 - **Einstellungen › Aufgaben aus anderen Plugins** (Zahnrad unten links): je Quelle an/aus, „Aufgaben der Kinder zeigen“ (alle / nur mir zugewiesene / keine), „Einkaufslisten in Mein Tag“, „Markierte Mails als Aufgabe“, „Erinnern um“ für die Müllabfuhr am Vorabend. Mail-Konten und Kinder lassen sich einem Bereich zuordnen („Arbeit (Microsoft 365) → Arbeit“) oder ausblenden. „Jetzt abgleichen“ holt den Stand sofort.
 - Fahrzeuge, NAS und Proxmox kommen in Schritt 2.
+- **Termine aus dem Kalender** (ab 1.9.0, Mail ab 1.18.0): Deine Termine aus Mail stehen unter „Termine heute“, „Demnächst“ und „Geplant“ – ohne Haken. Je Kalender schaltbar unter Einstellungen › „Termine aus dem Kalender“.
 
 > **Hinweis:** Die Plugins schicken ihre Änderungen selbst; einen ganzen Abgleich macht Notizen & Aufgaben etwa alle 12 Stunden. Eine Änderung in einer Quelle erscheint daher meist in Sekunden, spätestens nach dem nächsten Abgleich.
 
@@ -224,6 +237,15 @@ Im Tresor gibt es keine Suche, keine Schlagwörter und kein „→ Aufgabe“ �
 | beim Baumarkt, an der Apotheke, bei Lidl, bei Oma, zu Hause, Ringstraße 21 | ein Ort (siehe [Orte](#orte)) |
 
 Englisch geht auch: „tomorrow 5 pm“, „every monday“, „in 2 weeks“.
+
+**Als Termin** (Umschalter „Termin“, ab 1.9.0) gilt dasselbe, dazu:
+
+| Du schreibst | Ergebnis |
+|---|---|
+| 14 bis 16 Uhr, 14–16 Uhr, von 9:30 bis 11 Uhr, 14:00-15:30 | Beginn und Ende (ohne Ende: eine Stunde) |
+| keine Uhrzeit | ganztägig |
+| im Outlet, in der Schule, bei Oma, beim Zahnarzt | der Ort als Text (steht im Kalender) |
+| jeden Montag, monatlich, jährlich | eine Serie im Kalender („nach Erledigung“ gibt es bei Terminen nicht) |
 
 ## Umziehen
 

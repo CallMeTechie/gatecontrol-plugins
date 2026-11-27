@@ -477,6 +477,15 @@ Since 1.6.0 (`tofile_count` since 1.7.0) for Drive only (`server/services.js`; a
   `not_licensed`, `no_seat`, `auth_failed`, `consent_required`, `unreachable`, …).
 * Since 1.15.0, for Notizen & Aufgaben (a task with a time as an event; callers `gatecontrol-notizen`, `calendar_add` also
   Drive as before; 3600 calls an hour each):
+  * 1.18.0, for Notizen & Aufgaben ≥ 1.9.0 („Termin“ in its quick entry; no new service, no new permission):
+    `calendar_list` answers that caller every calendar the person sees with `kind` (own | shared | family | subscribed |
+    tasks), `key`, `isDefault`, `area`, plus `defaultId`, `reminders: { timed, allDay }`, `timeZone` (no addresses;
+    `{ calendars: [], reason }` for a person without the calendars); `calendar_add` takes for it no `calendarId` (the
+    default calendar), `endsAt`, `location`, `reminder` in minutes, `recurrence`, `items: true` (→ `{ eventId,
+    calendarId, items, replayed? }`); `calendar_update` also `location`, `allDay` + `startsAt` / `endsAt`, `reminder`,
+    `recurrence`. The events themselves go to the hub as items of the source (`server/notizen.js`,
+    `docs/notes-sources-contract.md` § 6b) once the hub asks for them (`todo_items { accepts: ['calendar'] }`).
+    Details: the head of `server/services.js`, CHANGELOG „1.18.0“.
   * `calendar_tasks` `{ userId, lang? }` → `{ ok: true, calendar: { id, name, color, created } }` — the person's calendar
     „Aufgaben“ (`calendars.role = 'tasks'`, `role` of the Calendar in the API), made on the first call. Always a
     GateControl calendar of Mail, never one of an account: every person has one without an account, it does not depend

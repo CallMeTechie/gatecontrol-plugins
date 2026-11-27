@@ -234,13 +234,65 @@ and answers only calls whose `caller` is `gatecontrol-notizen` (others: `{ ok: f
 | Source | `kind` | Notes |
 |---|---|---|
 | Familie | `task` (with `assignee`, `meta.stars`), `list` (`meta.type: 'shopping'`, `progress`) | Tasks of children: `users` = the child and the parents; the hub filters „Aufgaben der Kinder zeigen: Alle / Nur mir zugewiesene / Keine“ on `assignee`. Shopping lists: `meta.type: 'shopping'` (hub setting „Einkaufslisten in Mein Tag“). Packing lists and Pinnwand are **not** todo items — they live in the hub (§ 3). `group`: the task's list or „Familie“. |
-| Mail | `task` („Zu tun“, `subtitle` „Zu tun aus „<subject>““), flagged mails (`meta.flagged: true`) | `area: 'work'` for an account of kind business; `group` = the account (`account:<id>`, label = its name or address) so the person can map it; `users` = the account's owner. |
+| Mail | `task` („Zu tun“, `subtitle` „Zu tun aus „<subject>““), flagged mails (`meta.flagged: true`); since 1.18.0 `event` (`meta.type: 'calendar'`) — § 6b | `area: 'work'` for an account of kind business; `group` = the account (`account:<id>`, label = its name or address) so the person can map it; `users` = the account's owner. |
 | Drive | `deadline` (`meta.amount` when known, `due` the deadline date, `allDay: true`) | `users` = whoever reads the file's area and has a seat; `area: 'work'` for team folders. |
 | Schule | `homework`, `exam`, `event` (parent evening, `canComplete: false`) | `users` = the child and its recipients (parents); `assignee` = the child; `group` = the child (`child:<id>`, label the name) — the hub's „Kinder“ filter. |
 | Alltag | `event` with `lead: 'evening'`, `due` = the collection date (`allDay: true`), `title` „Gelbe Tonne rausstellen“, `subtitle` „Abholung morgen früh“ | `users` = the household (whoever gets the waste reminder); `canComplete: true` = „rausgestellt“ (hides it for everybody in the household). |
 
 The hub's per-person source settings (board „Quellen“) work only on these fields — a source needs no settings of its own
 for them.
+
+## 6b. Events of Mail's calendars (hub ≥ 1.9.0, Mail ≥ 1.18.0)
+
+Mail also reports the **events of the person's calendars** — the hub shows them on „Mein Tag“ (`Termine heute`,
+`Demnächst`) and „Geplant“ beside the tasks. An event is stored only in the calendar; the hub can make one there
+itself (`gatecontrol-mail:calendar_add`, § 6c) and otherwise only shows and opens it.
+
+```jsonc
+{ "id": "ev:4711",                       // 'ev:<eventId>'; an occurrence of a series: 'ev:<eventId>:<occurrence>'
+                                         // (the family calendar read through Mail: 'ov:familie:<id>:<date>')
+  "kind": "event", "title": "Zahnarzt", "subtitle": "Praxis am Markt",       // subtitle: the place, or null
+  "due": "2026-12-04T14:00:00+01:00", "allDay": false,                         // the start; all day: "2026-12-04", true
+  "area": "private",                     // 'work' for a business calendar
+  "users": [12], "important": false, "done": false, "canComplete": false,
+  "group": { "id": "cal:7", "label": "Privat" },   // the calendar ('overlay:familie' for the family calendar)
+  "meta": { "type": "calendar",          // the hub knows an event of a calendar by this
+            "cal": "own",                // own | shared | family | subscribed | tasks
+            "color": "#4F8DF5", "location": "Praxis am Markt",
+            "end": "2026-12-04T15:00:00+01:00",   // with a time; all day over several days: "endDate": "2026-12-06"
+            "eventId": 4711, "recurring": false, "writable": true },
+  "open": { "plugin": "gatecontrol-mail", "route": "event/4711" } }   // 'event/<id>/<occurrence>', 'calendar/<date>'
+```
+
+* **Only for a hub that asks.** A hub of v1 would show every event unasked, so Mail reports events only after the hub
+  said it takes them: the hub's pull carries `"accepts": ["calendar"]` (`todo_items { v: 1, cursor, limit, accepts }`),
+  Mail's answer then carries `"provides": ["calendar"]`. A pull without `accepts` (an older hub) switches the events off
+  again and Mail removes them with its next push. Every other source ignores `accepts`.
+* **What is reported:** from the start of today (the person's zone) for 30 days, ≤ 400 per person — the own calendars,
+  GateControl calendars shared with the person that they show in Mail (what they may read; never a private event or
+  one seen as „Gebucht“ only), the family calendar, iCal subscriptions and the calendar „Aufgaben“. Not: cancelled
+  events, declined invitations, invitations not answered yet.
+* **What the hub shows:** `meta.cal` `subscribed` and `tasks` are hidden until the person switches the calendar on
+  (hub prefs `groups['gatecontrol-mail|<group id>'] = 'show'`; `'hide'` hides any calendar). Events have no check box
+  (`canComplete: false`; `todo_complete` answers `read_only`) and are never overdue.
+
+## 6c. The hub writes an event (Mail's `calendar_*` services for `gatecontrol-notizen`)
+
+The hub lists `gatecontrol-mail:calendar_list`, `calendar_add`, `calendar_update`, `calendar_delete` in
+`permissions.services`; every call carries `userId` = GateControl's `user` of the call.
+
+* `calendar_list { userId, lang? }` → `{ ok, calendars: [{ id, key, name, color, kind, writable, isDefault, area,
+  account: { label, kind } }], defaultId, reminders: { timed, allDay }, timeZone }` — `key` is the group id of § 6b;
+  `{ ok: true, calendars: [], reason }` when the person cannot use the calendars (`feature_off`, `not_allowed`,
+  `not_licensed`, `no_seat`). Mail < 1.18.0 answers the hub `forbidden`.
+* `calendar_add { userId, title, calendarId?, allDay: false, start, end (ms) | allDay: true, startsAt, endsAt?, location?,
+  reminder? (minutes | false), recurrence?, key?, items?: true }` → `{ ok, eventId, calendarId, items: [Item], replayed? }`
+  — no `calendarId`: the default calendar; no `reminder`: the calendar's default; `key` makes it idempotent (the same
+  key answers the event made before, `replayed: true`); `items`: the event as the items of § 6b, which the hub takes at
+  once (the push brings the same).
+* `calendar_update { userId, eventId, …the same fields, location: null, recurrence: null }` and
+  `calendar_delete { userId, eventId }` → `{ ok, removed }` — only for events the hub made with a key.
+* Refusals: `invalid`, `not_found` (no such calendar / event of the caller), `forbidden`, `unavailable { reason }`.
 
 ## 6a. Reminders of Drive's deadlines (hub ≥ 1.7.0, Drive ≥ 1.30.0)
 
