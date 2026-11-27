@@ -231,6 +231,7 @@ async function route(req, gc, seg, cfg, now = Date.now()) {
   if (a === 'cast' && b && c === 'message' && !d && m === 'POST') return cast.message(gc, req, b, cfg, now);
   if (a === 'handoff' && !b && m === 'POST') return cast.handoff(gc, req, cfg, now);
   if (a === 'convert' && b === 'status' && !c && m === 'GET') return convert.status(gc, req, cfg);
+  if (a === 'convert' && b === 'request' && !c && m === 'POST') return convert.request(gc, req, cfg);
   throw fail('not_found');
 }
 

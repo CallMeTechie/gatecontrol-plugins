@@ -116,10 +116,10 @@ test('without GC.targets (older GateControl): no assignment from the page', asyn
   assert.equal(await MD.ensureTarget('jellyfin', 'a:0'), 0);
 });
 
-test('manifest asks for permissions.network.assignTargets and GateControl ≥ 1.325.0 (targets only on this page); no "Zugriffsziele öffnen" any more', () => {
+test('manifest asks for permissions.network.assignTargets and GateControl ≥ 1.328.0 (targets only on this page since 1.325.0, transcode since 1.328.0); no "Zugriffsziele öffnen" any more', () => {
   const m = require('../plugin.json');
   assert.equal(m.permissions.network.assignTargets, true);
-  assert.equal(m.gatecontrol, '>=1.325.0');
+  assert.equal(m.gatecontrol, '>=1.328.0');
   const ui = path.join(__dirname, '..', 'ui');
   for (const f of fs.readdirSync(ui)) assert.doesNotMatch(fs.readFileSync(path.join(ui, f), 'utf8'), /openSettings|targetsLink|targets_open/, f);
 });

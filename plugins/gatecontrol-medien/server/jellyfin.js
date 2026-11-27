@@ -175,7 +175,33 @@ async function sessions(gc, index, key) {
   return Array.isArray(b) ? b.filter((x) => x && typeof x === 'object').slice(0, 200) : [];
 }
 
+/**
+ * "Videos umwandeln" (1.6.0): after the gateway swapped a file, Jellyfin reads it again. POST /Library/Media/Updated
+ * with the path (UpdateType Modified) → true; Jellyfin answers 204.
+ */
+async function mediaUpdated(gc, index, key, path) {
+  const r = await call(gc, index, 'POST', '/Library/Media/Updated', { key, json: { Updates: [{ Path: String(path), UpdateType: 'Modified' }] } });
+  expect2xx(r, 'media_updated');
+  return true;
+}
+
+/** The fallback: refresh one item's metadata (POST /Items/{id}/Refresh) → true. */
+async function refreshItem(gc, index, key, id) {
+  const q = new URLSearchParams({ MetadataRefreshMode: 'Default', ImageRefreshMode: 'None', ReplaceAllMetadata: 'false', ReplaceAllImages: 'false' });
+  expect2xx(await call(gc, index, 'POST', '/Items/' + encodeURIComponent(id) + '/Refresh?' + q.toString(), { key }), 'refresh');
+  return true;
+}
+
+/** One film or episode with its media sources (as itemsPage has them) → the item or null. */
+async function item(gc, index, key, id) {
+  const q = new URLSearchParams({ Ids: String(id), Recursive: 'true', Fields: 'MediaSources,Path', EnableImages: 'false', EnableUserData: 'false' });
+  const b = expect2xx(await call(gc, index, 'GET', '/Items?' + q.toString(), { key, timeoutMs: 20000 }), 'item');
+  const list = b && Array.isArray(b.Items) ? b.Items.filter((x) => x && typeof x === 'object' && typeof x.Id === 'string') : [];
+  return list[0] || null;
+}
+
 module.exports = {
+  mediaUpdated, refreshItem, item,
   TARGET, MIN_VERSION, authHeader, versionOk, parseVersion, publicInfo, checkKey, users, user, createUser, quickConnectEnabled, setQuickConnect,
   authorize, device, devices, deleteDevice, libraries, itemsPage, sessions,
 };

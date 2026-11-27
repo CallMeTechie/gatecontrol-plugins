@@ -1,4 +1,4 @@
-<!-- version: 1.5.0 -->
+<!-- version: 1.6.0 -->
 # Media – Manual
 
 ## What the plugin does {#was-das-plugin-kann}
@@ -12,11 +12,12 @@ Media brings your own collection from **Jellyfin** and the **shares of your NAS*
 
 ## Requirements {#voraussetzungen}
 
-- GateControl 1.325.0 or newer.
+- GateControl 1.328.0 or newer.
 - A **licence of its own for Media**. It is not part of GateControl Lifetime or a bundle.
 - **Jellyfin 10.9 or newer** with Quick Connect (e.g. the Synology package) and/or SMB/WebDAV shares on the NAS.
 - A gateway in the home network and a **route** for Jellyfin or the NAS's WebDAV (domain → gateway → target). The server reaches the source over it (home target), and away the devices play over it through the VPN. A route released for internal use only is enough. The server does not route the home network itself into the tunnel.
 - GateControl apps in a version with media from the server.
+- For **converting** (optional): a gateway 1.50.0 or newer on the NAS (Docker, amd64) with the feature **“Convert videos”** switched on, and the permission “Convert videos” for Media (see [Converting videos](#umwandeln-nachts)).
 
 ## Setting up {#einrichten}
 
@@ -92,7 +93,42 @@ Every row shows the **reason**, the three **devices** (✓ plays directly, ~ dep
 
 **Estimated, not measured:** size and duration are for a NAS with an Intel J3455 (Apollo Lake) and the target H.264 8 bit in hardware; audio, subtitles and chapters would stay unchanged. A 20-minute episode in 1080p50 with 10 bit then takes about 15–30 minutes.
 
-**Converting itself comes later.** It needs its own service "umwandeln" on the gateway (at night 1–6 am, paused while someone watches, the original kept 14 days in the folder `.gc-papierkorb`). Until then the page only shows the list. The videos still play: Jellyfin converts them live, with "Convert" it stutters.
+Without a gateway with the service "umwandeln" the page only shows the list and says what is missing. The videos still play: Jellyfin converts them live, with "Convert" it stutters.
+
+## Converting videos {#umwandeln-nachts}
+
+From Media 1.6.0 the **gateway on the NAS** converts the videos of the list – into H.264 with 8 bit, with Intel graphics. Audio, subtitles, chapters and fonts are copied, the file keeps its name and place. Jellyfin so keeps the video with "watched" and the progress.
+
+**Setting up (once):**
+
+1. Gateway 1.50.0 or newer on the NAS. In GateControl: **Gateways › gateway › Features › Devices at home › “Convert videos”** on, under **“Folders and user”** enter the media folders (e.g. `/volume2/mediathek`) and the UID/GID of a DSM user of its own that may write only to these folders.
+2. **Download docker-compose.yml** and apply it on the NAS (it contains the service "umwandeln").
+3. When updating to Media 1.6.0, confirm the new permission **“Convert videos”** (Settings › Plugins › Media). Without it the page stays with the list.
+
+If something is missing, the top of the page says what to do (gateway too old, feature off, service missing, group of the graphics missing …).
+
+**Converting:**
+
+- **Convert** on a row queues the file for the next night, **“All overnight”** every open row of the level “Convert”. The check boxes select several. **⋮ › Convert now** starts at once, during the day too.
+- **At night 1–6 am** (server time, changeable under **Settings**): one file after the other. A new one only starts when it is likely to finish before the window ends; a running one may finish. Media estimates the duration with the measured speed of the gateway (3 × real time with graphics at first).
+- **Order:** “now”, then episodes of a series somebody is watching (in episode order), then “stuttered while playing”, then in the order they were queued.
+- **Pause while watching:** while Jellyfin plays something, the gateway pauses and goes on after the playback (can be switched off under Settings). If the server fails, it goes on by itself after three minutes.
+- **Running now** shows progress, speed, time left and free space, with **Pause** and **Cancel** (the original stays unchanged).
+- Only **MKV** files in the media folders of the gateway. MP4 and AVI are on the list with “comes later”.
+
+**Check:** before swapping, the gateway checks streams, duration, chapters and a complete test run. Then Jellyfin reads the file again, and Media checks that Jellyfin sees 8 bit and the same runtime. **“checked ›”** shows original against new, the test run, what Jellyfin reports and where the original is.
+
+**Trash:** the original stays in the folder `.gc-papierkorb` of the same share, **14 days** by default (setting **Trash days**), then the gateway deletes it. The tile **Trash** opens the list with **Restore** (the converted file is replaced, Jellyfin reads it again, Media does not convert it again by itself), **Delete now** and **Empty trash**. On Btrfs with snapshots the space is only freed once the snapshots expire too.
+
+**Errors:** *Not enough space* – the file stays queued and comes again the next night. *No graphics / group missing* – Media pauses converting for that gateway until it reports ready again. *File changed* – it is judged again. Anything else is a failed attempt; after **two** failed attempts the file is skipped (filter **Errors**, with the last lines of ffmpeg). In every error the original stays unchanged.
+
+**In the morning** the administrators get a notification “3 videos converted · 1 error” – only when something happened in the night (topic “Media: videos converted”).
+
+**Requested from the app:** people can “request conversion” in the apps. The row gets “requested from the app” (filter **Requested**); you decide whether to queue it.
+
+**Settings** (gear): time window, pause while watching, trash days (1–365) and quality (16–32, default 23; lower = better and larger). Trash days and quality apply to the feature of the gateway.
+
+An update of the gateway in the night restarts the running conversion.
 
 ## Permissions {#berechtigungen}
 
@@ -102,6 +138,8 @@ Every row shows the **reason**, the three **devices** (✓ plays directly, ~ dep
 | People with Media | see Media in their apps with the sources shared with them. |
 | Children (family: child) | see NAS shares only with the setting “Children see NAS shares”. For Jellyfin the parental control of their Jellyfin user applies. |
 | Devices | get a NAS password only with device binding, an active person with the right to the share. The Jellyfin access is made on the device itself; the server never sees it. |
+
+The plugin permission **“Convert videos”** (from 1.6.0) lets Media hand files of the media folders to the gateway for converting – the file is replaced, the original stays in the trash. The administrator confirms it with the update. Only administrators see the page “Convert”.
 
 The Jellyfin key never leaves the server. The log names people, devices and sources, never passwords, keys, codes or Jellyfin tokens.
 
@@ -113,6 +151,13 @@ The Jellyfin key never leaves the server. The log names people, devices and sour
 - **“unreachable through the tunnel”** on the tab Devices: is the source's HTTPS address for away (the route's domain) right? Is the route on, the gateway online, and does the DSM firewall allow the gateway (8096, 5006)?
 - **A phone is lost**: remove it in GateControl (Jellyfin closes at once or within 5 minutes). The NAS password cannot be taken back from a device that never comes online again: change it in DSM and replace it under Sources.
 - **Licence**: without a licence of its own for Media the apps hide Media. A GateControl Lifetime licence does not count here.
+
+## New in 1.6.0 {#neu-1-6-0}
+
+- **Converting videos:** the gateway on the NAS converts the videos of the list at night – queue, “All overnight”, “Convert now”, pause while watching, check in Jellyfin, trash with restore (see [Converting videos](#umwandeln-nachts)).
+- **New permission “Convert videos”** – please confirm it with the update. Needs GateControl 1.328.0 or newer and a gateway 1.50.0 or newer.
+- **Morning notification** to the administrators when something was converted in the night.
+- **App API:** `v1/convert/status` names queue, place, start time and progress; `v1/convert/request` (“request conversion”).
 
 ## New in 1.5.0 {#neu-1-5-0}
 

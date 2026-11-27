@@ -27,7 +27,8 @@ test/               node:test gegen tools/testing/mock-host.js; test/fixtures = 
 test/spike/         das Skript des Spikes M0 (gegen ein echtes Jellyfin)
 ```
 
-Mindestversion **GateControl 1.325.0** (ab Medien 1.2.0: die Zugriffsziele verwaltet nur noch der Reiter Quellen, GateControl
+Mindestversion **GateControl 1.328.0** (ab Medien 1.6.0: Recht `transcode` und Host-API `gc.transcode` für „Videos
+umwandeln“ – das Umwandeln selbst braucht dazu ein Gateway ab 1.50.0 mit eingeschalteter Funktion; ab Medien 1.2.0: die Zugriffsziele verwaltet nur noch der Reiter Quellen, GateControl
 zeigt sie unter Einstellungen nicht mehr; ab 1.1.0 `window.GC.targets` mit `permissions.network.assignTargets` – der
 Quellen-Dialog weist die Zugriffsziele `jellyfin`/`webdav`/`smb` selbst zu; dazu Signal-Topic, `ui.settingsPages`, `reason: plugin_unavailable`). Mit
 **GateControl ≥ 1.322.0** nutzt das Plugin den Hook `devicesChanged` (entferntes/gesperrtes Gerät verliert Jellyfin
@@ -183,14 +184,25 @@ Nach der ersten SMB-Anmeldung (nur wenn das Passwort vorher über `secret` gehol
 
 Der Weg zur Quelle (z. B. `problem: "tunnel_unreachable"`, „NAS durch den Tunnel nicht erreichbar“). Nur bei Änderung senden.
 
-### GET v1/convert/status?items=<id>,<id> → `{ ok, v: 1, available, items }` (ab 1.5.0)
+### GET v1/convert/status?items=<id>,<id> → `{ ok, v: 1, available, items, states }` (ab 1.5.0)
 
 Für den späteren Hinweis vor dem Abspielen („Videos umwandeln“, Frage 100). `items`: höchstens 100 Jellyfin-Item-IDs
 (32 Hex-Zeichen, Bindestriche und Großbuchstaben erlaubt), sonst `invalid` (`field: 'items'`). Ohne Recht „Medien“
 `no_access`. Antwort je ID in der angefragten Reihenfolge: `{ id, sourceId, level: 'convert' | 'hint' | 'info' | null,
 reasons: ['h264_10bit', …], devices: { phone, tv, windows: 'yes' | 'maybe' | 'no' } | null, stalled, state: 'none' }` –
 nur aus Jellyfin-Quellen, die die Person sieht (sonst `level: null`). `available: false` und `state: 'none'`, solange
-es das Umwandeln (Gateway-Dienst) nicht gibt; später kommen `queued | running | done` dazu.
+es das Umwandeln (Gateway-Dienst) nicht gibt. Ab 1.6.0 hat jedes Element zusätzlich `requested` (aus einer App angefragt),
+`state: 'none' | 'queued' | 'running' | 'done'`, `position` (Platz in der Warteschlange, ab 1), `startsAt` (geschätzter
+Start, ISO) und `percent` (beim Umwandeln); `states` ist dieselbe Angabe als Objekt je ID
+(`{ <id>: { state, position, startsAt, percent } }`, Form des Vertrags). Eine schon umgewandelte Datei, die nicht mehr in der
+Liste steht, antwortet mit `state: 'done'`. `available: true`, sobald ein Gateway umwandeln kann. Vertrag:
+`medien-entwurf/umwandeln-apps-vertrag.md`.
+
+### POST v1/convert/request `{ itemId }` → `{ ok, v: 1, requested: true, requestedAt, state, position, startsAt, percent }` (ab 1.6.0)
+
+„Umwandeln anfragen“ (Frage 100 b): setzt die Datei nur auf die Liste („aus der App angefragt“), nicht in die
+Warteschlange – vormerken entscheidet der Admin. Nur Dateien mit Befund (`convert`/`hint`) aus Quellen, die die Person
+sieht (sonst `not_found`), Recht „Medien“ (sonst `no_access`), höchstens 30 je Stunde und Person (`rate_limited`).
 Gründe: `h264_10bit`, `chroma` (4:2:2/4:4:4/12 Bit), `dovi`, `hevc_10bit`, `av1`, `legacy_video`, `container`,
 `audio_hd`, `audio_ac3`, `image_subs`, `interlaced`.
 
@@ -281,7 +293,12 @@ Freigaben wie im Vertrag. Keine Geheimnisse (Felder mit Namen wie token/password
 password?, smb, webdav }` (ab 1.4.0, ohne Speichern; `password` fehlt beim Bearbeiten → das gespeicherte) · `GET targets` (+ `made`) ·
 `POST targets/made { target, assignment }` · `POST targets/compact { target, map: { "<alter Index>": <neuer> }, forget? }` · `GET log` ·
 `GET convert` (ab 1.5.0: Liste „nicht überall abspielbar“, Zahlen, Schätzung, Stand je Quelle; startet den ersten Durchlauf) ·
-`POST convert/scan` (voller Durchlauf im Hintergrund).
+`POST convert/scan` (voller Durchlauf im Hintergrund). Ab 1.6.0 (Umwandeln über das Gateway, `server/convert-jobs.js`):
+`GET convert` zusätzlich `transcode { available, reason, gateways }`, `queue`, `current`, `trash`, `settings` und je Zeile
+`conv { state, position, error, fails, job, minutes, why, check, requested, hidden }` · `POST convert/queue { items: [{ sourceId,
+id }], now? }` · `POST convert/all` („Alle über Nacht“) · `GET convert/file?sourceId&id` (Ansicht „geprüft“) · `POST convert/file
+{ sourceId, id, action: unqueue | pause | resume | hide | unhide }` · `GET convert/trash` · `POST convert/trash { gatewayId, id |
+all, action: restore | purge }` · `PUT convert/settings { from, to, pauseWatch, trashDays, quality }`.
 
 Zugriffsziele aufräumen (ab 1.4.0): `GC.targets.set(id, list)` ersetzt die ganze Liste, eine Quelle nennt ihre
 Zuweisung über die Position (`targetIndex`). Der Dialog merkt sich jede Zuweisung, die er anhängt (`targets/made`,
@@ -300,5 +317,8 @@ Jede Quelle in `GET sources` hat `home: { level: unique | weak | none, why: null
 `mappings`, `pairings` (Gerät ↔ Jellyfin-DeviceId ↔ Benutzer, nie ein Token), `deliveries` (welches Gerät welchen
 Passwort-Stand bekam), `reports`, `known_devices`, `hits` (Ratenbegrenzung), `log` (nie Passwörter, Schlüssel, Codes,
 Tokens); `migrations/002_convert.sql`: `conv_items` (ab 1.5.0, nur Dateien mit Befund, Stand des letzten Durchlaufs in
-`gc.storage` `conv.scan`). Geheimnisse: `jf.<id>.key`, `share.<id>.pw` über `gc.settings.setSecret`. Die Jellyfin-DeviceId ist
+`gc.storage` `conv.scan`); `migrations/003_convert_jobs.sql` (ab 1.6.0): `conv_files` (Zustand je Datei mit Schnappschuss der
+Listenzeile, Warteschlange, Fehlversuche, Prüfung in Jellyfin, ausgeblendet, angefragt) und `conv_jobs` (jeder Versuch mit
+eigener `id`, Ergebnis des Gateways; Tempo und Morgen-Mitteilung). `gc.storage`: `conv.settings` (Zeitfenster, Pause),
+`conv.blocked`, `conv.paused`, `conv.watching`, `conv.notified`. Geheimnisse: `jf.<id>.key`, `share.<id>.pw` über `gc.settings.setSecret`. Die Jellyfin-DeviceId ist
 `gc-` + 20 Zeichen HMAC eines zufälligen Plugin-Schlüssels (`gc.storage` `pepper`) über Quelle und Geräte-ID.

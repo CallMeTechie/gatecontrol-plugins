@@ -1,8 +1,9 @@
 'use strict';
 
-// "Videos umwandeln", step 1 (1.5.0): the list of films and episodes that do not play on every device — nothing is
-// converted yet. Converting needs the service "umwandeln" on the gateway (Frage 92 a), which comes later; until then
-// the page and the App API say `available: false` and offer no button that would pretend otherwise.
+// "Videos umwandeln": the list of films and episodes that do not play on every device (step 1, 1.5.0) and, since
+// 1.6.0, converting them through the service "umwandeln" of a gateway (server/convert-jobs.js, host API
+// gc.transcode). Without gc.transcode (an older GateControl) or without a gateway that can convert, the page and the
+// App API say `available: false` and offer no button that would pretend otherwise.
 //
 //   scan     GET /Items in pages (each answer < 5 MB) for every Jellyfin source, judged by convert-rules.js; only rows
 //            with something to report are kept (conv_items). The first scan starts when an administrator opens the
@@ -10,14 +11,15 @@
 //            of it again (drops what is gone).
 //   watch    every 60 s GET /Sessions while the list has rows: a playback Jellyfin converts slower than real time
 //            marks the file "beim Abspielen gestockt" (with Jellyfin's TranscodeReasons) and moves it up the list.
-//   status   App API v1/convert/status?items=… — for the later hint before playing.
+//   status   App API v1/convert/status?items=… — for the hint before playing; v1/convert/request "Umwandeln anfragen".
 
 const store = require('./store');
 const jf = require('./jellyfin');
 const sources = require('./sources');
 const rights = require('./rights');
 const rules = require('./convert-rules');
-const { fail, str, json, iso } = require('./util');
+const jobs = require('./convert-jobs');
+const { fail, str, json, iso, sourceIdOf } = require('./util');
 
 const STATE_KEY = 'conv.scan';
 const INCREMENTAL_MS = 30 * 60000;
@@ -28,7 +30,7 @@ const PAGE_MIN = 25;
 const MAX_PAGES = 1000;
 const LIST_MAX = 2000;
 const STATUS_IDS_MAX = 100;
-// the decided night window (Frage 96 a) — only shown as "the night has room for …" until the queue exists
+// the decided night window (Frage 96 a) — the default; the page can change it (convert-jobs.js settings)
 const WINDOW = { from: '01:00', to: '06:00', minutes: 300 };
 
 const running = { p: null, full: false, startedAt: null };
@@ -136,16 +138,23 @@ function start(gc, { full = false } = {}) {
   return running.p;
 }
 
-/** "beim Abspielen gestockt": Jellyfin converts the video of a listed file slower than its frame rate. */
-async function watch(gc, now) {
-  const n = await store.one(gc, 'SELECT COUNT(*) AS n FROM conv_items');
-  if (!n || !n.n) return 0;
-  let marked = 0;
+/** GET /Sessions of every Jellyfin source → [{ src, list }] (a source that does not answer is left out). */
+async function sessionsAll(gc) {
+  const out = [];
   for (const src of await jellyfins(gc)) {
     const key = await sources.apiKey(gc, src);
     if (!key) continue;
-    let list;
-    try { list = await jf.sessions(gc, src.config.targetIndex || 0, key); } catch { continue; }
+    try { out.push({ src, list: await jf.sessions(gc, src.config.targetIndex || 0, key) }); } catch { /* next minute */ }
+  }
+  return out;
+}
+
+/** "beim Abspielen gestockt": Jellyfin converts the video of a listed file slower than its frame rate. */
+async function watch(gc, now, sessions = () => sessionsAll(gc)) {
+  const n = await store.one(gc, 'SELECT COUNT(*) AS n FROM conv_items');
+  if (!n || !n.n) return 0;
+  let marked = 0;
+  for (const { src, list } of await sessions()) {
     for (const s of list) {
       const ti = s.TranscodingInfo;
       const np = s.NowPlayingItem;
@@ -163,14 +172,24 @@ async function watch(gc, now) {
   return marked;
 }
 
-/** Background (every 60 s): the next scan when due, the session watch. */
+/** One item of Jellyfin read again (after a conversion was checked): its row of the list as the scan would write it. */
+async function rejudge(gc, src, item) {
+  const st = await loadState(gc);
+  await savePage(gc, src, [item], Number.isSafeInteger(st.seq) ? st.seq : 0, Date.now());
+}
+
+/** Background (every 60 s): the next scan when due, the session watch, converting (convert-jobs.js). */
 async function background(gc, now) {
   const st = await loadState(gc);
   if (st.at && !running.p) {
     if (now - (st.fullAt || 0) >= FULL_MS) start(gc, { full: true });
     else if (now - st.at >= INCREMENTAL_MS) start(gc, { full: false });
   }
-  try { await watch(gc, now); } catch (e) { gc.log.debug('convert watch failed', (e && e.code) || 'error'); }
+  // /Sessions at most once a minute, only when somebody needs it
+  let memo = null;
+  const sessions = () => (memo || (memo = sessionsAll(gc)));
+  try { await watch(gc, now, sessions); } catch (e) { gc.log.debug('convert watch failed', (e && e.code) || 'error'); }
+  try { await jobs.background(gc, now, { sessions, rejudge }); } catch (e) { gc.log.warn('convert jobs failed', (e && (e.code || e.message)) || 'error'); }
 }
 
 function rowView(r, names) {
@@ -199,7 +218,8 @@ async function view(gc) {
     counts.stalled += r.s || 0;
   }
   const rows = await store.all(gc, `SELECT * FROM conv_items ORDER BY ${ORDER} LIMIT ?`, [LIST_MAX]);
-  const items = rows.map((r) => rowView(r, names));
+  const conv = await jobs.overview(gc, rows.map((r) => rowView(r, names)));
+  const items = conv.items;
   const totals = { minutes: 0, sizeBefore: 0, sizeAfter: 0, unknown: 0 };
   for (const r of await store.all(gc, "SELECT size, estimate FROM conv_items WHERE level = 'convert'")) {
     const e = json(r.estimate, null);
@@ -209,15 +229,18 @@ async function view(gc) {
     totals.sizeAfter += e.size;
   }
   const per = st.sources || {};
+  const st2 = { requested: 0, hidden: 0 };
+  for (const it of items) { if (it.conv.requested && it.conv.state === 'none') st2.requested++; if (it.conv.hidden) st2.hidden++; }
   return {
-    available: false,
+    available: conv.transcode.available,
+    transcode: conv.transcode, queue: conv.queue, current: conv.current, trash: conv.trash, settings: conv.settings, marks: st2,
     scan: {
       at: iso(st.at), fullAt: iso(st.fullAt), running: !!running.p, full: running.full,
       total: Object.values(per).reduce((n, x) => n + (x && Number.isSafeInteger(x.total) ? x.total : 0), 0),
       sources: jfs.map((s) => ({ id: s.id, name: s.name, enabled: s.enabled, at: iso(per[s.id] && per[s.id].at), total: per[s.id] ? per[s.id].total || 0 : null, error: (per[s.id] && per[s.id].error) || null })),
     },
-    counts, totals, window: WINDOW, nas: 'apollo_lake',
-    items, truncated: counts.convert + counts.hint + counts.info > items.length,
+    counts, totals, window: conv.window, nas: 'apollo_lake',
+    items, truncated: counts.convert + counts.hint + counts.info > rows.length,
   };
 }
 
@@ -240,23 +263,131 @@ async function status(gc, req, cfg) {
   const rows = ids.length && visible.length
     ? await store.all(gc, `SELECT source_id, item_id, level, reasons, devices, stalled_at FROM conv_items WHERE item_id IN (${store.marks(ids.length)}) AND source_id IN (${store.marks(visible.length)})`, [...ids, ...visible])
     : [];
+  // a file converted (or being checked) has dropped out of the list: its row in conv_files still answers
+  const files = ids.length && visible.length
+    ? await store.all(gc, `SELECT source_id, item_id, snap, requested_at FROM conv_files WHERE item_id IN (${store.marks(ids.length)}) AND source_id IN (${store.marks(visible.length)})`, [...ids, ...visible])
+    : [];
+  const keys = [];
+  for (const id of ids) { const r = rows.find((x) => x.item_id === id) || files.find((x) => x.item_id === id); if (r) keys.push([r.source_id, id]); }
+  const states = await jobs.appStates(gc, keys);
+  const none = { state: 'none', position: null, startsAt: null, percent: null };
   const items = ids.map((id) => {
     const r = rows.find((x) => x.item_id === id);
-    if (!r) return { id, sourceId: null, level: null, reasons: [], devices: null, stalled: false, state: 'none' };
-    return { id, sourceId: r.source_id, level: r.level, reasons: json(r.reasons, []).map((x) => x.code), devices: json(r.devices, null), stalled: !!r.stalled_at, state: 'none' };
+    const f = files.find((x) => x.item_id === id);
+    const sid = (r || f || {}).source_id;
+    const c = sid ? states[sid + '/' + id] || none : none;
+    const requested = !!(f && f.requested_at);
+    if (!r && f && c.state !== 'none') {
+      const s = json(f.snap, {});
+      return { id, sourceId: f.source_id, level: s.level || null, reasons: (s.reasons || []).map((x) => x.code), devices: s.devices || null, stalled: false, requested, ...c };
+    }
+    if (!r) return { id, sourceId: null, level: null, reasons: [], devices: null, stalled: false, requested: false, ...none };
+    return { id, sourceId: r.source_id, level: r.level, reasons: json(r.reasons, []).map((x) => x.code), devices: json(r.devices, null), stalled: !!r.stalled_at, requested, ...c };
   });
-  return { v: 1, available: false, items };
+  const out = {};
+  for (const x of items) out[x.id] = { state: x.state, position: x.position, startsAt: x.startsAt, percent: x.percent };
+  const av = await jobs.available(gc);
+  return { v: 1, available: !!(av && av.available), items, states: out };
 }
+
+/** App API POST v1/convert/request { itemId }: "Umwandeln anfragen" — onto the list for the administrator only. */
+async function request(gc, req, cfg) {
+  const user = req.user;
+  if (!(await rights.mediaOf(gc, user)).media) throw fail('no_access');
+  const b = req.body && typeof req.body === 'object' ? req.body : {};
+  const id = itemIdOf(b.itemId);
+  if (!id) throw fail('invalid', { field: 'itemId' });
+  const visible = (await rights.visibleSources(gc, user, await sources.list(gc), cfg)).filter((s) => s.kind === 'jellyfin');
+  const row = visible.length
+    ? await store.one(gc, `SELECT * FROM conv_items WHERE item_id = ? AND source_id IN (${store.marks(visible.length)}) AND level IN ('convert', 'hint')`, [id, ...visible.map((s) => s.id)])
+    : null;
+  if (!row) throw fail('not_found');
+  const names = {};
+  for (const s of visible) names[s.id] = s.name;
+  const f = await jobs.request(gc, rowView(row, names), user.id);
+  const st = (await jobs.appStates(gc, [[row.source_id, id]]))[row.source_id + '/' + id];
+  return { v: 1, requested: true, requestedAt: iso(f.requested_at), ...st };
+}
+
+/** The list rows for these keys ({ sourceId, id }) as the admin list shows them. */
+async function rowsOf(gc, keys) {
+  const names = {};
+  for (const s of await sources.list(gc)) names[s.id] = s.name;
+  const out = [];
+  for (const k of keys) {
+    const r = await store.one(gc, 'SELECT * FROM conv_items WHERE source_id = ? AND item_id = ?', [k.sourceId, k.id]);
+    if (r) out.push(rowView(r, names));
+  }
+  return out;
+}
+
+function keyOf(b) {
+  const sourceId = sourceIdOf(b && b.sourceId);
+  const id = itemIdOf(b && b.id);
+  if (!sourceId || !id) throw fail('invalid', { field: 'id' });
+  return { sourceId, id };
+}
+
+const FILE_ACTIONS = ['unqueue', 'pause', 'resume', 'hide', 'unhide'];
 
 async function route(req, gc, seg) {
   const m = String(req.method || 'GET').toUpperCase();
+  const b = req.body && typeof req.body === 'object' ? req.body : {};
+  const q = req.query && typeof req.query === 'object' ? req.query : {};
   const [, , x] = seg;
   if (!x && m === 'GET') return view(gc);
   if (x === 'scan' && m === 'POST') {
     start(gc, { full: true });
     return { scan: { running: true } };
   }
+  // "Umwandeln" (tonight) / "Jetzt umwandeln" for one or more rows
+  if (x === 'queue' && m === 'POST') {
+    const list = Array.isArray(b.items) ? b.items : [];
+    if (!list.length || list.length > 500) throw fail('invalid', { field: 'items' });
+    return jobs.queue(gc, await rowsOf(gc, list.map(keyOf)), { now: b.now === true });
+  }
+  // "Alle über Nacht": every open row of the level "Umwandeln" that can be converted
+  if (x === 'all' && m === 'POST') {
+    const names = {};
+    for (const s of await sources.list(gc)) names[s.id] = s.name;
+    const rows = await store.all(gc, `SELECT i.* FROM conv_items i LEFT JOIN conv_files f ON f.source_id = i.source_id AND f.item_id = i.item_id
+      WHERE i.level = 'convert' AND (f.state IS NULL OR f.state = 'none') AND COALESCE(f.hidden, 0) = 0 ORDER BY ${ORDER.replace(/\b(level|stalled_at|size|item_id)\b/g, 'i.$1')} LIMIT 500`);
+    const av = await jobs.available(gc);
+    const ok = rows.map((r) => rowView(r, names)).filter((it) => !jobs.notQueueable(it, av, null));
+    if (!ok.length) return { queued: [], skipped: [] };
+    return jobs.queue(gc, ok);
+  }
+  if (x === 'file' && m === 'GET') {
+    const k = keyOf(q);
+    return jobs.detail(gc, k.sourceId, k.id);
+  }
+  if (x === 'file' && m === 'POST') {
+    const k = keyOf(b);
+    if (!FILE_ACTIONS.includes(b.action)) throw fail('invalid', { field: 'action' });
+    const now = Date.now();
+    if (b.action === 'hide' || b.action === 'unhide') {
+      const [it] = await rowsOf(gc, [k]);
+      if (!it && !(await jobs.fileOf(gc, k.sourceId, k.id))) throw fail('not_found');
+      if (it) await jobs.ensureFile(gc, it, now);
+      await store.run(gc, 'UPDATE conv_files SET hidden = ?, updated_at = ? WHERE source_id = ? AND item_id = ?', [b.action === 'hide' ? 1 : 0, now, k.sourceId, k.id]);
+      return { hidden: b.action === 'hide' };
+    }
+    const f = await jobs.fileOf(gc, k.sourceId, k.id);
+    if (!f) throw fail('not_found');
+    if (b.action === 'unqueue') { const r = await jobs.unqueue(gc, f, now); return { state: r.state }; }
+    return jobs.pauseJob(gc, f, b.action === 'pause', now);
+  }
+  if (x === 'trash' && m === 'GET') return jobs.trash(gc);
+  if (x === 'trash' && m === 'POST') {
+    const gid = Number.isSafeInteger(b.gatewayId) && b.gatewayId > 0 ? b.gatewayId : null;
+    if (!gid) throw fail('invalid', { field: 'gatewayId' });
+    const jid = typeof b.id === 'string' && /^[A-Za-z0-9_-]{8,64}$/.test(b.id) ? b.id : null;
+    if (b.action === 'restore' && jid) return jobs.restore(gc, gid, jid);
+    if (b.action === 'purge' && (jid || b.all === true)) return jobs.purge(gc, gid, b.all === true ? { all: true } : { id: jid });
+    throw fail('invalid', { field: 'action' });
+  }
+  if (x === 'settings' && m === 'PUT') return jobs.saveSettings(gc, b);
   throw fail('not_found');
 }
 
-module.exports = { route, view, status, start, scan, watch, background, itemIdOf, WINDOW, _running: running, STATE_KEY };
+module.exports = { route, view, status, request, start, scan, watch, sessionsAll, rejudge, background, itemIdOf, WINDOW, _running: running, STATE_KEY };

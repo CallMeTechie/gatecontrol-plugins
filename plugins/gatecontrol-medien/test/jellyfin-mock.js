@@ -33,6 +33,8 @@ function createJellyfin(version = '10.10.7', o = {}) {
     // "Videos umwandeln": films/episodes (test/fixtures/media-items.json), sessions, the largest page that still fits
     // in the host's 5 MB answer (a larger one fails like the host: ERR_NET "answer too large")
     items: clone(o.items || []), sessions: [], maxItemsPage: o.maxItemsPage || 500,
+    // 1.6.0: what the plugin asked Jellyfin to read again (/Library/Media/Updated paths, /Items/{id}/Refresh ids)
+    updated: [], refreshed: [], updateFails: false,
   };
   const reply = (status, body) => ({ status, headers: { 'content-type': 'application/json' }, body: body === undefined ? '' : (typeof body === 'string' ? body : JSON.stringify(body)) });
   const tokenOf = (h) => { const m = /Token="([^"]*)"/.exec((h && (h.Authorization || h.authorization)) || ''); return m ? m[1] : null; };
@@ -81,14 +83,22 @@ function createJellyfin(version = '10.10.7', o = {}) {
       case 'GET /Items': {
         const types = String(q.get('IncludeItemTypes') || '').split(',');
         const since = q.get('MinDateLastSaved');
-        const list = st.items.filter((x) => types.includes(x.Type) && (!since || Date.parse(x.DateLastSaved) >= Date.parse(since)));
+        const ids = q.get('Ids') ? q.get('Ids').split(',') : null;
+        const list = ids ? st.items.filter((x) => ids.includes(x.Id))
+          : st.items.filter((x) => types.includes(x.Type) && (!since || Date.parse(x.DateLastSaved) >= Date.parse(since)));
         const start = Number(q.get('StartIndex') || 0);
         const limit = Number(q.get('Limit') || 100);
         if (limit > st.maxItemsPage) { const e = new Error('answer too large'); e.code = 'ERR_NET'; throw e; }
         return reply(200, { Items: list.slice(start, start + limit), TotalRecordCount: list.length, StartIndex: start });
       }
       case 'GET /Sessions': return reply(200, st.sessions);
+      case 'POST /Library/Media/Updated': {
+        if (st.updateFails) return reply(500, 'Error processing request.');
+        for (const x of (opts.json && opts.json.Updates) || []) st.updated.push({ path: x.Path, type: x.UpdateType });
+        return reply(204);
+      }
       default:
+        if (method === 'POST' && /^\/Items\/[0-9a-f]{32}\/Refresh$/.test(u.pathname)) { st.refreshed.push(u.pathname.split('/')[2]); return reply(204); }
         if (method === 'GET' && u.pathname.startsWith('/Users/')) {
           const x = st.users.find((y) => y.Id === u.pathname.slice(7));
           return x ? reply(200, x) : reply(404, 'Error processing request.');
