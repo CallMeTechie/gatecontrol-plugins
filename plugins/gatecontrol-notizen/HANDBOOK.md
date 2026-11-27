@@ -1,5 +1,11 @@
-<!-- version: 1.8.0 -->
+<!-- version: 1.8.1 -->
 # Notes & Tasks
+
+## New in 1.8.1
+
+- **A weekday next to the date:** when you write “Friday, December 4 outlet”, “Fri 4 Dec”, “Friday 4.12.” or “4 December, Friday”, the weekday now belongs to the date and no longer stays in the title of the task.
+- **When the weekday does not fit the date** (e.g. “Saturday, December 4” although December 4 is a Friday), the date counts – and the weekday stays in the title, so that you see the contradiction.
+- **Apps:** the portal does this at once; the Android and the Windows app follow with one of the next versions.
 
 ## New in 1.8.0
 
@@ -208,7 +214,7 @@ A vault has no search, no tags and no "→ Task" – the server does not know th
 | today, tomorrow, the day after tomorrow | the date |
 | Monday … Sunday, Mon. … Sun., "Fri 10 am" | the next such day |
 | in 3 days, in a week, in 2 weeks, in a month | the date |
-| November 13, 13 Nov, 2026-11-13 | the date |
+| November 13, 13 Nov, 2026-11-13 – also with its weekday: "Friday, November 13", "Fri 13 Nov" | the date (a weekday that does not fit it stays in the title) |
 | 9 am, 9:30, at 9, 14h | the time (and a reminder) |
 | morning, noon, afternoon, evening, tonight, tomorrow morning | 9:00, 12:00, 15:00, 19:00 |
 | daily, every day, weekdays, every Monday, every monday and thursday, every 2 weeks, monthly, yearly, 3 days after completion | a repeat |
