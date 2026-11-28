@@ -20,6 +20,8 @@
 // Every run (since 1.12.0): jobs of several at once a restart interrupted go on, copies nobody brings bytes for end, old
 // jobs go (ops.js).
 // Every 15 minutes, the next minute after a change (since 1.20.0): the offers to GateControl's home cache (homecache.js).
+// Every run (since 1.32.0): "Nur auf diesem Gerät" — moves whose lease ran out end, returns whose lease ran out are local
+// again, what lay hidden for 24 hours after a move goes for good (vaultlocal.js).
 
 const store = require('./store');
 const scan = require('./scan');
@@ -39,6 +41,7 @@ const imports = require('./imports');
 const vault = require('./vault');
 const ops = require('./ops');
 const homecache = require('./homecache');
+const vaultlocal = require('./vaultlocal');
 
 const DAY = 86400000;
 const BATCH = 200;
@@ -87,6 +90,10 @@ async function tick(gc, now = Date.now(), o = {}) {
     try { out.reminders = await deadlines.due(gc, settings, now, o.asPerson, typeof o.dueHub === 'function' ? await o.dueHub() : false); } catch (e) { gc.log.warn('deadline reminders failed', (e && e.code) || 'error'); }
     try { out.imports = await imports.tick(gc, settings, now, o.asPerson); } catch (e) { gc.log.warn('imports failed', (e && e.code) || 'error'); }
     try { out.ops = await ops.tick(gc, now, o.ops); } catch (e) { gc.log.warn('jobs failed', (e && e.code) || 'error'); }
+    try {
+      const touched = await vaultlocal.tick(gc, now);
+      if (touched.size) await changes.announce(gc, touched, settings);
+    } catch (e) { gc.log.warn('vault local failed', (e && e.code) || 'error'); }
     // the home cache of the gateways (1.20.0, homecache.js — every 15 minutes or after a change; never throws)
     out.homeCache = await homecache.tick(gc, now, settings);
     return out;

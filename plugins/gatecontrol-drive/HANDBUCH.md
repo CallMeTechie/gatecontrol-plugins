@@ -1,4 +1,4 @@
-<!-- version: 1.31.0 -->
+<!-- version: 1.32.0 -->
 # Drive
 
 ## Was das Plugin kann
@@ -7,7 +7,7 @@
 - **Bereiche mit Rechten:** Meine Dateien, Familie, Ordner der Kinder und Team-Ordner.
 - **Versionen, Papierkorb, Links** für Personen ohne Konto und **Abgleich** mit allen Geräten (Apps).
 - **Fotos:** Zeitleiste, Alben, Erinnerungen, Orte und Personen, Fotorahmen auf dem Wand-Tablet und dem GateControl-TV.
-- **Tresor-Ordner:** Ende-zu-Ende verschlüsselte Ordner, die nur deine Geräte öffnen.
+- **Tresor-Ordner:** Ende-zu-Ende verschlüsselte Ordner, die nur deine Geräte öffnen – auf Wunsch auch ein Ordner, der **nur auf einem deiner Geräte** liegt.
 - **KI für Dokumente:** Art, Name und Fristen erkennen, Fragen an deine Dateien, Scans in Dokumente umwandeln, Fristen in den Familienkalender.
 - **Schutz vor Erpressungstrojanern:** Drive stoppt ein Gerät, das ungewöhnlich viele Dateien ändert.
 - **Import** aus Google Drive und OneDrive, **Office im Browser** mit einem eigenen Office-Server.
@@ -28,7 +28,7 @@ Drive ist ein eigenes Abo (Familie, Business oder Kombi, fünf Personen inklusiv
 1. **Personen einschalten:** Admin-Seite **„Personen“** – je Person **Familie** oder **Business** (je nach Lizenz). Nur eingeschaltete Personen nutzen Drive.
 2. **Speicherorte:** **Einstellungen › Plugins › Drive › Speicherorte** – je Bereich dieser Server oder ein Speicherziel. Auf einer NAS in der lesbaren Form liegen die Dateien als normale Dateien.
 3. **Team-Ordner** (Business): Admin-Seite **„Team-Ordner“** – Ordner anlegen und Personen oder Gruppen mit lesen, schreiben oder verwalten eintragen.
-4. **Einstellungen** (**Einstellungen › Plugins › Drive › Einstellungen**): Versionen aufbewahren, Papierkorb leeren nach … Tagen, Platz je Person, „Eltern dürfen die Ordner der Kinder ansehen“, Schutz vor Erpressungstrojanern (ab wie vielen Dateien oder Prozent in welcher Zeit), Fotorahmen, KI für Dokumente, Import, Adresse des Office-Servers, Adresse von GateControl für Direktlinks.
+4. **Einstellungen** (**Einstellungen › Plugins › Drive › Einstellungen**): Versionen aufbewahren, Papierkorb leeren nach … Tagen, Platz je Person, „Eltern dürfen die Ordner der Kinder ansehen“, Schutz vor Erpressungstrojanern (ab wie vielen Dateien oder Prozent in welcher Zeit), Fotorahmen, KI für Dokumente, Import, Adresse des Office-Servers, Adresse von GateControl für Direktlinks, Tresor „Nur auf diesem Gerät“ (ab 1.32.0, zuerst aus – erst einschalten, wenn die Apps aller Personen aktuell sind).
 5. **Sicherung:** Das Backup von GateControl sichert **keine Drive-Dateien**, nur die Datenbank. Liegen die Dateien nur an einem Ort, zeigt die Übersicht einen Hinweis. Sichere die Dateien selbst (z. B. Speicherziel S3 oder eine Sicherung der NAS).
 6. **Zwischenspeicher im Heimnetz** (optional): am Gateway unter **Gateways › Zwischenspeicher** einschalten und wählen, welche Arten es hält.
 
@@ -62,7 +62,26 @@ Ein Tresor-Ordner bleibt Ende-zu-Ende verschlüsselt, auch wenn du dir eine Date
 - **Der Server sieht nichts Neues:** Er liefert nur verschlüsselte Daten und das Programm der Ansicht. Administratoren können Tresore weiterhin nicht öffnen.
 - **Office-Dateien (Portal):** Word, Excel, PowerPoint und OpenDocument (docx, xlsx, pptx, odt, ods, odp) öffnen im Portal als **Leseansicht**: der Text mit Überschriften, Listen und Tabellen, bei Excel jedes Blatt als Reiter, bei PowerPoint Folie für Folie. Das Layout, Bilder und Diagramme fehlen; Formeln zeigen den zuletzt gespeicherten Wert. Makros, eingebettete Objekte und Verknüpfungen werden nicht ausgeführt und nichts wird aus dem Netz geladen. Ältere Formate (doc, xls, ppt), RTF und kennwortgeschützte Dateien bekommen einen Hinweis mit „Herunterladen“. In den Apps (Android, Windows) gibt es diese Ansicht noch nicht.
 - **Grenzen:** Sehr große Dateien und im Browser auch Videos zeigt die Ansicht nicht an – du bekommst einen Hinweis und kannst die Datei bewusst herunterladen oder in der App ansehen.
-- **Offline (Android-App):** Im Tresor schaltest du „Offline verfügbar“ für eine Datei oder einen Ordner ein (Menü ⋮) oder oben „Ganzen Tresor offline halten“. Auf dem Handy liegt dann nur der verschlüsselte Inhalt, genau so wie auf dem Server. Geöffnet wird wie immer erst nach dem Entsperren, nur im Arbeitsspeicher – auch ohne Netz. Dafür merkt sich das Handy den verpackten Tresor-Schlüssel; er bleibt mit dem Geräteschlüssel des Handys geschützt. Wird das Gerät aus dem Tresor entfernt oder meldest du dich ab, löscht die App die Offline-Dateien des Tresors.
+- **Offline (Android-App):** siehe gleich unten „Wo liegt ein Tresor-Ordner?“.
+
+### Wo liegt ein Tresor-Ordner? Zusätzlich offline oder nur auf diesem Gerät
+
+Für jeden Ordner im Tresor gibt es drei Möglichkeiten. Sie klingen ähnlich, sind aber etwas ganz anderes:
+
+| Wahl | Auf dem Server | Auf diesem Handy | Auf deinen anderen Geräten |
+|---|---|---|---|
+| **Nur auf dem Server** (Standard) | der Inhalt (verschlüsselt) | nichts | öffnen ihn mit Netz |
+| **Zusätzlich offline** („Diesen Ordner offline halten“, „Offline verfügbar“) | der Inhalt bleibt dort | eine **zusätzliche** verschlüsselte Kopie | öffnen ihn wie immer |
+| **Nur auf diesem Gerät** (ab Drive 1.32.0) | **nur ein Platzhalter**, kein Inhalt | die **einzige** Kopie | sehen nur „Nur auf ‹Gerät›“, öffnen nichts |
+
+- **„Diesen Ordner offline halten“ / „Offline verfügbar“ ist nur eine zusätzliche Kopie.** Nichts wird vom Server genommen: Der Ordner bleibt auf dem Server, in den Versionen und im Papierkorb, und alle deine freigegebenen Geräte öffnen ihn weiter. Das Handy hält daneben eine verschlüsselte Kopie, damit er auch ohne Netz aufgeht. Geht das Handy verloren oder löschst du die App, ist nichts verloren. Auf dem Handy liegt nur der verschlüsselte Inhalt, genau so wie auf dem Server; geöffnet wird wie immer erst nach dem Entsperren, nur im Arbeitsspeicher. Dafür merkt sich das Handy den verpackten Tresor-Schlüssel; er bleibt mit dem Geräteschlüssel des Handys geschützt. Wird das Gerät aus dem Tresor entfernt oder meldest du dich ab, löscht die App diese Kopien. Auf dem PC heißt dieselbe Markierung „Auf Mobilgeräten offline verfügbar“.
+- **„Nur auf diesem Gerät“ nimmt den Ordner vom Server.** Das Handy lädt alles, prüft jede Datei und verschlüsselt sie mit einem eigenen Schlüssel, der nur auf dem Handy liegt. Erst dann löscht Drive den Inhalt auf dem Server – mit allen Versionen, der Zeitreise, den Papierkorb-Einträgen aus diesem Ordner und den Offline-Kopien deiner anderen Handys. Übrig bleibt ein Platzhalter: dass es den Ordner gibt, auf welchem Gerät er liegt und seit wann – keine Dateien, keine Größen.
+- **Nur in Tresoren „Nur ich“.** In einem Tresor der Familie oder eines Team-Ordners geht das nicht, weil der Ordner sonst den anderen weggenommen würde. Nur Unterordner eines Tresors, nicht der ganze Tresor.
+- **24 Stunden „Rückgängig“.** Nach dem Umstellen liegt der alte Inhalt noch 24 Stunden unsichtbar auf dem Server. Bis dahin holt „Rückgängig“ auf dem Gerät alles zurück, wie es war. Danach ist er endgültig weg. Alle deine Geräte bekommen eine Mitteilung „Ordner nur noch auf einem Gerät“ – warst du das nicht, tippe innerhalb der 24 Stunden auf dem Gerät auf „Rückgängig“.
+- **Wichtig: Geht das Gerät verloren, ist der Inhalt weg.** App deinstallieren, App-Daten löschen, Handy zurücksetzen, verloren oder kaputt – GateControl hat keine Kopie. Exportiere deshalb regelmäßig eine verschlüsselte Sicherung (in der App im Ordner-Menü); sie lässt sich nur mit dem Wiederherstellungsschlüssel des Tresors öffnen.
+- **Auf anderen Geräten** steht der Ordner ausgegraut mit „Nur auf Pixel 8“ (der Name deines Geräts). Hineinlegen, Verschieben oder Kopieren in ihn geht dort nicht. Ist das Gerät verloren, entfernst du auf einem anderen deiner Geräte den Platzhalter („Platzhalter entfernen …“, frühestens 24 Stunden nach dem Umstellen).
+- **Zurück auf den Server:** Auf dem Gerät im Ordner-Menü „Wieder auf dem Server speichern“. Die App lädt alles wieder hoch; danach ist der Ordner ein normaler Tresor-Ordner.
+- **Was der Server nicht löschen kann:** Sicherungen außerhalb von Drive (NAS-Schnappschüsse, Hyper Backup, der Papierkorb einer NAS-Freigabe, S3-Versionierung) können den alten, verschlüsselten Inhalt noch so lange halten, wie ihre Aufbewahrung läuft. Ein Heim-Gateway bietet die Dateien nicht mehr an, kann eine schon geholte verschlüsselte Kopie aber behalten, bis es Platz braucht.
 
 ### Dateien in den Tresor legen – was mit dem Original passiert
 
@@ -104,6 +123,12 @@ Frage mit „Freigabe anfragen“ an und gib auf einem schon freigegebenen Gerä
 **Ein Video aus dem Tresor spielt im Browser nicht.**
 Der Portal-Tab darf Videos nicht aus dem Speicher abspielen, und eine entschlüsselte Kopie auf der Festplatte wäre nicht mehr geschützt. Sieh dir das Video in der Android- oder Windows-App an oder lade es bewusst herunter.
 
+**Ein Tresor-Ordner zeigt „Nur auf Pixel 8“ und öffnet sich nicht.**
+Der Ordner liegt nur auf diesem Gerät (siehe „Wo liegt ein Tresor-Ordner?“). Öffne ihn dort oder hole ihn dort mit „Wieder auf dem Server speichern“ zurück. Hochladen in ihn geht nirgends sonst; eine ältere App meldet dann „Dieser Ordner liegt nur auf …“.
+
+**„Nur auf diesem Gerät“ fehlt in der App.**
+Ein Admin muss es unter **Einstellungen › Plugins › Drive** einschalten. Es geht nur in Tresoren „Nur ich“ und braucht eine aktuelle App.
+
 **Dateien sind „vom Virenscan zurückgehalten“.**
 Der Virenscan von GateControl prüft neue Dateien; gesperrte Dateien öffnet und teilt Drive nicht. Auch die Bild- und Videoansicht zeigt dann nur den Grund. Eine als Schadsoftware markierte Datei zeigt sie erst nach „Trotzdem ansehen“.
 
@@ -121,6 +146,13 @@ Vollbild im Portal gibt es ab GateControl 1.244.0. Ältere Versionen zeigen das 
 
 **Zu Hause bauen sich die Fotos nicht schneller auf.**
 Die Vorschaubilder kommen erst nach und nach auf das Gateway (je Lauf einige Hundert, alle 15 Minuten). Prüfe am Gateway unter **Gateways › Zwischenspeicher**, dass er „aktiv“ ist und „Fotos“ bzw. „Drive“ eingeschaltet sind. Vorschaubilder aus dem Heimnetz braucht GateControl 1.249.0 und eine aktuelle App.
+
+## Neu in 1.32.0
+
+- **Tresor: „Nur auf diesem Gerät“** – ein Ordner eines Tresors „Nur ich“ lässt sich vom Server nehmen und liegt dann nur noch auf einem deiner Geräte (mit dem nächsten Update der Android-App; der PC zeigt solche Ordner zunächst nur an). Der Server behält nur einen Platzhalter. 24 Stunden lang lässt sich das rückgängig machen, alle deine Geräte bekommen eine Mitteilung. Siehe „Wo liegt ein Tresor-Ordner?“.
+- **Klarer erklärt:** „Diesen Ordner offline halten“ ist nur eine **zusätzliche** Kopie auf dem Handy – der Ordner bleibt auf dem Server. „Nur auf diesem Gerät“ ist das Gegenteil: die einzige Kopie liegt auf dem Gerät.
+- **Für Admins:** Die neue Einstellung „Tresor: Nur auf diesem Gerät“ ist zuerst aus. Schalte sie erst ein, wenn die Android- und Windows-Apps aller Personen aktuell sind – ältere Apps zeigen einen solchen Ordner leer.
+- **Im Portal** steht ein solcher Ordner ausgegraut mit „Nur auf ‹Gerät›“; ein Klick erklärt ihn.
 
 ## Neu in 1.31.0
 

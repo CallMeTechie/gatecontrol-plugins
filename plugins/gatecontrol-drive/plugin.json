@@ -4,7 +4,7 @@
     "de": "Drive",
     "en": "Drive"
   },
-  "version": "1.31.0",
+  "version": "1.32.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3: Meine Dateien, Familie, Ordner der Kinder und Team-Ordner mit Rechten, Versionen, Papierkorb und Abgleich mit allen Geräten.",
@@ -434,6 +434,19 @@
           "en": "Collabora Online or OnlyOffice, as the browser reaches it (e.g. https://office.example.com). Drive reads its discovery through the access target “Office server” (assign it under access targets); the office server must reach GateControl at its public address. Empty: off."
         },
         "default": ""
+      },
+      {
+        "key": "vault_local",
+        "type": "boolean",
+        "label": {
+          "de": "Tresor: „Nur auf diesem Gerät“",
+          "en": "Vault: “Only on this device”"
+        },
+        "help": {
+          "de": "Personen können einen Ordner eines Tresors „Nur ich“ vom Server nehmen: Er liegt dann nur noch auf einem ihrer Geräte, der Server behält nur einen Platzhalter (24 Stunden lang lässt es sich rückgängig machen). Erst einschalten, wenn die Android- und Windows-Apps aller Personen Platzhalter anzeigen – ältere Apps zeigen den Ordner leer.",
+          "en": "People can take a folder of a vault “Only me” off the server: it then lies on one of their devices only, the server keeps a placeholder (it can be undone for 24 hours). Switch it on only once the Android and Windows apps of everyone show placeholders – older apps show the folder empty."
+        },
+        "default": false
       }
     ],
     "pages": [

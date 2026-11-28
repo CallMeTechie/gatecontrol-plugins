@@ -126,6 +126,8 @@ async function pins(ctx) {
 /** PUT nodes/<id>/offline → { node } — a file or a folder I may read, at most PINS_MAX a person. */
 async function pin(ctx, id) {
   const { node } = await nodes.reach(ctx, id);
+  // a placeholder of "Nur auf diesem Gerät" (1.32.0): nothing of it is on the server — 409 local_only
+  if (node.vault_id) await require('./vaultlocal').checkWrite(ctx, node, true);
   const have = await store.one(ctx.gc, 'SELECT at FROM offline_pins WHERE user_id = ? AND node_id = ?', [ctx.viewer, node.id]);
   if (!have) {
     const n = await store.one(ctx.gc, 'SELECT COUNT(*) AS n FROM offline_pins WHERE user_id = ?', [ctx.viewer]);

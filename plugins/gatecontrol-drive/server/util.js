@@ -47,6 +47,12 @@ const STATUS = {
   quarantined: 423,
   scan_blocked: 423,
   infected: 422,
+  // since 1.32.0: "Nur auf diesem Gerät" (vaultlocal.js) — the folder lies only on one device, is being moved there,
+  // only in a vault of "Meine Dateien", not above another such folder
+  local_only: 409,
+  local_moving: 409,
+  local_shared: 409,
+  local_nested: 409,
   internal: 500,
 };
 

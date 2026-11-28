@@ -248,8 +248,20 @@
   }
   /** The quiet note on a tile or row of a marked node. */
   function markOf(n) {
+    if (n.local) return localOf(n);
     if (!n.deleteAt) return null;
     return h('span', { class: 'dp-mark', text: T('p.marked', { date: fmtDay(n.deleteAt) }), attrs: { title: markText(n) } });
+  }
+  // "Nur auf diesem Gerät" (since 1.32.0, Drive's `local` on a vault folder): it lies on one device only — the server
+  // has a placeholder; shown greyed with the device's name, it does not open here (only the apps take a folder there)
+  function localHeld(n) { return !!(n && n.local && n.local.state && n.local.state !== 'moving'); }
+  function localDevice(n) { return (n.local && n.local.deviceName) || T('p.local_other'); }
+  function localOf(n) {
+    return h('span', { class: 'dp-mark dp-local', text: T(n.local.state === 'moving' ? 'p.local_moving' : 'p.local_badge', { device: localDevice(n) }) });
+  }
+  function localNote(n) {
+    dialog(T('p.local_title'), [h('p', { class: 'dp-hint', text: T('p.local_note', { device: localDevice(n), date: fmtDay(n.local.since) }) }),
+      h('div', { class: 'dp-actions' }, [btn(T('p.close'), closeDialog)])]);
   }
   // the virus scan of GateControl (since 1.19.0): `scan { state, blocked, finding }` on a file node — only while the host
   // checks files. `blocked` decides: no preview, no download, no office, no sharing.
@@ -889,7 +901,7 @@
       var name = nm(n);
       var ext = extOf(name);
       var pick = B && has('bulk');
-      var card = h('div', { class: 'dp-card' + (pick && B.isCut(n) ? ' is-cut' : ''), attrs: { role: 'listitem', 'data-node': String(n.id) } }, [
+      var card = h('div', { class: 'dp-card' + (pick && B.isCut(n) ? ' is-cut' : '') + (localHeld(n) ? ' is-local' : ''), attrs: { role: 'listitem', 'data-node': String(n.id) } }, [
         pick ? B.check(n) : null,
         h('button', { type: 'button', class: 'dp-open', on: { click: function (ev) { if (pick && B.chooseClick(ev, n)) return; openNode(n, items); } }, attrs: { 'aria-label': name } }, [
           thumb,
@@ -921,7 +933,7 @@
     items.forEach(function (n) {
       var ic = h('span', { class: 'dp-ic' }, [n.encrypted && n.isDir ? icon('lock') : picOf(n)]);
       var name = nm(n);
-      var row = h('div', { class: 'dp-row' + (pick ? ' is-pick' : '') + (pick && B.isCut(n) ? ' is-cut' : ''), attrs: { role: 'row', 'data-node': String(n.id) } }, [
+      var row = h('div', { class: 'dp-row' + (pick ? ' is-pick' : '') + (pick && B.isCut(n) ? ' is-cut' : '') + (localHeld(n) ? ' is-local' : ''), attrs: { role: 'row', 'data-node': String(n.id) } }, [
         pick ? h('span', { class: 'dp-cbcell' }, B.check(n)) : null,
         h('button', { type: 'button', class: 'dp-open', on: { click: function (ev) { if (pick && B.chooseClick(ev, n)) return; openNode(n, items); } } }, [ic, h('span', { class: 'dp-name', text: name, attrs: { title: name } }),
           n.path && S.page === 'search' ? h('span', { class: 'dp-meta', text: n.path }) : null, markOf(n), scanOf(n), pick ? B.freshBadge(n) : null]),
@@ -940,6 +952,7 @@
    * others of `list` (the folder, the search, the photos shown) to go through; anything else in the preview.
    */
   function openNode(n, list) {
+    if (localHeld(n)) { localNote(n); return; }
     if (n.isDir) { $('dp-q').value = ''; openFolder(n.areaId, n.id); return; }
     // a vault's file: decrypted here, shown in the vault viewer in memory (ui/vaultview.js, 1.22.0 — the server has no preview)
     if (n.encrypted && V) { V.view(n); return; }

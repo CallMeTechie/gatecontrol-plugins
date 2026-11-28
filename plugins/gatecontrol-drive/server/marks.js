@@ -44,6 +44,8 @@ async function markable(ctx, id) {
   const { node, area } = await nodes.reach(ctx, Number(id), 'write');
   if (node.parent_id == null) throw fail('invalid');
   if (area.archived_at != null) throw fail('forbidden');
+  // a placeholder of "Nur auf diesem Gerät", or a folder holding one, never goes into the trash (1.32.0)
+  if (node.vault_id) await require('./vaultlocal').checkTree(ctx, node);
   return { node, area };
 }
 

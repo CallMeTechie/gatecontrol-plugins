@@ -31,6 +31,8 @@ const { fail, nodeName, numbered, iso } = require('./util');
 const vaults = () => require('./vault');
 // the work folder and the review marks (since 1.13.0) — the same
 const work = () => require('./work');
+// "Nur auf diesem Gerät" (since 1.32.0, vaultlocal.js): placeholders of vault folders — the same
+const local = () => require('./vaultlocal');
 
 const CHILDREN_MAX = 1000;
 const SEARCH_MAX = 100;
@@ -122,19 +124,24 @@ async function unmarkUp(gc, id, ctx, quiet = null) {
   return rows.length;
 }
 
-/** A live node the viewer may read (`need`: least role) → { node, area, role }. */
+/**
+ * A live node the viewer may read (`need`: least role) → { node, area, role }. A write in a vault (since 1.32.0): not
+ * below a folder that lies only on a device or is being moved there (409 local_only / local_moving — vaultlocal.js).
+ */
 async function reach(ctx, id, need = 'read') {
   const n = Number.isSafeInteger(id) ? await row(ctx.gc, id) : null;
   if (!n || n.deleted_at != null) throw fail('not_found');
   const v = await areas.roleIn(ctx, n.area_id, need).catch((e) => { throw e.code === 'forbidden' ? e : fail('not_found'); });
+  if (need !== 'read' && n.vault_id) await local().checkWrite(ctx, n, false);
   return { node: n, area: v.area, role: v.role, via: v.via };
 }
 
-/** A folder the viewer may write into. */
+/** A folder the viewer may write into (since 1.32.0 not a placeholder of "Nur auf diesem Gerät": 409 local_only). */
 async function folderFor(ctx, id) {
   const r = await reach(ctx, id, 'write');
   if (r.node.is_dir !== 1) throw fail('invalid', { field: 'parentId' });
   if (r.area.archived_at != null) throw fail('forbidden');
+  if (r.node.vault_id) await local().checkWrite(ctx, r.node, true);
   return r;
 }
 
@@ -165,14 +172,17 @@ async function insertFolder(ctx, areaId, parentId, name) {
 
 // ─── Reading ────────────────────────────────────
 
-/** GET nodes/<id> → the node, its path and the folders above it (crumbs). */
-async function get(ctx, id) {
+/** GET nodes/<id>[?deviceId=] → the node, its path and the folders above it (crumbs). */
+async function get(ctx, id, q) {
   const { node, area, role } = await reach(ctx, id);
   const crumbs = await store.all(ctx.gc, `WITH RECURSIVE up(id, parent_id, name, depth) AS (
       SELECT id, parent_id, name, 0 FROM nodes WHERE id = ?
       UNION ALL SELECT p.id, p.parent_id, p.name, up.depth + 1 FROM nodes p JOIN up ON p.id = up.parent_id)
     SELECT id, name FROM up WHERE depth > 0 ORDER BY depth DESC`, [node.id]);
-  return view(node, { path: await pathOf(ctx.gc, node), role, crumbs: crumbs.map((c) => ({ id: c.id, name: c.name })) });
+  const out = view(node, { path: await pathOf(ctx.gc, node), role, crumbs: crumbs.map((c) => ({ id: c.id, name: c.name })) });
+  // a placeholder of "Nur auf diesem Gerät" (since 1.32.0): `local`
+  if (node.vault_id) await local().attach(ctx, [out], q && q.deviceId);
+  return out;
 }
 
 const SORTS = { name: 'name COLLATE NOCASE', mtime: 'COALESCE(mtime, updated_at)', size: 'size', updated: 'updated_at' };
@@ -189,6 +199,9 @@ const on = (v) => ['1', 'true', 'yes'].includes(String(v == null ? '' : v).toLow
 async function children(ctx, id, q) {
   const { node, area, role, via } = await reach(ctx, id);
   if (node.is_dir !== 1) throw fail('invalid');
+  // a placeholder of "Nur auf diesem Gerät" (since 1.32.0): empty, with `local` — while it is moved, as always
+  const held = node.vault_id ? await local().childrenOf(ctx, node, q && q.deviceId) : null;
+  if (held && !held.list) return { items: [], total: 0, next: null, role, local: held.local };
   const dirs = on(q && q.dirs);
   const sort = dirs ? SORTS.name : SORTS[q && q.sort] || SORTS.name;
   const dir = q && q.order === 'desc' ? 'DESC' : 'ASC';
@@ -204,7 +217,8 @@ async function children(ctx, id, q) {
   const total = (await store.one(ctx.gc, `SELECT COUNT(*) AS n FROM nodes WHERE ${where}`, [node.id])).n;
   if (via === 'parent') await ctx.noteChildView(area);
   const items = rows.slice(0, limit).map(({ has_dirs: h, ...r }) => view(r, dirs ? { hasDirs: !!h } : null));
-  return { items, total, next: rows.length > limit ? offset + limit : null, role };
+  if (node.vault_id) await local().attach(ctx, items, q && q.deviceId);
+  return { items, total, next: rows.length > limit ? offset + limit : null, role, ...(held ? { local: held.local } : {}) };
 }
 
 /** GET nodes/by-path?area=<id>&path=<a/b> → the node. */
@@ -484,6 +498,8 @@ async function trash(ctx, id, everywhere = false) {
  * delete of a marked node (marks.js).
  */
 async function trashRows(ctx, node, area) {
+  // a placeholder of "Nur auf diesem Gerät" (since 1.32.0) never goes through the trash — only POST …/local/<id>/forget
+  if (node.vault_id) await local().checkTree(ctx, node);
   const rows = node.is_dir === 1 ? (await below(ctx.gc, node.id)).filter((r) => r.deleted_at == null) : [];
   const all = [node, ...rows];
   // the files leave their paths (free for new files; on a NAS below .gcdrive/files)
@@ -570,9 +586,24 @@ async function restore(ctx, id) {
 async function purgeBatch(gc, trashId, ctx) {
   const batch = await store.all(gc, 'SELECT * FROM nodes WHERE trash_id = ?', [trashId]);
   if (!batch.length) return 0;
+  const files = await purgeRows(gc, batch);
+  const top = batch.find((r) => r.id === trashId) || batch[0];
+  await log(gc, top.area_id, trashId, 'purge', ctx);
+  return files;
+}
+
+/**
+ * Inside a transaction: nodes `batch` (rows) go for good — the media of the files and of their versions, the versions,
+ * the recognised text, the rows and what forget() removes. No change log (the caller writes it). Also what lay hidden
+ * below a placeholder of "Nur auf diesem Gerät" (vaultlocal.js, since 1.32.0). → files removed
+ */
+async function purgeRows(gc, batch) {
   const ids = batch.map((r) => r.id);
   // versions of an empty file have no media (since 1.5.0); the ids in parts (≤ 100 parameters a statement)
-  const versions = await store.all(gc, 'SELECT v.media_id FROM versions v JOIN nodes n ON n.id = v.node_id WHERE n.trash_id = ? AND v.media_id IS NOT NULL', [trashId]);
+  const versions = [];
+  for (const part of store.chunks(ids)) {
+    versions.push(...await store.all(gc, `SELECT media_id FROM versions WHERE node_id IN (${store.marks(part.length)}) AND media_id IS NOT NULL`, part));
+  }
   for (const m of [...batch.filter((r) => r.media_id).map((r) => r.media_id), ...versions.map((v) => v.media_id)]) {
     try { await gc.media.delete(m); } catch (e) { gc.log.warn('purge: media delete failed', (e && e.code) || 'error'); }
   }
@@ -583,8 +614,6 @@ async function purgeBatch(gc, trashId, ctx) {
   }
   await forget(gc, ids);
   for (const part of store.chunks(ids)) await store.run(gc, `DELETE FROM nodes WHERE id IN (${store.marks(part.length)})`, part);
-  const top = batch.find((r) => r.id === trashId) || batch[0];
-  await log(gc, top.area_id, trashId, 'purge', ctx);
   return batch.filter((r) => r.is_dir === 0).length;
 }
 
@@ -615,6 +644,8 @@ async function forget(gc, ids) {
     // since 1.20.0: "offline verfügbar" and the vault's uses for the home cache (its offers go with the next run)
     await store.run(gc, `DELETE FROM offline_pins WHERE node_id IN (${m})`, part);
     await store.run(gc, `DELETE FROM cache_uses WHERE node_id IN (${m})`, part);
+    // since 1.32.0: a placeholder of "Nur auf diesem Gerät"
+    await store.run(gc, `DELETE FROM vault_local WHERE node_id IN (${m})`, part);
   }
 }
 
@@ -628,5 +659,5 @@ async function purge(ctx, id) {
 
 module.exports = {
   row, pathOf, below, pathsBelow, view, takenOf, TAKEN, forget, log, reach, folderFor, taken, freeName, join, insertFolder, unmarkUp, UNMARKED, get, children, byPath, search, mediaClause,
-  mkdir, update, vaultToRoot, trash, trashRows, unlinkLater, trashList, restore, purge, purgeBatch, moveMedia,
+  mkdir, update, vaultToRoot, trash, trashRows, unlinkLater, trashList, restore, purge, purgeBatch, purgeRows, moveMedia,
 };

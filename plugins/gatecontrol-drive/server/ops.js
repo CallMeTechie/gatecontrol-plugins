@@ -134,7 +134,22 @@ async function targetOf(ctx, id) {
   const r = await nodes.reach(ctx, id, 'write');
   if (r.node.is_dir !== 1) throw fail('invalid', { field: 'target' });
   if (r.area.archived_at != null) throw fail('forbidden');
+  // not into a placeholder of "Nur auf diesem Gerät" (1.32.0): 409 local_only
+  if (r.node.vault_id) await require('./vaultlocal').checkWrite(ctx, r.node, true);
   return r;
+}
+
+/** Why "Nur auf diesem Gerät" blocks node `n` in a job of `kind` → 'local_only' | 'local_moving' | null. */
+async function localBlock(ctx, n, kind) {
+  const vl = require('./vaultlocal');
+  try {
+    await vl.checkWrite(ctx, n, false);
+    if (kind === 'trash' || kind === 'copy') await vl.checkTree(ctx, n);
+    return null;
+  } catch (e) {
+    if (e && (e.code === 'local_only' || e.code === 'local_moving')) return e.code;
+    throw e;
+  }
 }
 
 // ─── Looking at a selection ─────────────────────
@@ -193,6 +208,12 @@ async function examine(ctx, kind, ids, target) {
         && (await liveBelow(gc, n.id)).some((r) => r.vault_id)) { no('encrypted'); continue; }
     }
     if (locks && await officeLocked(gc, n, ctx.now)) { no('locked'); continue; }
+    // "Nur auf diesem Gerät" (1.32.0): a placeholder, or a folder holding one, does not go into the trash or get
+    // copied; nothing below one being moved changes
+    if (n.vault_id && !trashBin) {
+      const why = await localBlock(ctx, n, kind);
+      if (why) { no(why); continue; }
+    }
     ok.push({ node: n, area: v.area, role: v.role, via: v.via });
   }
   // a node below another selected folder goes with it

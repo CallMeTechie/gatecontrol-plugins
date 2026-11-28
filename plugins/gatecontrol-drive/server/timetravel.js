@@ -69,6 +69,9 @@ async function plan(ctx, folderId, at) {
   const gc = ctx.gc;
   const { node: top, area } = await nodes.reach(ctx, Number(folderId), 'write');
   if (top.is_dir !== 1) throw fail('invalid');
+  // "Nur auf diesem Gerät" (1.32.0): what lies hidden below a placeholder never comes back this way — not the
+  // placeholder, not a folder holding one (409 local_only)
+  if (top.vault_id) await require('./vaultlocal').checkTree(ctx, top);
   if (area.archived_at != null) throw fail('forbidden');
   const since = await historySince(gc, ctx.now);
   // 1. the nodes: below the folder now (live and in the trash), and those that were below it then and left since

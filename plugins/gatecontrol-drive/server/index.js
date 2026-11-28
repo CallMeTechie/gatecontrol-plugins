@@ -41,6 +41,9 @@
 //     GET|POST vaults/<id>/devices · POST vaults/<id>/devices/<deviceId>/approve · DELETE vaults/<id>/devices/<deviceId>
 //     POST vaults/<id>/rotate   (vault folders, end-to-end encrypted — vault.js, 1.9.0; nodes and uploads/commit take
 //                               encrypted, nameCipher, keyVersion)
+//     GET|POST vaults/<id>/local · POST vaults/<id>/local/challenge · GET|DELETE vaults/<id>/local/<nodeId> · POST
+//     vaults/<id>/local/<nodeId>/lease|commit|undo|return|return/commit|forget ("Nur auf diesem Gerät" — vaultlocal.js,
+//     1.32.0, feature vaultLocal while the setting vault_local is on)
 //     GET viewer/vaultview · GET viewer/pdfjs?part=   (the portal's viewer of vault files and its PDF renderer — code
 //                               only, never a file: viewer.js, 1.22.0)
 //     POST nodes/<id>/office    (office in the browser — office.js, 1.9.0; the office server's WOPI requests come
@@ -119,6 +122,7 @@ const faces = require('./faces');
 const overview = require('./overview');
 const scan = require('./scan');
 const homecache = require('./homecache');
+const vaultlocal = require('./vaultlocal');
 const { t } = require('./text');
 const { STATUS, fail, isKnown, posInt, DEVICE_RE, day, iso } = require('./util');
 const viewer = require('./viewer');
@@ -143,7 +147,9 @@ function errorResponse(e, lang) {
   const code = isKnown(e) ? e.code : (e && HOST_CODES[e.code]) || 'internal';
   // a locked device (guard.js): { error: 'device_locked', code: 'device_locked', incident } — the text as `message`
   if (code === 'device_locked') return { status: STATUS[code], json: { ok: false, code, error: code, message: t(lang, 'error.' + code), ...((e && e.extra) || {}) } };
-  return { status: STATUS[code], json: { ok: false, code, error: t(lang, 'error.' + code), ...((isKnown(e) && e.extra) || {}) } };
+  // "Nur auf diesem Gerät" (1.32.0): the text names the device
+  const params = (code === 'local_only' || code === 'local_moving' || code === 'local_nested') ? { device: (e.extra && e.extra.deviceName) || t(lang, 'vault.device.other') } : undefined;
+  return { status: STATUS[code], json: { ok: false, code, error: t(lang, 'error.' + code, params), ...((isKnown(e) && e.extra) || {}) } };
 }
 
 /** A person: a signed-in portal viewer or an app user — never a kiosk device, never the admin UI. */
@@ -257,6 +263,9 @@ async function me(ctx) {
   };
 }
 
+// vaultLocal: "Nur auf diesem Gerät" — vaults/<id>/local/… (challenge, start, lease, commit, undo, return, forget), `local`
+// on placeholders (children, nodes/<id>, changes), 409 local_only / local_moving; only while the administrator switched
+// it on (vault_local, default off) — placeholders made before stay as they are when it goes off (1.32.0) ·
 // framePhotos: "Für Fotorahmen freigeben" — GET|POST|DELETE frame/photos (the person's own frame album) and GET frame
 // from an app device (the GateControl TV: the frame of what the person reads) (1.31.0) ·
 // memoryPicks: GET overview memoryPicks — on a day without „Heute vor X Jahren“ ≤ 4 collections of GET memories (the
@@ -328,6 +337,8 @@ async function optional(ctx) {
   // GateControl ≥ 1.249.0 (1.24.0): previews in the home caches too — a preview may carry `lan` / `largeLan` (photo items
   // previewLan / largeLan); an app at home sends its LAN addresses (X-GC-Local) with its lists as well
   if (homecache.previewsAvailable(ctx.gc)) out.push('homeCachePreviews');
+  // "Nur auf diesem Gerät" (1.32.0): off by default — an administrator turns it on once the apps can show placeholders
+  if (await vaultlocal.enabled(ctx.gc)) out.push('vaultLocal');
   return out;
 }
 
@@ -406,7 +417,7 @@ async function route(ctx, req, seg) {
     if (seg.length === 1 && m === 'POST') return ok({ node: await nodes.mkdir(ctx, body) });
     if (b === 'by-path' && seg.length === 2 && m === 'GET') return ok({ node: await nodes.byPath(ctx, q.area, q.path) });
     if (seg.length === 2) {
-      if (m === 'GET') return ok({ node: await nodes.get(ctx, idArg(b)) });
+      if (m === 'GET') return ok({ node: await nodes.get(ctx, idArg(b), q) });
       if (m === 'PATCH' || m === 'PUT') {
         // { deleteAt } alone: the mark (marks.js); with a name or a parent too: invalid
         if (body && typeof body === 'object' && Object.prototype.hasOwnProperty.call(body, 'deleteAt')) {
@@ -603,6 +614,27 @@ async function vaultRoute(ctx, m, seg, q, body) {
   if (seg.length === 3 && c === 'devices' && m === 'POST') return vault.ask(ctx, id, body);
   if (seg.length === 4 && c === 'devices' && m === 'DELETE') return vault.revoke(ctx, id, d);
   if (seg.length === 5 && c === 'devices' && e === 'approve' && m === 'POST') return vault.approve(ctx, id, d, body);
+  // "Nur auf diesem Gerät" (vaultlocal.js, 1.32.0)
+  if (c === 'local') return localRoute(ctx, m, seg, q, body);
+  throw fail('not_found');
+}
+
+/** vaults/<id>/local/… (vaultlocal.js, since 1.32.0). */
+async function localRoute(ctx, m, seg, q, body) {
+  const [, id, , d, e, f] = seg;
+  if (seg.length === 3 && m === 'GET') return vaultlocal.list(ctx, id, q);
+  if (seg.length === 3 && m === 'POST') return vaultlocal.start(ctx, id, body);
+  if (seg.length === 4 && d === 'challenge' && m === 'POST') return vaultlocal.challenge(ctx, id, body);
+  if (seg.length === 4 && m === 'GET') return vaultlocal.get(ctx, id, d, q);
+  if (seg.length === 4 && m === 'DELETE') return vaultlocal.cancel(ctx, id, d, q);
+  if (seg.length === 5 && m === 'POST') {
+    if (e === 'lease') return vaultlocal.lease(ctx, id, d, body);
+    if (e === 'commit') return vaultlocal.commit(ctx, id, d, body);
+    if (e === 'undo') return vaultlocal.undo(ctx, id, d, body);
+    if (e === 'return') return vaultlocal.startReturn(ctx, id, d, body);
+    if (e === 'forget') return vaultlocal.forget(ctx, id, d, body);
+  }
+  if (seg.length === 6 && e === 'return' && f === 'commit' && m === 'POST') return vaultlocal.finishReturn(ctx, id, d, body);
   throw fail('not_found');
 }
 
