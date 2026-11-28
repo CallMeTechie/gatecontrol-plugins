@@ -484,6 +484,10 @@
   "qa.battery_charging": "Akku lädt",
   "qa.battery_low": "leer",
   "qa.unreachable": "Nicht erreichbar",
+  "qa.toggle_named": "{{name}}: {{state}}",
+  "qa.toggle_last": "zuletzt: {{state}}",
+  "qa.verb_lock": "Zusperren",
+  "qa.verb_unlock": "Aufsperren",
   "portal.battery": "Batterie {{n}} %",
   "portal.battery_charging": "Akku {{n}} %, lädt"
  },
@@ -972,6 +976,10 @@
   "qa.battery_charging": "Charging",
   "qa.battery_low": "empty",
   "qa.unreachable": "Not reachable",
+  "qa.toggle_named": "{{name}}: {{state}}",
+  "qa.toggle_last": "last: {{state}}",
+  "qa.verb_lock": "Lock",
+  "qa.verb_unlock": "Unlock",
   "portal.battery": "Battery {{n}} %",
   "portal.battery_charging": "Battery {{n}} %, charging"
  }

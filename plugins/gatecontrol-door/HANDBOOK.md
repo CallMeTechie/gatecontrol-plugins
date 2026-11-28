@@ -1,4 +1,4 @@
-<!-- version: 1.10.0 -->
+<!-- version: 1.11.0 -->
 # Door & Camera
 
 ## What the plugin does
@@ -168,7 +168,7 @@ As in the Ring app under “Modes”: which cameras record in which mode is set 
 
 The portal tab and the app tab **“Door”** show the locks shared with you, with state, battery and buttons for the actions you may use. Also the cameras, the history and – with the right – the Ring mode. Without signing in (e.g. a kiosk device) you can only look.
 
-The app also offers quick actions and a widget for your locks and the Ring mode. Since 1.8.0 a lock's card there shows the battery as a small icon with the percentage beside the name – yellow from 30 %, red from 15 % or when Nuki reports the battery as critical, with a lightning bolt while it charges. The portal and the page “Devices” show the same icon beside the state.
+The app also offers quick actions and a widget for your locks and the Ring mode. Since 1.11.0 the lock is a single button there that shows whether it is locked or unlocked and switches over when you tap it (the app asks before unlocking). Since 1.8.0 a lock's card there shows the battery as a small icon with the percentage beside the name – yellow from 30 %, red from 15 % or when Nuki reports the battery as critical, with a lightning bolt while it charges. The portal and the page “Devices” show the same icon beside the state.
 
 ### Cameras in the portal
 
@@ -238,6 +238,12 @@ Firefox plays the live picture from GateControl 1.242.0 through the built-in pla
 
 **No clips are recorded.**
 Check the mode under “Recordings”. With “only when nobody is at home” the Family presence must be known. With less than 1 GB free the gateway records nothing.
+
+## New in 1.11.0
+
+- **One button for the lock:** in the app each Nuki smart lock has a single quick action instead of “lock” and “unlock”. It shows the state (“Locked” in green with a closed lock, “Unlocked” with an open lock) and switches over when you tap it. The app still asks before unlocking. The battery level sits small in the top right corner of this button.
+- While the lock moves (“Locking …”), its state is unclear, it is jammed or not reachable, the button says so; a tap then locks, never unlocks. With several locks the name comes first (“Haustür: Locked”).
+- If you had pinned “lock” or “unlock” on the start screen, the app replaces them with the new button. “Lock” in notifications still only locks. Family rules and smart home rules keep “lock” and “unlock”.
 
 ## New in 1.10.0
 

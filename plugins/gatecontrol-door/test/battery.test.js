@@ -41,13 +41,14 @@ test('quick actions: the battery as the badge on the lock\'s first action, the s
   devices: { 1001: { deviceType: 4, name: 'Haustür', state: 1, door: 2, battery: 12 }, 2002: { deviceType: 2, name: 'Opener', state: 1, battery: 64 } },
 }, async (host, { lockId, openerId, bridge }) => {
   let anna = await host.quickActions(ANNA);
-  assert.deepEqual(anna.map((a) => a.id), [`${lockId}:lock`, `${lockId}:unlock`, `${lockId}:open`, `${openerId}:open`]);
+  // 1.11.0: the lock's switch comes first and carries the battery — inside the one button
+  assert.deepEqual(anna.map((a) => a.id), [`${lockId}:toggle`, `${lockId}:open`, `${openerId}:open`]);
   assert.deepEqual(anna[0].widget, {
     label: null, value: 'Zugesperrt', unit: null, status: 'Tür zu', state: 'good', readings: [], controls: [], power: false,
     badge: { icon: battery.BATTERY_ICONS[0][1], value: 12, unit: '%', state: 'crit', label: 'Batterie' },
   });
-  assert.deepEqual([anna[1].widget, anna[2].widget], [null, null], 'only once per lock');
-  assert.deepEqual(anna[3].widget.badge, { icon: battery.BATTERY_ICONS[2][1], value: 64, unit: '%', state: 'good', label: 'Batterie' });
+  assert.deepEqual(anna[1].widget, null, 'only once per lock');
+  assert.deepEqual(anna[2].widget.badge, { icon: battery.BATTERY_ICONS[2][1], value: 64, unit: '%', state: 'good', label: 'Batterie' });
   // Marc (right "lock") sees the lock's first action he may use — with the badge
   const marc = await host.quickActions(MARC);
   assert.equal(marc[0].widget.badge.value, 12);

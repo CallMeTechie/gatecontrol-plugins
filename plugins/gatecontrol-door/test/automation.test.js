@@ -93,7 +93,7 @@ test('success: push "automatisch aufgesperrt" with the quick action "Wieder zusp
   assert.equal(bridge.devices[1001].state, 3);
   const n = lastAuto(host);
   assert.equal(n.title, 'Haustür automatisch aufgesperrt');
-  assert.deepEqual(n.data.actions[0], { type: 'quick_action', label: 'Wieder zusperren', plugin: 'gatecontrol-door', id: `${lockId}:lock` });
+  assert.deepEqual(n.data.actions[0], { type: 'quick_action', label: 'Wieder zusperren', plugin: 'gatecontrol-door', id: `${lockId}:toggle` });
   assert.equal(n.data.actions[0].auth, undefined, 'no device auth for locking');
   for (let i = 0; i < 17; i++) { clock.add(10 * SEC); await host.tick(); }
   assert.equal(bridge.devices[1001].state, 3, 'not yet after 2:50');
@@ -132,6 +132,9 @@ test('without a door sensor: the door state is not checked, after 3 min a push a
   await host.tick();
   const n = lastAuto(host);
   assert.equal(n.title, 'Haustür ist noch aufgesperrt');
-  assert.deepEqual(n.data.actions[0], { type: 'quick_action', label: 'Zusperren', plugin: 'gatecontrol-door', id: `${lockId}:lock` });
+  assert.deepEqual(n.data.actions[0], { type: 'quick_action', label: 'Zusperren', plugin: 'gatecontrol-door', id: `${lockId}:toggle` });
   assert.equal(bridge.devices[1001].state, 3, 'not locked by itself');
+  // the button (1.11.0: the lock's switch) only locks — from a push never the other way round
+  assert.deepEqual((await host.runQuickAction(ANNA, `${lockId}:toggle`, 'de', { via: 'notification' })).body.state, 'on');
+  assert.equal(bridge.devices[1001].state, 1, 'locked by the button');
 }));

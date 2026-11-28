@@ -367,7 +367,21 @@ async function assumeAfter(gc, lock, action, now) {
     stable_state = ?, nuki_state = NULL, nuki_via = 'assumed' WHERE lock_id = ?`, [state, now, state, lock.id]);
 }
 
+/**
+ * 1.11.0: does the apps' quick action of this lock come as ONE switch (zugesperrt ⇄ aufgesperrt, id `<id>:toggle`)?
+ * A smart lock (not an opener) whose administrator allows both zusperren and aufsperren — both need the same right.
+ */
+function hasToggle(lock) {
+  return !!lock && !nuki.isOpener(lock.device_type) && Array.isArray(lock.actions) && lock.actions.includes('lock') && lock.actions.includes('unlock');
+}
+
+/** The quick action id of a push button „Zusperren“: the switch when the lock has one (a run from a push only locks), else the button. */
+function lockActionId(lock) {
+  return hasToggle(lock) ? 'toggle' : 'lock';
+}
+
 module.exports = {
+  hasToggle, lockActionId,
   PERSIST_MS, POLL_MS, POLL_FAST_MS, STALE_MS, CLOUD_STALE_MS, REFRESH, WEB_TOKEN, bridgeSecret, reset, sourceKey, pollSoon, all, get, bridges, bridgeToken, webToken,
   displayState, stateView, diagView, saveState, poll, execute, assumeAfter, rowToLock, _mem: mem,
 };

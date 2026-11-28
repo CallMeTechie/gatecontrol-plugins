@@ -77,7 +77,8 @@ test('1.0.0 row (unlatching, moving_since NULL), live cloud stays on 7: overview
   const tile = (await host.portalTiles(ANNA)).find((x) => x.title === 'Haustür');
   assert.deepEqual([tile.value, tile.state], ['Zustand unklar', 'warn']);
   assert.equal((await host.portalTiles(ANNA, 'en')).find((x) => x.title === 'Haustür').value, 'State unclear');
-  assert.equal((await host.quickActions(ANNA)).find((x) => x.id === `${l.id}:lock`).subtitle, 'Zustand unklar');
+  const sw = (await host.quickActions(ANNA)).find((x) => x.id === `${l.id}:toggle`);
+  assert.deepEqual([sw.title, sw.subtitle, sw.state], ['Zustand unklar', 'Haustür', null], 'the switch: no side, no „zuletzt“');
   // keeps stale while the cloud stays stuck (moving_since is never reset)
   for (let i = 0; i < 6; i++) await step(host, clock);
   assert.deepEqual([(await shown(call, l.id)).lock, (await shown(call, l.id)).stale], ['unknown', true]);
