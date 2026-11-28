@@ -496,6 +496,9 @@ async function forget(gc, ids) {
     for (const v of vs) {
       await store.run(gc, 'DELETE FROM vault_wraps WHERE vault_id = ?', [v.id]);
       await store.run(gc, 'DELETE FROM vault_devices WHERE vault_id = ?', [v.id]);
+      // since 1.32.0: its placeholders of "Nur auf diesem Gerät" and open proofs (vaultlocal.js)
+      await store.run(gc, 'DELETE FROM vault_local WHERE vault_id = ?', [v.id]);
+      await store.run(gc, 'DELETE FROM vault_local_proofs WHERE vault_id = ?', [v.id]);
       await store.run(gc, 'DELETE FROM vaults WHERE id = ?', [v.id]);
     }
   }
@@ -523,7 +526,7 @@ async function announce(gc, ctx, texts) {
     let users = ev.users;
     if (!users && ev.area) users = await areas.readers(gc, ev.area, ctx.settings);
     if (!users || !users.length) continue;
-    try { await gc.events.emit({ users, type: 'vault', data: { vault: ev.vault, event: ev.event, ...(ev.device ? { device: ev.device } : {}), ...(ev.keyVersion ? { keyVersion: ev.keyVersion } : {}) } }); } catch (e) { gc.log.warn('vault event failed', (e && e.code) || 'error'); }
+    try { await gc.events.emit({ users, type: 'vault', data: { vault: ev.vault, event: ev.event, ...(ev.device ? { device: ev.device } : {}), ...(ev.keyVersion ? { keyVersion: ev.keyVersion } : {}), ...(ev.node ? { node: ev.node } : {}) } }); } catch (e) { gc.log.warn('vault event failed', (e && e.code) || 'error'); }
   }
 }
 

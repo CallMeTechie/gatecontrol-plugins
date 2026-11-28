@@ -73,7 +73,7 @@ reaches `GET frame` (the photo frame, since 1.7.0) and nothing else (`403 forbid
 
 | Route | Body / query | Answer |
 |---|---|---|
-| `GET me` | | `me { id, name, seat, deviceId, admin }`, `licence { valid, tier }`, `areas`, `latest` (change log seq), `settings`, `limits { maxBytes }`, `wipes` (entries this device has yet to handle, since 1.2.0), `devices` (my devices a new wipe reaches), `features` (since 1.5.0: `['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles']`, since 1.6.0 also `'links'`, `'guard'`, since 1.7.0 `'timeTravel'`, `'takenAt'`, `'photos'`, `'albums'`, `'frame'`, `'storage'`, since 1.8.0 `'docAi'` and `'cloudImport'` — only while GateControl offers the AI service / cloud accounts and they are allowed, see "AI for documents" and "Import"; since 1.9.0 `'vault'` and — while set up — `'office'`, since 1.10.0 `'photosFolder'`, since 1.11.0 `'vaultsApart'`, since 1.12.0 `'bulk'`, — while GateControl's public links are allowed — `'zip'` and `'multiLink'`, with GateControl ≥ 1.215.0 also `'copyServer'` (copies on the server) and `'zipMixed'` (a ZIP and one link of any selection); since 1.13.0 `'photoClasses'` (work photos apart); since 1.14.0 `'photoSearch'` (photos by what is on them) and — with `docAi` — `'docAsk'` (questions to the documents), `'scanDocs'` (scans become documents) and, while the Familie plugin's `calendar_add` is reachable, `'deadlineCalendar'` (see "AI in Drive"); since 1.16.0 `'photoPlaces'` and `'photoPeople'` (see "Places and people"); since 1.17.0 — with `docAi`, while Mail's `calendar_add` is reachable and takes Drive — `'deadlineMailCalendar'` (see "Deadlines into a calendar of Mail"); since 1.18.0 `'overview'` (see "Overview"); since 1.19.0 `'scan'` (file nodes and photo items carry GateControl's virus scan `scan { state, blocked, finding }`, see "Virus scan"); since 1.20.0 `'offline'` and — while GateControl has the home cache (≥ 1.231.0, `permissions.homeCache`) — `'homeCache'` (see "Home cache"); since 1.24.0 — with GateControl ≥ 1.249.0 — `'homeCachePreviews'` (previews in the home cache, see "Home cache"); since 1.25.0 `'mediaFilter'` (`media=image|video` on the photos and the search, `durationMs` on videos); since 1.26.0 `'memoryCollections'` (the page „Erinnerungen“: `GET memories`, `GET memories/photos`, see "Memories"); since 1.28.0 `'memoryPicks'` (`GET overview` `memoryPicks`, see "Overview"); since 1.31.0 `'framePhotos'` (`frame/photos` and `GET frame` from an app device, see "Share for the photo frame")), `settings` (since 1.14.0 also `scanKeepOriginal`), `links { node, drive } \| null` (since 1.6.0, see "Direct links"), `guard { on, locked, incident }` and `incidents` (since 1.6.0, see "Ransomware protection") |
+| `GET me` | | `me { id, name, seat, deviceId, admin }`, `licence { valid, tier }`, `areas`, `latest` (change log seq), `settings`, `limits { maxBytes }`, `wipes` (entries this device has yet to handle, since 1.2.0), `devices` (my devices a new wipe reaches), `features` (since 1.5.0: `['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles']`, since 1.6.0 also `'links'`, `'guard'`, since 1.7.0 `'timeTravel'`, `'takenAt'`, `'photos'`, `'albums'`, `'frame'`, `'storage'`, since 1.8.0 `'docAi'` and `'cloudImport'` — only while GateControl offers the AI service / cloud accounts and they are allowed, see "AI for documents" and "Import"; since 1.9.0 `'vault'` and — while set up — `'office'`, since 1.10.0 `'photosFolder'`, since 1.11.0 `'vaultsApart'`, since 1.12.0 `'bulk'`, — while GateControl's public links are allowed — `'zip'` and `'multiLink'`, with GateControl ≥ 1.215.0 also `'copyServer'` (copies on the server) and `'zipMixed'` (a ZIP and one link of any selection); since 1.13.0 `'photoClasses'` (work photos apart); since 1.14.0 `'photoSearch'` (photos by what is on them) and — with `docAi` — `'docAsk'` (questions to the documents), `'scanDocs'` (scans become documents) and, while the Familie plugin's `calendar_add` is reachable, `'deadlineCalendar'` (see "AI in Drive"); since 1.16.0 `'photoPlaces'` and `'photoPeople'` (see "Places and people"); since 1.17.0 — with `docAi`, while Mail's `calendar_add` is reachable and takes Drive — `'deadlineMailCalendar'` (see "Deadlines into a calendar of Mail"); since 1.18.0 `'overview'` (see "Overview"); since 1.19.0 `'scan'` (file nodes and photo items carry GateControl's virus scan `scan { state, blocked, finding }`, see "Virus scan"); since 1.20.0 `'offline'` and — while GateControl has the home cache (≥ 1.231.0, `permissions.homeCache`) — `'homeCache'` (see "Home cache"); since 1.24.0 — with GateControl ≥ 1.249.0 — `'homeCachePreviews'` (previews in the home cache, see "Home cache"); since 1.25.0 `'mediaFilter'` (`media=image|video` on the photos and the search, `durationMs` on videos); since 1.26.0 `'memoryCollections'` (the page „Erinnerungen“: `GET memories`, `GET memories/photos`, see "Memories"); since 1.28.0 `'memoryPicks'` (`GET overview` `memoryPicks`, see "Overview"); since 1.31.0 `'framePhotos'` (`frame/photos` and `GET frame` from an app device, see "Share for the photo frame"); since 1.32.0 — while the setting `vault_local` is on — `'vaultLocal'` ("Nur auf diesem Gerät", see "Only on this device")), `settings` (since 1.14.0 also `scanKeepOriginal`), `links { node, drive } \| null` (since 1.6.0, see "Direct links"), `guard { on, locked, incident }` and `incidents` (since 1.6.0, see "Ransomware protection") |
 | `GET areas` | | `areas [{ id, kind, label, role, via, rootId, owner, archived, storage { bytes, quota, form, target, state } }]` (+ `docAi` while the feature is on, since 1.14.0 `deadlinesToCalendar` with `deadlineCalendar`, since 1.17.0 `deadlinesTarget` — the viewer's target — and both while the family calendar or a calendar of Mail is reachable; also in `GET me` `areas`) |
 | `PATCH areas/<id>` | `{ docAi?: boolean, deadlinesToCalendar?: boolean, deadlinesTarget?: target \| null }` (since 1.8.0 / 1.14.0 / 1.17.0, write in the area) | `{ area: { id, docAi, deadlinesToCalendar?, deadlinesTarget? } }` — AI for documents on / off in this area; new deadlines into the family calendar on their own (the area's switch; Familie not reachable: `409 familie_unavailable`); since 1.17.0 my own target in this area (see "Deadlines into a calendar of Mail") |
 | `GET overview` | (since 1.18.0, feature `overview`) | `todo`, `recent`, `memories`, `memoryPicks` (since 1.28.0), `people`, `places`, `activity`, `storage` — the start of Drive in one request (see "Overview") |
@@ -1231,6 +1231,8 @@ All strings UTF-8, integers big-endian, binary fields **base64url without paddin
 | `nameCipher` | `0x01 ‖ keyVersion (uint32) ‖ nonce (12, random) ‖ AES-256-GCM(nameKey, nonce, aad = the first 5 bytes, plaintext = pad(name))`; `nameKey = HKDF(TK, salt empty, info "gcdrive-v1:name:<vaultId>", 32)`; `pad`: the name in Unicode NFC as UTF-8, then `0x80`, then `0x00` up to a multiple of 32 bytes (unpad: drop trailing zeros, expect 0x80). 65 … 1057 bytes |
 | Content | Header (29 bytes) `"GCDV" ‖ 0x01 ‖ keyVersion (uint32) ‖ chunkSize (uint32, 1048576; readers accept 1 KiB … 16 MiB) ‖ salt (16, random)`, then the chunks: the plaintext in pieces of `chunkSize` (the last shorter; an empty file is one empty chunk; a size that is a multiple has no extra empty chunk), chunk *i* = `AES-256-GCM(fileKey, nonce = 0^8 ‖ uint32(i), aad = header ‖ uint32(i) ‖ (last ? 0x01 : 0x00), piece)`; `fileKey = HKDF(TK, salt = the header's salt, info "gcdrive-v1:content:<vaultId>", 32)`. Size = 29 + plaintext + 16 × max(1, ⌈plaintext / chunkSize⌉). Reading: any range of whole chunks |
 | Recovery key | 32 random bytes, shown once as Crockford base32 of `key ‖ BLAKE2b-256(key)[0..3]` — 56 characters in 14 groups of 4 joined by `-` (the format of the Vault plugin: accept lower case, spaces, dashes, `O` = `0`, `I`/`L` = `1`; a wrong check refuses it). Its X25519 private key = `HKDF(key, salt empty, info "gcdrive-v1:recovery", 32)` (clamped by X25519); `recoveryPub` its public key. The vault key of every version is wrapped for it like for a device (`recoveryWrap`, device id `recovery` on the server). Its proof `recoveryAuth` = base64url(`HKDF(key, salt empty, info "gcdrive-v1:recovery-auth", 32)`) — the server keeps only its SHA-256 and lets a device approve itself with the recovery key only with it |
+| Device proof (1.32.0) | `POST vaults/<id>/local/challenge { deviceId }` → `challenge` = base64url(`0x01 ‖ enc (32) ‖ ct (48)`): HPKE as a `wrap` (same suite, single-shot, aad empty) of 32 random bytes to the device's public key, `info = "gcdrive-v1:local-proof:<vaultId>:<deviceId>"`. The device opens it with its key (behind the unlock) and sends `proof` = base64url of the 32 bytes — within 60 seconds, once (a wrong one or one followed by a 409 is used up). The server keeps only their SHA-256 |
+| Local key (1.32.0, on the device only) | "Nur auf diesem Gerät": one random 32-byte key LK per folder, the same content and name format as above with **key version 0** (`kv = 0`, "local") — it never reaches the server (the server refuses key version 0 everywhere). LK lies wrapped by the device (Keystore / DPAPI) and for the export wrapped to `recoveryPub` like a `wrap` with `info = "gcdrive-v1:lk:<vaultId>:<nodeId>"` (the apps' format — fixed with the first app that exports; the server takes no part) |
 
 Flows: **make** — TK, the vault id, the recovery key (shown, kept — only then `POST vaults`), the name encrypted with
 version 1, wraps for the device and the recovery key. **New device** — `POST …/devices`, show the safety number; an
@@ -1246,6 +1248,67 @@ keep reading what was encrypted with it (rotation protects only new files); name
 times, the folder structure, who changed what, or how many files there are. The portal's device key never leaves
 GateControl's page (not extractable), but a vault opened in the browser keeps its keys in the tab's memory until it
 is closed.
+
+### Only on this device (Nur auf diesem Gerät, since 1.32.0, feature `vaultLocal`)
+
+A folder of a vault whose content lies on **one device only** (`server/vaultlocal.js`, migration 026). The server keeps
+the folder as a **placeholder** — the same node (id, parent, opaque name, `nameCipher`) with no files, no folders below,
+no size — and knows only that it exists, on which vault device (`vault_devices`: name, platform) and since when. Only
+while an administrator switched it on (setting `vault_local`, **off** by default — older apps show a placeholder as an
+empty folder); placeholders made before stay as they are when it goes off. Only in a vault of the person's own files
+("Nur ich": `409 local_shared` elsewhere), only a folder below the vault's folder, not inside or above another placeholder
+(`409 local_nested { deviceName }`), only from an approved vault device of the person with the write right.
+
+```
+GET    vaults/<id>/local[?deviceId=]           → { items: [Local] }
+GET    vaults/<id>/local/<nodeId>[?deviceId=]  → { local }
+POST   vaults/<id>/local/challenge { deviceId } → { challenge, expiresAt } (the device proof, "Kryptografie")
+POST   vaults/<id>/local { nodeId, deviceId }  → { local, manifest: { items: [Item], files, folders, bytes },
+                                                 versions: { count, bytes }, trash: { entries, files, bytes } }
+                                                 — state moving, a lease of 30 minutes (again for the same device: anew)
+POST   vaults/<id>/local/<nodeId>/lease { deviceId }            → { local } — the lease 30 minutes more (moving, returning)
+DELETE vaults/<id>/local/<nodeId>?deviceId=                     → { local: null } — a move called off (nothing deleted)
+POST   vaults/<id>/local/<nodeId>/commit { deviceId, proof, manifest: [{ id, rev?, sha256? }] }
+                                         → { local, purgeAt, hidden } — 409 conflict { reason: 'changed', changed,
+                                           added, removed } when the nodes below are not what the device holds
+POST   vaults/<id>/local/<nodeId>/undo { deviceId }             → { local: null, restored } — within the 24 hours
+                                           (409 { reason: 'purged' } after, { reason: 'not_empty' } with a return's files)
+POST   vaults/<id>/local/<nodeId>/return { deviceId }           → { local } — state returning (needs the app's device)
+POST   vaults/<id>/local/<nodeId>/return/commit { deviceId, proof, count } → { local: null, files } — 409 { reason:
+                                           'count', files } when the files below are not `count`
+POST   vaults/<id>/local/<nodeId>/forget { deviceId, proof? }   → { forgotten, trashed } — the device itself with its
+                                           proof, another approved device of the person without one (only after the 24
+                                           hours: 409 { reason: 'purge_pending', purgeAt }); the placeholder into the trash
+
+Local = { nodeId, vaultId, deviceId, deviceName, platform, deviceState, state: 'moving'|'local'|'returning', since, mine,
+          thisDevice? (with ?deviceId=), leaseUntil? (moving, returning), purgeAt? and undo? (the person's own) }
+Item  = { id, parentId, isDir, nameCipher, keyVersion, rev?, sha256?, size?, mediaId?, mtime? } (files with rev … mtime)
+```
+
+Errors of a device: `403 { reason: 'device' }` (not an approved vault device of the person, or not the placeholder's),
+`403 { reason: 'proof' }`, `409 conflict { reason: 'state', state }`. **The move:** start → fetch every file of the
+manifest (`GET nodes/<id>/content`), check, encrypt with the local key (README "Kryptografie") → challenge → commit. Then
+every node below goes **hidden**: the live ones leave their paths as in the trash and get `trash_id` = the placeholder (no
+trash lists them, nothing serves them), those in the trash already keep their batch in `nodes.local_trash`; offline marks
+of every person, the home cache's uses and office locks below end at once (the home cache withdraws its offers at its
+next run, within a minute). The change log gets a `delete` for each node right below and `local` for the placeholder
+(also on every later change of its state); the person a push (topic `vault`, "Ordner nur noch auf einem Gerät" with the
+device's name — the folder's name is encrypted and not in it) and the live event `vault { event: 'local', node }`. The
+ransomware protection is not asked (no alarm): the proof, the push and the 24 hours stand for it. **After 24 hours** the
+background run removes what lay hidden for good (`nodes.purgeRows`: media, versions, texts, history, …). **Locks:**
+uploads, folders, moves, copies into a placeholder and "offline verfügbar" for it → `409 local_only { nodeId, deviceId,
+deviceName, state }`; any change below a folder being moved → `409 local_moving`; a placeholder or a folder holding one
+does not go into the trash, gets no mark and no time travel; in jobs `blocked` with `local_only` / `local_moving`. The
+placeholder itself may be renamed and moved within its vault. `GET children` of a placeholder is empty with `local`
+(while it is moved: as always; while it returns: its files only for the returning GateControl device). Placeholders carry
+`local` in `GET children`, `GET nodes/<id>` and `GET changes`. A move whose lease ran out ends by itself (nothing was
+deleted); a return whose lease ran out is `local` again (what it uploaded stays, out of sight, for the next try).
+
+What the server **cannot** delete: copies outside Drive (NAS snapshots, the recycle bin of a share, S3 versioning) keep
+the old ciphertext as long as they keep things. `gc.media.delete` deletes the row and GateControl's own copy at once and
+the file on a storage target right after (GateControl's worker, retried while the target is unreachable). A home gateway
+gets the withdrawal at its next sync of the stock and serves the file no more (no hints), but keeps a copy it fetched
+already until it needs the space (it goes first then).
 
 ### Viewing vault files (since 1.22.0)
 

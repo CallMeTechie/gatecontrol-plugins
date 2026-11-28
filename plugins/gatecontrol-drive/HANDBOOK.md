@@ -1,4 +1,4 @@
-<!-- version: 1.31.0 -->
+<!-- version: 1.32.0 -->
 # Drive
 
 ## What the plugin does
@@ -7,7 +7,7 @@
 - **Areas with rights:** My files, Family, the children's folders and team folders.
 - **Versions, trash, links** for people without an account and **sync** with every device (apps).
 - **Photos:** timeline, albums, memories, places and people, a photo frame on the wall tablet and the GateControl TV.
-- **Vault folders:** end-to-end encrypted folders only your devices open.
+- **Vault folders:** end-to-end encrypted folders only your devices open – if you like, also a folder that lies **on one of your devices only**.
 - **AI for documents:** recognise kind, name and deadlines, ask your files, turn scans into documents, deadlines into the family calendar.
 - **Ransomware protection:** Drive stops a device that changes unusually many files.
 - **Import** from Google Drive and OneDrive, **office in the browser** with an office server of your own.
@@ -28,7 +28,7 @@ Drive is a subscription of its own (Family, Business or Combo, five people inclu
 1. **Switch people on:** admin page **“People”** – per person **Family** or **Business** (depending on the licence). Only people switched on use Drive.
 2. **Storage places:** **Settings › Plugins › Drive › Storage places** – per area this server or a storage target. On a NAS in the readable form the files are plain files.
 3. **Team folders** (Business): admin page **“Team folders”** – create folders and enter people or groups with read, write or manage.
-4. **Settings** (**Settings › Plugins › Drive › Settings**): keep versions, empty the trash after … days, space per person, “parents may view the children's folders”, ransomware protection (from how many files or percent within what time), photo frame, AI for documents, import, address of the office server, address of GateControl for direct links.
+4. **Settings** (**Settings › Plugins › Drive › Settings**): keep versions, empty the trash after … days, space per person, “parents may view the children's folders”, ransomware protection (from how many files or percent within what time), photo frame, AI for documents, import, address of the office server, address of GateControl for direct links, vault “Only on this device” (from 1.32.0, off at first – switch it on only once everyone's apps are up to date).
 5. **Backup:** GateControl's backup holds **no Drive files**, only the database. When the files are in one place only, the overview shows a note. Back the files up yourself (e.g. a storage target in S3 or a backup of the NAS).
 6. **Home cache** (optional): switch it on at the gateway under **Gateways › Home cache** and choose which kinds it keeps.
 
@@ -62,7 +62,26 @@ A vault folder stays end-to-end encrypted while you look at a file in it:
 - **The server sees nothing new:** it serves encrypted data and the viewer's program only. Administrators still cannot open vaults.
 - **Office files (portal):** Word, Excel, PowerPoint and OpenDocument files (docx, xlsx, pptx, odt, ods, odp) open in the portal as a **reading view**: the text with headings, lists and tables, each sheet of a workbook as a tab, a presentation slide by slide. The layout, pictures and charts are missing; formulas show the value saved last. Macros, embedded objects and links are not run and nothing is loaded from the network. Older formats (doc, xls, ppt), RTF and password-protected files get a note with “Download”. The apps (Android, Windows) do not have this view yet.
 - **Limits:** very large files and, in the browser, videos are not shown – you get a note and can download the file on purpose or view it in the app.
-- **Offline (Android app):** In a vault, switch on “Available offline” for a file or a folder (menu ⋮) or “Keep the whole vault offline” at the top. The phone then keeps only the encrypted content, exactly as the server has it. As always a file opens only after unlocking, in memory only – also without a connection. For that the phone keeps the wrapped vault key; it stays protected by the phone's device key. If the device is removed from the vault or you sign out, the app deletes the vault's offline files.
+- **Offline (Android app):** see “Where does a vault folder lie?” right below.
+
+### Where does a vault folder lie? An extra copy offline, or only on this device
+
+For each folder in a vault there are three choices. They sound alike but are something quite different:
+
+| Choice | On the server | On this phone | On your other devices |
+|---|---|---|---|
+| **Only on the server** (default) | the content (encrypted) | nothing | open it with a connection |
+| **Also offline** (“Keep this folder offline”, “Available offline”) | the content stays there | an **extra** encrypted copy | open it as always |
+| **Only on this device** (from Drive 1.32.0) | **a placeholder only**, no content | the **only** copy | see only “Only on ‹device›”, open nothing |
+
+- **“Keep this folder offline” / “Available offline” is only an extra copy.** Nothing is taken off the server: the folder stays on the server, in the versions and in the trash, and all your approved devices keep opening it. Next to that the phone keeps an encrypted copy so it opens without a connection too. If the phone is lost or you delete the app, nothing is lost. The phone keeps only the encrypted content, exactly as the server has it; as always a file opens only after unlocking, in memory only. For that the phone keeps the wrapped vault key; it stays protected by the phone's device key. If the device is removed from the vault or you sign out, the app deletes these copies. On the PC the same mark is called “Available offline on mobile devices”.
+- **“Only on this device” takes the folder off the server.** The phone fetches everything, checks every file and encrypts it with a key of its own that lies only on the phone. Only then does Drive delete the content on the server – with all versions, the time travel, the trash entries from this folder and the offline copies on your other phones. What is left is a placeholder: that the folder exists, on which device it lies and since when – no files, no sizes.
+- **Only in vaults “Only me”.** In a vault of the family or of a team folder it is not possible, as the folder would be taken away from the others. Only folders inside a vault, not the whole vault.
+- **24 hours “Undo”.** After the move the old content stays on the server, invisible, for 24 hours. Until then “Undo” on the device brings everything back as it was. After that it is gone for good. All your devices get a notification “a folder on one device only” – if that was not you, tap “Undo” on that device within the 24 hours.
+- **Important: if the device is lost, the content is gone.** Uninstalling the app, clearing the app's data, resetting the phone, losing it or breaking it – GateControl has no copy. So export an encrypted backup regularly (in the app, in the folder menu); it opens only with the vault's recovery key.
+- **On other devices** the folder shows greyed with “Only on Pixel 8” (the name of your device). Putting something into it, moving or copying into it is not possible there. If the device is lost, remove the placeholder on another of your devices (“Remove placeholder …”, at the earliest 24 hours after the move).
+- **Back to the server:** on the device, “Save on the server again” in the folder menu. The app uploads everything again; then the folder is a plain vault folder.
+- **What the server cannot delete:** backups outside Drive (NAS snapshots, Hyper Backup, the recycle bin of a NAS share, S3 versioning) may keep the old, encrypted content as long as they keep things. A home gateway no longer offers the files but may keep an encrypted copy it already has until it needs the space.
 
 ### Putting files into a vault – what happens to the original
 
@@ -104,6 +123,12 @@ Request access and grant it on a device already approved – or open it with the
 **A video from a vault does not play in the browser.**
 The portal tab may not play videos from memory, and a decrypted copy on the disk would no longer be protected. Watch the video in the Android or Windows app or download it on purpose.
 
+**A vault folder shows “Only on Pixel 8” and does not open.**
+The folder lies only on that device (see “Where does a vault folder lie?”). Open it there, or bring it back there with “Save on the server again”. Uploading into it works nowhere else; an older app then says “This folder lies only on …”.
+
+**“Only on this device” is missing in the app.**
+An administrator has to switch it on under **Settings › Plugins › Drive**. It works only in vaults “Only me” and needs an up-to-date app.
+
 **Files are “held back by the virus scan”.**
 GateControl's virus scan checks new files; Drive does not open or share blocked files. The picture and video view then only shows the reason. A file marked as malware shows only after “Show anyway”.
 
@@ -121,6 +146,13 @@ Full screen in the portal needs GateControl 1.244.0. Older versions show the vid
 
 **At home the photos do not show up faster.**
 The previews reach the gateway bit by bit (a few hundred per run, every 15 minutes). Check at the gateway under **Gateways › Home cache** that it is “on” and that “Photos” or “Drive” are switched on. Previews from the home network need GateControl 1.249.0 and a current app.
+
+## New in 1.32.0
+
+- **Vault: “Only on this device”** – a folder of a vault “Only me” can be taken off the server and then lies on one of your devices only (with the next update of the Android app; the PC only shows such folders at first). The server keeps a placeholder only. For 24 hours it can be undone, all your devices get a notification. See “Where does a vault folder lie?”.
+- **Explained more clearly:** “Keep this folder offline” is only an **extra** copy on the phone – the folder stays on the server. “Only on this device” is the opposite: the only copy lies on the device.
+- **For administrators:** the new setting “Vault: Only on this device” is off at first. Switch it on only once the Android and Windows apps of everyone are up to date – older apps show such a folder empty.
+- **In the portal** such a folder shows greyed with “Only on ‹device›”; a click explains it.
 
 ## New in 1.31.0
 

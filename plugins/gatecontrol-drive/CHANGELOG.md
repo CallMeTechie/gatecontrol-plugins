@@ -2,6 +2,52 @@
 
 Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3.
 
+## 1.32.0
+
+Tresor: „Nur auf diesem Gerät“, Stufe 1 – der Server (`server/vaultlocal.js`, Migration 026, Feature-Wort `vaultLocal`).
+
+- **Neue Einstellung „Tresor: Nur auf diesem Gerät“** (`vault_local`, **Voreinstellung aus**): Erst einschalten, wenn die
+  Android- und Windows-Apps Platzhalter zeigen – ältere Apps sehen einen solchen Ordner leer, ihr Hochladen dorthin
+  scheitert mit `409 local_only` (lesbare Meldung). Ausgeschaltet bleiben bestehende Platzhalter, wie sie sind; nur neue
+  gibt es nicht (`403 feature_off`).
+- **Ein Ordner eines Tresors liegt nur auf einem Gerät:** Der Server behält den Ordner als **Platzhalter** (derselbe
+  Knoten, verschlüsselter Name) – keine Dateien, keine Unterordner, keine Größe – und weiß nur, auf welchem Tresor-Gerät
+  er liegt und seit wann. Nur in Tresoren „Nur ich“ (`409 local_shared` in Tresoren der Familie oder eines Team-Ordners),
+  nur Unterordner, nicht verschachtelt (`409 local_nested`), nur von einem freigegebenen Tresor-Gerät der Person mit
+  Schreibrecht.
+- **Routen `vaults/<id>/local/…`:** `GET` (Liste), `POST` (Umstellen beginnen: Zustand `moving`, Sperre 30 Minuten,
+  Manifest aller Knoten darunter, Zahl und Größe der Versionen und der Papierkorb-Einträge), `POST …/challenge`
+  (Gerätenachweis), `POST …/<nodeId>/lease`, `DELETE …/<nodeId>` (abbrechen), `POST …/<nodeId>/commit` (mit Nachweis und
+  Manifest; `409 conflict { reason: 'changed', changed, added, removed }`), `POST …/<nodeId>/undo`, `POST
+  …/<nodeId>/return` und `…/return/commit` (zurück auf den Server), `POST …/<nodeId>/forget` (Platzhalter entfernen),
+  `GET …/<nodeId>`.
+- **Gerätenachweis:** Abschluss, Rückweg und Entfernen vom Gerät selbst verlangen eine Zufallszahl, die der Server mit
+  HPKE an den öffentlichen Geräteschlüssel versiegelt (wie die Wraps, Info `gcdrive-v1:local-proof:<vaultId>:<deviceId>`),
+  60 Sekunden gültig, einmal. Ein gestohlenes Anmelde-Token reicht nicht, um Tresor-Inhalt am Papierkorb vorbei zu löschen.
+- **24 Stunden Sicherheitsfrist:** Nach dem Umstellen liegt der Inhalt unsichtbar auf dem Server (in keinem Papierkorb,
+  nicht abrufbar, Pfade frei wie im Papierkorb), „Rückgängig“ holt ihn zurück – mit Pfaden, Versionen und den
+  Papierkorb-Einträgen von damals (`nodes.local_trash`). Danach löscht der Hintergrundlauf endgültig: Medien, Versionen,
+  Texte, Zeitreise, Offline-Markierungen aller Personen, Nutzungen des Heim-Zwischenspeichers (Angebote zieht der nächste
+  Lauf in der nächsten Minute zurück), Büro-Sperren.
+- **Sperren:** Hochladen, Ordner anlegen, Verschieben, Kopieren in einen Platzhalter, „Offline verfügbar“ für ihn →
+  `409 local_only { deviceName }`; während des Umstellens jede Änderung darunter → `409 local_moving`. Ein Platzhalter
+  (oder ein Ordner, der einen enthält) geht nicht in den Papierkorb, bekommt keine Löschmarke und keine Zeitreise; in
+  Aufträgen (`ops`) `blocked` mit `local_only` / `local_moving`. Umbenennen und Verschieben des Platzhalters selbst
+  gehen. Während des Rückwegs darf nur das GateControl-Gerät hochladen, das ihn begonnen hat.
+- **Anzeige:** `local { nodeId, vaultId, deviceId, deviceName, platform, deviceState, state, since, mine, thisDevice?,
+  leaseUntil?, purgeAt?, undo? }` an Platzhaltern in `GET children`, `GET nodes/<id>` und `GET changes` (`?deviceId=` →
+  `thisDevice`); `GET children` eines Platzhalters ist leer und trägt `local`. Im Änderungsprotokoll ein `delete` je
+  Knoten direkt darunter und `local` für den Platzhalter.
+- **Kein Wächter-Alarm:** Das Umstellen zählt nicht als Massenlöschung. Stattdessen eine Mitteilung (Thema `vault`) an
+  alle Geräte der Person („Ordner nur noch auf einem Gerät“, mit Gerätenamen; der Ordnername ist verschlüsselt und steht
+  nicht darin) und das Live-Ereignis `vault` (`local`, `local_undone`, `local_returned`, `local_forgotten`,
+  `local_cancelled`).
+- **Portal:** Ein Platzhalter steht ausgegraut mit „Nur auf ‹Gerät›“; ein Klick erklärt ihn, statt ihn zu öffnen.
+- Handbuch: „Diesen Ordner offline halten“ klarer erklärt (zusätzliche Kopie) gegenüber „Nur auf diesem Gerät“.
+- Kein GateControl-Release nötig: nur vorhandene Schnittstellen (`gc.media`, `gc.homeCache`, `gc.notify`, `gc.events`).
+- Tests: `test/vault_local.test.js` (Nachweis gegen `ui/vaultcrypto.js`, Ablauf, Sperren, Frist, Rückgängig, Rückweg,
+  Entfernen, abgelaufene Sperren, nichts Lesbares auf dem Server, Migration 026), `test/portal_vaultlocal.test.js`.
+
 ## 1.31.0
 
 „Für Fotorahmen freigeben“ und der Fotorahmen auf dem GateControl-TV.

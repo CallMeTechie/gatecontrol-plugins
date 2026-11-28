@@ -338,6 +338,8 @@ label.dp-set-row{cursor:pointer}
 .dp-card:hover .dp-cb,.dp-card:focus-within .dp-cb,.dp-main.has-sel .dp-card .dp-cb,.dp-card.is-sel .dp-cb{opacity:1}
 .dp-card.is-sel{border-color:color-mix(in srgb,var(--accent) 60%,transparent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 35%,transparent)}
 .is-cut{opacity:.55}
+.is-local{opacity:.55}
+.dp-local{color:var(--muted)}
 .dp-row.is-drop,.dp-card.is-drop,.dp-tree-row.is-drop{position:relative;background:color-mix(in srgb,var(--accent) 14%,transparent);outline:2px dashed var(--accent);outline-offset:-2px}
 .dp-drophint{position:absolute;left:60%;top:calc(100% - 6px);z-index:5;white-space:nowrap;background:var(--accent);color:var(--surface);font-size:12px;font-weight:700;padding:4px 10px;border-radius:8px;pointer-events:none}
 .dp-fresh{display:inline-block;align-self:flex-start;margin-left:6px;font:700 10.5px var(--font);padding:2px 8px;border-radius:999px;background:var(--accent-soft);color:var(--accent)}

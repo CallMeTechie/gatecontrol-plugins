@@ -31,6 +31,8 @@ async function since(ctx, q) {
     const node = n && n.area_id === c.area_id ? nodes.view(n) : null;
     out.push({ seq: c.seq, op: c.op, areaId: c.area_id, nodeId: c.node_id, at: new Date(c.at).toISOString(), by: c.by, device: c.device, node });
   }
+  // placeholders of "Nur auf diesem Gerät" (since 1.32.0): `local` on the node (op 'local' when it changed)
+  await require('./vaultlocal').attach(ctx, out.map((x) => x.node).filter(Boolean), q && q.deviceId);
   return { changes: out, next: page.length ? page[page.length - 1].seq : Math.max(from, rows.length ? from : await latest(ctx.gc)), more: rows.length > limit };
 }
 
