@@ -74,7 +74,8 @@ test('a time window blocks actions outside it (also quick actions), shown as blo
   assert.deepEqual([me.me.windowOpen, me.locks[0].blocked], [false, 'outside_window']);
   const r = await call(app(MARC), 'POST', `/locks/${lockId}/unlock`);
   assert.deepEqual([r.status, r.json.code], [403, 'outside_window']);
-  const q = await host.runQuickAction(MARC, `${lockId}:unlock`);
+  // the apps' lock switch (1.11.0), aufsperren
+  const q = await host.runQuickAction(MARC, `${lockId}:toggle`, 'de', { state: 'off' });
   assert.deepEqual([q.status, q.body.ok], [200, false]);
   assert.match(q.body.message, /Zeitfenster/);
   clock.add(61 * MIN);
@@ -93,32 +94,52 @@ test('at most 10 actions per minute per person (429 rate_limited with retryAfter
   assert.equal((await call(app(ANNA), 'POST', `/locks/${lockId}/lock`)).status, 200);
 }));
 
-test('quick actions per right: zusperren / aufsperren / öffnen (opener: Summer), confirm for unlock/open, icons, state', () => withDoor({}, async (host, { lockId, openerId, bridge }) => {
+test('quick actions per right: the switch zugesperrt ⇄ aufgesperrt (1.11.0) and öffnen (opener: Summer), confirm before aufsperren/open, icons, state', () => withDoor({}, async (host, { lockId, openerId, bridge }) => {
+  const LOCK = 'M7 11V7a5 5 0 0 1 10 0v4M5 11h14v10H5z';
+  const UNLOCK = 'M7 11V7a5 5 0 0 1 9.9-1M5 11h14v10H5z';
   const anna = await host.quickActions(ANNA);
-  assert.deepEqual(anna.map((a) => [a.id, a.title, a.confirm]), [
-    [`${lockId}:lock`, 'Haustür zusperren', false], [`${lockId}:unlock`, 'Haustür aufsperren', true], [`${lockId}:open`, 'Haustür öffnen', true],
-    [`${openerId}:open`, 'Hoftor Summer', true],
+  assert.deepEqual(anna.map((a) => [a.id, a.title, a.kind, a.confirm]), [
+    [`${lockId}:toggle`, 'Zugesperrt', 'toggle', true], [`${lockId}:open`, 'Haustür öffnen', 'button', true],
+    [`${openerId}:open`, 'Hoftor Summer', 'button', true],
   ]);
-  assert.ok(anna.every((a) => a.icon && a.kind === 'button'));
+  // the switch: on = zugesperrt (green lock), off = aufgesperrt (open lock), asks only before aufsperren, targets for rules
+  assert.deepEqual(anna[0], {
+    id: `${lockId}:toggle`, title: 'Zugesperrt', subtitle: 'Haustür · Tür zu', icon: LOCK, kind: 'toggle', state: 'on', confirm: true, confirmWhen: 'off',
+    look: { on: { icon: LOCK, tone: 'good' }, off: { icon: UNLOCK, tone: 'warn' } }, verbs: { on: 'Zusperren', off: 'Aufsperren' }, targets: true,
+    device: { id: `lock:${lockId}`, title: 'Haustür', subtitle: null, icon: LOCK }, widget: anna[0].widget,
+  });
   // one device per lock (GateControl ≥ 1.172.0): all of its actions under it
-  const lockDevice = { id: `lock:${lockId}`, title: 'Haustür', subtitle: null, icon: 'M7 11V7a5 5 0 0 1 10 0v4M5 11h14v10H5z' };
   const openerDevice = { id: `lock:${openerId}`, title: 'Hoftor', subtitle: null, icon: 'M5 21V4a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v17M3 21h18M15 12h.01' };
-  assert.deepEqual(anna.map((a) => a.device), [lockDevice, lockDevice, lockDevice, openerDevice]);
-  assert.ok(anna.every((a) => a.look === null && a.confirmWhen === null), 'buttons as before');
-  // 1.8.0: a lock that reports its battery carries a widget on its first action (the battery as the badge)
-  assert.deepEqual(anna.map((a) => a.widget && a.widget.badge && a.widget.badge.value), [80, null, null, 80]);
-  // target states (GateControl ≥ 1.173.0) are for toggles: the lock's actions stay buttons — no verbs, no targets, no state
-  assert.ok(anna.every((a) => a.verbs === null && a.targets === false && a.state === null));
-  assert.deepEqual(await host.runQuickAction(ANNA, `${lockId}:lock`, 'de', { state: 'on' }), { status: 400, body: { ok: false, error: 'invalid_state' } });
-  assert.equal(anna[0].subtitle, 'Zugesperrt');
-  assert.deepEqual((await host.quickActions(MARC)).map((a) => a.id), [`${lockId}:lock`, `${lockId}:unlock`]);
+  assert.deepEqual(anna.map((a) => a.device.id), [`lock:${lockId}`, `lock:${lockId}`, `lock:${openerId}`]);
+  assert.deepEqual(anna[2].device, openerDevice);
+  assert.ok(anna.slice(1).every((a) => a.look === null && a.confirmWhen === null && a.verbs === null && a.targets === false && a.state === null), 'buttons as before');
+  // the battery on the switch, inside the one button (1.8.0: on the lock's first action)
+  assert.deepEqual(anna.map((a) => a.widget && a.widget.badge && a.widget.badge.value), [80, null, 80]);
+  assert.equal(anna[1].subtitle, 'Zugesperrt');
+  // Marc (right „lock“): only the switch; Lena (view): nothing
+  assert.deepEqual((await host.quickActions(MARC)).map((a) => a.id), [`${lockId}:toggle`]);
   assert.deepEqual(await host.quickActions(LENA), []);
-  assert.deepEqual((await host.quickActions(ANNA, 'en')).map((a) => a.title), ['Lock Haustür', 'Unlock Haustür', 'Open Haustür', 'Hoftor buzzer']);
-  // a run from the app and from a notification button: both checked and in the history with their source
-  assert.deepEqual((await host.runQuickAction(ANNA, `${lockId}:unlock`)).body, { ok: true, unchanged: false, message: 'Haustür aufgesperrt', state: null, widget: null });
+  assert.deepEqual((await host.quickActions(ANNA, 'en')).map((a) => a.title), ['Locked', 'Open Haustür', 'Hoftor buzzer']);
+  assert.deepEqual((await host.quickActions(ANNA, 'en'))[0].verbs, { on: 'Lock', off: 'Unlock' });
+  // the apps no longer offer the two buttons: a pin of them that is run is gone (404) — the apps move it to the switch
+  for (const id of [`${lockId}:lock`, `${lockId}:unlock`]) assert.equal((await host.runQuickAction(ANNA, id)).status, 404, id);
+  // a tap switches over: zugesperrt → aufsperren (state off, the widget after it)
+  let r = (await host.runQuickAction(ANNA, `${lockId}:toggle`)).body;
+  assert.deepEqual([r.ok, r.message, r.state, r.widget.badge.value], [true, 'Haustür aufgesperrt', 'off', 80]);
+  assert.equal(bridge.devices[1001].state, 3);
+  let sw = (await host.quickActions(ANNA))[0];
+  assert.deepEqual([sw.title, sw.state, sw.icon], ['Aufgesperrt', 'off', UNLOCK]);
+  // … and back: aufgesperrt → zusperren
+  r = (await host.runQuickAction(ANNA, `${lockId}:toggle`)).body;
+  assert.deepEqual([r.ok, r.message, r.state], [true, 'Haustür zugesperrt', 'on']);
+  assert.equal(bridge.devices[1001].state, 1);
+  // a target state does exactly that, whatever is shown (zugesperrt + „on“ → zusperren again, never aufsperren)
+  r = (await host.runQuickAction(ANNA, `${lockId}:toggle`, 'de', { state: 'on' })).body;
+  assert.deepEqual([r.ok, r.state, bridge.devices[1001].state], [true, 'on', 1]);
+  // a run from a notification and the opener: both checked and in the history with their source
   assert.deepEqual((await host.runQuickAction(ANNA, `${openerId}:open`, 'de', { via: 'notification' })).body, { ok: true, unchanged: false, message: 'Hoftor: Summer betätigt', state: null, widget: null });
   assert.equal((await host.runQuickAction(MARC, `${lockId}:open`)).status, 404, 'not listed for Marc');
   const h = await host.request({ method: 'GET', path: '/history', user: app(ANNA) });
-  assert.deepEqual(h.json.items.slice(0, 2).map((x) => [x.action, x.via, x.userName]), [['open', 'notification', 'Anna'], ['unlock', 'app', 'Anna']]);
+  assert.deepEqual(h.json.items.slice(0, 4).map((x) => [x.action, x.via, x.userName]), [['open', 'notification', 'Anna'], ['lock', 'app', 'Anna'], ['lock', 'app', 'Anna'], ['unlock', 'app', 'Anna']]);
   assert.deepEqual(bridge.devices[2002].lastAction, 3);
 }));

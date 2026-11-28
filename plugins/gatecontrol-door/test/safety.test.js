@@ -75,9 +75,10 @@ test('night check: at 22:00 (local) the lock is unlocked → push with the quick
   assert.equal(n.length, 1);
   assert.equal(n[0].title, 'Haustür ist noch aufgesperrt');
   assert.deepEqual(n[0].users, [ANNA.id, MARC.id]);
-  assert.deepEqual(n[0].data.actions[0], { type: 'quick_action', label: 'Zusperren', plugin: 'gatecontrol-door', id: `${lockId}:lock` });
-  // the button runs the normal quick action (Marc has `lock`)
-  assert.equal((await host.runQuickAction(MARC, `${lockId}:lock`, 'de', { via: 'notification' })).body.ok, true);
+  assert.deepEqual(n[0].data.actions[0], { type: 'quick_action', label: 'Zusperren', plugin: 'gatecontrol-door', id: `${lockId}:toggle` });
+  // the button runs the lock's switch (1.11.0; Marc has `lock`) — from a push it only locks
+  const r = (await host.runQuickAction(MARC, `${lockId}:toggle`, 'de', { via: 'notification' })).body;
+  assert.deepEqual([r.ok, r.state, bridge.devices[1001].lastAction], [true, 'on', 2]);
   assert.equal((await admin('PATCH', `locks/${lockId}`, { nightCheck: null })).json.lock.nightCheck, null);
   bridge.devices[1001].state = 3;
   clock.add(24 * HOUR);

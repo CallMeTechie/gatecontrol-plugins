@@ -11,6 +11,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const nuki = require('../server/nuki');
+const { ICONS } = require('../server/index');
 const { withDoor, app, ANNA, BRIDGE_TOKEN, WEB_TOKEN, SEC, MIN } = require('./helpers');
 
 const FAMILIE = { automation: true, via: 'gatecontrol-familie' };
@@ -105,8 +106,8 @@ test('still transitional after 3 min → the last stable state with stale: true 
   const tile = (await host.portalTiles(ANNA)).find((x) => x.title === 'Haustür');
   assert.deepEqual([tile.value, tile.state], ['Zustand unklar – zuletzt: Zugesperrt', 'warn']);
   assert.equal((await host.portalTiles(ANNA, 'en')).find((x) => x.title === 'Haustür').value, 'State unclear – last: Locked');
-  const qa = (await host.quickActions(ANNA)).find((x) => x.id === `${lockId}:lock`);
-  assert.equal(qa.subtitle, 'Zustand unklar – zuletzt: Zugesperrt');
+  const qa = (await host.quickActions(ANNA)).find((x) => x.id === `${lockId}:toggle`);
+  assert.deepEqual([qa.title, qa.subtitle, qa.state, qa.icon], ['Zustand unklar', 'Haustür · zuletzt: Zugesperrt', null, ICONS.lock], 'the switch shows no side while unclear');
   // admin diagnostics: the raw code Nuki reports
   const d = await diag(admin, lockId);
   assert.deepEqual([d.source, d.nukiState, d.stale, d.stableState], ['bridge', 7, true, 'locked']);

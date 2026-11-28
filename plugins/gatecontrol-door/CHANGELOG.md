@@ -8,6 +8,27 @@ bleibt auf dem eigenen Server. Einrichtung, Risiken, Datenschutz und die App-API
 an; das Plugin nutzt die, die auch die Open-Source-Projekte ring-client-api (Homebridge) und
 python-ring-doorbell (Home Assistant) verwenden. Sie kann sich jederzeit ändern oder wegfallen.
 
+## 1.11.0
+
+- **Ein Knopf fürs Schloss in den Apps:** Statt der zwei Schnellaktionen „<Name> zusperren“ und „<Name> aufsperren“
+  listet `quickActions` für die Apps pro Nuki-Schloss (kein Opener; der Administrator erlaubt zusperren und
+  aufsperren) einen Schalter `<lockId>:toggle`: `state` on = zugesperrt, off = aufgesperrt/geöffnet, ohne Zustand
+  während es sich bewegt, unklar, blockiert, unkalibriert oder nicht erreichbar ist. Titel = Zustand („Zugesperrt“,
+  „Aufgesperrt“, „Sperrt zu …“, „Zustand unklar“, „Nicht erreichbar“; ab zwei Schaltern „<Name>: <Zustand>“),
+  Untertitel Name und Türsensor („Haustür · Tür offen“), `look` (zu: grün, auf: offenes Schloss, warn),
+  `confirm: true` + `confirmWhen: 'off'` (fragt wie bisher nur vor dem Aufsperren), `verbs` Zusperren/Aufsperren,
+  `targets: true`. Der Schalter trägt das Widget des Schlosses, also den Akkustand als Abzeichen im Knopf.
+- **Lauf:** mit Zielzustand genau dieser; ein Tippen in der App schaltet um (zugesperrt → aufsperren, alles andere →
+  zusperren, auch unklar/unterwegs/nicht erreichbar – nie ungewollt auf); aus einer Mitteilung (`via notification`)
+  nur zusperren. Antwort mit `state` und `widget`.
+- **Mitteilungen:** „Zusperren“ (Nacht-Check, Nachfrage nach dem automatischen Aufsperren) und „Wieder zusperren“
+  tragen bei Schlössern mit Schalter die ID `<lockId>:toggle`. Ältere, schon zugestellte Mitteilungen mit `:lock`
+  melden „nicht mehr verfügbar“.
+- **Kompatibel:** Regeln (`gc.actions.run`, `automation`) und Knöpfe anderer Plugins (interaktiv, z. B. Messenger)
+  bekommen weiter `<lockId>:lock` / `<lockId>:unlock` / `:open` mit unveränderter Bedeutung; der Schalter ist nur für die
+  Apps. Angeheftete `:lock`/`:unlock` verschwinden aus der Liste der Apps (die Android-App setzt den Schalter an ihre
+  Stelle). Ein Schloss, bei dem nur zusperren erlaubt ist, behält den Knopf. Tests `toggle.test.js`.
+
 ## 1.10.0
 
 - **Kamera-ID im Klingel-Push ohne Einstellung:** Hat eine Ring-Klingel keine verknüpfte Heimkamera und gibt es bei

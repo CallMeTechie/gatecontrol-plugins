@@ -1,4 +1,4 @@
-<!-- version: 1.10.0 -->
+<!-- version: 1.11.0 -->
 # Tür & Kamera
 
 ## Was das Plugin kann
@@ -168,7 +168,7 @@ Wie in der Ring-App unter „Modi“: Welche Kameras in welchem Modus aufnehmen,
 
 Im Portal-Tab und im App-Tab **„Tür“** siehst du die Schlösser, die für dich freigegeben sind, mit Zustand, Batterie und Knöpfen für die Aktionen, die du darfst. Dazu die Kameras, den Verlauf und – mit Recht – den Ring-Modus. Ohne Anmeldung (z. B. ein Kiosk-Gerät) kannst du nur ansehen.
 
-Die App bietet außerdem Schnellaktionen und ein Widget für deine Schlösser und den Ring-Modus. Seit 1.8.0 zeigt die Karte eines Schlosses dort den Batteriestand als kleines Symbol mit Prozentwert neben dem Namen – gelb ab 30 %, rot ab 15 % oder wenn Nuki die Batterie als kritisch meldet, mit Blitz, solange der Akku lädt. Im Portal und auf der Seite „Geräte“ steht dasselbe Symbol neben dem Zustand.
+Die App bietet außerdem Schnellaktionen und ein Widget für deine Schlösser und den Ring-Modus. Seit 1.11.0 ist das Schloss dort ein einziger Knopf, der zeigt, ob zugesperrt oder aufgesperrt ist, und beim Tippen umschaltet (vor dem Aufsperren fragt die App nach). Seit 1.8.0 zeigt die Karte eines Schlosses dort den Batteriestand als kleines Symbol mit Prozentwert neben dem Namen – gelb ab 30 %, rot ab 15 % oder wenn Nuki die Batterie als kritisch meldet, mit Blitz, solange der Akku lädt. Im Portal und auf der Seite „Geräte“ steht dasselbe Symbol neben dem Zustand.
 
 ### Kameras im Portal
 
@@ -237,6 +237,12 @@ Firefox spielt das Live-Bild ab GateControl 1.242.0 über den eingebauten Player
 
 **Es werden keine Clips aufgenommen.**
 Prüfe unter „Aufnahmen“ den Modus. Bei „nur wenn niemand zu Hause ist“ muss die Anwesenheit der Familie bekannt sein. Unter 1 GB freiem Platz nimmt das Gateway nichts auf.
+
+## Neu in 1.11.0
+
+- **Ein Knopf fürs Schloss:** In der App gibt es pro Nuki-Schloss nur noch eine Schnellaktion statt „zusperren“ und „aufsperren“. Sie zeigt den Zustand („Zugesperrt“ grün mit geschlossenem Schloss, „Aufgesperrt“ mit offenem Schloss) und schaltet beim Tippen um. Vor dem Aufsperren fragt die App wie bisher nach. Der Batteriestand steht klein oben rechts in diesem Knopf.
+- Während das Schloss sich bewegt („Sperrt zu …“), der Zustand unklar ist, es blockiert oder nicht erreichbar ist, zeigt der Knopf das an; ein Tippen sperrt dann zu, nie auf. Mit mehreren Schlössern steht der Name davor („Haustür: Zugesperrt“).
+- Hattest du „zusperren“ oder „aufsperren“ auf der Startseite angeheftet, ersetzt die App sie durch den neuen Knopf. „Zusperren“ in Mitteilungen sperrt weiter nur zu. Regeln der Familie und Smart-Home-Regeln behalten „zusperren“ und „aufsperren“.
 
 ## Neu in 1.10.0
 

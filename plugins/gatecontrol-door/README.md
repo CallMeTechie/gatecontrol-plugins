@@ -463,12 +463,29 @@ One ring or motion event (the push "Ansehen" opens it with `data.door.eventId`):
 
 ### Quick actions
 
-`GET /api/v1/client/actions` lists, per lock and right: `<lockId>:lock` ("Haustür zusperren",
-no confirm), `<lockId>:unlock` ("… aufsperren", `confirm: true`), `<lockId>:open` ("… öffnen";
-opener "… Summer", `confirm: true`); subtitle = the state ("Zugesperrt"), icons lock / open lock /
-door. Runs: `POST /api/v1/client/actions/gatecontrol-door/<lockId>:<action>` with body
-`{ "source": "app" | "notification" }`. Another plugin (`gc.actions.run`, `automation: true`)
-gets only `lock`/`unlock`, and `unlock` only under the rules of "Automatisch aufsperren".
+`GET /api/v1/client/actions` lists, per lock and right (1.11.0):
+
+* `<lockId>:toggle` — a smart lock whose administrator allows both zusperren and aufsperren: **one
+  toggle** instead of the two buttons. `state` `"on"` = locked, `"off"` = unlocked or unlatched,
+  `null` while it moves, is unclear, jammed, uncalibrated or not reachable. `title` the state
+  ("Zugesperrt", "Aufgesperrt", "Sperrt zu …", "Zustand unklar", "Nicht erreichbar"; with two or
+  more toggles for the person "<name>: <state>"), `subtitle` the lock's name with the door sensor
+  ("Haustür · Tür offen") or what was last seen while unclear; `icon` lock / open lock; `look: {
+  on: { icon: <lock>, tone: "good" }, off: { icon: <open lock>, tone: "warn" } }`, `confirm: true`,
+  `confirmWhen: "off"` (asks before aufsperren), `verbs: { on: "Zusperren", off: "Aufsperren" }`,
+  `targets: true`. It carries the lock's widget (the battery as `badge`). A run with a target
+  state does exactly that; a tap in the app (`source: "app"`) switches over: locked → unlock,
+  everything else → lock; a run from a notification only locks. The answer has `state` (the aimed
+  one) and `widget`.
+* `<lockId>:lock` / `<lockId>:unlock` — only for a lock without the toggle (e.g. only zusperren
+  allowed), and always for another plugin: `gc.actions.run` (`automation: true`, only
+  `lock`/`unlock`, `unlock` only under the rules of "Automatisch aufsperren") and an interactive
+  run (a person's tap in another plugin) keep these ids, so stored rules stay valid. In the apps
+  they are gone with the toggle — the Android app moves a pin of them to the toggle (apps: pins the plugin no longer lists).
+* `<lockId>:open` ("… öffnen"; opener "… Summer", `confirm: true`).
+
+Runs: `POST /api/v1/client/actions/gatecontrol-door/<lockId>:<action>` with body
+`{ "source": "app" | "notification" }`.
 
 Ring mode, per location the person may switch (administrators: every location that supports
 it), both with `device: { id: "ring:<locationId>", title: "<location name>", subtitle:
@@ -511,11 +528,11 @@ plain run — the Familie rules with target states need 1.173.0 anyway).
 |---|---|---|
 | `doorbell` | `{ type: "ding", eventId, cameraId, lockId }` (+ picture); 1.9.0 + `homeCameraId`, `live` (see below) | `open` right: `{ type: "quick_action", label: "Tür öffnen" (opener "Summer"), plugin: "gatecontrol-door", id: "<lockId>:open", confirm: true, auth: "device" }`; all: `{ id: "open", type: "open_app_route", label: "Ansehen", target: "plg-gatecontrol-door" }` |
 | `motion` | `{ type: "motion", eventId, cameraId, lockId }` (+ picture); 1.9.0 + `homeCameraId`, `live` (see below) | "Ansehen" |
-| `auto` | `{ type: "auto_unlocked", lockId }` | `{ type: "quick_action", label: "Wieder zusperren", plugin, id: "<lockId>:lock" }`, "Ansehen" |
+| `auto` | `{ type: "auto_unlocked", lockId }` | `{ type: "quick_action", label: "Wieder zusperren", plugin, id: "<lockId>:toggle" }` (1.11.0; `:lock` without the toggle), "Ansehen" |
 | `auto` | `{ type: "auto_refused", lockId, reason }` · `{ type: "auto_relocked" \| "auto_relock_failed", lockId }` | "Ansehen" |
-| `auto` | `{ type: "auto_ask", lockId }` (no door sensor, 3 min) | `{ type: "quick_action", label: "Zusperren", plugin, id: "<lockId>:lock" }`, "Ansehen" |
+| `auto` | `{ type: "auto_ask", lockId }` (no door sensor, 3 min) | `{ type: "quick_action", label: "Zusperren", plugin, id: "<lockId>:toggle" }` (1.11.0; `:lock` without the toggle), "Ansehen" |
 | `door` | `{ type: "open_long" \| "jammed" \| "unreachable" \| "battery", lockId }` | "Ansehen" |
-| `door` | `{ type: "night", lockId }` | `{ type: "quick_action", label: "Zusperren", plugin, id: "<lockId>:lock" }`, "Ansehen" |
+| `door` | `{ type: "night", lockId }` | `{ type: "quick_action", label: "Zusperren", plugin, id: "<lockId>:toggle" }` (1.11.0; `:lock` without the toggle), "Ansehen" |
 | `door` | `{ type: "ring_broken" }` (administrators, ≤ 1 per day) | – |
 | `kamera` | `{ type: "home_camera_event", cameraId: "c…", eventId: "e…" }` (+ snapshot; everybody who sees the camera, without who switched it off for themselves) | 1.7.0: "Ansehen" — the apps open that camera |
 

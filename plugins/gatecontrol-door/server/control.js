@@ -126,7 +126,7 @@ async function perform(gc, ctx, user, lockId, action) {
     await push.send(gc, {
       topic: 'auto', priority: 'normal', users: [user.id], collapseKey: `auto:${lock.id}`,
       title: push.t(nlang, 'auto.done', { name: lock.name }), body: push.t(nlang, lock.door_sensor ? 'auto.done_body' : 'auto.done_body_nosensor'),
-      data: { door: { type: 'auto_unlocked', lockId: lock.id }, actions: [...(canRelock ? [push.quickAction(push.t(nlang, 'action.relock'), lock.id, 'lock')] : []), push.viewAction(nlang)] },
+      data: { door: { type: 'auto_unlocked', lockId: lock.id }, actions: [...(canRelock ? [push.quickAction(push.t(nlang, 'action.relock'), lock.id, locks.lockActionId(lock))] : []), push.viewAction(nlang)] },
     });
   }
   const fresh = (await locks.get(gc, lock.id)) || lock;

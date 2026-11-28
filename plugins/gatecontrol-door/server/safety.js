@@ -105,7 +105,7 @@ async function check(gc, cfg, now) {
       if (x.key === 'unreachable') await push.send(gc, { ...base, users: [...lockUsers, ...adminIds], title: push.t(lang, 'door.unreachable', { name }), body: push.t(lang, 'door.unreachable_body', { min: x.min }) });
       if (x.key === 'battery') await push.send(gc, { ...base, users: [...lockUsers, ...adminIds], title: push.t(lang, 'door.battery', { name }), body: push.t(lang, 'door.battery_body') });
       if (x.key === 'night') {
-        const actions = lock.actions.includes('lock') ? [push.quickAction(push.t(lang, 'action.lock'), lock.id, 'lock'), push.viewAction(lang)] : [push.viewAction(lang)];
+        const actions = lock.actions.includes('lock') ? [push.quickAction(push.t(lang, 'action.lock'), lock.id, locks.lockActionId(lock)), push.viewAction(lang)] : [push.viewAction(lang)];
         await push.send(gc, { ...base, users: lockUsers, title: push.t(lang, 'door.night', { name }), body: push.t(lang, 'door.night_body', { time: x.time }), data: { door: { type: 'night', lockId: lock.id }, actions } });
       }
       if (x.key !== 'battery') await store.tx(gc, () => history.add(gc, { at: now, kind: 'alert', lockId: lock.id, via: 'system', action: x.key, result: 'ok' }));
@@ -147,7 +147,7 @@ async function autoRelock(gc, cfg, now, t) {
       await push.send(gc, {
         topic: 'auto', priority: 'normal', users, collapseKey: `auto:${lock.id}`,
         title: push.t(lang, 'auto.ask', { name: lock.name }), body: push.t(lang, 'auto.ask_body'),
-        data: { door: { type: 'auto_ask', lockId: lock.id }, actions: [push.quickAction(push.t(lang, 'action.lock'), lock.id, 'lock'), push.viewAction(lang)] },
+        data: { door: { type: 'auto_ask', lockId: lock.id }, actions: [push.quickAction(push.t(lang, 'action.lock'), lock.id, locks.lockActionId(lock)), push.viewAction(lang)] },
       });
       continue;
     }
